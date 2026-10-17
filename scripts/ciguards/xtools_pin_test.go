@@ -21,7 +21,7 @@ const xtoolsPinKey = "ANALYSIS_XTOOLS_VERSION"
 
 // xtoolsPinWorkflows are the workflows that must carry the pin whatever the
 // sweep finds: the two whose analyzers are built on it today. A workflow that
-// starts reading the key later is swept in by
+// starts reading the key, or using the action built on it, later is swept in by
 // TestTheAnalysisXToolsPinIsOneVersionAcrossWorkflows without an edit here.
 var xtoolsPinWorkflows = []string{ciWorkflow, securityWorkflow}
 
@@ -133,16 +133,162 @@ func readsKey(content, key string) bool {
 	return false
 }
 
-// WEB-299: ci.yml and security.yml pin ANALYSIS_XTOOLS_VERSION separately.
-// Every workflow that names the key must define it exactly once, as a literal,
-// and every definition must agree; ci.yml and security.yml are required by
-// name, so a sweep that stopped finding them fails rather than comparing
-// nothing.
-func TestTheAnalysisXToolsPinIsOneVersionAcrossWorkflows(t *testing.T) {
-	pins := map[string]string{}
+// xtoolsAction is the composite action that builds an analyzer against the
+// pinned x/tools. What the pin protects is the `xtools-version` input of every
+// step that uses it, so the guard keys on those steps, not on the env name.
+const xtoolsAction = "go-install-on-xtools"
+
+// xtoolsInputExpression is the only value a step may pass as `xtools-version`,
+// compared without spaces: the workflow's own pin, read through `env`.
+const xtoolsInputExpression = "${{env." + xtoolsPinKey + "}}"
+
+var (
+	// xtoolsActionUse is a step key `uses:` naming the action, in whatever
+	// spelling of the path; a comment line mentioning it does not match.
+	xtoolsActionUse = regexp.MustCompile(`(?m)^[ \t]*uses:.*` + regexp.QuoteMeta(xtoolsAction))
+	// xtoolsVersionLine is the input at a `with:` entry's depth, as Steps
+	// re-indents a step: keys at eight spaces, `with:` entries at ten.
+	xtoolsVersionLine = regexp.MustCompile(`(?m)^ {10}xtools-version:(.*)$`)
+	stepNameLine      = regexp.MustCompile(`(?m)^ {8}name:[ \t]*(.*?)[ \t]*$`)
+)
+
+// xtoolsVersionInput judges one step, as workflowfile.Steps returns it, that
+// uses the action: it must pass `xtools-version` exactly once, as the
+// expression reading the workflow's own pin. A literal, another env name or no
+// input at all builds the analyzer on an x/tools the pin sweep never compares.
+func xtoolsVersionInput(step string) error {
+	inputs := xtoolsVersionLine.FindAllStringSubmatch(step, -1)
+	switch len(inputs) {
+	case 0:
+		return fmt.Errorf("passes no xtools-version input, so the analyzer is built on an x/tools nothing pins")
+	case 1:
+	default:
+		return fmt.Errorf("passes xtools-version %d times", len(inputs))
+	}
+	value := strings.TrimSpace(yamlTrailingComment.ReplaceAllString(inputs[0][1], ""))
+	if workflowfile.WithoutSpaces(value) != xtoolsInputExpression {
+		return fmt.Errorf("passes xtools-version %q; it must be ${{ env.%s }} so the pin the sweep compares is the one the analyzer is built on", value, xtoolsPinKey)
+	}
+	return nil
+}
+
+// xtoolsSteps is every step of every workflow that uses the action, keyed by
+// workflow and then by "job / step name" — the key the failure message and the
+// anti-vacuity check both name — read from the source with no allowlist.
+func xtoolsSteps(t *testing.T) map[string]map[string]string {
+	t.Helper()
+
+	found := map[string]map[string]string{}
 	for _, workflow := range allWorkflowFiles(t) {
 		content := workflowfile.Read(t, workflow)
-		if !readsKey(content, xtoolsPinKey) {
+		for _, header := range workflowfile.JobHeaders(t, workflow, content) {
+			job := strings.TrimSuffix(strings.TrimSpace(header), ":")
+			for _, step := range workflowfile.Steps(workflowfile.Job(t, workflow, job)) {
+				if !xtoolsActionUse.MatchString(step) {
+					continue
+				}
+				name := "(unnamed)"
+				if m := stepNameLine.FindStringSubmatch(step); m != nil {
+					name = m[1]
+				}
+				if found[workflow] == nil {
+					found[workflow] = map[string]string{}
+				}
+				found[workflow][job+" / "+name] = step
+			}
+		}
+	}
+	return found
+}
+
+// The steps that build staticcheck, golangci-lint and gosec on the pin today.
+// Named, not counted: a sweep that stopped finding one of them fails here
+// rather than judging fewer steps in green.
+var knownXToolsSteps = map[string][]string{
+	ciWorkflow:       {"test-go-analysis / Install staticcheck", "test-go-analysis / Install golangci-lint"},
+	securityWorkflow: {"gosec / Install gosec"},
+}
+
+func TestEveryStepUsingTheXToolsActionPassesTheWorkflowsPin(t *testing.T) {
+	found := xtoolsSteps(t)
+	for workflow, names := range knownXToolsSteps {
+		for _, name := range names {
+			if _, ok := found[workflow][name]; !ok {
+				t.Fatalf("%s: step %q was not found among the steps using %s — it was renamed or the sweep lost it, and this guard would judge nothing", workflow, name, xtoolsAction)
+			}
+		}
+	}
+	for workflow, steps := range found {
+		for name, step := range steps {
+			if err := xtoolsVersionInput(step); err != nil {
+				t.Errorf("%s: step %q %v", workflow, name, err)
+			}
+		}
+	}
+}
+
+func TestXToolsVersionInputRefusesEveryInputThatIsNotTheWorkflowsPin(t *testing.T) {
+	step := func(with string) string {
+		return "        name: Install tool\n        uses: ./.github/actions/go-install-on-xtools\n        with:\n          package: example.com/cmd/tool\n          version: ${{ env.TOOL_VERSION }}\n" + with
+	}
+	accepted := map[string]string{
+		"the pin":           step("          xtools-version: ${{ env.ANALYSIS_XTOOLS_VERSION }}\n"),
+		"the pin, no space": step("          xtools-version: ${{env.ANALYSIS_XTOOLS_VERSION}} # x/tools\n"),
+	}
+	for name, src := range accepted {
+		if err := xtoolsVersionInput(src); err != nil {
+			t.Errorf("%s: refused: %v", name, err)
+		}
+	}
+	refused := map[string]string{
+		"a literal version": step("          xtools-version: v0.50.0\n"),
+		"a quoted literal":  step("          xtools-version: 'v0.50.0'\n"),
+		"another env name":  step("          xtools-version: ${{ env.OTHER_XTOOLS_VERSION }}\n"),
+		"a longer env name": step("          xtools-version: ${{ env.ANALYSIS_XTOOLS_VERSION_OLD }}\n"),
+		"a vars context":    step("          xtools-version: ${{ vars.ANALYSIS_XTOOLS_VERSION }}\n"),
+		"an empty value":    step("          xtools-version:\n"),
+		"no input":          step(""),
+		"the input twice":   step("          xtools-version: ${{ env.ANALYSIS_XTOOLS_VERSION }}\n          xtools-version: v0.50.0\n"),
+	}
+	for name, src := range refused {
+		if err := xtoolsVersionInput(src); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestXToolsActionUseIgnoresCommentsAndOtherActions(t *testing.T) {
+	for _, src := range []string{
+		"        uses: ./.github/actions/go-install-on-xtools\n",
+		"        uses: \"./.github/actions/go-install-on-xtools\"\n",
+		"        uses: ./.github/actions/go-install-on-xtools # pinned\n",
+	} {
+		if !xtoolsActionUse.MatchString(src) {
+			t.Errorf("a use of the action was missed: %q", src)
+		}
+	}
+	for _, src := range []string{
+		"        # uses: ./.github/actions/go-install-on-xtools\n",
+		"        uses: ./.github/actions/setup-go\n",
+		"        run: echo go-install-on-xtools\n",
+	} {
+		if xtoolsActionUse.MatchString(src) {
+			t.Errorf("not a use of the action: %q", src)
+		}
+	}
+}
+
+// WEB-299: ci.yml and security.yml pin ANALYSIS_XTOOLS_VERSION separately.
+// Every workflow that names the key, or has a step using the action built on
+// it, must define it exactly once, as a literal, and every definition must
+// agree; ci.yml and security.yml are required by name, so a sweep that stopped
+// finding them fails rather than comparing nothing.
+func TestTheAnalysisXToolsPinIsOneVersionAcrossWorkflows(t *testing.T) {
+	pins := map[string]string{}
+	users := xtoolsSteps(t)
+	for _, workflow := range allWorkflowFiles(t) {
+		content := workflowfile.Read(t, workflow)
+		if !readsKey(content, xtoolsPinKey) && len(users[workflow]) == 0 {
 			continue
 		}
 		pin, err := EnvPin(content, xtoolsPinKey)
