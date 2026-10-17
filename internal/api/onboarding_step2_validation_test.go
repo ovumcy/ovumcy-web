@@ -23,6 +23,7 @@ func TestOnboardingStep2SanitizesOutOfRangeAndIncompatibleValues(t *testing.T) {
 	invalidCycleRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	invalidCycleRequest.Header.Set("HX-Request", "true")
 	invalidCycleRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, invalidCycleRequest, user.ID)
 
 	invalidCycleResponse, err := app.Test(invalidCycleRequest, testConfigNoTimeout)
 	if err != nil {
@@ -52,6 +53,7 @@ func TestOnboardingStep2SanitizesOutOfRangeAndIncompatibleValues(t *testing.T) {
 	incompatibleRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	incompatibleRequest.Header.Set("HX-Request", "true")
 	incompatibleRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, incompatibleRequest, user.ID)
 
 	incompatibleResponse, err := app.Test(incompatibleRequest, testConfigNoTimeout)
 	if err != nil {
@@ -83,6 +85,7 @@ func TestOnboardingStep1RejectsUnparseableLastPeriodStart(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
@@ -118,6 +121,7 @@ func TestOnboardingStep2IgnoresUnexpectedPeriodEndInput(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
@@ -181,6 +185,7 @@ func TestOnboardingStep2SanitizesSliderValuesEvenWhenUnexpectedPeriodEndIsPresen
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			request.Header.Set("HX-Request", "true")
 			request.Header.Set("Cookie", authCookie)
+			bindDayWriteForTest(t, request, user.ID)
 
 			response, err := app.Test(request, testConfigNoTimeout)
 			if err != nil {

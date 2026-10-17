@@ -45,6 +45,7 @@ func TestOnboardingStep1ShowsLocalizedErrorWhenDateMissing(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "ru")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {

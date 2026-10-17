@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -63,6 +64,18 @@ func (handler *Handler) SetLanguage(c fiber.Ctx) error {
 // unsupported code as a cookie-only fallback to the default. So an unsupported
 // code reaches neither the account nor the cookie in the form it was submitted.
 //
+// The account write is gated on the page too. The switcher is rendered by pages
+// that outlive a sign-in: an onboarding page of one account left open in a tab,
+// or a signed-out page left open while a different account signs in, still posts
+// here with the session cookie of whoever is signed in NOW. The session alone
+// cannot tell that apart from the owner's own click, so the choice is stored on
+// the account only when the form carries the binding of the page's account (the
+// hidden field the signed-in pages render, see languageSwitchNamesAccount) and it
+// names the account now signed in. Any other request — a signed-out page, a page
+// of another account, a client that sends no binding — switches the cookie alone,
+// and is answered exactly as the stored switch is, so the response still tells
+// nobody which of the cases it was.
+//
 // The owner-role check is defense in depth, not a live branch: ResolveAuthSession
 // already refuses an unsupported role, so optionalAuthenticatedUser answers nil
 // for one. It is here for the same reason every mutating route declares
@@ -81,10 +94,22 @@ func (handler *Handler) persistSwitchedLanguage(c fiber.Ctx, submitted string, n
 	if user == nil || !services.IsOwnerUser(user) {
 		return APIErrorSpec{}, true
 	}
+	if !handler.languageSwitchNamesAccount(c, user) {
+		return APIErrorSpec{}, true
+	}
 	if err := handler.settingsService.SaveInterfaceLanguage(c.Context(), user.ID, normalized); err != nil {
 		return settingsInterfaceUpdateErrorSpec(), false
 	}
 	return APIErrorSpec{}, true
+}
+
+// languageSwitchNamesAccount reports whether the switch came from a page
+// rendered for user: it carries a binding, and every binding it carries names
+// user. It is the settings writes' rule (dayFormBindingRefused) with the page
+// requirement always on, because the public form cannot be refused for lacking
+// one — only denied the account write.
+func (handler *Handler) languageSwitchNamesAccount(c fiber.Ctx, user *models.User) bool {
+	return !dayFormBindingRefused(handler.dayFormBinder(), user, presentedDayFormAccountBindings(c), true)
 }
 
 func (handler *Handler) ShowPrivacyPage(c fiber.Ctx) error {

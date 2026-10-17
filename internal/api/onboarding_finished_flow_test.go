@@ -16,17 +16,17 @@ func TestOnboardingFlowBuildsPeriodRangeFromSliderPeriodLength(t *testing.T) {
 	periodLength := 8
 	endDayExclusive := startDay.AddDate(0, 0, periodLength)
 
-	submitOnboardingStep1(t, app, authCookie, url.Values{
+	submitOnboardingStep1(t, app, authCookie, user.ID, url.Values{
 		"last_period_start": {startDay.Format("2006-01-02")},
 	})
 
-	submitOnboardingStep2(t, app, authCookie, url.Values{
+	submitOnboardingStep2(t, app, authCookie, user.ID, url.Values{
 		"cycle_length":     {"28"},
 		"period_length":    {"8"},
 		"auto_period_fill": {"true"},
 	})
 
-	submitOnboardingComplete(t, app, authCookie)
+	submitOnboardingComplete(t, app, authCookie, user.ID)
 
 	for day := startDay; day.Before(endDayExclusive); day = day.AddDate(0, 0, 1) {
 		assertOnboardingPeriodLogForDay(t, database, user.ID, day)
@@ -44,16 +44,16 @@ func TestOnboardingFlowSkipsPeriodLogsWhenAutoFillIsDisabled(t *testing.T) {
 	periodLength := 5
 	endDayExclusive := startDay.AddDate(0, 0, periodLength)
 
-	submitOnboardingStep1(t, app, authCookie, url.Values{
+	submitOnboardingStep1(t, app, authCookie, user.ID, url.Values{
 		"last_period_start": {startDay.Format("2006-01-02")},
 	})
 
-	submitOnboardingStep2(t, app, authCookie, url.Values{
+	submitOnboardingStep2(t, app, authCookie, user.ID, url.Values{
 		"cycle_length":  {"28"},
 		"period_length": {"5"},
 	})
 
-	submitOnboardingComplete(t, app, authCookie)
+	submitOnboardingComplete(t, app, authCookie, user.ID)
 
 	for day := startDay; day.Before(endDayExclusive); day = day.AddDate(0, 0, 1) {
 		assertNoOnboardingLogForDay(t, database, user.ID, day)

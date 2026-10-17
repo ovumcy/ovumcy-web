@@ -23,6 +23,7 @@ func TestOnboardingStep1RejectsFutureAndTooOldDates(t *testing.T) {
 	futureRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	futureRequest.Header.Set("HX-Request", "true")
 	futureRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, futureRequest, user.ID)
 
 	futureResponse, err := app.Test(futureRequest, testConfigNoTimeout)
 	if err != nil {
@@ -41,6 +42,7 @@ func TestOnboardingStep1RejectsFutureAndTooOldDates(t *testing.T) {
 	oldRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	oldRequest.Header.Set("HX-Request", "true")
 	oldRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, oldRequest, user.ID)
 
 	oldResponse, err := app.Test(oldRequest, testConfigNoTimeout)
 	if err != nil {
@@ -66,6 +68,7 @@ func TestOnboardingStep1IgnoresUnexpectedPeriodEndInput(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
@@ -99,6 +102,7 @@ func TestOnboardingStep1RejectsFarHistoricalDate(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {

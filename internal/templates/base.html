@@ -52,6 +52,11 @@
           <form action="/lang" method="post" class="lang-switch" aria-label="{{t .Messages "lang.switch"}}" data-language-switch-form>
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <input type="hidden" name="next" value="{{.CurrentPath}}">
+            {{/* Rendered only for a signed-in account (the onboarding pages): the
+                 server stores the choice on an account only when this names the
+                 account now signed in. A signed-out page carries none and switches
+                 the cookie alone. */}}
+            {{if .CurrentUser}}<input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">{{end}}
             {{range .LanguageOptions}}
             <button
               type="submit"

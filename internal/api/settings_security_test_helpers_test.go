@@ -198,6 +198,10 @@ func settingsFormRequestWithCSRF(t *testing.T, ctx settingsSecurityTestContext, 
 	request := httptest.NewRequest(method, path, strings.NewReader(cloned.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
+	// The request stands for a submit of a page rendered for this context's own
+	// account, which carries the account binding. A call site that tests a stale
+	// or lost binding sets its own header below, which replaces this one.
+	bindDayWriteForTest(t, request, ctx.user.ID)
 	for key, value := range headers {
 		request.Header.Set(key, value)
 	}

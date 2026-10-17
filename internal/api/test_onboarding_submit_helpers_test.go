@@ -10,13 +10,17 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-func submitOnboardingStep1(t *testing.T, app *fiber.App, authCookie string, form url.Values) {
+// The submit helpers stand for the onboarding page's own form posts, which
+// carry the binding of the account the page was rendered for: userID names it.
+
+func submitOnboardingStep1(t *testing.T, app *fiber.App, authCookie string, userID uint, form url.Values) {
 	t.Helper()
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/steps/1", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, userID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
@@ -29,13 +33,14 @@ func submitOnboardingStep1(t *testing.T, app *fiber.App, authCookie string, form
 	}
 }
 
-func submitOnboardingStep2(t *testing.T, app *fiber.App, authCookie string, form url.Values) {
+func submitOnboardingStep2(t *testing.T, app *fiber.App, authCookie string, userID uint, form url.Values) {
 	t.Helper()
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/steps/2", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, userID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
@@ -48,12 +53,13 @@ func submitOnboardingStep2(t *testing.T, app *fiber.App, authCookie string, form
 	}
 }
 
-func submitOnboardingComplete(t *testing.T, app *fiber.App, authCookie string) {
+func submitOnboardingComplete(t *testing.T, app *fiber.App, authCookie string, userID uint) {
 	t.Helper()
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/complete", nil)
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, userID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {

@@ -263,6 +263,7 @@ func TestSettingsSymptomsHTMXCreateTooLongClearsDraftName(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("HX-Request", "true")
 	req.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	bindDayWriteForTest(t, req, user.ID)
 	resp, err := app.Test(req, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("too-long create request failed: %v", err)

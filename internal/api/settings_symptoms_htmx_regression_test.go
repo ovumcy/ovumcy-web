@@ -133,6 +133,7 @@ func TestSettingsSymptomsHTMXUpdateDuplicateShowsRowLocalError(t *testing.T) {
 	updateRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	updateRequest.Header.Set("HX-Request", "true")
 	updateRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	bindDayWriteForTest(t, updateRequest, user.ID)
 
 	updateResponse, err := app.Test(updateRequest, testConfigNoTimeout)
 	if err != nil {
@@ -196,6 +197,7 @@ func TestSettingsSymptomsHTMXUpdateTooLongDoesNotEchoDraftName(t *testing.T) {
 	updateRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	updateRequest.Header.Set("HX-Request", "true")
 	updateRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	bindDayWriteForTest(t, updateRequest, user.ID)
 
 	updateResponse, err := app.Test(updateRequest, testConfigNoTimeout)
 	if err != nil {
@@ -247,6 +249,7 @@ func TestSettingsSymptomsHTMXCreateTooLongDoesNotPersistSymptom(t *testing.T) {
 	createRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	createRequest.Header.Set("HX-Request", "true")
 	createRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	bindDayWriteForTest(t, createRequest, user.ID)
 
 	createResponse, err := app.Test(createRequest, testConfigNoTimeout)
 	if err != nil {
@@ -299,6 +302,7 @@ func TestSettingsSymptomsHTMXUpdateWithoutColorPreservesStoredValue(t *testing.T
 	updateRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	updateRequest.Header.Set("HX-Request", "true")
 	updateRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	bindDayWriteForTest(t, updateRequest, user.ID)
 
 	updateResponse, err := app.Test(updateRequest, testConfigNoTimeout)
 	if err != nil {
@@ -359,6 +363,7 @@ func performSettingsSymptomsHTMXRequest(t *testing.T, ctx settingsSymptomsHTMXTe
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie)))
+	bindDayWriteForTest(t, request, ctx.user.ID)
 
 	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {

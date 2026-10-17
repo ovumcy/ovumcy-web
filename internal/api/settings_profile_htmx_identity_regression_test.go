@@ -22,6 +22,7 @@ func TestProfileUpdateHTMXReturnsUnicodeSafeIdentityOOBMarkup(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/profile", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 
@@ -89,6 +90,7 @@ func TestProfileUpdateHTMXKeepsTheDesktopChipMarkedAsTheCurrentSection(t *testin
 	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/profile", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 
@@ -135,6 +137,7 @@ func TestProfileUpdateHTMXReturnsFallbackIdentityWhenDisplayNameCleared(t *testi
 	seedRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/profile", strings.NewReader(seedForm.Encode()))
 	seedRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	seedRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, seedRequest, user.ID)
 	seedRequest.Header.Set("HX-Request", "true")
 
 	seedResponse, err := app.Test(seedRequest, testConfigNoTimeout)
@@ -152,6 +155,7 @@ func TestProfileUpdateHTMXReturnsFallbackIdentityWhenDisplayNameCleared(t *testi
 	clearRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/profile", strings.NewReader(clearForm.Encode()))
 	clearRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	clearRequest.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, clearRequest, user.ID)
 	clearRequest.Header.Set("HX-Request", "true")
 	clearRequest.Header.Set("Accept-Language", "en")
 

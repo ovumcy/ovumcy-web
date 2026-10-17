@@ -215,6 +215,7 @@ func TestOnboardingComplete_EligibleUserRedirectsToDashboard(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("HX-Request", "true")
 	req.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, req, user.ID)
 	resp := mustAppResponse(t, app, req)
 	defer func() { _ = resp.Body.Close() }()
 

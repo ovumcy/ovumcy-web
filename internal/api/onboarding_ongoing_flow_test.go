@@ -18,18 +18,18 @@ func TestOnboardingFlowCompletesWithOngoingPeriodRangeAndFlowNone(t *testing.T) 
 	stepDate := today.AddDate(0, 0, -2)
 	stepDateRaw := stepDate.Format("2006-01-02")
 
-	submitOnboardingStep1(t, app, authCookie, url.Values{
+	submitOnboardingStep1(t, app, authCookie, user.ID, url.Values{
 		"last_period_start": {stepDateRaw},
 	})
 
-	submitOnboardingStep2(t, app, authCookie, url.Values{
+	submitOnboardingStep2(t, app, authCookie, user.ID, url.Values{
 		"cycle_length":     {"30"},
 		"period_length":    {"5"},
 		"auto_period_fill": {"true"},
 		"irregular_cycle":  {"true"},
 	})
 
-	submitOnboardingComplete(t, app, authCookie)
+	submitOnboardingComplete(t, app, authCookie, user.ID)
 
 	var updatedUser models.User
 	if err := database.First(&updatedUser, user.ID).Error; err != nil {

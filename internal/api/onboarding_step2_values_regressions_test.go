@@ -142,10 +142,10 @@ func TestOnboardingStep2SkippedModeCompletesWithTheNeutralDefault(t *testing.T) 
 	user := createOnboardingTestUser(t, database, "onboarding-step2-skip@example.com", "StrongPass1", false)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	submitOnboardingStep1(t, app, authCookie, url.Values{
+	submitOnboardingStep1(t, app, authCookie, user.ID, url.Values{
 		"last_period_start": {time.Now().UTC().AddDate(0, 0, -5).Format("2006-01-02")},
 	})
-	submitOnboardingStep2(t, app, authCookie, url.Values{
+	submitOnboardingStep2(t, app, authCookie, user.ID, url.Values{
 		"cycle_length":  {"29"},
 		"period_length": {"5"},
 	})

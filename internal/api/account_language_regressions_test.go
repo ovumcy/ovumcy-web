@@ -584,7 +584,9 @@ func TestSwitchedLanguageSurvivesASessionReissue(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "lang-switch-reissue@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	switchResponse := mustAppResponse(t, app, languageSwitchRequest("ru", "/dashboard", authCookie))
+	switchRequest := languageSwitchRequest("ru", "/dashboard", authCookie)
+	bindDayWriteForTest(t, switchRequest, user.ID)
+	switchResponse := mustAppResponse(t, app, switchRequest)
 	assertStatusCode(t, switchResponse, http.StatusSeeOther)
 
 	reissueResponse := passwordLoginResponse(t, app, user.Email)
@@ -612,7 +614,9 @@ func TestLanguageSwitchAnswersTheSameWithNoSessionAndWithADeadOne(t *testing.T) 
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	anonymous := mustAppResponse(t, app, languageSwitchRequest("ru", "/login", ""))
-	authenticated := mustAppResponse(t, app, languageSwitchRequest("ru", "/login", authCookie))
+	authenticatedRequest := languageSwitchRequest("ru", "/login", authCookie)
+	bindDayWriteForTest(t, authenticatedRequest, user.ID)
+	authenticated := mustAppResponse(t, app, authenticatedRequest)
 	stale := mustAppResponse(t, app, languageSwitchRequest("ru", "/login", authCookieName+"=not-a-sealed-value"))
 
 	for name, response := range map[string]*http.Response{

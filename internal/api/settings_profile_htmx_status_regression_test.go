@@ -20,6 +20,7 @@ func TestProfileUpdateHTMXStatusMarkupIsNonTransient(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/profile", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
+	bindDayWriteForTest(t, request, user.ID)
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 
