@@ -341,7 +341,7 @@ test("a dashboard autosave refused by a keyless 403 shows the refusal copy and r
     assert.equal(message.textContent, REFUSED_TEXT);
     assert.deepEqual(
       calls.map((call) => call.init.method),
-      ["PUT", "GET"]
+      ["PATCH", "GET"]
     );
     assert.equal(currentToken(dom.window), FRESH_TOKEN);
   } finally {
