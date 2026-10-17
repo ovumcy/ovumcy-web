@@ -6498,7 +6498,23 @@
   // published on the stack as --settings-section-nav-height; the stylesheet's
   // two-row figure is only the default for a page without this script. A page
   // with no index has nothing to clear but the header.
-  function publishSettingsSectionNavHeight(root, nav) {
+  //
+  // The sticky header wraps the same way (text zoom, locale), so its height is
+  // measured too and published as --sticky-header-clearance: the header plus
+  // the sliver the stylesheet's default carries. Both figures feed the cards'
+  // scroll-margin-top and the index's sticky offset, and one observer watches
+  // both elements.
+  var SETTINGS_STICKY_HEADER_SLIVER_PX = 4;
+
+  function publishSettingsStickyChrome(root, nav, header) {
+    if (header && header.offsetHeight > 0) {
+      root.style.setProperty(
+        "--sticky-header-clearance",
+        header.offsetHeight + SETTINGS_STICKY_HEADER_SLIVER_PX + "px"
+      );
+    }
+    // A header that is absent or not laid out (yet) keeps whatever was last
+    // published, or the stylesheet default.
     var height = nav ? nav.offsetHeight : 0;
     if (nav && !(height > 0)) {
       // Not laid out (yet): keep whatever was last published, or the default.
@@ -6513,18 +6529,25 @@
       return;
     }
     var nav = root.querySelector("[data-settings-section-nav]");
-    publishSettingsSectionNavHeight(root, nav);
-    // Re-entered after every htmx swap; the index itself is never swapped, so
-    // one observer per index node is the whole binding.
-    if (!nav || nav.__ovumcySettingsNavObserved) {
+    var header = document.querySelector(".paper-header");
+    publishSettingsStickyChrome(root, nav, header);
+    // Re-entered after every htmx swap; neither the index nor the header is
+    // ever swapped, so one observer per stack node is the whole binding.
+    if (root.__ovumcySettingsChromeObserved || (!nav && !header)) {
       return;
     }
-    nav.__ovumcySettingsNavObserved = true;
+    root.__ovumcySettingsChromeObserved = true;
     var republish = function () {
-      publishSettingsSectionNavHeight(root, nav);
+      publishSettingsStickyChrome(root, nav, header);
     };
     if (typeof window.ResizeObserver === "function") {
-      new window.ResizeObserver(republish).observe(nav);
+      var observer = new window.ResizeObserver(republish);
+      if (nav) {
+        observer.observe(nav);
+      }
+      if (header) {
+        observer.observe(header);
+      }
       return;
     }
     window.addEventListener("resize", republish);

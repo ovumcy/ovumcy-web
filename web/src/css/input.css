@@ -54,8 +54,9 @@
      two rows from 640px up (~117px).
      --settings-section-nav-height is the index's two-row height (0.5rem
      padding each side, two 2.25rem pills, the 0.4rem gap, the 1px borders).
-     It is only the default: the settings script replaces it with the measured
-     height inline on this element, since the row count follows the locale. */
+     Both are only defaults: the settings script replaces each with the
+     measured height inline on this element (the header plus a sliver), since
+     the row count follows the locale and the text zoom. */
   [data-settings-sections] {
     --sticky-header-clearance: 6rem;
     --settings-section-nav-height: calc(5.9rem + 2px);
