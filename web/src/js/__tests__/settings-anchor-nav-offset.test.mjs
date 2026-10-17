@@ -18,6 +18,7 @@ function settingsPage({ withNav = true } = {}) {
   return `<!doctype html>
 <html lang="en"><head><meta name="csrf-token" content="test-token"></head>
 <body>
+  <header class="paper-header"><a href="/">Ovumcy</a></header>
   <section data-settings-sections>
     ${withNav ? `<nav class="settings-section-nav" data-settings-section-nav aria-label="Settings">
       <a href="#settings-cycle" class="settings-section-nav-link">Cycle</a>
@@ -35,14 +36,24 @@ function settingsPage({ withNav = true } = {}) {
 
 // jsdom performs no layout, so the index's height is whatever the test says it
 // is; every other element reports 0, as it does in jsdom anyway.
-function stubIndexHeight(window, initial) {
+function stubIndexHeight(window, initial, headerInitial = 0) {
   window.__testIndexHeight = initial;
+  window.__testHeaderHeight = headerInitial;
   Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", {
     configurable: true,
     get() {
-      return this.hasAttribute("data-settings-section-nav") ? window.__testIndexHeight : 0;
+      if (this.hasAttribute("data-settings-section-nav")) {
+        return window.__testIndexHeight;
+      }
+      return this.classList.contains("paper-header") ? window.__testHeaderHeight : 0;
     },
   });
+}
+
+function publishedClearance(window) {
+  return window.document
+    .querySelector("[data-settings-sections]")
+    .style.getPropertyValue("--sticky-header-clearance");
 }
 
 function stubResizeObserver(window) {
@@ -131,6 +142,83 @@ test("an index that is not laid out keeps the stylesheet default", async () => {
   });
 
   assert.equal(publishedHeight(dom.window), "");
+  dom.window.close();
+});
+
+test("the measured sticky-header height plus the sliver is published at load", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: settingsPage(),
+    url: "https://ovumcy.test/settings#settings-cycle",
+    beforeRun(window) {
+      stubIndexHeight(window, 96, 93);
+      stubResizeObserver(window);
+    },
+  });
+
+  assert.equal(publishedClearance(dom.window), "97px");
+  dom.window.close();
+});
+
+test("a re-wrapped sticky header republishes its clearance through the same observer", async () => {
+  let observers = [];
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: settingsPage(),
+    url: "https://ovumcy.test/settings",
+    beforeRun(window) {
+      stubIndexHeight(window, 96, 93);
+      observers = stubResizeObserver(window);
+    },
+  });
+
+  const header = dom.window.document.querySelector(".paper-header");
+  const index = dom.window.document.querySelector("[data-settings-section-nav]");
+  const watching = observers.filter((observer) => observer.targets.includes(header));
+  assert.equal(watching.length, 1, "expected exactly one observer on the sticky header");
+  assert.ok(watching[0].targets.includes(index), "the header and the index share one observer");
+
+  // 200% text zoom at 375px: the header wraps to a third row.
+  dom.window.__testHeaderHeight = 188;
+  watching[0].callback([]);
+  assert.equal(publishedClearance(dom.window), "192px");
+  dom.window.close();
+});
+
+test("without ResizeObserver a window resize republishes the header clearance", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: settingsPage(),
+    url: "https://ovumcy.test/settings",
+    beforeRun(window) {
+      stubIndexHeight(window, 96, 93);
+      delete window.ResizeObserver;
+    },
+  });
+
+  assert.equal(publishedClearance(dom.window), "97px");
+  dom.window.__testHeaderHeight = 117;
+  dom.window.dispatchEvent(new dom.window.Event("resize"));
+  assert.equal(publishedClearance(dom.window), "121px");
+  dom.window.close();
+});
+
+test("a header that is not laid out keeps the stylesheet default clearance", async () => {
+  let observers = [];
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: settingsPage(),
+    url: "https://ovumcy.test/settings",
+    beforeRun(window) {
+      stubIndexHeight(window, 96, 0);
+      observers = stubResizeObserver(window);
+    },
+  });
+
+  assert.equal(publishedClearance(dom.window), "");
+  // It lays out later: the observer publishes it, and a later 0 keeps it.
+  dom.window.__testHeaderHeight = 93;
+  observers[0].callback([]);
+  assert.equal(publishedClearance(dom.window), "97px");
+  dom.window.__testHeaderHeight = 0;
+  observers[0].callback([]);
+  assert.equal(publishedClearance(dom.window), "97px");
   dom.window.close();
 });
 
