@@ -11,11 +11,16 @@ const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 // A copy of the checkout, holding only what the JS build reads, so the build
 // under test writes into the copy and never into the tree running the suite.
 function copyCheckoutForBuild(root) {
-  for (const path of ["scripts/build-js.mjs", "web/src/js", "package-lock.json"]) {
-    cpSync(join(repoRoot, path), join(root, path), {
-      recursive: true,
-      filter: (source) => !source.includes("__tests__")
-    });
+  for (const path of [
+    "scripts/build-js.mjs",
+    "package-lock.json",
+    "web/src/js/app",
+    "web/src/js/settings-export",
+    "web/src/js/settings-import",
+    "web/src/js/theme-bootstrap.js",
+    "web/src/js/timezone-bootstrap.js"
+  ]) {
+    cpSync(join(repoRoot, path), join(root, path), { recursive: true });
   }
   for (const path of ["package.json", "dist/htmx.min.js"]) {
     cpSync(join(repoRoot, "node_modules/htmx.org", path), join(root, "node_modules/htmx.org", path));
