@@ -5851,6 +5851,45 @@
     });
   }
 
+  // An anchor jump into a card scrolls its top edge to the top of the viewport,
+  // under the sticky header and, from 640px up, the sticky section index. The
+  // cards' scroll-margin-top clears both, but the index wraps to as many rows
+  // as the locale and the width need, so its height is measured here and
+  // published on the stack as --settings-section-nav-height; the stylesheet's
+  // two-row figure is only the default for a page without this script. A page
+  // with no index has nothing to clear but the header.
+  function publishSettingsSectionNavHeight(root, nav) {
+    var height = nav ? nav.offsetHeight : 0;
+    if (nav && !(height > 0)) {
+      // Not laid out (yet): keep whatever was last published, or the default.
+      return;
+    }
+    root.style.setProperty("--settings-section-nav-height", height + "px");
+  }
+
+  function bindSettingsSectionNavOffset() {
+    var root = document.querySelector("[data-settings-sections]");
+    if (!root) {
+      return;
+    }
+    var nav = root.querySelector("[data-settings-section-nav]");
+    publishSettingsSectionNavHeight(root, nav);
+    // Re-entered after every htmx swap; the index itself is never swapped, so
+    // one observer per index node is the whole binding.
+    if (!nav || nav.__ovumcySettingsNavObserved) {
+      return;
+    }
+    nav.__ovumcySettingsNavObserved = true;
+    var republish = function () {
+      publishSettingsSectionNavHeight(root, nav);
+    };
+    if (typeof window.ResizeObserver === "function") {
+      new window.ResizeObserver(republish).observe(nav);
+      return;
+    }
+    window.addEventListener("resize", republish);
+  }
+
   function bindSettingsSectionDisclosures() {
     var sections = settingsSectionDisclosures();
     if (!sections.length || !window.matchMedia) {
@@ -6943,6 +6982,9 @@
     bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
     bindPregnancyTestFields(document);
+    // Before the hash reveal: its load-time scroll reads the cards'
+    // scroll-margin-top, which depends on the measured section-index height.
+    bindSettingsSectionNavOffset();
     bindHashDisclosureReveals();
     bindDashboardNotesCounters(document);
     bindSettingsCycleForms();
