@@ -118,5 +118,8 @@ function build() {
 // argv[1] is unresolved while import.meta.url is realpath'd by the ESM loader;
 // comparing them raw turns a run through a junction into a silent no-op.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // Every path above is relative to the checkout this script lives in; run from
+  // any other directory, they would read and overwrite that directory's tree.
+  process.chdir(fileURLToPath(new URL("..", import.meta.url)));
   build();
 }

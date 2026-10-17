@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const buildResult = spawnSync(
   process.execPath,
@@ -11,6 +12,9 @@ const buildResult = spawnSync(
     "--minify"
   ],
   {
+    // The paths above, and the sources Tailwind scans, belong to this script's
+    // own checkout, whatever directory it was started from.
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
     stdio: "inherit"
   }
 );
