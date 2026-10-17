@@ -19,6 +19,9 @@
     bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
     bindPregnancyTestFields(document);
+    // Before the hash reveal: its load-time scroll reads the cards'
+    // scroll-margin-top, which depends on the measured section-index height.
+    bindSettingsSectionNavOffset();
     bindHashDisclosureReveals();
     bindDashboardNotesCounters(document);
     bindSettingsCycleForms();

@@ -5851,6 +5851,68 @@
     });
   }
 
+  // An anchor jump into a card scrolls its top edge to the top of the viewport,
+  // under the sticky header and, from 640px up, the sticky section index. The
+  // cards' scroll-margin-top clears both, but the index wraps to as many rows
+  // as the locale and the width need, so its height is measured here and
+  // published on the stack as --settings-section-nav-height; the stylesheet's
+  // two-row figure is only the default for a page without this script. A page
+  // with no index has nothing to clear but the header.
+  //
+  // The sticky header wraps the same way (text zoom, locale), so its height is
+  // measured too and published as --sticky-header-clearance: the header plus
+  // the sliver the stylesheet's default carries. Both figures feed the cards'
+  // scroll-margin-top and the index's sticky offset, and one observer watches
+  // both elements.
+  var SETTINGS_STICKY_HEADER_SLIVER_PX = 4;
+
+  function publishSettingsStickyChrome(root, nav, header) {
+    if (header && header.offsetHeight > 0) {
+      root.style.setProperty(
+        "--sticky-header-clearance",
+        header.offsetHeight + SETTINGS_STICKY_HEADER_SLIVER_PX + "px"
+      );
+    }
+    // A header that is absent or not laid out (yet) keeps whatever was last
+    // published, or the stylesheet default.
+    var height = nav ? nav.offsetHeight : 0;
+    if (nav && !(height > 0)) {
+      // Not laid out (yet): keep whatever was last published, or the default.
+      return;
+    }
+    root.style.setProperty("--settings-section-nav-height", height + "px");
+  }
+
+  function bindSettingsSectionNavOffset() {
+    var root = document.querySelector("[data-settings-sections]");
+    if (!root) {
+      return;
+    }
+    var nav = root.querySelector("[data-settings-section-nav]");
+    var header = document.querySelector(".paper-header");
+    publishSettingsStickyChrome(root, nav, header);
+    // Re-entered after every htmx swap; neither the index nor the header is
+    // ever swapped, so one observer per stack node is the whole binding.
+    if (root.__ovumcySettingsChromeObserved || (!nav && !header)) {
+      return;
+    }
+    root.__ovumcySettingsChromeObserved = true;
+    var republish = function () {
+      publishSettingsStickyChrome(root, nav, header);
+    };
+    if (typeof window.ResizeObserver === "function") {
+      var observer = new window.ResizeObserver(republish);
+      if (nav) {
+        observer.observe(nav);
+      }
+      if (header) {
+        observer.observe(header);
+      }
+      return;
+    }
+    window.addEventListener("resize", republish);
+  }
+
   function bindSettingsSectionDisclosures() {
     var sections = settingsSectionDisclosures();
     if (!sections.length || !window.matchMedia) {
@@ -6943,6 +7005,9 @@
     bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
     bindPregnancyTestFields(document);
+    // Before the hash reveal: its load-time scroll reads the cards'
+    // scroll-margin-top, which depends on the measured section-index height.
+    bindSettingsSectionNavOffset();
     bindHashDisclosureReveals();
     bindDashboardNotesCounters(document);
     bindSettingsCycleForms();

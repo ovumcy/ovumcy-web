@@ -45,6 +45,26 @@
   :root[data-scripted] [data-nojs-only] {
     display: none;
   }
+
+  /* The settings stack's sticky-chrome geometry, read by the section index's
+     sticky offset and by the cards' scroll-margin-top, so the offset the index
+     sticks at and the clearance a jump leaves cannot drift apart.
+     --sticky-header-clearance is the paper-header's height plus a sliver: one
+     row on a phone (py-4 around the 2.75rem menu toggle, pb-4 below, ~93px),
+     two rows from 640px up (~117px).
+     --settings-section-nav-height is the index's two-row height (0.5rem
+     padding each side, two 2.25rem pills, the 0.4rem gap, the 1px borders).
+     Both are only defaults: the settings script replaces each with the
+     measured height inline on this element (the header plus a sliver), since
+     the row count follows the locale and the text zoom. */
+  [data-settings-sections] {
+    --sticky-header-clearance: 6rem;
+    --settings-section-nav-height: calc(5.9rem + 2px);
+
+    @media (min-width: 640px) {
+      --sticky-header-clearance: 7.75rem;
+    }
+  }
 }
 
 @utility app-shell {
@@ -385,12 +405,30 @@
     flex-wrap: wrap;
     overflow-x: visible;
     position: sticky;
-    top: 7.75rem;
+    top: var(--sticky-header-clearance);
     z-index: 20;
   }
 
   :root[data-theme='dark'] & {
     background: rgba(47, 38, 63, 0.92);
+  }
+}
+
+@utility settings-section {
+  /* Every anchor target on the settings page is one of these cards: the section
+     index, the dashboard's "update cycle data" link, the privacy page's ledger
+     link and the account chip all land on a card id. A jump puts the card's top
+     edge at the top of the viewport, which is where the sticky chrome sits — the
+     paper-header everywhere, plus the section index from 640px up — so without
+     a margin the card's own title lands underneath it.
+     The index wraps to as many rows as the locale and the width need (three in
+     Russian on a tablet), so its height is not a constant: the settings script
+     measures it into --settings-section-nav-height, and the stack declares a
+     two-row default for a page without that script. */
+  scroll-margin-top: calc(var(--sticky-header-clearance) + 0.75rem);
+
+  @media (min-width: 640px) {
+    scroll-margin-top: calc(var(--sticky-header-clearance) + var(--settings-section-nav-height) + 0.75rem);
   }
 }
 

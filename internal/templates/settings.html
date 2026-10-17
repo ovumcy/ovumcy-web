@@ -10,7 +10,7 @@
   </div>
 
   {{if eq .CurrentUser.Role "owner"}}
-  <nav class="settings-section-nav" aria-label="{{t .Messages "settings.title"}}">
+  <nav class="settings-section-nav" data-settings-section-nav aria-label="{{t .Messages "settings.title"}}">
     <a href="#settings-cycle" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.cycle.title"}}</a>
     <a href="#settings-symptoms" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "list"}}</span> {{t .Messages "settings.symptoms.title"}}</a>
     <a href="#settings-tracking" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "flask"}}</span> {{t .Messages "settings.tracking.title"}}</a>
