@@ -5315,6 +5315,12 @@
        fertile window           double
        predicted in fertile     dashed, with a dashed inner ring
                                 (dotted with a dotted ring in the start window)
+       pre-fertile              solid, 2px (a firm single line)
+       tentative ovulation      thin solid, with a dotted inner ring
+     The two fertility tiers last are solid on purpose: their base rules are
+     dashed, which is the shape of a predicted PERIOD day, and a fertility day
+     must never read as one. Neither has a legend swatch, so neither is drawn
+     in the key.
      The swatches grow so a double border and an inner ring stay legible. */
   .legend-swatch {
     width: 1.25rem;
@@ -5361,6 +5367,21 @@
   .calendar-cell-overlap-period-fertile.calendar-cell-overlap-start-window {
     border-style: dotted;
     outline-style: dotted;
+  }
+
+  /* Both base rules draw these two dashed, so left alone they would repeat the
+     predicted-period shape. Each restates style AND width, because a width left
+     to the base cell would be the plain 1px line. */
+  .calendar-cell-pre-fertile {
+    border-style: solid;
+    border-width: 2px;
+  }
+
+  .calendar-cell-ovulation-tentative {
+    border-style: solid;
+    border-width: 1px;
+    outline: 1px dotted CanvasText;
+    outline-offset: -5px;
   }
 
   /* Today and the selected day were shadow rings. Both move outside the cell

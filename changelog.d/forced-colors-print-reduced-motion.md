@@ -5,8 +5,10 @@
   logged-day dot, and the difference between recorded-period, fertile and plain calendar days (the
   legend swatches went blank the same way). Each state is now restated in border geometry the theme
   keeps — thick solid for a recorded period, dashed for a predicted one, dotted for the start
-  window, double for the fertile window, an inner ring where a prediction falls in the window — and
-  the legend draws the same shapes. The toggle draws itself in system colours, today and the
+  window, double for the fertile window, an inner ring where a prediction falls in the window, a
+  firm solid line before the fertile window and a thin solid line with a dotted inner ring for a
+  tentative ovulation day, so no fertility day looks like a period day — and the legend draws the
+  same shapes for the states it lists. The toggle draws itself in system colours, today and the
   selected day get outline rings, and the dashboard cycle ribbon and the Insights cycle stack keep
   their phase colours.
 - **Printing drops the interface chrome.** The header, the fixed mobile tab bar, toasts and the
