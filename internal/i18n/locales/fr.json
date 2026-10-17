@@ -851,7 +851,7 @@
   "common.error.bad_request": "Le serveur n'a pas pu traiter cette requête. Veuillez vérifier le formulaire et réessayer.",
   "common.error.unauthorized": "Vous n'êtes pas connecté. Veuillez vous connecter et réessayer.",
   "common.error.forbidden": "Cette action a été refusée. Veuillez recharger la page et réessayer.",
-  "common.error.csrf_refused": "Cette action a été refusée. Veuillez réessayer.",
+  "common.error.csrf_refused": "Cette action a été refusée. Veuillez réessayer ; si elle est de nouveau refusée, rechargez la page.",
   "common.error.method_not_allowed": "Cette action n'est pas disponible à cette adresse.",
   "common.error.unsupported_media_type": "Ce type de contenu n'est pas pris en charge.",
   "common.error.request_rejected": "Le serveur a refusé cette requête. Veuillez réessayer.",

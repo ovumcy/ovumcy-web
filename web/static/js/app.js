@@ -2176,7 +2176,7 @@
   }
 
   function csrfRefusalCopy() {
-    return document.body.getAttribute("data-csrf-refused") || "That action was refused. Please try again.";
+    return document.body.getAttribute("data-csrf-refused") || "That action was refused. Please try again; if it is refused again, reload the page.";
   }
 
   // What an error answer says, parsed once. A CSRF refusal that carried no key
@@ -2311,14 +2311,27 @@
   // The calendar page renders an empty live region of its own, outside every
   // swap. A refusal's text is written into it: text changing inside a region
   // that already exists is announced, a node arriving with role="status" is not.
+  //
+  // The region is emptied at once and filled in a later task. Emptied and
+  // refilled in the same task, the region ends the task holding the text it
+  // already held, so a refusal repeating the previous one is not a change a
+  // screen reader sees and is not announced. A second refusal before the fill
+  // replaces the pending one: only the latest text is written.
+  var calendarRefusalFill = null;
+
   function announceCalendarRefusal(message) {
     var region = document.querySelector("[data-calendar-refusal-announcer]");
     if (!region || !message) {
       return;
     }
-    // Emptied first so a refusal repeating the previous text is still a change.
+    if (calendarRefusalFill !== null) {
+      window.clearTimeout(calendarRefusalFill);
+    }
     region.textContent = "";
-    region.textContent = message;
+    calendarRefusalFill = window.setTimeout(function () {
+      calendarRefusalFill = null;
+      region.textContent = message;
+    }, 0);
   }
 
   // The calendar fetches its day editor, and every request from the page names

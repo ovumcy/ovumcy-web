@@ -810,7 +810,7 @@
   "common.error.bad_request": "The server could not process that request. Please check the form and try again.",
   "common.error.unauthorized": "You are not signed in. Please sign in and try again.",
   "common.error.forbidden": "That action was refused. Reload the page and try again.",
-  "common.error.csrf_refused": "That action was refused. Please try again.",
+  "common.error.csrf_refused": "That action was refused. Please try again; if it is refused again, reload the page.",
   "common.error.method_not_allowed": "That action is not available on this address.",
   "common.error.unsupported_media_type": "That content type is not supported.",
   "common.error.request_rejected": "The server refused that request. Please try again.",

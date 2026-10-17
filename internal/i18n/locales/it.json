@@ -810,7 +810,7 @@
   "common.error.bad_request": "Il server non ha potuto elaborare questa richiesta. Controlla il modulo e riprova.",
   "common.error.unauthorized": "Non hai effettuato l'accesso. Accedi e riprova.",
   "common.error.forbidden": "Questa azione è stata rifiutata. Ricarica la pagina e riprova.",
-  "common.error.csrf_refused": "Questa azione è stata rifiutata. Riprova.",
+  "common.error.csrf_refused": "Questa azione è stata rifiutata. Riprova; se viene rifiutata di nuovo, ricarica la pagina.",
   "common.error.method_not_allowed": "Questa azione non è disponibile a questo indirizzo.",
   "common.error.unsupported_media_type": "Questo tipo di contenuto non è supportato.",
   "common.error.request_rejected": "Il server ha rifiutato questa richiesta. Riprova.",

@@ -19,10 +19,10 @@ const STALE_TOKEN = "stale-token-0000000000";
 const FRESH_TOKEN = "fresh-token-1111111111";
 const PAGE_URL = "https://ovumcy.test/calendar";
 const TYPED_NOTE = "cramps since the afternoon";
-const CSRF_COPY = "That action was refused. Please try again.";
+const CSRF_COPY = "That action was refused. Please try again; if it is refused again, reload the page.";
 const FORBIDDEN_FRAGMENT = `<div class="status-error" data-flash-key="common.error.csrf_refused">${CSRF_COPY}</div>`;
-const SHARED_FORBIDDEN_FRAGMENT =
-  '<div class="status-error" data-flash-key="common.error.forbidden">That action was refused. Reload the page and try again.</div>';
+const SHARED_FORBIDDEN_COPY = "That action was refused. Reload the page and try again.";
+const SHARED_FORBIDDEN_FRAGMENT = `<div class="status-error" data-flash-key="common.error.forbidden">${SHARED_FORBIDDEN_COPY}</div>`;
 const OWN_BINDING = "binding-of-the-rendering-account";
 const REFUSED_TEXT = "This save was refused. Your entry is still here — try again.";
 
@@ -351,7 +351,9 @@ test("a dashboard autosave refused by a keyless 403 shows the refusal copy and r
 
 // The delete and cycle-start controls are not the day form: they show the
 // server's CSRF copy (or the page's own when the answer named none), never the
-// shared forbidden copy that tells the owner to reload.
+// shared forbidden copy that sends the owner to reload before anything else.
+// The CSRF copy leads with trying again (the token is refreshed here) and keeps
+// the reload only as the fallback a form posted without JavaScript needs.
 const CONTROL_PAGE = `<!doctype html><html><head><meta name="csrf-token" content="${STALE_TOKEN}"></head>
   <body data-csrf-refused="${CSRF_COPY}">
     <div id="dashboard-status" class="save-status" aria-live="polite"></div>
@@ -377,7 +379,8 @@ test("the cycle-start control shows the CSRF copy beside it, from the server or 
 
       const shown = dom.window.document.querySelector("#dashboard-status .status-error");
       assert.equal(shown.textContent, CSRF_COPY, name);
-      assert.doesNotMatch(shown.textContent, /reload/i, name);
+      assert.notEqual(shown.textContent, SHARED_FORBIDDEN_COPY, name);
+      assert.match(shown.textContent, /^That action was refused\. Please try again;/, `${name}: trying again comes first`);
       assert.equal(calls.length, 1, `${name}: the token is refreshed so the retry can land`);
       assert.equal(currentToken(dom.window), FRESH_TOKEN, name);
     } finally {
@@ -414,16 +417,14 @@ test("the calendar editor's delete control, which has no status area, still says
 test("an error answer is parsed once, whichever branch shows it", async () => {
   const { dom } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN))), { html: CONTROL_PAGE });
   try {
-    // Calibrate on how many times one refusal reaches the handler rather than
-    // assuming the harness registers it once (each run of the handler toasts a
-    // CSRF refusal that has no status area), then require exactly one parse per
-    // run.
+    // The harness delivers DOMContentLoaded once, so the handler is registered
+    // once: one refusal is one run of it (each run toasts a CSRF refusal that has
+    // no status area), and one run must parse the answer exactly once.
     refuseControl(dom.window, "delete", dom.window.document.getElementById("day-editor"), {
       status: 403,
       responseText: FORBIDDEN_FRAGMENT,
     });
-    const runs = dom.window.document.querySelectorAll(".toast-stack .toast-message").length;
-    assert.ok(runs >= 1);
+    assert.equal(dom.window.document.querySelectorAll(".toast-stack .toast-message").length, 1, "the handler runs once per refusal");
 
     const prototype = dom.window.DOMParser.prototype;
     const original = prototype.parseFromString;
@@ -441,7 +442,7 @@ test("an error answer is parsed once, whichever branch shows it", async () => {
       prototype.parseFromString = original;
     }
     assert.equal(dom.window.document.querySelector("#dashboard-status .status-error").textContent, "Check the form.");
-    assert.equal(parses, runs, "one parse per run of the handler, not one per branch that reads the answer");
+    assert.equal(parses, 1, "one parse per run of the handler, not one per branch that reads the answer");
   } finally {
     dom.window.close();
   }

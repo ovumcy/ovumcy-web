@@ -810,7 +810,7 @@
   "common.error.bad_request": "El servidor no pudo procesar esa solicitud. Revisa el formulario e inténtalo de nuevo.",
   "common.error.unauthorized": "No has iniciado sesión. Inicia sesión e inténtalo de nuevo.",
   "common.error.forbidden": "Esa acción fue rechazada. Recarga la página e inténtalo de nuevo.",
-  "common.error.csrf_refused": "Esa acción fue rechazada. Inténtalo de nuevo.",
+  "common.error.csrf_refused": "Esa acción fue rechazada. Inténtalo de nuevo; si se rechaza otra vez, recarga la página.",
   "common.error.method_not_allowed": "Esa acción no está disponible en esta dirección.",
   "common.error.unsupported_media_type": "Ese tipo de contenido no es compatible.",
   "common.error.request_rejected": "El servidor rechazó esa solicitud. Inténtalo de nuevo.",

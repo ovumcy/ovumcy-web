@@ -810,7 +810,7 @@
   "common.error.bad_request": "Der Server konnte diese Anfrage nicht verarbeiten. Bitte prüfen Sie das Formular und versuchen Sie es erneut.",
   "common.error.unauthorized": "Sie sind nicht angemeldet. Bitte melden Sie sich an und versuchen Sie es erneut.",
   "common.error.forbidden": "Diese Aktion wurde abgelehnt. Bitte laden Sie die Seite neu und versuchen Sie es erneut.",
-  "common.error.csrf_refused": "Diese Aktion wurde abgelehnt. Bitte versuchen Sie es erneut.",
+  "common.error.csrf_refused": "Diese Aktion wurde abgelehnt. Bitte versuchen Sie es erneut; wird sie wieder abgelehnt, laden Sie die Seite neu.",
   "common.error.method_not_allowed": "Diese Aktion ist unter dieser Adresse nicht verfügbar.",
   "common.error.unsupported_media_type": "Dieser Inhaltstyp wird nicht unterstützt.",
   "common.error.request_rejected": "Der Server hat diese Anfrage abgelehnt. Bitte versuchen Sie es erneut.",

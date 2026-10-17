@@ -890,7 +890,62 @@ test("a refused calendar grid refresh keeps the grid and leads it with the notic
     assert.equal(notices[0].querySelector("[role]"), null);
     assert.equal(announcer, dom.window.document.querySelector("[data-calendar-refusal-announcer]"), "the same node, not a replacement");
     assert.equal(announcer.getAttribute("role"), "status");
+    await nextTask(dom.window);
     assert.equal(announcer.textContent, GRID_ACCOUNT_CHANGED_TEXT);
+  } finally {
+    dom.window.close();
+  }
+});
+
+function nextTask(window) {
+  return new Promise((resolve) => window.setTimeout(resolve, 0));
+}
+
+// Emptied and refilled within one task, the region would end that task holding
+// the text it already held: a refusal repeating the previous one would change
+// nothing a screen reader observes. The region must end the refusal's own task
+// empty and receive the text in a later one.
+test("a repeated identical refusal empties the live region in its own task and refills it in a later one", async () => {
+  const page = `<!doctype html><html><body>
+    <div class="sr-only" role="status" aria-live="polite" data-calendar-refusal-announcer></div>
+    <section id="calendar-grid-panel"><div id="grid">the month as rendered</div></section>
+  </body></html>`;
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: page });
+  try {
+    const panel = dom.window.document.getElementById("calendar-grid-panel");
+    const announcer = dom.window.document.querySelector("[data-calendar-refusal-announcer]");
+    const refuse = () =>
+      panel.dispatchEvent(
+        new dom.window.CustomEvent("htmx:responseError", {
+          detail: { target: panel, xhr: { status: 409, responseText: GRID_ACCOUNT_CHANGED_FRAGMENT } },
+          bubbles: true,
+        })
+      );
+
+    refuse();
+    assert.equal(announcer.textContent, "", "the first refusal's task ends with the region empty");
+    await nextTask(dom.window);
+    assert.equal(announcer.textContent, GRID_ACCOUNT_CHANGED_TEXT, "and the text arrives in a later task");
+
+    refuse();
+    assert.equal(announcer.textContent, "", "the repeat is a change: its task ends with the region empty");
+    await nextTask(dom.window);
+    assert.equal(announcer.textContent, GRID_ACCOUNT_CHANGED_TEXT, "then the same text is written again");
+
+    // Two refusals inside one task leave one pending fill, holding the latest text.
+    const writes = [];
+    const observer = new dom.window.MutationObserver((records) => {
+      for (const record of records) {
+        writes.push(...Array.from(record.addedNodes, (node) => node.textContent));
+      }
+    });
+    observer.observe(announcer, { childList: true });
+    refuse();
+    refuse();
+    await nextTask(dom.window);
+    await nextTask(dom.window);
+    observer.disconnect();
+    assert.deepEqual(writes, [GRID_ACCOUNT_CHANGED_TEXT], "one fill, not one per refusal");
   } finally {
     dom.window.close();
   }
@@ -910,6 +965,7 @@ test("a refused editor fetch is announced through the page's live region too", a
         bubbles: true,
       })
     );
+    await nextTask(dom.window);
     assert.equal(dom.window.document.querySelector("[data-calendar-refusal-announcer]").textContent, OPEN_ACCOUNT_CHANGED_TEXT);
     assert.equal(editor.querySelector("[data-day-editor-refused]").getAttribute("role"), null);
   } finally {
