@@ -4134,11 +4134,28 @@
   flex-direction: column;
   gap: 0.5rem;
   max-width: 22rem;
+  /* The stack is created empty at init and spans the viewport's width on
+     phones, so the box itself never takes a tap; only the toasts in it do. */
+  pointer-events: none;
+
+  & > * {
+    pointer-events: auto;
+  }
 
   @media (max-width: 640px) {
     left: 1rem;
     right: 1rem;
     max-width: none;
+  }
+
+  /* The floating tab bar is shown below the `sm` breakpoint (it carries
+     `sm:hidden`). At the 1rem default a toast sat on top of it and swallowed
+     every tap on the primary navigation until the toast expired, so on a page
+     that renders the bar the stack starts above it instead. */
+  @media (width < 40rem) {
+    :root:has(.mobile-tabbar) & {
+      bottom: var(--mobile-tabbar-clearance);
+    }
   }
 }
 
