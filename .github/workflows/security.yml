@@ -15,9 +15,9 @@ env:
   # drift from the install line (see "Cache Go tool binaries" in ci.yml).
   # git SHA for v2.29.0: deb54465fea23d19a77f037e11e6589021f8501d (verified via go list -m -json)
   GOSEC_VERSION: v2.29.0
-  # git SHA for golang.org/x/tools v0.51.0: ea2f152dc35325e4b9b639583972375972350a84 (verified via go list -m -json)
+  # git SHA for golang.org/x/tools v0.52.0: 16517d951552611e7bd358c48ee1051fd0e57b0c (verified via go list -m -json)
   # gosec is built against this x/tools, not its own: see .github/actions/go-install-on-xtools.
-  ANALYSIS_XTOOLS_VERSION: v0.51.0
+  ANALYSIS_XTOOLS_VERSION: v0.52.0
   # git SHA for v1.3.0: 0782b76014f15f24e22a438f30f308df42899ba1 (verified via go list -m -json)
   GOVULNCHECK_VERSION: v1.3.0
 

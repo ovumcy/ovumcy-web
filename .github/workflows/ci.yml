@@ -370,10 +370,10 @@ jobs:
       DEADCODE_VERSION: v0.49.0
       # git SHA for v2.13.2: 27774aaf853a4fd21f1dd5e69439459dc1b26e68 (verified via go list -m -json)
       GOLANGCI_LINT_VERSION: v2.13.2
-      # git SHA for golang.org/x/tools v0.51.0: ea2f152dc35325e4b9b639583972375972350a84 (verified via go list -m -json)
+      # git SHA for golang.org/x/tools v0.52.0: 16517d951552611e7bd358c48ee1051fd0e57b0c (verified via go list -m -json)
       # staticcheck and golangci-lint are built against this x/tools, not their
       # own: see .github/actions/go-install-on-xtools.
-      ANALYSIS_XTOOLS_VERSION: v0.51.0
+      ANALYSIS_XTOOLS_VERSION: v0.52.0
       # git SHA for v1.7.12: 914e7df21a07ef503a81201c76d2b11c789d3fca (verified via go list -m -json)
       ACTIONLINT_VERSION: v1.7.12
       # git SHA for v1.6.0: 5348b744d0983d85713295ea08a20cca1654a45e (verified via go list -m -json)
