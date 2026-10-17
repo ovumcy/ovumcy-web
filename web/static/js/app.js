@@ -4529,26 +4529,45 @@
   // refusal answers with, as no HTMX request asked for a fragment.
   var DASHBOARD_PAGE_ACCOUNT_REFUSAL = "day form page account changed";
 
+  // The structured key of the JSON envelope is read, as the restore client does;
+  // the top-level string is consulted only when the envelope carries no detail.
   function dashboardRefusalIsAccountChange(body) {
     var parsed;
+    var key;
     try {
       parsed = JSON.parse(String(body || ""));
     } catch {
       return false;
     }
-    return !!parsed && parsed.error === DASHBOARD_PAGE_ACCOUNT_REFUSAL;
+    if (!parsed || typeof parsed !== "object") {
+      return false;
+    }
+    key = parsed.error_detail && typeof parsed.error_detail === "object" ? parsed.error_detail.key : parsed.error;
+    return key === DASHBOARD_PAGE_ACCOUNT_REFUSAL;
   }
 
   // The header this page shows could not be refreshed because the session now
   // belongs to another account. Nothing is painted, and the owner is told why in
   // the journal's own status area, in place of a refresh that would otherwise
   // just never come. The entry the owner typed stays where it is.
+  //
+  // The save that triggered the refresh did land, so the notice is not tagged as
+  // a rejected save and the indicator no longer claims "Saved" beside a notice
+  // about another account. The notice stays until the next save starts, like
+  // any other: that save is refused with its own account-changed notice, which
+  // replaces this one.
   function noteDashboardRefreshAccountChanged() {
     var form = document.querySelector("[data-dashboard-save-form]");
     var message = form ? String(form.getAttribute("data-day-open-refused-text") || "").trim() : "";
+    var indicator;
 
-    if (message) {
-      renderDaySaveFailure(form, message, "rejected", OPEN_ACCOUNT_CHANGED_NOTICE_KEY);
+    if (message && renderDaySaveFailure(form, message, "account-changed", OPEN_ACCOUNT_CHANGED_NOTICE_KEY)) {
+      indicator = dashboardAutosaveIndicator(form);
+      // Only the settled "Saved" is withdrawn: a save already running again
+      // keeps its own state.
+      if (indicator && indicator.getAttribute("data-autosave-state") === "saved") {
+        setDashboardAutosaveIndicator(form, "idle");
+      }
     }
     return false;
   }

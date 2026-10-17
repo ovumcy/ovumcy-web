@@ -639,6 +639,14 @@ function assertAccountChangedNotice(document) {
   assert.equal(message.textContent, OPEN_REFUSED_TEXT);
   assert.equal(notice.querySelector("[data-day-save-retry]"), null, "no retry: nothing was being saved");
   assert.equal(notice.querySelector("[data-day-save-sign-in]"), null, "no sign-in link either");
+  assert.equal(
+    notice.getAttribute("data-day-save-failed"),
+    "account-changed",
+    "the save landed, so the notice does not claim a rejected save"
+  );
+  const indicator = document.querySelector("[data-dashboard-autosave-indicator]");
+  assert.equal(indicator.getAttribute("data-autosave-state"), "idle", "the indicator no longer says Saved");
+  assert.equal(indicator.querySelector(".dashboard-autosave-message").textContent, "");
 }
 
 test("the refresh names the page's own account on the request and nothing else about it changes", async () => {
@@ -682,6 +690,23 @@ test("a refresh the server refuses for another account shows the account-changed
   }
 });
 
+test("a refusal whose envelope lacks error_detail is read from the top-level key", async () => {
+  const { dom } = await loadDashboard({
+    install: refreshAnsweredWith(refusedResponse(409, '{"error":"day form page account changed"}')),
+  });
+  try {
+    const document = dom.window.document;
+    pick(document, "positive");
+    await saveNow(dom.window);
+    await settleAll();
+
+    assert.equal(bannerText(document), STALE_HEADER);
+    assertAccountChangedNotice(document);
+  } finally {
+    dom.window.close();
+  }
+});
+
 // The server's refusal is the first layer; the comparison of the bindings in
 // the page that comes back is the second, and shows the same notice.
 test("a refreshed page carrying another account's binding shows the account-changed notice and keeps the header", async () => {
@@ -706,6 +731,20 @@ test("a refreshed page carrying another account's binding shows the account-chan
 for (const [why, install] of [
   ["no binding at all", recorderFor(FRESH_SHELL, null)],
   ["a 409 that is not the account refusal", refreshAnsweredWith(refusedResponse(409, '{"error":"conflict"}'))],
+  [
+    "a 409 carrying another conflict key",
+    refreshAnsweredWith(refusedResponse(409, JSON.stringify({
+      error: "day already exists",
+      error_detail: { key: "day already exists", category: "conflict", target: "global" },
+    }))),
+  ],
+  [
+    "a 409 whose structured key is another one although the top-level string names the account refusal",
+    refreshAnsweredWith(refusedResponse(409, JSON.stringify({
+      error: "day form page account changed",
+      error_detail: { key: "day already exists", category: "conflict", target: "global" },
+    }))),
+  ],
   ["a 409 with a body that is not JSON", refreshAnsweredWith(refusedResponse(409, "<p>conflict</p>"))],
   ["a server error", refreshAnsweredWith(refusedResponse(500, PAGE_ACCOUNT_REFUSAL))],
 ]) {
