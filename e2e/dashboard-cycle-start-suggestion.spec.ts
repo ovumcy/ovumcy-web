@@ -3,6 +3,7 @@ import { apiOriginHeader } from './support/auth-helpers';
 import { cancelConfirmDialog, mutatingRequestsDuring } from './support/confirm-dialog-helpers';
 import { localeText } from './support/locale-helpers';
 import {
+  expectNoHtmxRequestInFlight,
   registerAndOnboardWithStartDaysAgo,
   shiftISODate,
   todayISOFromDashboard,
@@ -208,6 +209,8 @@ test.describe('Dashboard: cycle-start suggestion', () => {
 
     // Accepting is the answer the hint points at: the manual control, through
     // its replace confirmation.
+    const reloaded = page.waitForEvent('load');
+    reloaded.catch(() => undefined);
     const [request] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
@@ -230,8 +233,10 @@ test.describe('Dashboard: cycle-start suggestion', () => {
       `POST /api/v1/days/${today}/cycle-start?source=dashboard failed with ${response!.status()}`
     ).toBeTruthy();
     // The handler answers HTMX with HX-Refresh, so the dashboard reloads itself;
-    // let that settle before reading state (see saveDayEditorForm).
-    await page.waitForLoadState('networkidle');
+    // let that settle before reading state. The reload is awaited as the load
+    // event it ends in; the dashboard fetches nothing through htmx on load.
+    await reloaded;
+    await expectNoHtmxRequestInFlight(page);
 
     const markedToday = await fetchDay(page, today);
     expect(markedToday.cycle_start, 'accepting must mark today as the cycle start').toBe(true);

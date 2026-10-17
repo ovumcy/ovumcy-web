@@ -84,7 +84,20 @@ export default [
       // assertion would mean rewriting every one of those into a type guard
       // for no gain — the `expect(...).not.toBeNull()` on the line above is
       // what makes the failure legible.
-      "@typescript-eslint/no-non-null-assertion": "off"
+      "@typescript-eslint/no-non-null-assertion": "off",
+      // `networkidle` counts every request the browser began, and one aborted
+      // by an earlier navigation can stay counted: the wait then runs out the
+      // whole test timeout with nothing pending. Wait on the response the
+      // action produces, then on htmx having no request in flight
+      // (`expectNoHtmxRequestInFlight`, e2e/support/stats-helpers.ts).
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value='networkidle']",
+          message:
+            "Do not wait on 'networkidle': it can hang on a request an earlier navigation aborted. Wait on the action's own response, then expectNoHtmxRequestInFlight(page)."
+        }
+      ]
     }
   },
   {

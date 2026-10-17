@@ -14,8 +14,10 @@ import { dashboardStatusLine } from './support/dashboard-helpers';
 import {
   markCycleStartViaAPI,
   openCalendarDayEditor,
+  settleCalendarGridRefresh,
   shiftISODate,
   todayISOFromDashboard,
+  watchCalendarGridRefresh,
 } from './support/stats-helpers';
 
 // The best-timing badge is withheld until the account has enough completed
@@ -65,6 +67,7 @@ async function registerAndSetEggwhiteToday(
   await dayForm
     .locator('label.choice-option:has(input[name="cervical_mucus"][value="eggwhite"])')
     .click();
+  const gridRefresh = watchCalendarGridRefresh(page);
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
@@ -83,7 +86,7 @@ async function registerAndSetEggwhiteToday(
   // calendar-day-updated grid refresh + editor re-lazy-load cascade settle
   // first so that navigation doesn't race an in-flight server request
   // (see saveDayEditorForm in calendar-autofill-clear.spec.ts).
-  await page.waitForLoadState('networkidle');
+  await settleCalendarGridRefresh(page, gridRefresh);
 }
 
 async function setUsageGoal(

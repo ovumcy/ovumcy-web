@@ -13,8 +13,10 @@ import {
   dashboardMoreDisclosure,
   dashboardStatusLine,
   openDashboardMoreFields,
+  pinDashboardClock,
   saveDashboardEntry,
 } from './support/dashboard-helpers';
+import { expectNoHtmxRequestInFlight } from './support/stats-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
@@ -32,6 +34,7 @@ async function registerOwnerOnDashboard(page: Page, prefix: string): Promise<voi
   await completeOnboardingIfPresent(page);
 
   await setRequestTimezoneFromBrowser(page);
+  await pinDashboardClock(page);
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/dashboard$/);
 }
@@ -477,7 +480,7 @@ test.describe('Dashboard: today editor', () => {
     // Navigating on top of an in-flight request aborts it and `goto` reports
     // net::ERR_ABORTED — a failure of the navigation, not of the product, which
     // passes on retry and reads as a flake.
-    await page.waitForLoadState('networkidle');
+    await expectNoHtmxRequestInFlight(page);
     await page.goto('/dashboard');
     await expect(dashboardMoreDisclosure(page)).not.toHaveAttribute('open', '');
 

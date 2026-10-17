@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, type Request } from '@playwright/test';
+import { expect, type Locator, type Page, type Request, type Response } from '@playwright/test';
 import {
   apiOriginHeader,
   completeOnboardingIfPresent,
@@ -120,6 +120,79 @@ export async function todayISOFromDashboard(page: Page): Promise<string> {
   return String(action).replace('/api/v1/days/', '');
 }
 
+/**
+ * Settles the page once no htmx request is in flight.
+ *
+ * htmx marks the element that issued a request with `htmx-request` for exactly
+ * the request's lifetime, so a count of zero is the app's own statement that
+ * its fetches are done. Playwright's `networkidle` is not: it counts every
+ * request the browser ever began, and a request aborted by an earlier
+ * navigation (the timezone sync fired from a page the test then left) can stay
+ * in that count, so the wait runs out the whole test timeout with nothing
+ * pending: CI traces showed the grid refresh answered 200 and then 27 s of
+ * silence before the timeout.
+ */
+export async function expectNoHtmxRequestInFlight(page: Page): Promise<void> {
+  await expect(page.locator('.htmx-request')).toHaveCount(0);
+}
+
+/**
+ * Registers the wait for the calendar grid's refresh response.
+ *
+ * A committed day write fires `calendar-day-updated`, which the hidden
+ * `#calendar-grid-refresh` element answers with a `GET /calendar?month=…` that
+ * htmx tags with `HX-Trigger: calendar-grid-refresh`. Call this BEFORE the
+ * click that saves — a response that has already arrived is never delivered to
+ * a listener registered afterwards — and pass the returned promise to
+ * `settleCalendarGridRefresh` once the save's own response was checked.
+ */
+export function watchCalendarGridRefresh(page: Page): Promise<Response> {
+  const refresh = page.waitForResponse(async (response) => {
+    const request = response.request();
+    if (request.method() !== 'GET') {
+      return false;
+    }
+    return (await request.allHeaders())['hx-trigger'] === 'calendar-grid-refresh';
+  });
+  // Handled here so a save that fails before the caller awaits the promise
+  // does not also surface the unawaited wait as an unhandled rejection; the
+  // caller's own `await` still sees the rejection.
+  refresh.catch(() => undefined);
+  return refresh;
+}
+
+/**
+ * Waits for the refresh `watchCalendarGridRefresh` registered, then for the
+ * cascade it starts (the grid swap and the day editor's reload) to finish.
+ */
+export async function settleCalendarGridRefresh(page: Page, refresh: Promise<Response>): Promise<void> {
+  await refresh;
+  await expectNoHtmxRequestInFlight(page);
+}
+
+/**
+ * Registers the wait for the day editor's lazy load after a full-page reload.
+ *
+ * A calendar action answered with `HX-Refresh` reloads the page, and the
+ * reloaded page's `#day-editor` fetches `GET /calendar/day/<date>` on `load`.
+ * Call this BEFORE the click that triggers the reload; settle it with
+ * `settleDayEditorLoad`.
+ */
+export function watchDayEditorLoad(page: Page, isoDate: string): Promise<Response> {
+  const load = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === `/calendar/day/${isoDate}`,
+  );
+  load.catch(() => undefined);
+  return load;
+}
+
+export async function settleDayEditorLoad(page: Page, load: Promise<Response>): Promise<void> {
+  await load;
+  await expectNoHtmxRequestInFlight(page);
+}
+
 export async function markCycleStart(page: Page, isoDate: string): Promise<void> {
   const month = isoDate.slice(0, 7);
   await page.goto(`/calendar?month=${month}&day=${isoDate}`);
@@ -132,6 +205,7 @@ export async function markCycleStart(page: Page, isoDate: string): Promise<void>
   // Bind to the click's own request, not any matching response: waitForResponse
   // can resolve on a still-in-flight earlier request under load (see
   // saveDayEditorForm below).
+  const editorLoad = watchDayEditorLoad(page, isoDate);
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
@@ -157,7 +231,7 @@ export async function markCycleStart(page: Page, isoDate: string): Promise<void>
   // hx-trigger="load" (calendar.html). Callers immediately chain into another
   // markCycleStart/openCalendarDayEditor navigation, so let that fetch settle
   // before returning or it competes with the next page.goto.
-  await page.waitForLoadState('networkidle');
+  await settleDayEditorLoad(page, editorLoad);
 }
 
 /**
@@ -233,6 +307,9 @@ export async function openCalendarDayEditor(page: Page, isoDate: string): Promis
 }
 
 export async function saveDayEditorForm(page: Page, isoDate: string, form: Locator): Promise<void> {
+  // Registered before the click: the grid refresh a committed save fires can
+  // answer before any listener added after the click's own response exists.
+  const gridRefresh = watchCalendarGridRefresh(page);
   // Bind the wait to the request this click issues, not to any PATCH response for
   // the date. waitForResponse would resolve on the first matching response to
   // arrive after registration — under CPU contention a still-in-flight earlier
@@ -260,8 +337,11 @@ export async function saveDayEditorForm(page: Page, isoDate: string, form: Locat
   // can miss the 5s visibility window. A bare click followed by page.goto is
   // worse still: the navigation aborts a PATCH that has not committed yet and the
   // save is silently lost. Let the app go quiescent first so the save is fully
-  // settled — not just committed — before returning.
-  await page.waitForLoadState('networkidle');
+  // settled — not just committed — before returning. The grid refresh is that
+  // cascade's own response, so the wait binds to it rather than to the whole
+  // page's network going quiet, which can fail to arrive (see
+  // expectNoHtmxRequestInFlight).
+  await settleCalendarGridRefresh(page, gridRefresh);
 }
 
 /**
@@ -303,6 +383,7 @@ export async function saveCycleFactorOnDay(
     `label.choice-option:has(input[name="cycle_factor_keys"][value="${factorKey}"]) .chip-lead`
   );
   await factorChip.click();
+  const gridRefresh = watchCalendarGridRefresh(page);
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
@@ -319,7 +400,7 @@ export async function saveCycleFactorOnDay(
   expect(response!.ok(), `PATCH /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
   // Let the calendar-day-updated grid refresh + editor re-lazy-load cascade
   // settle before the reopen below re-navigates (see saveDayEditorForm).
-  await page.waitForLoadState('networkidle');
+  await settleCalendarGridRefresh(page, gridRefresh);
   const savedForm = await openCalendarDayEditor(page, isoDate);
   await expect(savedForm.locator(`input[name="cycle_factor_keys"][value="${factorKey}"]`)).toBeChecked();
 }
@@ -353,6 +434,7 @@ export async function saveBBTOnDay(page: Page, isoDate: string, value: string): 
   const bbtInput = form.locator('#calendar-bbt');
   await expect(bbtInput).toBeVisible();
   await bbtInput.fill(value);
+  const gridRefresh = watchCalendarGridRefresh(page);
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
@@ -369,7 +451,7 @@ export async function saveBBTOnDay(page: Page, isoDate: string, value: string): 
   expect(response!.ok(), `PATCH /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
   // Let the calendar-day-updated grid refresh + editor re-lazy-load cascade
   // settle before the reopen below re-navigates (see saveDayEditorForm).
-  await page.waitForLoadState('networkidle');
+  await settleCalendarGridRefresh(page, gridRefresh);
 
   const savedForm = await openCalendarDayEditor(page, isoDate);
   await expect(savedForm.locator('#calendar-bbt')).not.toHaveValue('');
