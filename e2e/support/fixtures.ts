@@ -110,9 +110,9 @@ export class BrowserErrorWatcher {
     this.allowed.push({ pattern, reason });
   }
 
-  /** Whether anything recorded so far matches `pattern`, allowed or not. */
-  reported(pattern: RegExp): boolean {
-    return this.observed.some((text) => pattern.test(text));
+  /** How many recorded lines so far match `pattern`, allowed or not. */
+  countReported(pattern: RegExp): number {
+    return this.observed.filter((text) => pattern.test(text)).length;
   }
 
   /** Everything recorded that no allowlist entry covers. */
