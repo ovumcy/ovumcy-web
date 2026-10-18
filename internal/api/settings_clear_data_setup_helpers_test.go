@@ -19,6 +19,14 @@ type clearDataScenario struct {
 	csrfToken  string
 }
 
+// settingsContext is the scenario's account as a settings request context. It
+// carries the user: settingsFormRequestWithCSRF binds each request to
+// ctx.user.ID as the page rendered for that account would, and a context
+// without the user would bind account 0, which the binding rightly rejects.
+func (s clearDataScenario) settingsContext() settingsSecurityTestContext {
+	return settingsSecurityTestContext(s)
+}
+
 func setupClearDataScenario(t *testing.T) clearDataScenario {
 	t.Helper()
 

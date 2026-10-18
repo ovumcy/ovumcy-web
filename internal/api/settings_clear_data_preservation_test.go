@@ -64,12 +64,7 @@ func TestClearDataPreservesAccountIdentityFields(t *testing.T) {
 		t.Fatalf("load user baseline: %v", err)
 	}
 
-	response := settingsFormRequestWithCSRF(t, settingsSecurityTestContext{
-		app:        scenario.app,
-		authCookie: scenario.authCookie,
-		csrfCookie: scenario.csrfCookie,
-		csrfToken:  scenario.csrfToken,
-	}, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
+	response := settingsFormRequestWithCSRF(t, scenario.settingsContext(), http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
 		"password": {"StrongPass1"},
 	}, map[string]string{
 		"Accept": "application/json",

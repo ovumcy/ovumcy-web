@@ -380,10 +380,18 @@ test.describe('Onboarding flow', () => {
     // The server bound is the one that matters, and no browser UI is between it
     // and this call: a forced out-of-range post is answered 400, twice.
     const csrfToken = String(await page.locator('meta[name="csrf-token"]').getAttribute('content'));
+    // An HTMX onboarding write must carry the account binding the rendered step
+    // form holds; without it the server refuses with 409 before it validates the
+    // date, so the 400 below would never be reached.
+    const dayFormAccount =
+      (await page
+        .locator('form[hx-post="/api/v1/onboarding/steps/1"] input[name="day_form_account"]')
+        .getAttribute('value')) ?? '';
+    expect(dayFormAccount, 'the onboarding step 1 form renders the account binding').not.toBe('');
     for (const outOfRange of [shiftISODate(min, -1), shiftISODate(max, 1)]) {
       const response = await page.request.post('/api/v1/onboarding/steps/1', {
         headers: { ...apiOriginHeader(page), 'HX-Request': 'true' },
-        form: { csrf_token: csrfToken, last_period_start: outOfRange },
+        form: { csrf_token: csrfToken, day_form_account: dayFormAccount, last_period_start: outOfRange },
         maxRedirects: 0,
       });
       expect(response.status(), `expected 400 for ${outOfRange}`).toBe(400);

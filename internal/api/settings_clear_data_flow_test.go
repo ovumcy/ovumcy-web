@@ -11,12 +11,7 @@ import (
 func TestClearDataRemovesTrackedCalendarEntriesAndResetsCycleSettings(t *testing.T) {
 	scenario := setupClearDataScenario(t)
 
-	response := settingsFormRequestWithCSRF(t, settingsSecurityTestContext{
-		app:        scenario.app,
-		authCookie: scenario.authCookie,
-		csrfCookie: scenario.csrfCookie,
-		csrfToken:  scenario.csrfToken,
-	}, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
+	response := settingsFormRequestWithCSRF(t, scenario.settingsContext(), http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
 		"password": {"StrongPass1"},
 	}, map[string]string{
 		"Accept": "application/json",
@@ -33,12 +28,7 @@ func TestClearDataRemovesTrackedCalendarEntriesAndResetsCycleSettings(t *testing
 func TestClearDataRejectsMissingPassword(t *testing.T) {
 	scenario := setupClearDataScenario(t)
 
-	response := settingsFormRequestWithCSRF(t, settingsSecurityTestContext{
-		app:        scenario.app,
-		authCookie: scenario.authCookie,
-		csrfCookie: scenario.csrfCookie,
-		csrfToken:  scenario.csrfToken,
-	}, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{}, map[string]string{
+	response := settingsFormRequestWithCSRF(t, scenario.settingsContext(), http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{}, map[string]string{
 		"Accept": "application/json",
 	})
 	defer func() { _ = response.Body.Close() }()
@@ -55,12 +45,7 @@ func TestClearDataRejectsMissingPassword(t *testing.T) {
 func TestClearDataRejectsInvalidPassword(t *testing.T) {
 	scenario := setupClearDataScenario(t)
 
-	response := settingsFormRequestWithCSRF(t, settingsSecurityTestContext{
-		app:        scenario.app,
-		authCookie: scenario.authCookie,
-		csrfCookie: scenario.csrfCookie,
-		csrfToken:  scenario.csrfToken,
-	}, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
+	response := settingsFormRequestWithCSRF(t, scenario.settingsContext(), http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
 		"password": {"WrongPass1"},
 	}, map[string]string{
 		"Accept": "application/json",
@@ -79,12 +64,7 @@ func TestClearDataRejectsInvalidPassword(t *testing.T) {
 func TestValidateClearDataPasswordAcceptsCorrectPassword(t *testing.T) {
 	scenario := setupClearDataScenario(t)
 
-	response := settingsFormRequestWithCSRF(t, settingsSecurityTestContext{
-		app:        scenario.app,
-		authCookie: scenario.authCookie,
-		csrfCookie: scenario.csrfCookie,
-		csrfToken:  scenario.csrfToken,
-	}, http.MethodPost, "/api/v1/users/current/data-wipe/validate", url.Values{
+	response := settingsFormRequestWithCSRF(t, scenario.settingsContext(), http.MethodPost, "/api/v1/users/current/data-wipe/validate", url.Values{
 		"password": {"StrongPass1"},
 	}, map[string]string{
 		"Accept": "application/json",
@@ -107,12 +87,7 @@ func TestValidateClearDataPasswordAcceptsCorrectPassword(t *testing.T) {
 // password, mirroring the login form's own budget contract.
 func TestValidateClearDataPasswordRateLimitsGuessesAndRefusesCorrectPassword(t *testing.T) {
 	scenario := setupClearDataScenario(t)
-	ctx := settingsSecurityTestContext{
-		app:        scenario.app,
-		authCookie: scenario.authCookie,
-		csrfCookie: scenario.csrfCookie,
-		csrfToken:  scenario.csrfToken,
-	}
+	ctx := scenario.settingsContext()
 	validate := func(t *testing.T, password string) int {
 		t.Helper()
 		response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe/validate", url.Values{
@@ -155,12 +130,7 @@ func TestValidateClearDataPasswordRateLimitsGuessesAndRefusesCorrectPassword(t *
 func TestValidateClearDataPasswordRejectsInvalidPassword(t *testing.T) {
 	scenario := setupClearDataScenario(t)
 
-	response := settingsFormRequestWithCSRF(t, settingsSecurityTestContext{
-		app:        scenario.app,
-		authCookie: scenario.authCookie,
-		csrfCookie: scenario.csrfCookie,
-		csrfToken:  scenario.csrfToken,
-	}, http.MethodPost, "/api/v1/users/current/data-wipe/validate", url.Values{
+	response := settingsFormRequestWithCSRF(t, scenario.settingsContext(), http.MethodPost, "/api/v1/users/current/data-wipe/validate", url.Values{
 		"password": {"WrongPass1"},
 	}, map[string]string{
 		"Accept": "application/json",
