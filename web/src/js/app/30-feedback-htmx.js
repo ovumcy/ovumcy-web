@@ -654,11 +654,15 @@
   // swap. A refusal's text is written into it: text changing inside a region
   // that already exists is announced, a node arriving with role="status" is not.
   //
-  // The region is emptied at once and filled in a later task. Emptied and
+  // The region is emptied at once and filled after a delay. Emptied and
   // refilled in the same task, the region ends the task holding the text it
   // already held, so a refusal repeating the previous one is not a change a
-  // screen reader sees and is not announced. A second refusal before the fill
+  // screen reader sees and is not announced. The delay is not 0: a 0 ms task can
+  // still run before the next rendering and accessibility-tree update, which
+  // would see empty-then-same-text as no change. It outlasts one frame
+  // (about 16 ms at 60 Hz) with room to spare. A second refusal before the fill
   // replaces the pending one: only the latest text is written.
+  var CALENDAR_REFUSAL_FILL_DELAY_MS = 150;
   var calendarRefusalFill = null;
 
   function announceCalendarRefusal(message) {
@@ -673,7 +677,7 @@
     calendarRefusalFill = window.setTimeout(function () {
       calendarRefusalFill = null;
       region.textContent = message;
-    }, 0);
+    }, CALENDAR_REFUSAL_FILL_DELAY_MS);
   }
 
   // The calendar fetches its day editor, and every request from the page names

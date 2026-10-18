@@ -21,7 +21,7 @@
 
 - **The calendar's account-changed notices are announced to screen readers.** They were inserted as
   new nodes already carrying a live role, which is not announced; the text is now written into a
-  live region the calendar page renders up front. The region is emptied at once and filled in a
-  later task, so a notice repeating the previous one is announced again.
+  live region the calendar page renders up front. The region is emptied at once and filled a
+  moment later (past one frame), so a notice repeating the previous one is announced again.
 - **A refused calendar grid refresh has its own message** ("This calendar is out of date: ...")
   instead of reusing "This day can't be opened", in all six languages.
