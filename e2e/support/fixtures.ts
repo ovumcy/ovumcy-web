@@ -47,10 +47,31 @@ const ALLOWED_EVERYWHERE: readonly AllowedBrowserError[] = [
   },
 ];
 
+/** Errors one engine emits on pages the other engines render cleanly. */
+const ALLOWED_PER_BROWSER: Readonly<Record<string, readonly AllowedBrowserError[]>> = {
+  webkit: [
+    {
+      pattern:
+        /^console\.error: Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy\.$/,
+      reason:
+        "WebKit 27.2 (Playwright 1.64) reports its own user-agent stylesheet for every <select> " +
+        "as refused under style-src 'self': a bare <select> on an otherwise empty page served " +
+        "with that policy logs this line once, an <input type=number> or plain markup logs " +
+        'nothing. The page carries no inline style, and the CSP stays as it is. Chromium runs ' +
+        'the whole suite and reports an inline <style> or style attribute of ours in its own ' +
+        'wording, which this pattern does not match. Drop the entry once WebKit stops emitting it.',
+    },
+  ],
+};
+
 /** Collects what the browser reported, and judges it at the end of the test. */
 export class BrowserErrorWatcher {
   private readonly observed: string[] = [];
-  private readonly allowed: AllowedBrowserError[] = [...ALLOWED_EVERYWHERE];
+  private readonly allowed: AllowedBrowserError[];
+
+  constructor(browserName: string) {
+    this.allowed = [...ALLOWED_EVERYWHERE, ...(ALLOWED_PER_BROWSER[browserName] ?? [])];
+  }
 
   /**
    * Binds to a context the spec created itself. The fixture already watches
@@ -87,8 +108,8 @@ export const test = base.extend<{ browserErrors: BrowserErrorWatcher }>({
   // `auto` so a spec inherits the guard without naming it: a fixture that has
   // to be opted into is the per-spec plumbing this replaces.
   browserErrors: [
-    async ({ context }, use, testInfo) => {
-      const watcher = new BrowserErrorWatcher();
+    async ({ context, browserName }, use, testInfo) => {
+      const watcher = new BrowserErrorWatcher(browserName);
       watcher.watch(context);
 
       await use(watcher);
