@@ -566,6 +566,16 @@
     return true;
   }
 
+  // The page the refresh reads the token from. It is NOT the current page: a
+  // refusal can come from a control on a surface whose GET spends or mints a
+  // one-time value (the TOTP enrolment page mints a new secret into its setup
+  // cookie on every visit, so re-fetching it would invalidate the QR code the
+  // owner is still scanning). /privacy is public, renders through the base
+  // layout that carries the csrf-token meta, and sets no cookie but the CSRF
+  // one. The Go test TestPrivacyPageIsASideEffectFreeCSRFTokenSource pins both
+  // halves; change this URL only to another page that test also holds.
+  var CSRF_REFRESH_PAGE_URL = "/privacy";
+
   // One refresh at a time: a second refused write while one is in flight shares
   // it. Resolves true only when the page's token was replaced.
   function refreshCSRFToken() {
@@ -577,7 +587,7 @@
     }
 
     var pending = Promise.resolve().then(function () {
-      return window.fetch(window.location.pathname, {
+      return window.fetch(CSRF_REFRESH_PAGE_URL, {
         method: "GET",
         credentials: "same-origin",
         cache: "no-store",

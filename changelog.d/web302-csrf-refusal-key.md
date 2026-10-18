@@ -16,6 +16,9 @@
   a proxy's own error page, is treated the same way and shows the refusal copy rather than "check
   your connection". The calendar editor's delete and cycle-start controls, which have no status
   area, now say so in a toast instead of staying silent.
+- **The token refresh reads the privacy page, not the page the owner is on**, so a refusal on a
+  one-time surface (the two-factor setup page, the recovery code) never re-fetches that surface and
+  spends or re-mints what it shows.
 
 ### Fixed
 

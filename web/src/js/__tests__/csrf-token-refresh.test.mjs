@@ -5,7 +5,8 @@
 // autosave would be refused 403 until a reload that discards the entry.
 //
 // These tests pin the recovery against the shipped bundle: a refused day write
-// re-reads the token from the page the owner is on, adopts only the <meta>
+// re-reads the token from a fixed side-effect-free page (never the page the
+// owner is on, which may be a shown-once surface), adopts only the <meta>
 // token from a same-origin answer, never re-sends the write itself, and leaves
 // everything as it was when the refresh does not work.
 
@@ -100,11 +101,11 @@ function notice(window) {
 }
 
 /** Loads the page with a fetch whose every answer comes from `answer(url, init)`. */
-async function load(answer, { html = PAGE } = {}) {
+async function load(answer, { html = PAGE, url = PAGE_URL } = {}) {
   const calls = [];
   const dom = await loadDOMWithScript(APP_BUNDLE, {
     html,
-    url: PAGE_URL,
+    url,
     beforeRun: (window) => {
       window.fetch = (url, init) => {
         calls.push({ url: String(url), init: init || {} });
@@ -115,14 +116,14 @@ async function load(answer, { html = PAGE } = {}) {
   return { dom, calls };
 }
 
-test("a 403 on a day save re-reads the token from the current page and keeps the entry", async () => {
-  const { dom, calls } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN))));
+test("a 403 on a day save re-reads the token from the privacy page and keeps the entry", async () => {
+  const { dom, calls } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN), "https://ovumcy.test/privacy")));
   try {
     fireResponseError(dom.window, { status: 403, responseText: FORBIDDEN_FRAGMENT });
     await flush();
 
     assert.equal(calls.length, 1, "exactly one refresh per refused write");
-    assert.equal(calls[0].url, "/calendar", "the current path, no query, no origin of its own");
+    assert.equal(calls[0].url, "/privacy", "the fixed refresh page, not the current path, no origin of its own");
     assert.equal(calls[0].init.method, "GET");
     assert.equal(calls[0].init.credentials, "same-origin");
     assert.equal(currentToken(dom.window), FRESH_TOKEN);
@@ -137,6 +138,45 @@ test("a 403 on a day save re-reads the token from the current page and keeps the
     assert.equal(dayForm(dom.window).querySelector("#calendar-notes").value, TYPED_NOTE);
   } finally {
     dom.window.close();
+  }
+});
+
+// A GET of the TOTP enrolment page mints a new secret into the setup cookie
+// while the page still shows the old QR code, so a refresh that re-fetched the
+// page the owner is on would break the enrolment it was meant to rescue. The
+// same holds for every other shown-once surface.
+test("a CSRF refusal on a shown-once page never fetches that page", async () => {
+  const shownOnce = [
+    "/settings/2fa",
+    "/recovery-code",
+    "/settings/calendar-feed",
+    "/auth/oidc/start",
+    "/auth/oidc/callback",
+    "/auth/oidc/callback/continue",
+    "/auth/oidc/logout/redirect",
+    "/register/welcome",
+  ];
+  for (const path of shownOnce) {
+    const { dom, calls } = await load(() => Promise.resolve(okPage(pageWithToken(FRESH_TOKEN), "https://ovumcy.test/privacy")), {
+      html: CONTROL_PAGE,
+      url: `https://ovumcy.test${path}`,
+    });
+    try {
+      refuseControl(dom.window, "cycle-start", dom.window.document.getElementById("dashboard-status"), {
+        status: 403,
+        responseText: FORBIDDEN_FRAGMENT,
+      });
+      await flush();
+
+      assert.deepEqual(
+        calls.map((call) => call.url),
+        ["/privacy"],
+        `${path}: the only request is the fixed refresh page`
+      );
+      assert.equal(currentToken(dom.window), FRESH_TOKEN, `${path}: the token is still refreshed`);
+    } finally {
+      dom.window.close();
+    }
   }
 });
 
