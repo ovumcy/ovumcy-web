@@ -1,4 +1,4 @@
-import { expect, test, type Page } from './support/fixtures';
+import { ALLOWED_PER_BROWSER, expect, test, type Page } from './support/fixtures';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -104,5 +104,36 @@ test.describe('Cross-browser smoke', () => {
     await expect(html).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('#calendar-grid-panel')).toBeVisible();
     await expectPageTitle(page, 'calendar.title', 'es');
+  });
+
+  test('every engine-specific allowlist entry still reproduces', async ({
+    page,
+    browserName,
+    browserErrors,
+  }) => {
+    const entries = ALLOWED_PER_BROWSER[browserName] ?? [];
+    test.skip(entries.length === 0, `no engine-specific allowlist entry for ${browserName}`);
+
+    // The app's own header, so the probe stops reproducing if the policy changes too.
+    const policy = (await page.request.get('/register')).headers()['content-security-policy'];
+    expect(policy).toContain("style-src 'self'");
+
+    for (const [index, entry] of entries.entries()) {
+      const probe = `/__allowlist-probe/${index}`;
+      await page.route(probe, (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          headers: { 'Content-Security-Policy': policy },
+          body: `<!doctype html><html><body>${entry.reproducer}</body></html>`,
+        })
+      );
+      await page.goto(probe);
+      await expect
+        .poll(() => browserErrors.reported(entry.pattern), {
+          message: `${browserName} no longer reports ${entry.pattern}; drop it from ALLOWED_PER_BROWSER`,
+        })
+        .toBe(true);
+    }
   });
 });
