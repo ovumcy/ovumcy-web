@@ -762,6 +762,13 @@ Because the budget is per pass and the passes are sequential, the worst case for
   start from the dedicated Caddy or Nginx example stack, then migrate your existing SQLite volume into that stack instead of exposing the base compose app port directly.
 - Changing the proxy subnet or host:
   update the Docker subnet or proxy IP and `TRUSTED_PROXIES` together; treating only one side as changed is a common source of broken real-client IP handling.
+- Running the proxy outside the app's compose stack (an existing Caddy or Nginx on the host, or on another machine):
+  `TRUSTED_PROXIES` must list the address the proxy's requests arrive from as the container sees it. For a proxy on the
+  Docker host that is the bridge gateway of the app's network (often `172.17.0.1` or `172.18.0.1`; `docker network inspect
+  <network>` shows it as `Gateway`), not the host's LAN IP that the proxy forwards to. If that address is not trusted, the
+  app ignores the proxy's `X-Forwarded-Proto: https`, sees the request as plain HTTP, and the CSRF check refuses every
+  sign-in, registration and form with `Forbidden` while the log records `action="csrf" outcome="denied" ...
+  reason="invalid referer"`. Trust the gateway address (or the network's subnet) and the same requests succeed.
 - Rotating the application secret:
   treat it as planned maintenance; active sessions and sealed cookies will stop working, which is expected — and that is only the visible tip. The full per-domain impact (2FA secrets, stored webhook URLs, calendar feeds of every generation) with recovery steps lives in [Secret Handling and Rotation](#secret-handling-and-rotation).
 - Seeing healthy containers but a failing public URL:
