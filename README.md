@@ -23,7 +23,7 @@
 
 <p align="center">
   <a href="https://github.com/ovumcy/ovumcy-web/releases"><img src="https://img.shields.io/github/v/release/ovumcy/ovumcy-web?display_name=tag" alt="Release"></a>
-  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.27.2+-00ADD8?logo=go" alt="Go Version"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.27.3+-00ADD8?logo=go" alt="Go Version"></a>
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://github.com/ovumcy/ovumcy-web/pkgs/container/ovumcy-web"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fovumcy%2Fovumcy-web%2Fbadges%2Fpulls.json&logo=docker" alt="GHCR pulls"></a>
   <a href="https://hub.docker.com/r/ovumcy/ovumcy-web"><img src="https://img.shields.io/docker/pulls/ovumcy/ovumcy-web" alt="Docker Hub pulls"></a>
@@ -126,7 +126,7 @@ A binary started this way listens on `PORT` (default `8080`) on every interface;
 
 Requirements:
 
-- Go 1.27.2+
+- Go 1.27.3+
 - Node.js 22+
 
 ```bash
