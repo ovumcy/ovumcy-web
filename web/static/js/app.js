@@ -4830,8 +4830,28 @@
     });
   }
 
+  // Two channels save the same day — the autosave fetch and an htmx Save —
+  // and their answers arrive in either order. Each save draws a number from
+  // one counter when it goes out; an accepted answer becomes the base only if
+  // no later save's answer already did, so an older answer arriving last
+  // cannot put back a value a newer save replaced (the next edit would send
+  // that stale value as its base and be refused as a conflict).
+  function nextDaySaveSequence(form) {
+    form.__ovumcyDaySaveSequence = (form.__ovumcyDaySaveSequence || 0) + 1;
+    return form.__ovumcyDaySaveSequence;
+  }
+
+  function acceptDaySaveSequence(form, sequence) {
+    if ((sequence || 0) < (form.__ovumcyDayBaseSequence || 0)) {
+      return false;
+    }
+    form.__ovumcyDayBaseSequence = sequence || 0;
+    return true;
+  }
+
   function runDashboardAutosave(form, mode) {
     var requestVersion;
+    var sentSequence;
     var endpoint;
     var url;
     var method;
@@ -4867,6 +4887,7 @@
     // What is on the wire is what the server will hold: snapshot it here, and
     // promote it to "persisted" only once the server has said yes.
     sentState = dashboardFormState(form, false);
+    sentSequence = nextDaySaveSequence(form);
 
     // Which edit is on the wire, readable from outside this call: the unload
     // flush has to know whether the open request already carries the newest
@@ -4902,12 +4923,16 @@
       // save. Undoing an undo is not offered: depth stays at one. A save that
       // carried no change — a blur can fire one — is not a step, so it leaves
       // the existing step back alone instead of collapsing it onto itself.
-      if (mode === "undo") {
-        form.__ovumcyAutosaveUndo = null;
-      } else if (previousState && dashboardStateKey(sentState) !== dashboardStateKey(previousState)) {
-        form.__ovumcyAutosaveUndo = previousState;
+      // An answer older than one already accepted moves neither the base nor
+      // the step back: the newer save's are the current ones.
+      if (acceptDaySaveSequence(form, sentSequence)) {
+        if (mode === "undo") {
+          form.__ovumcyAutosaveUndo = null;
+        } else if (previousState && dashboardStateKey(sentState) !== dashboardStateKey(previousState)) {
+          form.__ovumcyAutosaveUndo = previousState;
+        }
+        form.__ovumcyPersistedState = sentState;
       }
-      form.__ovumcyPersistedState = sentState;
       form.__ovumcyAutosaveFailed = false;
       setDashboardAutosaveIndicator(form, "saved");
       if (previousState && dashboardStateValue(sentState, "pregnancy_test") !== dashboardStateValue(previousState, "pregnancy_test")) {
@@ -5028,6 +5053,7 @@
       return Promise.resolve(false);
     }
 
+    var sentSequence = nextDaySaveSequence(form);
     setDashboardAutosaveIndicator(form, "saving");
     form.__ovumcyAutosaveInFlight = window.fetch(url, {
       method: "DELETE",
@@ -5045,7 +5071,9 @@
         });
       }
       delete form.dataset.autosaveDirty;
-      form.__ovumcyPersistedState = undoState;
+      if (acceptDaySaveSequence(form, sentSequence)) {
+        form.__ovumcyPersistedState = undoState;
+      }
       form.__ovumcyAutosaveFailed = false;
       setDashboardAutosaveIndicator(form, "saved");
       // The day is gone server-side, and the page around the journal (cycle
@@ -5398,7 +5426,12 @@
   var DAY_PATCH_BASE_PREFIX = "base_";
   // Not day fields: they ride along on every save exactly as the form holds
   // them.
-  var DAY_PATCH_PASSTHROUGH = ["csrf_token", "day_form_account", "source", "ack_period_tip", "cycle_start"];
+  var DAY_PATCH_PASSTHROUGH = ["csrf_token", "day_form_account", "source", "ack_period_tip"];
+  // Not day fields either, but an answer: the inline cycle-start confirmation
+  // goes out with the save that changed it and no other. Riding along on every
+  // save, a yes given once was given again by each later edit of the day, and
+  // re-marked a start the owner had since un-marked.
+  var DAY_PATCH_SENT_WHEN_CHANGED = ["cycle_start"];
   // The method override names the full write a submit without this script
   // posts; the partial write carries none.
   var DAY_PATCH_DROPPED = ["_method"];
@@ -5435,7 +5468,9 @@
   }
 
   function isDayFieldName(name) {
-    return DAY_PATCH_PASSTHROUGH.indexOf(name) === -1 && DAY_PATCH_DROPPED.indexOf(name) === -1;
+    return DAY_PATCH_PASSTHROUGH.indexOf(name) === -1 &&
+      DAY_PATCH_SENT_WHEN_CHANGED.indexOf(name) === -1 &&
+      DAY_PATCH_DROPPED.indexOf(name) === -1;
   }
 
   function dayFieldNamesOf(current, base) {
@@ -5475,7 +5510,9 @@
     var out = [];
 
     current.order.forEach(function (name) {
-      if (DAY_PATCH_PASSTHROUGH.indexOf(name) !== -1) {
+      var sentWhenChanged = DAY_PATCH_SENT_WHEN_CHANGED.indexOf(name) !== -1;
+      if (DAY_PATCH_PASSTHROUGH.indexOf(name) !== -1 ||
+        (sentWhenChanged && !sameDayValues(current.values[name], base.values[name]))) {
         current.values[name].forEach(function (value) {
           out.push([name, value]);
         });
@@ -5546,19 +5583,22 @@
     form.__ovumcyDayPatchSentEntries = sent.filter(function (entry) {
       return entry[0] !== "csrf_token";
     });
+    form.__ovumcyDayPatchSentSequence = nextDaySaveSequence(form);
   }
 
-  // An accepted save is the new base: the next edit is based on what it left.
+  // An accepted save is the new base: the next edit is based on what it left —
+  // unless a later save's answer (the autosave's) already became the base.
   function promoteDaySaveBase(event) {
     var form = dayEditorFormFromEvent(event);
     var detail = event ? event.detail : null;
     if (!form || !form.__ovumcyDayPatchSentEntries) {
       return;
     }
-    if (detail && detail.successful) {
+    if (detail && detail.successful && acceptDaySaveSequence(form, form.__ovumcyDayPatchSentSequence)) {
       setDayFormBase(form, form.__ovumcyDayPatchSentEntries, false);
     }
     form.__ovumcyDayPatchSentEntries = null;
+    form.__ovumcyDayPatchSentSequence = 0;
   }
 
   function restoreDayFormEntries(form, entries) {
@@ -5605,6 +5645,8 @@
     });
 
     restoreDayFormEntries(form, merged);
+    // What the server holds now outranks every answer still on its way.
+    acceptDaySaveSequence(form, nextDaySaveSequence(form));
     setDayFormBase(form, freshEntries, dashboardRenderIsEmpty(freshForm));
     clearDashboardSaveNotice(form);
     return changedDayFieldNames(dashboardFormEntries(form), freshEntries).length > 0;
