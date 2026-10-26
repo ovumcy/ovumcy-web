@@ -874,6 +874,10 @@ func TestVerifyTOTPLogin_AReplayedCodeKeepsItsSlot(t *testing.T) {
 	if firstStatus == http.StatusUnauthorized || firstStatus == http.StatusTooManyRequests {
 		t.Fatalf("first submission status = %d, want the code accepted: the replay premise is broken", firstStatus)
 	}
+	// The accepted code signed a session in, which retires the CSRF token it
+	// was submitted with (WEB-242); the replays carry a fresh one so what
+	// refuses them is the code check, not the CSRF middleware's 403.
+	csrfToken, csrfCookieHeader = extractCSRFCookieAndToken(t, app)
 
 	for attempt := range services.DefaultTOTPAttemptsLimit {
 		resp := submitTOTPChallengeHTMX(t, app, sealTOTPPendingCookieForTest(t, secretKey, user.ID, false), csrfCookieHeader, csrfToken, code)
@@ -919,12 +923,19 @@ func TestVerifyTOTPLogin_ReplayCode_Rejected(t *testing.T) {
 		t.Fatal("first submission did not issue an auth cookie — replay test premise is broken")
 	}
 
-	// Replay the same code with a fresh pending cookie. Replay protection must
-	// reject it; no new auth cookie may be issued.
+	// Replay the same code with a fresh pending cookie and a fresh CSRF token
+	// (the accepted sign-in retired the first one, WEB-242). Replay protection
+	// must reject it as a compared code: the browser path answers 303 back to
+	// the challenge, never the CSRF middleware's 403, and no new auth cookie
+	// may be issued.
+	csrfToken, csrfCookieHeader = extractCSRFCookieAndToken(t, app)
 	pending2 := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
 	resp2 := doTOTPChallengeRequest(t, app, joinCookieHeader(pending2, csrfCookieHeader), code, csrfToken)
 	defer func() { _ = resp2.Body.Close() }()
 
+	if resp2.StatusCode != http.StatusSeeOther || resp2.Header.Get("Location") != "/auth/2fa" {
+		t.Fatalf("replayed code answered %d → %q, want 303 back to /auth/2fa (compared and refused)", resp2.StatusCode, resp2.Header.Get("Location"))
+	}
 	if c := responseCookie(resp2.Cookies(), authCookieName); c != nil && c.Value != "" {
 		t.Error("replayed code must not issue a new auth cookie — replay protection failed")
 	}
