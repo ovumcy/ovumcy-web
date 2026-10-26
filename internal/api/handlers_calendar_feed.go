@@ -67,10 +67,10 @@ const (
 // "the feed".
 //
 // path is compared against fiber's OWN routing normalization
-// (httpx.RoutingNormalizedPath), not the raw wire path c.Path() returns: the
+// (httpx.RoutingNormalizedPath), not the unfolded path c.Path() returns: the
 // shipped fiberConfig (cmd/ovumcy/server.go) leaves CaseSensitive and
 // StrictRouting both off, so the router folds ASCII case and trailing slashes
-// away before matching a route, and a predicate comparing the untouched path
+// away before matching a route, and a predicate comparing the unfolded path
 // claims fewer spellings than the router actually dispatches here.
 //
 // The token/suffix boundary mirrors fiber's own left-to-right param scan

@@ -383,9 +383,9 @@ func TestScopedRateLimitersCoverEveryRoutableSpellingOfTheirPath(t *testing.T) {
 // uncapped — the sweep above is measuring something real, not spellings that
 // 404 anyway.
 //
-// Backward: c.Path() still hands back the untouched path off the wire while the
-// router matches its own normalized copy. That gap is the whole defect; should a
-// fiber upgrade close it by normalizing c.Path() too, this pin fails and says so
+// Backward: c.Path() still hands back a path whose case and trailing slashes
+// are not folded while the router matches its own folded copy. That gap is the whole defect; should a
+// fiber upgrade close it by folding c.Path() too, this pin fails and says so
 // rather than leaving httpx.RoutingNormalizedPath as dead weight nobody revisits.
 func TestFiberRoutesEveryScopedLimiterPathSpellingToItsOwnRoute(t *testing.T) {
 	specs := discoverScopedLimiterSpecs(t)

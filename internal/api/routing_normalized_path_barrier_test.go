@@ -14,7 +14,7 @@ import (
 
 // This file holds the routing-normalized path barrier. Fiber picks a route
 // against a case-folded, trailing-slash-stripped copy of the path but hands
-// handlers the untouched wire path, so any branch keyed on the raw path sends
+// handlers the path without those folds, so any branch keyed on the raw path sends
 // /API/v1/sessions, /LANG or /lang/ down a different answer than the lowercase
 // spelling that reaches the very same handler. The barrier therefore requires
 // every raw path read in a module package that imports fiber — today the

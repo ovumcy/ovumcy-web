@@ -1,9 +1,10 @@
 ### Security
 
-- **A request too large to read no longer receives a cookie.** When a request's headers overflow the
-  server's read buffer, Ovumcy answers `431` without having read the request at all, yet that answer
-  still carried a fresh anti-forgery cookie, minted for a request that never existed. The `431`
-  answer now sets nothing.
+- **A request the server cannot read no longer receives a cookie.** When a request's headers
+  overflow the server's read buffer (`431`), are malformed (`400`) or time out (`408`), Ovumcy
+  answers without having read the request at all, yet that answer still carried a fresh
+  anti-forgery cookie, minted for a request that never existed — and it replaced the browser's own,
+  so a form already open in another tab went stale. Those answers now set nothing.
 
 ### Changed
 

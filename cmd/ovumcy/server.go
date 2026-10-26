@@ -190,6 +190,16 @@ func fiberConfig(proxy proxySettings, handler *api.Handler) fiber.Config {
 func newOvumcyErrorHandler(handler *api.Handler) fiber.ErrorHandler {
 	return func(c fiber.Ctx, err error) error {
 		setSecurityHeaders(c, false)
+		// A head fasthttp could not parse (431, 400, 408) arrives here reset, and
+		// fiber has first run the app-wide middleware on it as an empty "GET /":
+		// the CSRF middleware has minted a cookie for a request that never
+		// existed, and would overwrite the browser's own. The reset head carries
+		// no header at all, which a parsed HTTP/1.1 request (Host is mandatory)
+		// never does. Not keyed on status: a body-limit 413 arrives with its head
+		// parsed, and its page renders the token that cookie carries.
+		if c.Request().Header.Len() == 0 {
+			c.Response().Header.DelAllCookies()
+		}
 		// The CSRF check's refusal is a 403 like the role guards', but it answers
 		// under a key of its own so a client can tell a stale token from a
 		// forbidden account.
@@ -209,10 +219,6 @@ func newOvumcyErrorHandler(handler *api.Handler) fiber.ErrorHandler {
 		// not-found noise, while the user is looking at a 431. Nothing about the
 		// request is logged; there is nothing parsed to log.
 		if fiberErr.Code == fiber.StatusRequestHeaderFieldsTooLarge {
-			// Fiber runs the app-wide middleware for this request as an empty
-			// "GET /" before handing it here, so the CSRF middleware has minted a
-			// cookie for a request that never parsed. Nothing may be set on it.
-			c.Response().Header.DelAllCookies()
 			log.Printf("request rejected: 431 request header fields too large — the request head did not fit the server read buffer")
 			return handler.RespondRequestHeadersTooLarge(c)
 		}

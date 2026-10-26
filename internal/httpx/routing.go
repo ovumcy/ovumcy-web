@@ -8,7 +8,8 @@ import "strings"
 //
 // c.Path() is not the path off the wire (that is URI().PathOriginal()): it is
 // already normalized as RFC 3986 Section 6.2.2 describes — unreserved percent
-// escapes decoded, "." and ".." segments removed. Route matching runs against
+// escapes decoded (UnescapePath stays off), "." and ".." segments removed,
+// "//" kept literal. Route matching runs against
 // a separate, unexported "detection path" derived from it
 // (DefaultCtx.configDependentPaths): ASCII-lowercased while CaseSensitive is
 // off, with trailing slashes stripped while StrictRouting is off — the app's
