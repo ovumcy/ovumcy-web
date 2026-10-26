@@ -159,6 +159,32 @@ func TestLoginInvalidCredentialsErrorIsAnnouncedAndTiedToBothFields(t *testing.T
 	}
 }
 
+// TestForgotPasswordInvalidCodeErrorIsTiedToBothOperands pins WEB-263 on the
+// recovery page: a refused code names the code and the password it was
+// compared beside, never one of them, and the clean page carries no mark.
+func TestForgotPasswordInvalidCodeErrorIsTiedToBothOperands(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "forgot-a11y@example.com", "StrongPass1", true)
+
+	form := url.Values{
+		"email":         {user.Email},
+		"recovery_code": {"OVUM-AAAA-BBBB-CCCC"},
+		"password":      {"StrongPass1"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+	flashValue := responseCookieValue(response.Cookies(), flashCookieName)
+	if flashValue == "" {
+		t.Fatalf("expected flash cookie in the refused recovery redirect")
+	}
+
+	rendered := followLoginPageWithFlash(t, app, mustParseLocationHeader(t, response).String(), flashValue)
+	assertAuthErrorAnnouncedForFields(t, rendered, "auth.error.invalid_recovery_code",
+		[]string{"recovery-code", "recovery-password"}, nil)
+}
+
 // TestRegisterPasswordMismatchErrorIsTiedToTheConfirmField pins the
 // field-specific half of WEB-263: a mismatch is about the confirmation field
 // alone, so only that field is marked.

@@ -25,7 +25,7 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <label class="field-label" for="login-email">{{t .Messages "auth.email"}}</label>
-      <input id="login-email" type="email" name="email" value="{{.Email}}" required autocomplete="email" class="input-field"{{if index .InvalidFields "email"}} aria-invalid="true" aria-describedby="auth-server-error"{{end}} />
+      <input id="login-email" type="email" name="email" value="{{.Email}}" required autocomplete="email" class="input-field"{{template "auth_invalid_field_attrs" (index .InvalidFields "email")}} />
 
       {{template "password_toggle_field" (dict
         "Messages" .Messages

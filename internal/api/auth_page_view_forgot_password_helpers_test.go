@@ -27,6 +27,12 @@ func TestBuildForgotPasswordPageDataUsesFlashEmailForRecoveryStep(t *testing.T) 
 	if payload["ShowRecoveryCodeStep"] != true {
 		t.Fatalf("expected ShowRecoveryCodeStep=true, got %#v", payload["ShowRecoveryCodeStep"])
 	}
+	// The template indexes InvalidFields unconditionally, so the builder must
+	// always carry it; an invalid code names both operands it compared.
+	invalidFields, ok := payload["InvalidFields"].(map[string]any)
+	if !ok || invalidFields["recovery_code"] != true || invalidFields["password"] != true {
+		t.Fatalf("expected InvalidFields naming recovery_code and password, got %#v", payload["InvalidFields"])
+	}
 }
 
 func TestBuildForgotPasswordPageDataWithoutFlashHasNoEmail(t *testing.T) {

@@ -32,8 +32,7 @@
           maxlength="6"
           autocomplete="one-time-code"
           required
-          autofocus
-          {{if index .InvalidFields "code"}}aria-invalid="true" aria-describedby="auth-server-error"{{end}}
+          autofocus{{template "auth_invalid_field_attrs" (index .InvalidFields "code")}}
           class="input-field tracking-widest text-center text-xl"
           placeholder="{{t .Messages "auth.2fa.code_placeholder"}}" />
       </div>

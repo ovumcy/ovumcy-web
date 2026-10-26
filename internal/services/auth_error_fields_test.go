@@ -38,15 +38,20 @@ func TestInvalidAuthFieldsNamesEveryComparedOperandOrNone(t *testing.T) {
 	}
 }
 
-// Every key the map names must exist in the catalogue; a key named here that
-// no page can render marks nothing. The catalogue side is pinned by
-// TestEveryLocaleKeyIsReachableFromTheApplication in internal/i18n, which
-// reads this map's literals as reachable keys.
+// Every key the map names must be a locale key an auth page can actually
+// resolve from an error source — a value of authErrorTranslationKeys — or the
+// markup silently stops firing when that table is renamed while the notice
+// still renders. The catalogue side is pinned by
+// TestEveryLocaleKeyIsReachableFromTheApplication in internal/i18n.
 func TestInvalidAuthFieldsKeysAreAuthPageErrorKeys(t *testing.T) {
 	t.Parallel()
+	resolvable := map[string]bool{}
+	for _, key := range authErrorTranslationKeys {
+		resolvable[key] = true
+	}
 	for key := range invalidAuthFields {
-		if key == "" || (len(key) < 11 || (key[:11] != "auth.error." && key[:6] != "error.")) {
-			t.Fatalf("%q is not an auth-page error key", key)
+		if !resolvable[key] {
+			t.Fatalf("%q is not a key AuthErrorTranslationKey resolves to; the markup it names would never render", key)
 		}
 	}
 }
