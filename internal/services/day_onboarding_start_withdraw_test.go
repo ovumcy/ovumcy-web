@@ -14,6 +14,11 @@ import (
 // un-mark of an onboarding start day.
 var _ lastPeriodStartClearer = (*db.DailyLogRepository)(nil)
 
+// The production day-log repository reads the stored start on the day write's
+// own transaction; without this a row-less day's period tick would be derived
+// from a settings read taken beside that transaction.
+var _ lastPeriodStartReader = (*db.DailyLogRepository)(nil)
+
 // withdrawFixture onboards an owner on 2026-09-14 (period length 5) and returns
 // a day service wired the way the composition root wires it: every day write
 // runs inside the day-log repository's transaction.
@@ -176,5 +181,44 @@ func TestTheDayEditorTicksAStoredStartWithoutARow(t *testing.T) {
 	}
 	if withdrawCalendarPaintsPeriod(stored, logs, "2026-09-14") {
 		t.Fatal("the calendar still paints the un-ticked onboarding day as a period day")
+	}
+}
+
+// TestRowlessPatchReadsTheStoredStartOnTheDayTransaction: on the production
+// repository a mood save of the row-less onboarding day keeps the period tick,
+// and once Settings has withdrawn the start the same save on the next date-less
+// day reads the withdrawal — both through the read on the day write's handle.
+func TestRowlessPatchReadsTheStoredStartOnTheDayTransaction(t *testing.T) {
+	service, repositories, userID := withdrawFixture(t, "rowless-patch-start@example.com", false)
+	now := time.Date(2026, time.October, 5, 12, 0, 0, 0, time.UTC)
+	start := startMoveDay(time.September, 14)
+	patch := func() models.DailyLog {
+		t.Helper()
+		saved, err := service.PatchDayEntryWithAutoFillAt(context.Background(), userID, start,
+			DayEntryInput{Mood: 3}, DayEntryFields{Mood: true}, DayEntryBase{}, now, time.UTC)
+		if err != nil {
+			t.Fatalf("patch: %v", err)
+		}
+		return saved
+	}
+
+	if stored, err := repositories.DailyLogs.LoadLastPeriodStartForUpdate(context.Background(), userID); err != nil || stored == nil || !dateOnly(*stored).Equal(start) {
+		t.Fatalf("expected the stored start %s read on the repository handle, got %v (%v)", start.Format("2006-01-02"), stored, err)
+	}
+	if err := repositories.Users.UpdateByID(context.Background(), userID, map[string]any{"last_period_start": nil}); err != nil {
+		t.Fatalf("withdraw start: %v", err)
+	}
+	if saved := patch(); saved.IsPeriod {
+		t.Fatal("a mood save after the start was withdrawn materialized a period day")
+	}
+}
+
+func TestLoadLastPeriodStartForUpdateRefusesAMissingOwner(t *testing.T) {
+	_, repositories, _ := withdrawFixture(t, "rowless-patch-owner@example.com", false)
+	if _, err := repositories.DailyLogs.LoadLastPeriodStartForUpdate(context.Background(), 0); err == nil {
+		t.Fatal("expected a zero user id refused")
+	}
+	if _, err := repositories.DailyLogs.LoadLastPeriodStartForUpdate(context.Background(), 1<<30); err == nil {
+		t.Fatal("expected an unknown user refused")
 	}
 }

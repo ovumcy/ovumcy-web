@@ -14,12 +14,19 @@ var (
 	ErrStatsPageViewLoadSymptoms = errors.New("stats page view load symptoms")
 )
 
+// StatsChartViewData is the cycle-length trend as plotted. RangeMin and
+// RangeMax span Values, the plotted bars — not CycleStats.Min/MaxCycleLength,
+// which read only the last cyclePredictionWindow cycles while the chart plots
+// up to maxTrendPoints: a caption read off the stats names a range a plotted
+// bar falls outside.
 type StatsChartViewData struct {
 	Labels      []string
 	Values      []int
 	Baseline    int
 	HasBaseline bool
 	Kind        string
+	RangeMin    int
+	RangeMax    int
 }
 
 type StatsSymptomCountViewData struct {
@@ -249,6 +256,7 @@ func buildStatsChartViewData(cycleLabelPattern string, lengths []int, baselineCy
 		chartData.Baseline = baselineCycleLength
 		chartData.HasBaseline = true
 	}
+	chartData.RangeMin, chartData.RangeMax = minMaxInts(lengths)
 	return chartData
 }
 

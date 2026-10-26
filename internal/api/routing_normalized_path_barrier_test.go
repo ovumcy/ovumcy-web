@@ -43,10 +43,11 @@ var rawPathReadersByDesign = map[string]struct {
 	reads  int
 	reason string
 }{
-	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.csrfMiddlewareConfig":   {1, "the OIDC callback's CSRF exemption matches the raw bytes on purpose: a case or slash variant gets no exemption, which is stricter than the route"},
-	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.setSecurityHeaders":     {1, "the /static cache exemption matches the raw bytes on purpose: a variant spelling keeps no-store, which is the stricter answer"},
-	"github.com/ovumcy/ovumcy-web/internal/api.SafeRequestLogPath":   {1, "writes the path into the request log line; nothing branches on it"},
-	"github.com/ovumcy/ovumcy-web/internal/api.currentPathWithQuery": {1, "echoes the address into the rendered layout; nothing branches on it"},
+	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.csrfMiddlewareConfig":      {1, "the OIDC callback's CSRF exemption matches the raw bytes on purpose: a case or slash variant gets no exemption, which is stricter than the route"},
+	"github.com/ovumcy/ovumcy-web/cmd/ovumcy.setSecurityHeaders":        {1, "the /static cache exemption matches the raw bytes on purpose: a variant spelling keeps no-store, which is the stricter answer"},
+	"(*github.com/ovumcy/ovumcy-web/internal/api.Handler).AuthRequired": {1, "the onboarding gate hands the wire path (normalized, but read through a []byte-to-string conversion the sink check cannot see through) to ShouldEnforceOnboardingAccess, which compares it with the routed path and REFUSES on a mismatch: stricter than the route"},
+	"github.com/ovumcy/ovumcy-web/internal/api.SafeRequestLogPath":      {1, "writes the path into the request log line; nothing branches on it"},
+	"github.com/ovumcy/ovumcy-web/internal/api.currentPathWithQuery":    {1, "echoes the address into the rendered layout; nothing branches on it"},
 }
 
 // routingNormalizedDecisionSites are the functions whose answer used to fork

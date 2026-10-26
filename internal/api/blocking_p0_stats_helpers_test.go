@@ -143,8 +143,8 @@ func TestMapStatsBBTChartData(t *testing.T) {
 }
 
 // TestBuildStatsCycleChartSummary pins the accessible text summary for the
-// cycle-length chart. It exercises the empty-data guard, the min/max <= 0
-// fallback to the latest value, and both the baseline and no-baseline sentence
+// cycle-length chart. It exercises the empty-data guard, the range read off the
+// plotted bars, and both the baseline and no-baseline sentence
 // shapes (distinct fmt argument lists). Each surviving conditional in
 // buildStatsCycleChartSummary changes the numbers the summary announces, so the
 // assertions check the rendered figures, not just non-emptiness.
@@ -179,9 +179,8 @@ func TestBuildStatsCycleChartSummary(t *testing.T) {
 		t.Parallel()
 		got := buildStatsCycleChartSummary(map[string]string{}, services.StatsPageViewData{
 			Flags:         services.StatsFlags{HasTrendData: true},
-			ChartData:     services.StatsChartViewData{Values: []int{27, 31}},
+			ChartData:     services.StatsChartViewData{Values: []int{27, 31}, RangeMin: 27, RangeMax: 31},
 			ChartBaseline: 29,
-			Stats:         services.CycleStats{MinCycleLength: 27, MaxCycleLength: 31},
 		})
 		// Default pattern: "%d completed cycles shown. Latest cycle %d %s.
 		// Average %d %s. Range %d to %d %s." -> 2 cycles, latest 31, avg 29,
@@ -193,19 +192,16 @@ func TestBuildStatsCycleChartSummary(t *testing.T) {
 		}
 	})
 
-	t.Run("zero min max falls back to latest value", func(t *testing.T) {
+	t.Run("no baseline announces range without an average", func(t *testing.T) {
 		t.Parallel()
 		got := buildStatsCycleChartSummary(map[string]string{}, services.StatsPageViewData{
 			Flags:         services.StatsFlags{HasTrendData: true},
-			ChartData:     services.StatsChartViewData{Values: []int{27, 33}},
+			ChartData:     services.StatsChartViewData{Values: []int{27, 33}, RangeMin: 27, RangeMax: 33},
 			ChartBaseline: 0, // no baseline -> shorter sentence
-			Stats:         services.CycleStats{MinCycleLength: 0, MaxCycleLength: 0},
 		})
-		// No-baseline pattern: "%d completed cycles shown. Latest cycle %d %s.
-		// Range %d to %d %s." with min=max=latest=33.
-		for _, want := range []string{"2 completed", "Latest cycle 33", "Range 33 to 33"} {
+		for _, want := range []string{"2 completed", "Latest cycle 33", "Range 27 to 33"} {
 			if !strings.Contains(got, want) {
-				t.Fatalf("no-baseline fallback summary %q missing %q", got, want)
+				t.Fatalf("no-baseline summary %q missing %q", got, want)
 			}
 		}
 		if strings.Contains(got, "Average") {
@@ -213,19 +209,16 @@ func TestBuildStatsCycleChartSummary(t *testing.T) {
 		}
 	})
 
-	t.Run("single non-positive bound still triggers latest fallback", func(t *testing.T) {
+	t.Run("range is the plotted span, not the prediction window", func(t *testing.T) {
 		t.Parallel()
-		// Only the min bound is non-positive: the OR guard must still fall back
-		// to the latest value for BOTH bounds (an AND guard would leave the
-		// stray 0 in the announced range).
 		got := buildStatsCycleChartSummary(map[string]string{}, services.StatsPageViewData{
 			Flags:         services.StatsFlags{HasTrendData: true},
-			ChartData:     services.StatsChartViewData{Values: []int{26, 34}},
-			ChartBaseline: 0,
-			Stats:         services.CycleStats{MinCycleLength: 0, MaxCycleLength: 31},
+			ChartData:     services.StatsChartViewData{Values: []int{365, 15, 128, 28}, RangeMin: 15, RangeMax: 365},
+			ChartBaseline: 134,
+			Stats:         services.CycleStats{MinCycleLength: 15, MaxCycleLength: 128},
 		})
-		if !strings.Contains(got, "Range 34 to 34") {
-			t.Fatalf("expected latest-value fallback range 34 to 34 when min bound is 0, got %q", got)
+		if !strings.Contains(got, "Range 15 to 365") {
+			t.Fatalf("caption must span the plotted bars, got %q", got)
 		}
 	})
 }

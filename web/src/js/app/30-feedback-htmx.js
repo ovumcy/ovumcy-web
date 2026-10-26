@@ -818,12 +818,22 @@
     );
   }
 
+  // A failed htmx day save older than the save the form's base already holds is
+  // not shown: the newer save carried everything typed up to it (the dashboard
+  // runner keeps the sequence; see __ovumcyHtmxDaySaveRefusalIgnored).
+  function daySaveRefusalIgnored(form, responseText) {
+    return typeof window.__ovumcyHtmxDaySaveRefusalIgnored === "function" &&
+      window.__ovumcyHtmxDaySaveRefusalIgnored(form, responseText);
+  }
+
   function handleDaySaveTransportFailure(event) {
     var form = dayEditorFormFromEvent(event);
     if (!form) {
       return;
     }
-    renderDaySaveUnreachable(form);
+    if (!daySaveRefusalIgnored(form, "")) {
+      renderDaySaveUnreachable(form);
+    }
     // htmx fires afterRequest before sendError, so the button is already back;
     // re-assert it anyway, because a save button left disabled would take the
     // retry with it.
@@ -921,9 +931,12 @@
     document.body.addEventListener("htmx:afterRequest", function (event) {
       var form = getSaveFeedbackFormFromEvent(event);
       var xhr = event && event.detail ? event.detail.xhr : null;
+      var ignored = !(event && event.detail && event.detail.successful) && form &&
+        daySaveRefusalIgnored(form, xhr ? xhr.responseText : "");
       setSaveButtonState(form, false);
       showResponseNotice(xhr);
-      if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
+      // A stale refusal leaves the indicator to the newer save that answered.
+      if (!ignored && form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
         window.__ovumcyFinalizeDashboardManualSave(form);
       }
     });
@@ -1012,6 +1025,9 @@
         return;
       }
 
+      if (dayForm && daySaveRefusalIgnored(dayForm, xhr ? xhr.responseText : "")) {
+        return;
+      }
       if (dayForm) {
         // The server answered, but not with a save. Keep its own message when
         // it sent one — it is more specific than any generic copy — and fall

@@ -88,6 +88,20 @@ func TestOversizedRequestHeadIsRejectedVisibly(t *testing.T) {
 	}
 }
 
+// The test above measures the limit through whatever default the pinned Fiber
+// release ships, so on a release whose default equals the documented 4 KB it
+// cannot tell a pinned buffer from an unpinned one. This one can: the operator
+// documentation states 4 KB, and a framework default that moves (Fiber 3.6
+// doubled it) must not move the limit with it.
+func TestFiberConfigPinsTheDocumentedReadBuffer(t *testing.T) {
+	t.Parallel()
+
+	const documentedRequestHeadBytes = 4096
+	if got := fiberConfig(proxySettings{}, nil).ReadBufferSize; got != documentedRequestHeadBytes {
+		t.Fatalf("fiberConfig ReadBufferSize = %d, want the documented %d — an unset value takes the framework default", got, documentedRequestHeadBytes)
+	}
+}
+
 func requestWithCookieOfSize(t *testing.T, address string, size int) (int, string, http.Header) {
 	t.Helper()
 
