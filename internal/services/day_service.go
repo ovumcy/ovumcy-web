@@ -90,9 +90,12 @@ type DayUserRepository interface {
 }
 
 type DayService struct {
-	logs    DayLogRepository
-	users   DayUserRepository
-	runInTx DayLogTxRunner
+	logs  DayLogRepository
+	users DayUserRepository
+	// lockedStart is the stored start a transaction-bound service read and
+	// locked first (lockedTxService); zero outside a transaction.
+	lockedStart heldStoredStart
+	runInTx     DayLogTxRunner
 }
 
 // NewDayServiceWithTx wires a transaction runner so multi-step writes commit
@@ -500,7 +503,7 @@ func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, use
 	}
 
 	dayStart, _ := DayRange(day, location)
-	return service.writeDayEntryWithAutoFill(ctx, userID, dayStart, now, location, func(DayLogRepository) (DayEntryInput, error) {
+	return service.writeDayEntryWithAutoFill(ctx, userID, dayStart, now, location, func(*DayService) (DayEntryInput, error) {
 		return normalized, nil
 	})
 }
@@ -523,40 +526,29 @@ func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, user
 	}
 
 	dayStart, dayEnd := DayRange(day, location)
-	resolve := func(txLogs DayLogRepository) (DayEntryInput, error) {
+	resolve := func(txService *DayService) (DayEntryInput, error) {
 		// The locking read: a concurrent partial write of the same day waits
 		// for this transaction and then merges onto the row it leaves, rather
 		// than both merging onto one old row and the later commit erasing the
-		// fields the earlier one stated.
-		existing, found, err := txLogs.FindByUserAndDayRangeForUpdate(ctx, userID, dayStart, dayEnd)
+		// fields the earlier one stated. It comes after the transaction's
+		// stored-start lock (lockStoredStart), so a concurrent write of this
+		// same row-less day has committed its row before this read runs.
+		existing, found, err := txService.logs.FindByUserAndDayRangeForUpdate(ctx, userID, dayStart, dayEnd)
 		if err != nil {
 			return DayEntryInput{}, ErrDayEntryLoadFailed
 		}
 		tickedFromStart := false
 		if !found {
-			// The stored start is read on the transaction's own handle: a
-			// Settings withdrawal committed before this write is the start it
-			// reads, never a snapshot taken beside it.
-			start, locked, loadErr := (&DayService{logs: txLogs, users: service.users}).loadStoredStart(ctx, userID)
+			// The stored start the transaction holds: a Settings withdrawal
+			// committed before this write is the start it reads, never a
+			// snapshot taken beside it.
+			start, loadErr := txService.storedStart(ctx, userID)
 			if loadErr != nil {
 				return DayEntryInput{}, ErrDayEntryLoadFailed
 			}
-			// A locking read of the start can have waited for a concurrent
-			// write of this same row-less day to commit — and with it the row
-			// that write created. The day is read again after it, so this
-			// write merges onto that row instead of onto the empty day it saw
-			// before the wait.
-			if locked {
-				existing, found, err = txLogs.FindByUserAndDayRangeForUpdate(ctx, userID, dayStart, dayEnd)
-				if err != nil {
-					return DayEntryInput{}, ErrDayEntryLoadFailed
-				}
-			}
-			if !found {
-				existing = models.DailyLog{}
-				tickedFromStart = onboardingStartTicks(&models.User{LastPeriodStart: start}, dayStart, now, location)
-				existing.IsPeriod = tickedFromStart
-			}
+			existing = models.DailyLog{}
+			tickedFromStart = onboardingStartTicks(&models.User{LastPeriodStart: start}, dayStart, now, location)
+			existing.IsPeriod = tickedFromStart
 		}
 		written, err := NormalizeDayEntryInput(mergeDayEntryPatch(existing, patch, fields))
 		if err != nil {
@@ -585,11 +577,14 @@ func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, user
 // inline cycle-start answer in one transaction. resolve yields the normalized
 // full day to write; it runs inside that transaction against its repository,
 // so a write that depends on the stored row reads the row it replaces.
-func (service *DayService) writeDayEntryWithAutoFill(ctx context.Context, userID uint, dayStart time.Time, now time.Time, location *time.Location, resolve func(DayLogRepository) (DayEntryInput, error)) (models.DailyLog, error) {
+func (service *DayService) writeDayEntryWithAutoFill(ctx context.Context, userID uint, dayStart time.Time, now time.Time, location *time.Location, resolve func(*DayService) (DayEntryInput, error)) (models.DailyLog, error) {
 	var entry models.DailyLog
 	if err := service.withinTransaction(ctx, func(txLogs DayLogRepository) error {
-		txService := &DayService{logs: txLogs, users: service.users}
-		normalized, innerErr := resolve(txLogs)
+		txService, innerErr := service.lockedTxService(ctx, txLogs, userID)
+		if innerErr != nil {
+			return ErrDayEntryLoadFailed
+		}
+		normalized, innerErr := resolve(txService)
 		if innerErr != nil {
 			return innerErr
 		}
@@ -681,25 +676,53 @@ var errLastPeriodStartClearUnsupported = errors.New("day log repository cannot w
 // day write's transaction the start a write derives from is the start that
 // transaction commits beside. The production repository implements it (pinned
 // by a compile-time assertion in the day service's integration test).
+//
+// Lock order. The read locks the owner's users row (FOR UPDATE on
+// PostgreSQL), and every day-service transaction that writes a day takes it
+// FIRST, before any day row (lockedTxService): the day write and its autofill,
+// the delete, and the manual cycle-start mark. A transaction that took a day
+// row and then the users row (a withdrawal of the start, a cycle-start policy
+// read) beside one that took them the other way round would deadlock.
 type lastPeriodStartReader interface {
 	LoadLastPeriodStartForUpdate(ctx context.Context, userID uint) (*time.Time, error)
 }
 
-// loadStoredStart reads the stored onboarding start through the day-log
-// repository when it can, which inside withinTransaction is the transaction's
-// locking read; locked reports that it was. A repository without that read is
-// one with no transaction around it (the in-memory stubs), where the settings
-// projection is the same read.
-func (service *DayService) loadStoredStart(ctx context.Context, userID uint) (*time.Time, bool, error) {
-	if reader, ok := service.logs.(lastPeriodStartReader); ok {
-		start, err := reader.LoadLastPeriodStartForUpdate(ctx, userID)
-		return start, true, err
+// heldStoredStart is the stored start a transaction read and locked first.
+type heldStoredStart struct {
+	start *time.Time
+	held  bool
+}
+
+// lockedTxService opens a day-write transaction's work: it takes the owner's
+// stored-start lock first (the lock order above) and returns the service bound
+// to the transaction, carrying the start it read. A repository without the
+// read is one with no transaction around it (the in-memory stubs); nothing is
+// locked there and the start is read from the settings projection on demand.
+func (service *DayService) lockedTxService(ctx context.Context, txLogs DayLogRepository, userID uint) (*DayService, error) {
+	txService := &DayService{logs: txLogs, users: service.users}
+	reader, ok := txLogs.(lastPeriodStartReader)
+	if !ok {
+		return txService, nil
+	}
+	start, err := reader.LoadLastPeriodStartForUpdate(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	txService.lockedStart = heldStoredStart{start: start, held: true}
+	return txService, nil
+}
+
+// storedStart is the stored onboarding start this transaction holds, or the
+// settings projection's where there is no transaction to hold it.
+func (service *DayService) storedStart(ctx context.Context, userID uint) (*time.Time, error) {
+	if service.lockedStart.held {
+		return service.lockedStart.start, nil
 	}
 	user, err := service.users.LoadSettingsByID(ctx, userID)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	return user.LastPeriodStart, false, nil
+	return user.LastPeriodStart, nil
 }
 
 // applyConfirmedCycleStart marks the day the owner just saved as a cycle start,
@@ -724,12 +747,10 @@ func (service *DayService) applyConfirmedCycleStart(ctx context.Context, userID 
 	if err != nil {
 		return models.DailyLog{}, ErrDayEntryLoadFailed
 	}
-	// The boundary the policy reads includes the stored start, taken from the
-	// write's transaction like the day it judges (lastPeriodStartReader).
-	if reader, ok := service.logs.(lastPeriodStartReader); ok {
-		if userSettings.LastPeriodStart, err = reader.LoadLastPeriodStartForUpdate(ctx, userID); err != nil {
-			return models.DailyLog{}, ErrDayEntryLoadFailed
-		}
+	// The boundary the policy reads includes the stored start, the one the
+	// write's transaction locked first (lockedTxService).
+	if service.lockedStart.held {
+		userSettings.LastPeriodStart = service.lockedStart.start
 	}
 	// dayStart is the canonical UTC-midnight write key; the policy works on the
 	// location-midnight calendar day, and CalendarDay converts without the
@@ -863,7 +884,10 @@ func (service *DayService) DeleteDayEntry(ctx context.Context, userID uint, day 
 	}
 	dayStart, _ := DayRange(day, location)
 	if err := service.withinTransaction(ctx, func(txLogs DayLogRepository) error {
-		txService := &DayService{logs: txLogs, users: service.users}
+		txService, err := service.lockedTxService(ctx, txLogs, userID)
+		if err != nil {
+			return err
+		}
 		if err := txService.DeleteDailyLogByDate(ctx, userID, day, location); err != nil {
 			return err
 		}
@@ -901,17 +925,21 @@ func (service *DayService) MarkCycleStartManually(ctx context.Context, userID ui
 		return ErrManualCycleStartDateInvalid
 	}
 
-	policy, err := service.loadManualCycleStartPolicy(ctx, userID, day, now, location)
-	if err != nil {
-		return ErrDayEntryLoadFailed
-	}
-	if err := validateManualCycleStartOptions(policy, options); err != nil {
-		return err
-	}
-
 	dayStart, _ := DayRange(day, location)
 	if err := service.withinTransaction(ctx, func(txLogs DayLogRepository) error {
-		txService := &DayService{logs: txLogs, users: service.users}
+		txService, err := service.lockedTxService(ctx, txLogs, userID)
+		if err != nil {
+			return ErrDayEntryLoadFailed
+		}
+		// The policy judges the history and the stored start this transaction
+		// holds, not a read taken before it.
+		policy, err := txService.loadManualCycleStartPolicy(ctx, userID, day, now, location)
+		if err != nil {
+			return ErrDayEntryLoadFailed
+		}
+		if err := validateManualCycleStartOptions(policy, options); err != nil {
+			return err
+		}
 		// The payload carries every stored field of the day back into the
 		// write, so it is read inside the write's transaction, through the
 		// locking read: a concurrent write of the day committed before this
@@ -944,6 +972,9 @@ func (service *DayService) loadManualCycleStartPolicy(ctx context.Context, userI
 	userSettings, err := service.users.LoadSettingsByID(ctx, userID)
 	if err != nil {
 		return ManualCycleStartPolicy{}, err
+	}
+	if service.lockedStart.held {
+		userSettings.LastPeriodStart = service.lockedStart.start
 	}
 	return ResolveManualCycleStartPolicy(&userSettings, logs, day, now, location), nil
 }

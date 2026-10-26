@@ -101,12 +101,14 @@ type txStartDayLogs struct {
 	// createdDuringStartRead is the row a concurrent write of the same day
 	// commits while this write's locking read of the start waits for it.
 	createdDuringStartRead *models.DailyLog
-	// refindErr fails the day read taken after the start read.
-	refindErr error
+	// calls records the locking reads in order: "start" for the stored start,
+	// "day" for a day row.
+	calls []string
 }
 
 func (stub *txStartDayLogs) LoadLastPeriodStartForUpdate(ctx context.Context, _ uint) (*time.Time, error) {
 	stub.startReads++
+	stub.calls = append(stub.calls, "start")
 	if stub.createdDuringStartRead != nil {
 		if err := stub.Create(ctx, stub.createdDuringStartRead); err != nil {
 			return nil, err
@@ -117,9 +119,7 @@ func (stub *txStartDayLogs) LoadLastPeriodStartForUpdate(ctx context.Context, _ 
 }
 
 func (stub *txStartDayLogs) FindByUserAndDayRangeForUpdate(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
-	if stub.startReads > 0 && stub.refindErr != nil {
-		return models.DailyLog{}, false, stub.refindErr
-	}
+	stub.calls = append(stub.calls, "day")
 	return stub.startClearingDayLogs.FindByUserAndDayRangeForUpdate(ctx, userID, dayStart, dayEnd)
 }
 
@@ -146,22 +146,73 @@ func TestPatchDayEntryMergesOntoTheRowCommittedWhileTheStartReadWaited(t *testin
 	}
 }
 
-func TestPatchDayEntryRefusesWhenTheStartOrTheDayReReadFails(t *testing.T) {
+func TestPatchDayEntryRefusesWhenTheStartReadFails(t *testing.T) {
 	day := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
-	failing := func(startErr error, refindErr error) *txStartDayLogs {
-		logs := newTxStartDayLogs()
-		logs.startErr, logs.refindErr = startErr, refindErr
-		return logs
+	logs := newTxStartDayLogs()
+	logs.startErr = errors.New("driver: bad connection")
+	_, err := NewDayService(logs, &dayUserRepositoryStub{}).PatchDayEntryWithAutoFillAt(context.Background(), 7, day,
+		DayEntryInput{Mood: 4}, DayEntryFields{Mood: true}, DayEntryBase{}, day.Add(12*time.Hour), time.UTC)
+	if !errors.Is(err, ErrDayEntryLoadFailed) {
+		t.Fatalf("expected ErrDayEntryLoadFailed, got %v", err)
 	}
-	for name, logs := range map[string]*txStartDayLogs{
-		"start read":  failing(errors.New("driver: bad connection"), nil),
-		"day re-read": failing(nil, errors.New("driver: bad connection")),
-	} {
-		_, err := NewDayService(logs, &dayUserRepositoryStub{}).PatchDayEntryWithAutoFillAt(context.Background(), 7, day,
-			DayEntryInput{Mood: 4}, DayEntryFields{Mood: true}, DayEntryBase{}, day.Add(12*time.Hour), time.UTC)
-		if !errors.Is(err, ErrDayEntryLoadFailed) {
-			t.Fatalf("%s: expected ErrDayEntryLoadFailed, got %v", name, err)
+}
+
+// One lock order for every day write: the owner's stored-start lock first,
+// then any day row. A write that took a day row first and the users row after
+// would deadlock against one taking them the other way round.
+func TestEveryDayWriteLocksTheStoredStartBeforeAnyDayRow(t *testing.T) {
+	day := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	now := day.Add(12 * time.Hour)
+	ctx := context.Background()
+	writes := map[string]func(*DayService) error{
+		"partial write": func(service *DayService) error {
+			_, err := service.PatchDayEntryWithAutoFillAt(ctx, 7, day, DayEntryInput{Mood: 4}, DayEntryFields{Mood: true}, DayEntryBase{}, now, time.UTC)
+			return err
+		},
+		"full write with a cycle-start answer": func(service *DayService) error {
+			_, err := service.UpsertDayEntryWithAutoFillAt(ctx, 7, day, DayEntryInput{IsPeriod: true, Flow: models.FlowMedium, ConfirmCycleStart: true}, now, time.UTC)
+			return err
+		},
+		"manual cycle-start mark": func(service *DayService) error {
+			return service.MarkCycleStartManually(ctx, 7, day, now, time.UTC, ManualCycleStartOptions{})
+		},
+	}
+	for name, write := range writes {
+		logs := newTxStartDayLogs()
+		if err := write(NewDayService(logs, &dayUserRepositoryStub{})); err != nil {
+			t.Fatalf("%s: %v", name, err)
 		}
+		starts := 0
+		for _, call := range logs.calls {
+			if call == "start" {
+				starts++
+			}
+		}
+		if len(logs.calls) < 2 || logs.calls[0] != "start" || starts != 1 {
+			t.Fatalf("%s: expected the stored start locked once, before every day row, got %v", name, logs.calls)
+		}
+	}
+}
+
+// The manual mark's policy judges the stored start its transaction holds: a
+// start withdrawn before the mark no longer makes the marked day a short
+// cycle, though the settings projection beside the transaction still has it.
+func TestManualCycleStartPolicyReadsTheStartTheTransactionHolds(t *testing.T) {
+	day := time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC)
+	stale := day.AddDate(0, 0, -10)
+	ctx := context.Background()
+
+	withdrawn := newTxStartDayLogs()
+	service := NewDayService(withdrawn, &dayUserRepositoryStub{settings: models.User{LastPeriodStart: &stale}})
+	if err := service.MarkCycleStartManually(ctx, 7, day, day.Add(12*time.Hour), time.UTC, ManualCycleStartOptions{}); err != nil {
+		t.Fatalf("expected the mark judged against the withdrawn start to save, got %v", err)
+	}
+
+	held := newTxStartDayLogs()
+	held.txStart = &stale
+	service = NewDayService(held, &dayUserRepositoryStub{})
+	if err := service.MarkCycleStartManually(ctx, 7, day, day.Add(12*time.Hour), time.UTC, ManualCycleStartOptions{}); !errors.Is(err, ErrManualCycleStartConfirmationNeeded) {
+		t.Fatalf("expected the start the transaction holds to make the mark a short cycle, got %v", err)
 	}
 }
 
