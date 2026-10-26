@@ -20,13 +20,15 @@ func (handler *Handler) ShowTOTPChallengePage(c fiber.Ctx) error {
 
 	flash := handler.popFlashCookie(c)
 	messages := currentMessages(c)
+	// The flash carries the error SPEC key ("totp invalid code"); the template
+	// translates whatever ErrorKey holds, so it has to be resolved to a locale
+	// key here — exactly as the other auth pages do. Passing the spec key
+	// straight through rendered it verbatim in every language.
+	errorKey := services.AuthErrorTranslationKey(services.ResolveAuthErrorSource(flash.AuthError))
 	data := fiber.Map{
-		"Title": localizedPageTitle(messages, "auth.2fa.title", "Ovumcy | Two-Factor Authentication"),
-		// The flash carries the error SPEC key ("totp invalid code"); the template
-		// translates whatever ErrorKey holds, so it has to be resolved to a locale
-		// key here — exactly as the other auth pages do. Passing the spec key
-		// straight through rendered it verbatim in every language.
-		"ErrorKey": services.AuthErrorTranslationKey(services.ResolveAuthErrorSource(flash.AuthError)),
+		"Title":         localizedPageTitle(messages, "auth.2fa.title", "Ovumcy | Two-Factor Authentication"),
+		"ErrorKey":      errorKey,
+		"InvalidFields": services.InvalidAuthFields(errorKey),
 	}
 	return handler.render(c, "auth_2fa", data)
 }

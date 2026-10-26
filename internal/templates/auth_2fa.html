@@ -9,7 +9,7 @@
     </div>
 
     {{if .ErrorKey}}
-    <div class="status-error mt-5" data-auth-server-error data-error-key="{{.ErrorKey}}">{{t .Messages .ErrorKey}}</div>
+    <div id="auth-server-error" class="status-error mt-5" role="alert" data-auth-server-error data-error-key="{{.ErrorKey}}">{{t .Messages .ErrorKey}}</div>
     {{end}}
 
     <form
@@ -33,6 +33,7 @@
           autocomplete="one-time-code"
           required
           autofocus
+          {{if index .InvalidFields "code"}}aria-invalid="true" aria-describedby="auth-server-error"{{end}}
           class="input-field tracking-widest text-center text-xl"
           placeholder="{{t .Messages "auth.2fa.code_placeholder"}}" />
       </div>
@@ -41,9 +42,14 @@
       <button type="submit" class="btn-primary w-full">{{t .Messages "auth.2fa.submit_button"}}</button>
     </form>
 
+    {{/* The recovery path is the forgot-password flow: email, then the
+         recovery code beside the current password, which signs in without
+         the authenticator and rotates both. /recovery-code is the one-time
+         reveal page and answers a visitor with no reveal pending by sending
+         them back to sign-in. */}}
     <div class="mt-5 text-sm">
       <p class="journal-muted">
-        <a href="/recovery-code" class="inline-link">{{t .Messages "auth.2fa.lost_access"}}</a>
+        <a href="/forgot-password" class="inline-link" data-auth-lost-authenticator>{{t .Messages "auth.2fa.lost_access"}}</a>
       </p>
     </div>
   </div>

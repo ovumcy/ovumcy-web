@@ -19,7 +19,7 @@
     </div>
 
     {{if .ErrorKey}}
-    <div class="status-error mt-5" data-auth-server-error data-error-key="{{.ErrorKey}}"{{if not .RegistrationOpen}} data-registration-disabled{{end}}>{{t .Messages .ErrorKey}}</div>
+    <div id="auth-server-error" class="status-error mt-5" role="alert" data-auth-server-error data-error-key="{{.ErrorKey}}"{{if not .RegistrationOpen}} data-registration-disabled{{end}}>{{t .Messages .ErrorKey}}</div>
     {{end}}
 
     {{if .RegistrationOpen}}
@@ -36,7 +36,7 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <label class="field-label" for="register-email">{{t .Messages "auth.email"}}</label>
-      <input id="register-email" type="email" name="email" value="{{.Email}}" required autocomplete="email" class="input-field" />
+      <input id="register-email" type="email" name="email" value="{{.Email}}" required autocomplete="email" class="input-field"{{if index .InvalidFields "email"}} aria-invalid="true" aria-describedby="auth-server-error"{{end}} />
 
       {{template "password_toggle_field" (dict
         "Messages" .Messages
@@ -44,7 +44,8 @@
         "FieldID" "register-password"
         "FieldName" "password"
         "Autocomplete" "new-password"
-        "Required" true)}}
+        "Required" true
+        "Invalid" (index .InvalidFields "password"))}}
 
       {{template "password_toggle_field" (dict
         "Messages" .Messages
@@ -52,11 +53,12 @@
         "FieldID" "register-confirm-password"
         "FieldName" "confirm_password"
         "Autocomplete" "new-password"
-        "Required" true)}}
+        "Required" true
+        "Invalid" (index .InvalidFields "confirm_password"))}}
       {{template "password_requirements_checklist" (dict "Messages" .Messages)}}
 
       <label class="remember-option" for="register-consent" data-register-consent>
-        <input id="register-consent" type="checkbox" name="consent" value="true" required class="remember-checkbox" />
+        <input id="register-consent" type="checkbox" name="consent" value="true" required class="remember-checkbox"{{if index .InvalidFields "consent"}} aria-invalid="true" aria-describedby="auth-server-error"{{end}} />
         <span class="remember-copy">
           <span class="remember-title">{{t .Messages "auth.consent.label"}}</span>
           <span class="remember-hint">{{t .Messages "auth.consent.hint"}} <a href="/privacy" class="inline-link" target="_blank" rel="noopener noreferrer">{{t .Messages "auth.consent.link_text"}}</a>.</span>

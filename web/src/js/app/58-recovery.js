@@ -160,8 +160,34 @@
     }
   }
 
+  // The reveal is one-time on the server: a reload or a navigation away before
+  // the owner has acknowledged the code loses it (Settings can mint a new one,
+  // behind the password). Until the continue form is submitted acknowledged,
+  // leaving the page asks the browser for its generic confirmation.
+  var recoveryCodeAcknowledged = false;
+
+  function recoveryCodeLeaveGuard(event) {
+    if (recoveryCodeAcknowledged || !document.querySelector("[data-recovery-code-confirm]")) {
+      return undefined;
+    }
+    event.preventDefault();
+    event.returnValue = "";
+    return "";
+  }
+
+  function bindRecoveryCodeLeaveGuard() {
+    if (document.body.dataset.recoveryLeaveGuardBound === "1") {
+      return;
+    }
+    document.body.dataset.recoveryLeaveGuardBound = "1";
+    window.addEventListener("beforeunload", recoveryCodeLeaveGuard);
+  }
+
   function bindRecoveryCodeConfirmForms() {
     var forms = document.querySelectorAll("[data-recovery-code-confirm]");
+    if (forms.length > 0) {
+      bindRecoveryCodeLeaveGuard();
+    }
     for (var index = 0; index < forms.length; index++) {
       var form = forms[index];
       if (form.dataset.recoveryConfirmBound !== "1") {
@@ -189,6 +215,7 @@
           if (checkbox.checked) {
             event.preventDefault();
             syncRecoveryCodeConfirmForm(this);
+            recoveryCodeAcknowledged = true;
             window.location.assign(recoveryCodeContinuePath(this));
             return;
           }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"golang.org/x/net/html"
 )
 
 func TestLoginInvalidCredentialsRedirectDoesNotPersistEmail(t *testing.T) {
@@ -89,4 +90,97 @@ func loadCleanLoginPage(t *testing.T, app *fiber.App) string {
 	afterFlashResponse := mustAppResponse(t, app, afterFlashRequest)
 	assertStatusCode(t, afterFlashResponse, http.StatusOK)
 	return mustReadBodyString(t, afterFlashResponse.Body)
+}
+
+// assertAuthErrorAnnouncedForFields pins the WEB-263 contract on an auth page
+// rendered with an error: the notice is an alert region with an id, and every
+// field in invalidIDs is marked aria-invalid and described by that id, while
+// every field in validIDs carries neither.
+func assertAuthErrorAnnouncedForFields(t *testing.T, rendered string, errorKey string, invalidIDs []string, validIDs []string) {
+	t.Helper()
+	document := mustParseHTMLDocument(t, rendered)
+	notice := htmlAuthErrorByKey(document, errorKey)
+	if notice == nil {
+		t.Fatalf("expected the %s error on the page", errorKey)
+	}
+	if htmlAttr(notice, "role") != "alert" {
+		t.Fatalf("expected the auth error notice to be a role=alert region, got role=%q", htmlAttr(notice, "role"))
+	}
+	noticeID := htmlAttr(notice, "id")
+	if noticeID == "" {
+		t.Fatal("expected the auth error notice to carry an id the fields can be described by")
+	}
+	fieldByID := func(id string) *html.Node {
+		node := htmlFindElement(document, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlAttr(node, "id") == id
+		})
+		if node == nil {
+			t.Fatalf("expected a field with id %q", id)
+		}
+		return node
+	}
+	for _, id := range invalidIDs {
+		field := fieldByID(id)
+		if htmlAttr(field, "aria-invalid") != "true" || htmlAttr(field, "aria-describedby") != noticeID {
+			t.Fatalf("expected %q to be aria-invalid and described by %q, got aria-invalid=%q aria-describedby=%q", id, noticeID, htmlAttr(field, "aria-invalid"), htmlAttr(field, "aria-describedby"))
+		}
+	}
+	for _, id := range validIDs {
+		field := fieldByID(id)
+		if htmlAttr(field, "aria-invalid") != "" || htmlAttr(field, "aria-describedby") != "" {
+			t.Fatalf("did not expect %q to be marked invalid, got aria-invalid=%q aria-describedby=%q", id, htmlAttr(field, "aria-invalid"), htmlAttr(field, "aria-describedby"))
+		}
+	}
+}
+
+// TestLoginInvalidCredentialsErrorIsAnnouncedAndTiedToBothFields pins WEB-263
+// on the sign-in page: a refused password renders an alert region, and both
+// operands the refusal compared are marked invalid — never only one, which
+// would say which of them was wrong.
+func TestLoginInvalidCredentialsErrorIsAnnouncedAndTiedToBothFields(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "login-a11y@example.com", "StrongPass1", true)
+
+	response := mustAppResponse(t, app, loginInvalidCredentialsRequest(user.Email))
+	assertStatusCode(t, response, http.StatusSeeOther)
+	flashValue := responseCookieValue(response.Cookies(), flashCookieName)
+	if flashValue == "" {
+		t.Fatalf("expected flash cookie in login redirect response")
+	}
+
+	rendered := followLoginPageWithFlash(t, app, mustParseLocationHeader(t, response).String(), flashValue)
+	assertAuthErrorAnnouncedForFields(t, rendered, "auth.error.invalid_credentials",
+		[]string{"login-email", "login-password"}, []string{"login-remember-me"})
+
+	// With no error there is no notice to describe the fields by.
+	cleanPage := loadCleanLoginPage(t, app)
+	if strings.Contains(cleanPage, `aria-invalid="true"`) || strings.Contains(cleanPage, `aria-describedby="auth-server-error"`) {
+		t.Fatalf("did not expect invalid-field markup on a clean sign-in page")
+	}
+}
+
+// TestRegisterPasswordMismatchErrorIsTiedToTheConfirmField pins the
+// field-specific half of WEB-263: a mismatch is about the confirmation field
+// alone, so only that field is marked.
+func TestRegisterPasswordMismatchErrorIsTiedToTheConfirmField(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	form := url.Values{
+		"email":            {"register-a11y@example.com"},
+		"password":         {"StrongPass1"},
+		"confirm_password": {"StrongPass2"},
+		"consent":          {"true"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+	flashValue := responseCookieValue(response.Cookies(), flashCookieName)
+	if flashValue == "" {
+		t.Fatalf("expected flash cookie in register redirect response")
+	}
+
+	rendered := followLoginPageWithFlash(t, app, mustParseLocationHeader(t, response).String(), flashValue)
+	assertAuthErrorAnnouncedForFields(t, rendered, "auth.error.password_mismatch",
+		[]string{"register-confirm-password"}, []string{"register-email", "register-password", "register-consent"})
 }

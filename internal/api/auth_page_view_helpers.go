@@ -9,9 +9,11 @@ import (
 
 func buildLoginPageData(messages map[string]string, flash FlashPayload, needsSetup bool, registrationOpen bool, oidcEnabled bool, localPublicAuthEnabled bool) fiber.Map {
 	errorSource := services.ResolveAuthErrorSource(flash.AuthError)
+	errorKey := services.AuthErrorTranslationKey(errorSource)
 	return fiber.Map{
 		"Title":                  localizedPageTitle(messages, "meta.title.login", "Ovumcy | Login"),
-		"ErrorKey":               services.AuthErrorTranslationKey(errorSource),
+		"ErrorKey":               errorKey,
+		"InvalidFields":          services.InvalidAuthFields(errorKey),
 		"Email":                  "",
 		"IsFirstLaunch":          needsSetup,
 		"RegistrationOpen":       registrationOpen,
@@ -25,9 +27,11 @@ func buildRegisterPageData(messages map[string]string, flash FlashPayload, needs
 	if !registrationOpen && errorSource == "" {
 		errorSource = "registration disabled"
 	}
+	errorKey := services.AuthErrorTranslationKey(errorSource)
 	return fiber.Map{
 		"Title":            localizedPageTitle(messages, "meta.title.register", "Ovumcy | Sign Up"),
-		"ErrorKey":         services.AuthErrorTranslationKey(errorSource),
+		"ErrorKey":         errorKey,
+		"InvalidFields":    services.InvalidAuthFields(errorKey),
 		"Email":            "",
 		"IsFirstLaunch":    needsSetup,
 		"RegistrationOpen": registrationOpen,
@@ -37,9 +41,11 @@ func buildRegisterPageData(messages map[string]string, flash FlashPayload, needs
 func buildForgotPasswordPageData(messages map[string]string, flash FlashPayload) fiber.Map {
 	errorSource := services.ResolveAuthErrorSource(flash.AuthError)
 	email := services.ResolveAuthPageEmail(flash.ForgotEmail)
+	errorKey := services.AuthErrorTranslationKey(errorSource)
 	return fiber.Map{
-		"Title":                localizedPageTitle(messages, "meta.title.forgot_password", "Ovumcy | Password Recovery"),
-		"ErrorKey":             services.AuthErrorTranslationKey(errorSource),
+		"Title":                localizedPageTitle(messages, "meta.title.forgot_password", "Ovumcy | Recovery code sign-in"),
+		"ErrorKey":             errorKey,
+		"InvalidFields":        services.InvalidAuthFields(errorKey),
 		"Email":                email,
 		"ShowRecoveryCodeStep": email != "",
 	}
@@ -65,10 +71,12 @@ func (handler *Handler) buildResetPasswordPageData(c fiber.Ctx, messages map[str
 	}
 
 	errorSource := services.ResolveAuthErrorSource(flash.AuthError)
+	errorKey := services.AuthErrorTranslationKey(errorSource)
 	return fiber.Map{
-		"Title":        localizedPageTitle(messages, "meta.title.reset_password", "Ovumcy | Reset Password"),
-		"InvalidToken": invalidToken,
-		"ForcedReset":  forcedReset,
-		"ErrorKey":     services.AuthErrorTranslationKey(errorSource),
+		"Title":         localizedPageTitle(messages, "meta.title.reset_password", "Ovumcy | Reset Password"),
+		"InvalidToken":  invalidToken,
+		"ForcedReset":   forcedReset,
+		"ErrorKey":      errorKey,
+		"InvalidFields": services.InvalidAuthFields(errorKey),
 	}
 }

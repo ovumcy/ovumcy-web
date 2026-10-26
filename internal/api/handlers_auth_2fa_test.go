@@ -16,6 +16,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"github.com/pquerna/otp/totp"
+	"golang.org/x/net/html"
 	"gorm.io/gorm"
 )
 
@@ -1067,4 +1068,54 @@ func extractCSRFCookieAndToken(t *testing.T, app *fiber.App) (string, string) {
 		cookieHeader = cookiePair(c)
 	}
 	return token, cookieHeader
+}
+
+// TestTOTPChallengePageLinksTheRecoveryFlowAndAnnouncesARejectedCode pins
+// WEB-215 and WEB-263 on the challenge page. The "lost your authenticator"
+// link leads to /forgot-password — the flow that signs in with the recovery
+// code beside the password — and never to /recovery-code, the one-time
+// reveal page, which answers a visitor with no reveal pending by sending them
+// back to sign-in. A rejected code renders an alert region and marks the code
+// field invalid, described by it.
+func TestTOTPChallengePageLinksTheRecoveryFlowAndAnnouncesARejectedCode(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-page-a11y@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+	pendingCookie := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+
+	cleanRequest := httptest.NewRequest(http.MethodGet, "/auth/2fa", nil)
+	cleanRequest.Header.Set("Accept-Language", "en")
+	cleanRequest.Header.Set("Cookie", pendingCookie)
+	cleanResponse := mustAppResponse(t, app, cleanRequest)
+	assertStatusCode(t, cleanResponse, http.StatusOK)
+	cleanPage := mustReadBodyString(t, cleanResponse.Body)
+	link := htmlFindElement(mustParseHTMLDocument(t, cleanPage), func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "a" && htmlHasAttr(node, "data-auth-lost-authenticator")
+	})
+	if link == nil {
+		t.Fatal("expected the lost-authenticator link on the challenge page")
+	}
+	if href := htmlAttr(link, "href"); href != "/forgot-password" {
+		t.Fatalf("expected the lost-authenticator link to lead to /forgot-password, got %q", href)
+	}
+	if strings.Contains(cleanPage, `aria-invalid="true"`) {
+		t.Fatal("did not expect invalid-field markup on a clean challenge page")
+	}
+
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+	resp := doTOTPChallengeRequest(t, app, joinCookieHeader(pendingCookie, csrfCookieHeader), "000000", csrfToken)
+	_ = resp.Body.Close()
+	assertStatusCode(t, resp, http.StatusSeeOther)
+	flashValue := responseCookieValue(resp.Cookies(), flashCookieName)
+	if flashValue == "" {
+		t.Fatal("expected a flash cookie carrying the rejection reason")
+	}
+	follow := httptest.NewRequest(http.MethodGet, "/auth/2fa", nil)
+	follow.Header.Set("Accept-Language", "en")
+	follow.Header.Set("Cookie", joinCookieHeader(pendingCookie, flashCookieName+"="+flashValue))
+	followResp := mustAppResponse(t, app, follow)
+	assertStatusCode(t, followResp, http.StatusOK)
+	assertAuthErrorAnnouncedForFields(t, mustReadBodyString(t, followResp.Body),
+		services.AuthErrorTranslationKey(totpInvalidCodeErrorSpec().Key), []string{"totp-code"}, nil)
 }
