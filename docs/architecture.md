@@ -245,5 +245,8 @@ reverse-proxy stack, backups, and secrets) are documented in the
 The pushed image is a shell-free `FROM scratch` runtime built from the repo-root
 `Dockerfile`; every published image is Cosign-signed and carries a SLSA
 build-provenance attestation and an SBOM. Publication waits for the commit's own
-CI run and scans the exact image before pushing it, so a tag or `:latest` never
-reaches the registry ahead of the checks for the commit it was built from.
+CI run and scans the exact image before pushing it, so a tag, `:main` or
+`:latest` never reaches the registry ahead of the checks for the commit it was
+built from. `:main` is the moving pre-release channel that follows the tip of
+`main`; `:latest` names the newest stable release and moves only with a release
+tag (or through the manually dispatched `promote-latest` workflow).

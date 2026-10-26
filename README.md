@@ -69,7 +69,7 @@ docker compose up -d
 
 Then open `http://127.0.0.1:8080`.
 
-The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v1.9.2`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. Tagged releases from `v0.7.1` onward publish under these names. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
+The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v1.9.2`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. Tagged releases from `v0.7.1` onward publish under these names. `:latest` names the newest stable release; `:main` is the moving pre-release channel built from the tip of `main`, signed the same way but not a release, so pin a release tag for anything you rely on. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
 
 ```bash
 OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v1.9.2 docker compose up -d
