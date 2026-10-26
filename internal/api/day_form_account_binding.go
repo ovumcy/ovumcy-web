@@ -30,8 +30,19 @@ import (
 // without any binding is refused the same way: a page that lost the field must
 // not disable the check. Only a client that never renders a page — a JSON API
 // caller — may omit it, and its writes keep the behaviour they had.
+//
+// The names say "day form" for historical reasons only: the same field and
+// header also bind the settings writes (see each constant). They stay as they
+// are, because renaming either would answer 409 to every page rendered before
+// the deploy that carries the old name.
 const (
-	dayFormAccountField  = "day_form_account"
+	// dayFormAccountField is the form field name. Despite the name it is also
+	// the field of the settings, symptom and onboarding forms guarded by
+	// RefuseSettingsFormFromAnotherAccount, not only of day forms.
+	dayFormAccountField = "day_form_account"
+	// dayFormAccountHeader is the header name. Despite the name it is also the
+	// carrier for a settings write with no form body to hold the field, such as
+	// the settings restore, which sends the export file itself as its body.
 	dayFormAccountHeader = "X-Ovumcy-Day-Form-Account"
 )
 
@@ -271,7 +282,9 @@ func presentedDayFormAccountBindings(c fiber.Ctx) [][]byte {
 
 // dayWriteFromRenderedPage reports whether the request came from a page the
 // server rendered: an HTMX request, or a form post (urlencoded or multipart)
-// whose Accept names text/html.
+// whose Accept names text/html. Despite the name it is not limited to day
+// writes: refuseFormFromAnotherAccount applies it to the settings, symptom and
+// onboarding writes too.
 func dayWriteFromRenderedPage(c fiber.Ctx) bool {
 	if isHTMX(c) {
 		return true
