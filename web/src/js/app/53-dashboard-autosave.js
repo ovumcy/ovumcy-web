@@ -243,6 +243,12 @@
     if (!target || !status || !status.message) {
       return;
     }
+    // The header refresh this save started may have come back first, refused
+    // because another account holds the session: that notice stays, whichever
+    // of the two answers lands last.
+    if (saveStatusHoldsAccountChange(target)) {
+      return;
+    }
     // A neutral status only says the day was saved, which the journal's own
     // indicator has already said; the dashboard does not say it twice. It also
     // says nothing about the earlier save, so whatever that one left in the
@@ -654,9 +660,13 @@
   // about another account. The notice stays until the next save starts, like
   // any other: that save is refused with its own account-changed notice, which
   // replaces this one.
-  function noteDashboardRefreshAccountChanged() {
-    var form = document.querySelector("[data-dashboard-save-form]");
-    var message = form ? String(form.getAttribute("data-day-open-refused-text") || "").trim() : "";
+  //
+  // A conflict choice's read of the stored day is refused the same way, on
+  // either day form: it names its form, and the calendar editor, which carries
+  // no copy of its own for this, shows the server's (serverText).
+  function noteDashboardRefreshAccountChanged(dayForm, serverText) {
+    var form = dayForm || document.querySelector("[data-dashboard-save-form]");
+    var message = form ? String(form.getAttribute("data-day-open-refused-text") || serverText || "").trim() : "";
     var indicator;
 
     if (message && renderDaySaveFailure(form, message, "account-changed", OPEN_ACCOUNT_CHANGED_NOTICE_KEY)) {
@@ -1531,6 +1541,19 @@
     return changedDayFieldNames(dashboardFormEntries(form), freshEntries).length > 0;
   }
 
+  // The refusal of a conflict choice's read when the session is another
+  // account's, or null for any other answer. The read asks as htmx does, so the
+  // refusal is the status fragment, its key in data-flash-key; the JSON
+  // envelope the same refusal takes without HX-Request (the header refresh's)
+  // is read as well.
+  function daySaveConflictAccountRefusal(body) {
+    var parsed = parseServerStatusError(String(body || ""));
+    if (parsed && parsed.key === OPEN_ACCOUNT_CHANGED_NOTICE_KEY) {
+      return { text: String(parsed.text || "").trim() };
+    }
+    return dashboardRefusalIsAccountChange(body) ? { text: "" } : null;
+  }
+
   function resolveDaySaveConflict(form, choice) {
     var url = String(form.getAttribute("data-day-conflict-refresh-url") || "").trim();
     var selector = isDashboardSaveForm(form) ? "[data-dashboard-save-form]" : "[data-day-editor-form]";
@@ -1547,10 +1570,28 @@
       credentials: "same-origin",
       headers: headers
     }).then(function (response) {
-      return response.ok ? response.text() : "";
-    }).then(function (text) {
-      var fresh = text ? new window.DOMParser().parseFromString(text, "text/html").querySelector(selector) : null;
+      if (response.ok) {
+        return response.text().then(function (text) {
+          return { text: text, refusal: null };
+        });
+      }
+      if (response.status === 409 && typeof response.text === "function") {
+        return response.text().then(function (body) {
+          return { text: "", refusal: daySaveConflictAccountRefusal(body) };
+        });
+      }
+      return { text: "", refusal: null };
+    }).then(function (answer) {
+      var text = answer.text;
+      var fresh;
       var unsaved;
+      // Another account holds the session now, and the server sent none of its
+      // day: no choice can be applied, and a retry would be refused too.
+      if (answer.refusal) {
+        noteDashboardRefreshAccountChanged(form, answer.refusal.text);
+        return false;
+      }
+      fresh = text ? new window.DOMParser().parseFromString(text, "text/html").querySelector(selector) : null;
       // The day the page shows is the day the answer is about: a page left
       // open past midnight reads another day's form, and nothing is merged.
       if (!fresh || fresh.getAttribute("hx-put") !== form.getAttribute("hx-put")) {

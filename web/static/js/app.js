@@ -2068,10 +2068,44 @@
     return form;
   }
 
+  // A notice that the account changed outranks every other status a day form's
+  // region can be given until the next save of that form starts: an answer to a
+  // request made before it (a save's own feedback, a failure, the conflict
+  // choice's read) knows nothing of the change, and whichever lands last would
+  // otherwise take the region, leaving a "try again" that cannot help or a
+  // success beside a session that is no longer this page's.
+  function isAccountChangedNoticeKey(messageKey) {
+    return messageKey === ACCOUNT_CHANGED_NOTICE_KEY || messageKey === OPEN_ACCOUNT_CHANGED_NOTICE_KEY;
+  }
+
+  function saveStatusHoldsAccountChange(target) {
+    var keys = target && target.querySelectorAll ? target.querySelectorAll("[data-notice-key]") : [];
+    for (var index = 0; index < keys.length; index++) {
+      if (isAccountChangedNoticeKey(keys[index].getAttribute("data-notice-key"))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // The next save of the form starts: what it answers is about the session as
+  // it is now, so the account-changed notice stops holding the region.
+  function releaseAccountChangedNotice(form) {
+    var target = form && form.querySelector ? form.querySelector(".save-status") : null;
+    if (saveStatusHoldsAccountChange(target)) {
+      target.replaceChildren();
+    }
+  }
+
   function renderDaySaveFailure(form, message, origin, messageKey) {
     var target = form && form.querySelector ? form.querySelector(".save-status") : null;
     if (!target || !message) {
       return false;
+    }
+    if (!isAccountChangedNoticeKey(messageKey) && saveStatusHoldsAccountChange(target)) {
+      // Rendered, as far as the caller is concerned: the region already says
+      // why no save can land, and no fallback may write over it either.
+      return true;
     }
     if (messageKey === CSRF_REFUSED_NOTICE_KEY) {
       // The transport's own copy tells the owner to reload, which discards the
@@ -2103,7 +2137,7 @@
       return true;
     }
 
-    if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY || messageKey === OPEN_ACCOUNT_CHANGED_NOTICE_KEY) {
+    if (isAccountChangedNoticeKey(messageKey)) {
       // The form was rendered for another account than the one now signed in:
       // no retry can land it, so the notice offers none, and no sign-in link
       // either. The entry stays in the form, untouched. The read-side key is the
@@ -2522,6 +2556,9 @@
       if (statusTarget) {
         delete statusTarget.dataset.toastShown;
       }
+      // A day save sent through htmx (the calendar's Save and its retry) is the
+      // start the dashboard runner marks by clearing its notice.
+      releaseAccountChangedNotice(dayEditorFormFromEvent(event));
       setSaveButtonState(getSaveFeedbackFormFromEvent(event), true);
     });
 
@@ -4231,6 +4268,12 @@
     if (!target || !status || !status.message) {
       return;
     }
+    // The header refresh this save started may have come back first, refused
+    // because another account holds the session: that notice stays, whichever
+    // of the two answers lands last.
+    if (saveStatusHoldsAccountChange(target)) {
+      return;
+    }
     // A neutral status only says the day was saved, which the journal's own
     // indicator has already said; the dashboard does not say it twice. It also
     // says nothing about the earlier save, so whatever that one left in the
@@ -4642,9 +4685,13 @@
   // about another account. The notice stays until the next save starts, like
   // any other: that save is refused with its own account-changed notice, which
   // replaces this one.
-  function noteDashboardRefreshAccountChanged() {
-    var form = document.querySelector("[data-dashboard-save-form]");
-    var message = form ? String(form.getAttribute("data-day-open-refused-text") || "").trim() : "";
+  //
+  // A conflict choice's read of the stored day is refused the same way, on
+  // either day form: it names its form, and the calendar editor, which carries
+  // no copy of its own for this, shows the server's (serverText).
+  function noteDashboardRefreshAccountChanged(dayForm, serverText) {
+    var form = dayForm || document.querySelector("[data-dashboard-save-form]");
+    var message = form ? String(form.getAttribute("data-day-open-refused-text") || serverText || "").trim() : "";
     var indicator;
 
     if (message && renderDaySaveFailure(form, message, "account-changed", OPEN_ACCOUNT_CHANGED_NOTICE_KEY)) {
@@ -5519,6 +5566,19 @@
     return changedDayFieldNames(dashboardFormEntries(form), freshEntries).length > 0;
   }
 
+  // The refusal of a conflict choice's read when the session is another
+  // account's, or null for any other answer. The read asks as htmx does, so the
+  // refusal is the status fragment, its key in data-flash-key; the JSON
+  // envelope the same refusal takes without HX-Request (the header refresh's)
+  // is read as well.
+  function daySaveConflictAccountRefusal(body) {
+    var parsed = parseServerStatusError(String(body || ""));
+    if (parsed && parsed.key === OPEN_ACCOUNT_CHANGED_NOTICE_KEY) {
+      return { text: String(parsed.text || "").trim() };
+    }
+    return dashboardRefusalIsAccountChange(body) ? { text: "" } : null;
+  }
+
   function resolveDaySaveConflict(form, choice) {
     var url = String(form.getAttribute("data-day-conflict-refresh-url") || "").trim();
     var selector = isDashboardSaveForm(form) ? "[data-dashboard-save-form]" : "[data-day-editor-form]";
@@ -5535,10 +5595,28 @@
       credentials: "same-origin",
       headers: headers
     }).then(function (response) {
-      return response.ok ? response.text() : "";
-    }).then(function (text) {
-      var fresh = text ? new window.DOMParser().parseFromString(text, "text/html").querySelector(selector) : null;
+      if (response.ok) {
+        return response.text().then(function (text) {
+          return { text: text, refusal: null };
+        });
+      }
+      if (response.status === 409 && typeof response.text === "function") {
+        return response.text().then(function (body) {
+          return { text: "", refusal: daySaveConflictAccountRefusal(body) };
+        });
+      }
+      return { text: "", refusal: null };
+    }).then(function (answer) {
+      var text = answer.text;
+      var fresh;
       var unsaved;
+      // Another account holds the session now, and the server sent none of its
+      // day: no choice can be applied, and a retry would be refused too.
+      if (answer.refusal) {
+        noteDashboardRefreshAccountChanged(form, answer.refusal.text);
+        return false;
+      }
+      fresh = text ? new window.DOMParser().parseFromString(text, "text/html").querySelector(selector) : null;
       // The day the page shows is the day the answer is about: a page left
       // open past midnight reads another day's form, and nothing is merged.
       if (!fresh || fresh.getAttribute("hx-put") !== form.getAttribute("hx-put")) {

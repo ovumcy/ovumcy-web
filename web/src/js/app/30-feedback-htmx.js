@@ -393,10 +393,44 @@
     return form;
   }
 
+  // A notice that the account changed outranks every other status a day form's
+  // region can be given until the next save of that form starts: an answer to a
+  // request made before it (a save's own feedback, a failure, the conflict
+  // choice's read) knows nothing of the change, and whichever lands last would
+  // otherwise take the region, leaving a "try again" that cannot help or a
+  // success beside a session that is no longer this page's.
+  function isAccountChangedNoticeKey(messageKey) {
+    return messageKey === ACCOUNT_CHANGED_NOTICE_KEY || messageKey === OPEN_ACCOUNT_CHANGED_NOTICE_KEY;
+  }
+
+  function saveStatusHoldsAccountChange(target) {
+    var keys = target && target.querySelectorAll ? target.querySelectorAll("[data-notice-key]") : [];
+    for (var index = 0; index < keys.length; index++) {
+      if (isAccountChangedNoticeKey(keys[index].getAttribute("data-notice-key"))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // The next save of the form starts: what it answers is about the session as
+  // it is now, so the account-changed notice stops holding the region.
+  function releaseAccountChangedNotice(form) {
+    var target = form && form.querySelector ? form.querySelector(".save-status") : null;
+    if (saveStatusHoldsAccountChange(target)) {
+      target.replaceChildren();
+    }
+  }
+
   function renderDaySaveFailure(form, message, origin, messageKey) {
     var target = form && form.querySelector ? form.querySelector(".save-status") : null;
     if (!target || !message) {
       return false;
+    }
+    if (!isAccountChangedNoticeKey(messageKey) && saveStatusHoldsAccountChange(target)) {
+      // Rendered, as far as the caller is concerned: the region already says
+      // why no save can land, and no fallback may write over it either.
+      return true;
     }
     if (messageKey === CSRF_REFUSED_NOTICE_KEY) {
       // The transport's own copy tells the owner to reload, which discards the
@@ -428,7 +462,7 @@
       return true;
     }
 
-    if (messageKey === ACCOUNT_CHANGED_NOTICE_KEY || messageKey === OPEN_ACCOUNT_CHANGED_NOTICE_KEY) {
+    if (isAccountChangedNoticeKey(messageKey)) {
       // The form was rendered for another account than the one now signed in:
       // no retry can land it, so the notice offers none, and no sign-in link
       // either. The entry stays in the form, untouched. The read-side key is the
@@ -847,6 +881,9 @@
       if (statusTarget) {
         delete statusTarget.dataset.toastShown;
       }
+      // A day save sent through htmx (the calendar's Save and its retry) is the
+      // start the dashboard runner marks by clearing its notice.
+      releaseAccountChangedNotice(dayEditorFormFromEvent(event));
       setSaveButtonState(getSaveFeedbackFormFromEvent(event), true);
     });
 
