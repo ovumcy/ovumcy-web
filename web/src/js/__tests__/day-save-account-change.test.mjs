@@ -160,6 +160,11 @@ function fireOnCalendarForm(window, name, detail) {
 function assertAccountChanged(region, text) {
   const notice = region.querySelector("[data-day-save-failed]");
   assert.ok(notice, "the region carries a notice");
+  assert.equal(
+    notice.getAttribute("data-day-save-failed"),
+    "account-changed",
+    "the notice is the account change, not a save that did not land"
+  );
   const message = notice.querySelector("[data-notice-key]");
   assert.equal(message.getAttribute("data-notice-key"), OPEN_ACCOUNT_CHANGED_KEY, "the notice says the account changed");
   assert.equal(message.textContent, text);
