@@ -20,34 +20,22 @@ func IsOnboardingPath(path string) bool {
 // turns "/api/v1/onboarding/../days/…" into a days route, and the exemption
 // prefix read off the wire string would wave that request past the gate.
 //
-// A request whose routed path is not already canonical, or whose routed path
-// differs from the path it arrived with, is refused outright rather than
-// exempted. No page or form of this app produces such a path, so a request
-// carrying one is not a legitimate onboarding request whatever it resolves to,
-// and refusing it keeps the decision independent of how much normalization a
-// given router release performs.
+// A request whose routed path differs from the path it arrived with, or that
+// path.Clean would still change, is refused outright rather than exempted.
+// path.Clean removes every "." and ".." segment and every empty segment, so a
+// path carrying one never equals its cleaned form. No page or form of this app
+// produces such a path, so a request carrying one is not a legitimate
+// onboarding request whatever it resolves to, and refusing it keeps the
+// decision independent of how much normalization a given router release
+// performs. A relative or empty path is never exempt either: neither carries
+// an exempt prefix.
 func ShouldEnforceOnboardingAccess(wirePath string, routedPath string) bool {
 	routed := strings.TrimSpace(routedPath)
-	if strings.TrimSpace(wirePath) != routed || !isCanonicalRequestPath(routed) {
+	if strings.TrimSpace(wirePath) != routed || path.Clean(routed) != routed {
 		return true
 	}
 	if routed == "/api/v1/sessions/current" {
 		return false
 	}
 	return !IsOnboardingPath(routed)
-}
-
-// isCanonicalRequestPath reports whether requestPath is an absolute path with
-// no ".." segment that path.Clean leaves unchanged: no "." segment, no empty
-// segment, no trailing slash.
-func isCanonicalRequestPath(requestPath string) bool {
-	if !strings.HasPrefix(requestPath, "/") {
-		return false
-	}
-	for _, segment := range strings.Split(requestPath, "/") {
-		if segment == ".." {
-			return false
-		}
-	}
-	return path.Clean(requestPath) == requestPath
 }
