@@ -169,7 +169,6 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		// codecov:ignore:end
 	}
 	handler.clearSessionEndCookies(c)
-	handler.rotateCSRFToken(c)
 	// The session has ended by this line on every branch below, so the audit
 	// record of it is written here rather than on the success answer alone: a
 	// refused sign-out still terminated a session and must not read as a bare 429.

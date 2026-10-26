@@ -187,6 +187,12 @@ func (handler *Handler) clearSessionEndCookies(c fiber.Ctx) {
 	// message belongs to the ended session exactly as much as the page slot's.
 	handler.clearFlashCookie(c)
 	handler.clearCSRFExemptFlashCookie(c)
+	// The CSRF token was minted under the authentication state that just
+	// ended — sign-out, account deletion, or a server-side rollback of a
+	// session it had issued — and goes with it, on every one of those sites
+	// rather than on the sign-out alone: the browser that signs into the next
+	// account must not keep a token the previous one held.
+	handler.rotateCSRFToken(c)
 }
 
 // sessionWasRemembered reads the owner's remember-me choice back off the session

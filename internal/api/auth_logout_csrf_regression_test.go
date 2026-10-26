@@ -1,11 +1,17 @@
 package api
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -313,6 +319,87 @@ func TestLogoutBeforeOnboardingEndsTheSession(t *testing.T) {
 	assertStatusCode(t, afterResponse, http.StatusSeeOther)
 	if location := afterResponse.Header.Get("Location"); location != "/login" {
 		t.Fatalf("expected the ended session to be refused with a /login redirect, got %q", location)
+	}
+}
+
+// TestEverySignInSiteRotatesTheCSRFToken walks every non-test function in this
+// package that writes an auth cookie and requires it to retire the CSRF token
+// in the same body. The sign-in sites are derived from the source, not
+// re-listed here: a sixth way to mint a session that forgets the rotation
+// fails by name. The two exemptions are re-issues of a session the request
+// already held — the same principal keeps the page's token so its HTMX forms
+// keep working — and the two cookie writers themselves.
+func TestEverySignInSiteRotatesTheCSRFToken(t *testing.T) {
+	t.Parallel()
+
+	reissueSites := map[string]string{
+		"setAuthCookie":           "the sign-in writer the sign-in sites call",
+		"writeAuthCookie":         "the cookie writer every site calls",
+		"installRefreshedSession": "re-issues the request's own session after a posture change",
+		"RegenerateRecoveryCode":  "re-issues the request's own session around the recovery-code rotation",
+	}
+
+	sources, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob package sources: %v", err)
+	}
+	signInSites := []string{}
+	missing := []string{}
+	for _, name := range sources {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		source, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), name, source, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			funcDecl, ok := node.(*ast.FuncDecl)
+			if !ok || funcDecl.Body == nil {
+				return true
+			}
+			if _, exempt := reissueSites[funcDecl.Name.Name]; exempt {
+				return true
+			}
+			mints, rotates := false, false
+			ast.Inspect(funcDecl.Body, func(inner ast.Node) bool {
+				call, ok := inner.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				switch selector.Sel.Name {
+				case "setAuthCookie", "writeAuthCookie":
+					mints = true
+				case "rotateCSRFToken":
+					rotates = true
+				}
+				return true
+			})
+			if !mints {
+				return true
+			}
+			site := name + ":" + funcDecl.Name.Name
+			signInSites = append(signInSites, site)
+			if !rotates {
+				missing = append(missing, site)
+			}
+			return true
+		})
+	}
+	sort.Strings(signInSites)
+	if len(signInSites) < 5 {
+		t.Fatalf("expected the walk to find the five known sign-in sites (password, TOTP challenge, OIDC callback, reset, register pickup), found %v", signInSites)
+	}
+	if len(missing) > 0 {
+		t.Fatalf("sign-in sites that mint a session without rotateCSRFToken: %v", missing)
 	}
 }
 

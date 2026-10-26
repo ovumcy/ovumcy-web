@@ -22,20 +22,24 @@ const CSRFCookieName = "ovumcy_csrf"
 var csrfCookieSpec = sealedCookieSpec{name: CSRFCookieName, path: "/"}
 
 // rotateCSRFToken retires the CSRF token the request arrived with. It runs at
-// every change of authentication state — each fresh sign-in and the sign-out —
-// so a token minted for the signed-out page, or kept from a session that ended,
-// is not accepted on the session that follows: the browser's next safe request
-// mints a new one. Where the middleware is on the request, the token is also
-// deleted from its storage, so the value cannot be replayed by a client that
-// can still present the cookie. The OIDC callback is exempt from the middleware
-// and, in form_post mode, arrives cross-site without the Lax cookie: there only
-// the cookie can be expired, which still unpairs the browser from the old value.
+// every change of authentication state — each fresh sign-in, and every session
+// end through clearSessionEndCookies — so a token minted for the signed-out
+// page, or kept from a session that ended, is not accepted on the session that
+// follows: the browser's next safe request mints a new one. Where the
+// middleware is on the request, the token is also deleted from its storage, so
+// the value cannot be replayed by a client that can still present the cookie.
+// The OIDC callback is exempt from the middleware (and in form_post mode
+// arrives cross-site without the Lax cookie), so there only the cookie can be
+// expired, which still unpairs the browser from the old value; the storage
+// entry idles out as before. A delete the storage refuses falls through to the
+// same retraction: the cookie is what this browser pairs with.
+//
+// TestEverySignInSiteRotatesTheCSRFToken walks the callers of writeAuthCookie
+// and refuses a sign-in that does not call this.
 func (handler *Handler) rotateCSRFToken(c fiber.Ctx) {
-	if c.Cookies(CSRFCookieName) != "" {
-		if middleware := csrf.HandlerFromContext(c); middleware != nil {
-			_ = middleware.DeleteToken(c)
-			return
-		}
+	middleware := csrf.HandlerFromContext(c)
+	if middleware != nil && c.Cookies(CSRFCookieName) != "" && middleware.DeleteToken(c) == nil {
+		return
 	}
 	handler.clearSealedCookie(c, csrfCookieSpec)
 }
