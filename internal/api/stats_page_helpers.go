@@ -86,12 +86,8 @@ func buildStatsCycleChartSummary(messages map[string]string, viewData services.S
 
 	daysShort := translateMessage(messages, "common.days_short")
 	latestCycleLength := viewData.ChartData.Values[len(viewData.ChartData.Values)-1]
-	minCycleLength := viewData.Stats.MinCycleLength
-	maxCycleLength := viewData.Stats.MaxCycleLength
-	if minCycleLength <= 0 || maxCycleLength <= 0 {
-		minCycleLength = latestCycleLength
-		maxCycleLength = latestCycleLength
-	}
+	minCycleLength := viewData.ChartData.RangeMin
+	maxCycleLength := viewData.ChartData.RangeMax
 
 	if viewData.ChartBaseline > 0 {
 		pattern, translated := lookupMessage(messages, "stats.cycle_chart_summary")

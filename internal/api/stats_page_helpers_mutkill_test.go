@@ -21,39 +21,6 @@ import (
 
 // TestBuildStatsCycleChartSummaryMutKill pins the cycle-summary conditionals.
 func TestBuildStatsCycleChartSummaryMutKill(t *testing.T) {
-	// L58 (CONDITIONALS_BOUNDARY, `<= 0` on BOTH bounds): a single non-positive
-	// bound must still pull BOTH announced range bounds to the latest value.
-	// Changing either `<=` to `<` leaves the stray 0 in the range.
-	t.Run("max bound zero still falls back to latest", func(t *testing.T) {
-		got := buildStatsCycleChartSummary(map[string]string{}, services.StatsPageViewData{
-			Flags:         services.StatsFlags{HasTrendData: true},
-			ChartData:     services.StatsChartViewData{Values: []int{26, 34}},
-			ChartBaseline: 0,
-			Stats:         services.CycleStats{MinCycleLength: 29, MaxCycleLength: 0},
-		})
-		if !strings.Contains(got, "Range 34 to 34") {
-			t.Fatalf("max=0 must trigger latest-value fallback for both bounds, got %q", got)
-		}
-		if strings.Contains(got, "to 0") {
-			t.Fatalf("a stray 0 bound must not survive into the range, got %q", got)
-		}
-	})
-
-	t.Run("min bound zero still falls back to latest", func(t *testing.T) {
-		got := buildStatsCycleChartSummary(map[string]string{}, services.StatsPageViewData{
-			Flags:         services.StatsFlags{HasTrendData: true},
-			ChartData:     services.StatsChartViewData{Values: []int{26, 34}},
-			ChartBaseline: 0,
-			Stats:         services.CycleStats{MinCycleLength: 0, MaxCycleLength: 31},
-		})
-		if !strings.Contains(got, "Range 34 to 34") {
-			t.Fatalf("min=0 must trigger latest-value fallback for both bounds, got %q", got)
-		}
-		if strings.Contains(got, "Range 0") {
-			t.Fatalf("a stray 0 bound must not survive into the range, got %q", got)
-		}
-	})
-
 	// L65 (CONDITIONALS_NEGATION, two operators): in the baseline branch, a
 	// present translation must be used verbatim. Negating either operator forces
 	// the hardcoded default pattern instead, dropping the injected marker.
