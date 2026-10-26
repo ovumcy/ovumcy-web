@@ -303,24 +303,95 @@ jobs:
 
           echo "docker.io/${IMAGE_PATH}@${DIGEST} is the release and verifies on the mirror."
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
       - name: Point latest at the signed digest on GHCR
-        # `imagetools create` from a DIGEST, never from the tag: a tag is a
-        # mutable pointer, and the digest is what the signature covers. One
-        # source and no annotation leaves the manifest as it is, so the new tag
-        # names the signed bytes; the check right after this step is what says
-        # so rather than assuming it.
+        # A registry tag write and nothing else, as docker-image.yml's own
+        # promotion is: the manifest bytes are fetched by DIGEST and PUT back
+        # under the tag unchanged, so `latest` cannot come to name anything but
+        # the digest that was just verified. Re-creating the index instead (a
+        # buildx `imagetools create`) would write an index that need not hash
+        # to the digest the signature covers. The bytes are also hashed here
+        # and must equal the digest before the PUT, and the check right after
+        # this step reads the alias back anonymously.
         shell: bash
         env:
-          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_PATH: ${{ steps.image.outputs.path }}
           DIGEST: ${{ steps.release.outputs.digest }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          docker buildx imagetools create --tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}@${DIGEST}"
-          echo "${IMAGE_NAME}:latest <- ${IMAGE_NAME}@${DIGEST}"
+          manifest="$(mktemp)"
+          headers="$(mktemp)"
+          token_body="$(mktemp)"
+          credential="$(mktemp)"
+          trap 'rm -f "$manifest" "$headers" "$token_body" "$credential"' EXIT
+
+          # In a curl config file, not on the command line: an argument is
+          # readable in the process table, and this token carries `packages: write`.
+          printf 'user = "%s:%s"\n' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" > "$credential"
+
+          token_status="$(
+            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$token_body" -w '%{http_code}' -K "$credential" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${IMAGE_PATH}:pull,push"
+          )"
+          if [ "$token_status" != "200" ]; then
+            echo "::error::GHCR returned HTTP ${token_status} for a push token on ${IMAGE_PATH}. Nothing was changed."
+            exit 1
+          fi
+          token="$(
+            python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
+          )"
+          if [ -z "$token" ]; then
+            echo "::error::GHCR returned no push token for ${IMAGE_PATH}. Nothing was changed."
+            exit 1
+          fi
+
+          manifest_status="$(
+            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$manifest" -D "$headers" -w '%{http_code}' \
+              -H "Authorization: Bearer ${token}" \
+              -H "Accept: ${MANIFEST_ACCEPT}" \
+              "https://ghcr.io/v2/${IMAGE_PATH}/manifests/${DIGEST}"
+          )"
+          if [ "$manifest_status" != "200" ]; then
+            echo "::error::reading the signed manifest ${DIGEST} returned HTTP ${manifest_status}. Nothing was changed."
+            exit 1
+          fi
+
+          fetched="sha256:$(sha256sum "$manifest" | awk '{print $1}')"
+          if [ "$fetched" != "$DIGEST" ]; then
+            echo "::error::the manifest fetched for ${DIGEST} hashes to ${fetched}, so writing it under a tag would not name the signed digest. Nothing was changed."
+            exit 1
+          fi
+
+          # The tag write declares the media type the manifest was stored
+          # under, parameters dropped, or the registry stores a different object.
+          content_type="$(
+            tr -d '\r' < "$headers" \
+              | awk 'tolower($0) ~ /^content-type:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]*;.*$/, ""); sub(/[ \t]+$/, ""); print }' \
+              | tail -1
+          )"
+          if [ -z "$content_type" ]; then
+            echo "::error::GHCR returned the signed manifest with no Content-Type, so the tag write has no media type to declare. Nothing was changed."
+            exit 1
+          fi
+
+          put_status="$(
+            curl -sS --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o /dev/null -w '%{http_code}' -X PUT \
+              -H "Authorization: Bearer ${token}" \
+              -H "Content-Type: ${content_type}" \
+              --data-binary "@${manifest}" \
+              "https://ghcr.io/v2/${IMAGE_PATH}/manifests/latest"
+          )"
+          if [ "$put_status" != "201" ]; then
+            echo "::error::pointing ghcr.io/${IMAGE_PATH}:latest at ${DIGEST} returned HTTP ${put_status}."
+            exit 1
+          fi
+
+          echo "ghcr.io/${IMAGE_PATH}:latest -> ${DIGEST}"
 
       - name: Check GHCR latest anonymously and against the signed digest
         shell: bash
@@ -376,18 +447,85 @@ jobs:
           echo "ghcr.io/${IMAGE_PATH}:latest is anonymously pullable and resolves to ${DIGEST}."
 
       - name: Point latest at the signed digest on Docker Hub
-        # From the MIRROR's own copy of the digest, so the write is a manifest
-        # PUT on the registry that already holds every blob, and the source is
-        # the digest the step above verified on that registry.
+        # The same fetch-by-digest and PUT as the GHCR step, read from the
+        # MIRROR's own copy of the digest, the one verified there above, and
+        # written with the publishing credential (not the pull-auth pair).
         shell: bash
         env:
           IMAGE_PATH: ${{ steps.image.outputs.path }}
           DIGEST: ${{ steps.release.outputs.digest }}
+          REGISTRY_USER: ${{ secrets.DOCKERHUB_PUBLISH_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_PUBLISH_TOKEN }}
         run: |
           set -euo pipefail
 
-          docker buildx imagetools create --tag "docker.io/${IMAGE_PATH}:latest" "docker.io/${IMAGE_PATH}@${DIGEST}"
-          echo "docker.io/${IMAGE_PATH}:latest <- docker.io/${IMAGE_PATH}@${DIGEST}"
+          manifest="$(mktemp)"
+          headers="$(mktemp)"
+          token_body="$(mktemp)"
+          credential="$(mktemp)"
+          trap 'rm -f "$manifest" "$headers" "$token_body" "$credential"' EXIT
+
+          printf 'user = "%s:%s"\n' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" > "$credential"
+
+          token_status="$(
+            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$token_body" -w '%{http_code}' -K "$credential" \
+              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${IMAGE_PATH}:pull,push"
+          )"
+          if [ "$token_status" != "200" ]; then
+            echo "::error::Docker Hub returned HTTP ${token_status} for a push token on ${IMAGE_PATH}. GHCR latest has moved; the mirror's has not."
+            exit 1
+          fi
+          token="$(
+            python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
+          )"
+          if [ -z "$token" ]; then
+            echo "::error::Docker Hub returned no push token for ${IMAGE_PATH}. GHCR latest has moved; the mirror's has not."
+            exit 1
+          fi
+
+          manifest_status="$(
+            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$manifest" -D "$headers" -w '%{http_code}' \
+              -H "Authorization: Bearer ${token}" \
+              -H "Accept: ${MANIFEST_ACCEPT}" \
+              "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${DIGEST}"
+          )"
+          if [ "$manifest_status" != "200" ]; then
+            echo "::error::reading the signed manifest ${DIGEST} on Docker Hub returned HTTP ${manifest_status}. GHCR latest has moved; the mirror's has not."
+            exit 1
+          fi
+
+          fetched="sha256:$(sha256sum "$manifest" | awk '{print $1}')"
+          if [ "$fetched" != "$DIGEST" ]; then
+            echo "::error::the manifest fetched for ${DIGEST} on Docker Hub hashes to ${fetched}, so writing it under a tag would not name the signed digest. GHCR latest has moved; the mirror's has not."
+            exit 1
+          fi
+
+          content_type="$(
+            tr -d '\r' < "$headers" \
+              | awk 'tolower($0) ~ /^content-type:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]*;.*$/, ""); sub(/[ \t]+$/, ""); print }' \
+              | tail -1
+          )"
+          if [ -z "$content_type" ]; then
+            echo "::error::Docker Hub returned the signed manifest with no Content-Type, so the tag write has no media type to declare. GHCR latest has moved; the mirror's has not."
+            exit 1
+          fi
+
+          put_status="$(
+            curl -sS --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o /dev/null -w '%{http_code}' -X PUT \
+              -H "Authorization: Bearer ${token}" \
+              -H "Content-Type: ${content_type}" \
+              --data-binary "@${manifest}" \
+              "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/latest"
+          )"
+          if [ "$put_status" != "201" ]; then
+            echo "::error::pointing docker.io/${IMAGE_PATH}:latest at ${DIGEST} returned HTTP ${put_status}. GHCR latest has moved; the mirror's has not."
+            exit 1
+          fi
+
+          echo "docker.io/${IMAGE_PATH}:latest -> ${DIGEST}"
 
       - name: Check Docker Hub latest anonymously and against the signed digest
         shell: bash

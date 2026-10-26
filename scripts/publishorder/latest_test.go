@@ -327,7 +327,7 @@ func TestThePromotionVerifiesEverythingBeforeItWritesAnything(t *testing.T) {
 	// And nothing else may write: a step added between the verdicts and the
 	// writes, or after them, has to be read for whether it can move a tag.
 	for _, at := range []int{refuse, resolve, verify, mirrorSeen} {
-		if strings.Contains(withoutComments(workflowfile.Step(t, promoteWorkflow, promoteJob, workflowfile.Job(t, promoteWorkflow, promoteJob), steps[at])), "imagetools create") {
+		if strings.Contains(withoutComments(workflowfile.Step(t, promoteWorkflow, promoteJob, workflowfile.Job(t, promoteWorkflow, promoteJob), steps[at])), "-X PUT") {
 			t.Errorf("%s: %q runs before the first write and writes a tag", promoteWorkflow, steps[at])
 		}
 	}
@@ -667,40 +667,128 @@ func TestTheMirrorIsVerifiedBeforeLatestMovesAnywhere(t *testing.T) {
 	}
 }
 
-// TestLatestIsPointedAtTheDigestNeverAtATag runs the two writes with `docker`
-// shadowed. The source of each is the signed DIGEST: a tag is a mutable pointer
-// and the signature covers the bytes it named when it was signed.
-func TestLatestIsPointedAtTheDigestNeverAtATag(t *testing.T) {
-	const dockerStub = `docker() { printf 'DOCKER %s\n' "$*" >&2; }`
+// putCurl shadows `curl` and `python3` for the two tag writes. A token request
+// answers 200; a manifest GET by digest answers STUB_BODY with a Content-Type
+// carrying a parameter; a PUT is logged with the media type it declares and the
+// exact bytes it sends, and answers STUB_PUT_STATUS (201 by default).
+const putCurl = `curl() {
+  local out="" hdr="" url="" method="GET" data=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -o) out="$2"; shift ;;
+      -D) hdr="$2"; shift ;;
+      -X) method="$2"; shift ;;
+      --data-binary) data="${2#@}"; shift ;;
+      -H) case "$2" in Content-Type:*) printf 'PUT-TYPE %s\n' "${2#Content-Type: }" >&2 ;; esac; shift ;;
+      -w|-K|--connect-timeout|--max-time|--retry|--retry-delay) shift ;;
+      -*) ;;
+      *) url="$1" ;;
+    esac
+    shift
+  done
+  printf 'CURL %s %s\n' "$method" "$url" >&2
+  case "$method $url" in
+    "GET "*token*)
+      printf '{"token":"t"}' > "$out"
+      printf '200' ;;
+    "GET "*manifests/sha256:*)
+      printf '%s' "$STUB_BODY" > "$out"
+      printf 'HTTP/2 200\r\nContent-Type: application/vnd.oci.image.index.v1+json; charset=utf-8\r\n' > "$hdr"
+      printf '200' ;;
+    "PUT "*)
+      printf 'PUT-BODY %s\n' "$(cat "$data")" >&2
+      printf '%s' "${STUB_PUT_STATUS:-201}" ;;
+  esac
+}
+python3() { printf 't'; }`
 
-	for _, testCase := range []struct {
-		step string
+// TestLatestIsWrittenAsTheSignedBytesPutUnderTheTag runs the two writes. Each
+// fetches the manifest by DIGEST, refuses bytes that do not hash to it, and PUTs
+// those bytes under `latest` with the media type they were stored under. A tag
+// is a mutable pointer and the signature covers the bytes it named when it was
+// signed, so a write that re-created the index would name something else.
+func TestLatestIsWrittenAsTheSignedBytesPutUnderTheTag(t *testing.T) {
+	const wrongBytes = otherManifest
+
+	for _, step := range []struct {
+		name string
 		env  map[string]string
-		want string
+		api  string
 	}{
-		{
-			step: promoteGhcrMoveStep,
-			env:  map[string]string{"IMAGE_NAME": imageName},
-			want: "DOCKER buildx imagetools create --tag " + imageName + ":latest " + imageName + "@" + signedDigest,
-		},
-		{
-			step: promoteHubMoveStep,
-			env:  map[string]string{"IMAGE_PATH": imagePath},
-			want: "DOCKER buildx imagetools create --tag " + mirrorName + ":latest " + mirrorName + "@" + signedDigest,
-		},
+		{promoteGhcrMoveStep, map[string]string{"REGISTRY_USER": "actor", "REGISTRY_PASSWORD": "secret"}, "https://ghcr.io/v2/" + imagePath},
+		{promoteHubMoveStep, map[string]string{"REGISTRY_USER": "publisher", "REGISTRY_PASSWORD": "secret"}, "https://registry-1.docker.io/v2/" + imagePath},
 	} {
-		t.Run(testCase.step, func(t *testing.T) {
-			env := map[string]string{"DIGEST": signedDigest}
-			for key, value := range testCase.env {
-				env[key] = value
-			}
-			output, _, err := runWorkflowStep(t, promoteWorkflow, promoteJob, testCase.step, dockerStub, env)
-			if err != nil {
-				t.Fatalf("the step failed: %v\n%s", err, output)
-			}
-			if !strings.Contains(output, testCase.want+"\n") {
-				t.Errorf("the step did not run %q:\n%s", testCase.want, output)
-			}
-		})
+		for _, testCase := range []struct {
+			name        string
+			body        string
+			putStatus   string
+			wantRefusal string
+		}{
+			{name: "the signed bytes", body: canonicalManifest},
+			{name: "bytes that do not hash to the digest", body: wrongBytes, wantRefusal: "hashes to"},
+			{name: "a refused write", body: canonicalManifest, putStatus: "401", wantRefusal: "returned HTTP 401"},
+		} {
+			t.Run(step.name+": "+testCase.name, func(t *testing.T) {
+				env := map[string]string{
+					"DIGEST": digest, "IMAGE_PATH": imagePath, "MANIFEST_ACCEPT": "x",
+					"STUB_BODY": testCase.body, "STUB_PUT_STATUS": testCase.putStatus,
+				}
+				for key, value := range step.env {
+					env[key] = value
+				}
+				output, _, err := runWorkflowStep(t, promoteWorkflow, promoteJob, step.name, putCurl, env)
+
+				if testCase.wantRefusal != "" {
+					if err == nil {
+						t.Fatalf("the step went on.\n%s", output)
+					}
+					requireRefusalReason(t, output, testCase.wantRefusal)
+					if testCase.putStatus == "" && strings.Contains(output, "CURL PUT") {
+						t.Errorf("the step wrote a tag from bytes that are not the signed digest:\n%s", output)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("the step failed: %v\n%s", err, output)
+				}
+				for _, want := range []string{
+					"CURL GET " + step.api + "/manifests/" + digest + "\n",
+					"CURL PUT " + step.api + "/manifests/latest\n",
+					// The parameter on the stored Content-Type is dropped.
+					"PUT-TYPE application/vnd.oci.image.index.v1+json\n",
+					"PUT-BODY " + canonicalManifest + "\n",
+				} {
+					if !strings.Contains(output, want) {
+						t.Errorf("the step never did %q:\n%s", want, output)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestNoStepRecreatesTheIndexUnderATag enumerates the workflows from the
+// directory and refuses `imagetools create` anywhere outside a comment: it
+// builds a new index that need not hash to the digest the signature covers, so
+// it is not a promotion. The two promote-latest writes are then found by name
+// and held to the PUT, so the guard cannot pass by there being no writer.
+func TestNoStepRecreatesTheIndexUnderATag(t *testing.T) {
+	matches, err := filepath.Glob(filepath.Join("..", "..", ".github", "workflows", "*.yml"))
+	if err != nil || len(matches) == 0 {
+		t.Fatalf("list the workflows: %v (%d found)", err, len(matches))
+	}
+	for _, match := range matches {
+		workflow := ".github/workflows/" + filepath.Base(match)
+		if text := withoutComments(workflowfile.Read(t, workflow)); strings.Contains(text, "imagetools create") {
+			t.Errorf("%s runs `imagetools create`: a tag is written by PUTting the signed manifest bytes back unchanged, not by re-creating the index", workflow)
+		}
+	}
+
+	job := workflowfile.Job(t, promoteWorkflow, promoteJob)
+	for _, name := range []string{promoteGhcrMoveStep, promoteHubMoveStep} {
+		block := withoutComments(workflowfile.Step(t, promoteWorkflow, promoteJob, job, name))
+		if !strings.Contains(block, "-X PUT") || !strings.Contains(block, "/manifests/latest") {
+			t.Errorf("%s, step %q does not PUT the manifest under `latest`", promoteWorkflow, name)
+		}
 	}
 }
