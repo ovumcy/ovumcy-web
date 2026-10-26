@@ -535,11 +535,14 @@ func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, user
 		tickedFromStart := false
 		if !found {
 			existing = models.DailyLog{}
-			user, loadErr := service.users.LoadSettingsByID(ctx, userID)
+			// The stored start is read on the transaction's own handle: a
+			// Settings withdrawal committed before this write is the start it
+			// reads, never a snapshot taken beside it.
+			start, loadErr := (&DayService{logs: txLogs, users: service.users}).loadStoredStart(ctx, userID)
 			if loadErr != nil {
 				return DayEntryInput{}, ErrDayEntryLoadFailed
 			}
-			tickedFromStart = onboardingStartTicks(&user, dayStart, now, location)
+			tickedFromStart = onboardingStartTicks(&models.User{LastPeriodStart: start}, dayStart, now, location)
 			existing.IsPeriod = tickedFromStart
 		}
 		written, err := NormalizeDayEntryInput(mergeDayEntryPatch(existing, patch, fields))
@@ -660,6 +663,30 @@ func (service *DayService) withdrawOnboardingStartOn(ctx context.Context, userID
 
 var errLastPeriodStartClearUnsupported = errors.New("day log repository cannot withdraw the onboarding start with the day write")
 
+// lastPeriodStartReader is the day-log repository's read of the stored
+// onboarding start (users.last_period_start) on its own handle, so inside the
+// day write's transaction the start a write derives from is the start that
+// transaction commits beside. The production repository implements it (pinned
+// by a compile-time assertion in the day service's integration test).
+type lastPeriodStartReader interface {
+	LoadLastPeriodStartForUpdate(ctx context.Context, userID uint) (*time.Time, error)
+}
+
+// loadStoredStart reads the stored onboarding start through the day-log
+// repository when it can, which inside withinTransaction is the transaction.
+// A repository without that read is one with no transaction around it (the
+// in-memory stubs), where the settings projection is the same read.
+func (service *DayService) loadStoredStart(ctx context.Context, userID uint) (*time.Time, error) {
+	if reader, ok := service.logs.(lastPeriodStartReader); ok {
+		return reader.LoadLastPeriodStartForUpdate(ctx, userID)
+	}
+	user, err := service.users.LoadSettingsByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return user.LastPeriodStart, nil
+}
+
 // applyConfirmedCycleStart marks the day the owner just saved as a cycle start,
 // but only when the same policy that raised the inline question still holds for
 // the saved entry. Nothing here is inferred: without the explicit yes the
@@ -681,6 +708,13 @@ func (service *DayService) applyConfirmedCycleStart(ctx context.Context, userID 
 	userSettings, err := service.users.LoadSettingsByID(ctx, userID)
 	if err != nil {
 		return models.DailyLog{}, ErrDayEntryLoadFailed
+	}
+	// The boundary the policy reads includes the stored start, taken from the
+	// write's transaction like the day it judges (lastPeriodStartReader).
+	if reader, ok := service.logs.(lastPeriodStartReader); ok {
+		if userSettings.LastPeriodStart, err = reader.LoadLastPeriodStartForUpdate(ctx, userID); err != nil {
+			return models.DailyLog{}, ErrDayEntryLoadFailed
+		}
 	}
 	// dayStart is the canonical UTC-midnight write key; the policy works on the
 	// location-midnight calendar day, and CalendarDay converts without the

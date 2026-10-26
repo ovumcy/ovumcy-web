@@ -270,6 +270,28 @@ func (repo *DailyLogRepository) ClearLastPeriodStartOn(ctx context.Context, user
 		Update("last_period_start", nil).Error
 }
 
+// LoadLastPeriodStartForUpdate reads users.last_period_start for userID on this
+// repository's handle, so inside WithinTransaction a day write that derives a
+// row-less day's period tick from the stored onboarding start reads the start
+// its own transaction commits beside. On PostgreSQL the read is SELECT … FOR
+// UPDATE: a concurrent Settings write of the start waits for the day write, or
+// the day write waits for it and reads what it left. SQLite drops the clause
+// and needs none (BEGIN IMMEDIATE serializes writers). A zero userID is
+// refused, never a reason to skip the scope.
+func (repo *DailyLogRepository) LoadLastPeriodStartForUpdate(ctx context.Context, userID uint) (*time.Time, error) {
+	if userID == 0 {
+		return nil, errors.New("user id is required")
+	}
+	var user models.User
+	if err := repo.database.WithContext(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Select("id", "last_period_start").
+		Where("id = ?", userID).
+		First(&user).Error; err != nil {
+		return nil, err
+	}
+	return user.LastPeriodStart, nil
+}
+
 // UpdateSymptomIDs updates only the symptom_ids column, scoped by user_id so the
 // write can only touch a row whose user_id matches the entry's own UserID
 // (defense-in-depth, mirroring Save and the read/delete methods).
