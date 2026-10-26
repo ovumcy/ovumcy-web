@@ -9,15 +9,20 @@ env:
 
 # A push to `main` no longer starts this workflow directly. It used to, which
 # meant the publish job raced the test, e2e and scan jobs triggered by the same
-# push and normally beat them: `:latest` was publicly pullable before anything
-# had judged that commit, and a CRITICAL found by `trivy-image` minutes later
-# was already live. `:latest` now follows `main` through ci.yml's
+# push and normally beat them: the moving alias was publicly pullable before
+# anything had judged that commit, and a CRITICAL found by `trivy-image` minutes
+# later was already live. `:main` now follows `main` through ci.yml's
 # `publish-image` job, which calls this workflow only once that commit's own
 # checks have passed — `needs:` cannot cross workflow boundaries, so the gate
 # has to live in the workflow that owns those jobs.
 #
+# `:main` is the moving PRE-RELEASE channel. `:latest` is not on it: it names
+# the newest stable release and is moved only by a release tag's run (the step
+# `Decide whether this run moves latest`) or by promote-latest.yml, which
+# points it at an already signed release digest. A branch run never writes it.
+#
 # Publishing stays in one workflow rather than being copied into ci.yml so that
-# release tags and `:latest` are built, scanned, signed and attested by the same
+# release tags and `:main` are built, scanned, signed and attested by the same
 # job, and so both keep the `docker-image.yml` keyless-signing identity that
 # SECURITY.md tells operators to verify (a reusable workflow signs under its own
 # ref, not the caller's).
@@ -74,7 +79,7 @@ jobs:
     # while `github.ref` stays the caller's ref, `refs/heads/main`. The publish
     # job below needs no such distinction any more: it promotes whatever tags
     # the metadata step derived from the event, and the release tag and
-    # `:latest` differ only in that list.
+    # `:main` differ only in that list.
     if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     permissions:
@@ -135,7 +140,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          # The six ci.yml's `publish-image` requires before it lets `:latest`
+          # The six ci.yml's `publish-image` requires before it lets `:main`
           # follow `main`, split by WHERE each one's verdict is real. The split
           # is not a preference about which run to trust; it is ci.yml's own
           # gating read back.
@@ -176,7 +181,7 @@ jobs:
           # it joins that list, not `QUEUE_CHECKS`. REL-5 (owner decision,
           # 2026-09-03): the prior version of this comment held it out because
           # adding it here alone would have made a release tag stricter than
-          # `:latest`; it is added to both gates in the same change instead, so
+          # the `main` alias; it is added to both gates in the same change instead, so
           # the two stay level. This gate mirrors exactly the six checks
           # publish-image now requires — see ci.yml's `publish-image` job
           # `needs:`.
@@ -416,7 +421,7 @@ jobs:
           # `success` and nothing else, in the run where the lane ran. `skipped`
           # is refused here even where the lane may legitimately have been
           # cleared for the diff: a release image is being signed off, the
-          # cleared lane is one of the six that hold `:latest` back, and this
+          # cleared lane is one of the six that hold `:main` back, and this
           # gate cannot tell a lane cleared by `changes` from one skipped
           # because its run was cancelled. `pending` is not `skipped` either —
           # a queued or still-running check is no verdict at all.
@@ -830,7 +835,7 @@ jobs:
     # The trade, stated: when the newer commit's own checks fail, its publish
     # never happens and this older, green commit's does not either — the aliases
     # stay on what they served until a green commit follows. That is the same
-    # "`:latest` stays put when a gate fails" outcome ci.yml's `publish-image`
+    # "`:main` stays put when a gate fails" outcome ci.yml's `publish-image`
     # already accepts, applied to the commit that is `main`'s tip.
     #
     # The residual, stated: this job reads the tip before `publish` queues, so
@@ -899,7 +904,7 @@ jobs:
       - confirm-main-tip
     # A skipped `needs:` dependency blocks the dependent job unless its own `if`
     # says otherwise, and on the `workflow_call` path the gate above is skipped
-    # by design — without this, `:latest` would simply stop publishing.
+    # by design — without this, `:main` would simply stop publishing.
     #
     # Written in the fail-safe direction: the gate's `success` is the only thing
     # that lets a TAG through, and `skipped` is accepted only where it is
@@ -915,7 +920,7 @@ jobs:
     # ONE PUBLISH AT A TIME PER ALIAS SET. ci.yml gives every push to `main`
     # its own concurrency group so that no push run is ever cancelled, and this
     # job had none, so two commits' publishes ran side by side and each wrote
-    # `:latest`, `:main` and the Docker Hub mirror's aliases unconditionally.
+    # `:main` and the Docker Hub mirror's aliases unconditionally.
     # Whichever finished LAST won, not whichever commit was newer: run
     # 36783421026 (22956b83) promoted at 22:21:11Z and run 36782607690, for its
     # ancestor 64e4361c, promoted at 22:24:14Z and mirrored at 22:24:17-47Z, so
@@ -936,11 +941,13 @@ jobs:
     # as far as it can read, into it, so a job that arrives late for an older
     # commit never replaces a waiting newer one.
     #
-    # A release tag moves no alias (`vX.Y.Z` and `sha-…` name one commit), so it
+    # A release tag moves no BRANCH alias (`vX.Y.Z` and `sha-…` name one
+    # commit; `:latest` is decided by the step `Decide whether this run moves
+    # latest`, against the tags that exist, not against the live image), so it
     # gets a group of its own, per tag: sharing `main`'s would let a later
     # `main` publish cancel a release waiting its turn, and a release is the
     # one publish nothing replaces. Inside this called workflow `github.ref` is
-    # the caller's ref, `refs/heads/main` on the `:latest` path.
+    # the caller's ref, `refs/heads/main` on the `:main` path.
     concurrency:
       group: publish-${{ github.ref_type == 'tag' && github.ref || 'main' }}
       cancel-in-progress: false
@@ -973,7 +980,7 @@ jobs:
 
       # No `if:` on this step, on purpose: the condition is in the script, so a
       # runner-side skip cannot pass it. The mirror steps below skip when the
-      # publishing username is empty, which is right for `:latest` and wrong for
+      # publishing username is empty, which is right for `:main` and wrong for
       # a release: a tag reaches here only after verify-release-tag, and
       # publishing it to GHCR alone while the Docker Hub mirror is silently
       # absent leaves a release that every operator pulling from Docker Hub
@@ -1038,13 +1045,86 @@ jobs:
             echo "name=ghcr.io/${path}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Decide whether this run moves latest
+        # `:latest` names the newest STABLE RELEASE, so only a release tag's run
+        # can move it, and only a tag that is the highest stable `vMAJOR.MINOR.PATCH`
+        # in the repository at this moment. It used to follow `main` through the
+        # metadata step's `is_default_branch`, which made the floating name an
+        # operator pulls by default a pre-release build; `:main` is that channel
+        # now and this run's branch path never writes the other.
+        #
+        # Three refusals, each a plain `false` and not an error, because the
+        # release itself still publishes under its own tag: a branch run; a tag
+        # with a pre-release suffix (`v1.10.0-rc.1`) or any other shape than three
+        # numeric components; and a stable tag that is not the highest, which is
+        # what a backport or a re-pushed older patch looks like and would
+        # otherwise move `:latest` backwards. Versions compare as numbers
+        # (`sort -V`: v1.10.0 is above v1.9.2), and the run's own tag is added to
+        # the list it is compared with, so a tag listing that lags this very push
+        # cannot make the tag lose to the one below it.
+        #
+        # The tag list that cannot be READ is an error: guessing `true` could
+        # move `:latest` backwards and guessing `false` would leave a new release
+        # without it, silently. Nothing is pushed yet, so a re-run costs nothing.
+        # The answer is read once, here. `:latest` is then written by the same
+        # promotion, after the same signature, as every other tag of the run, and
+        # mirrored by the same step; a second tag being pushed within the minutes
+        # a release takes to publish is the residual, and promote-latest.yml is
+        # the repair for it.
+        id: latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          decide() {
+            echo "publish_latest=$1" >> "$GITHUB_OUTPUT"
+            echo "$2"
+          }
+
+          if [ "$REF_TYPE" != "tag" ]; then
+            decide false "ref type ${REF_TYPE}: only a release tag moves \`latest\`, so this run writes \`main\` and \`sha-…\` and leaves it where it is."
+            exit 0
+          fi
+
+          stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "$REF_NAME" =~ $stable ]]; then
+            decide false "tag ${REF_NAME} is not a stable vMAJOR.MINOR.PATCH release, so it is published under its own name and \`latest\` stays put."
+            exit 0
+          fi
+
+          refs=""
+          for attempt in 1 2 3; do
+            if refs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq '.[].ref')"; then
+              break
+            fi
+            refs=""
+            sleep $(( attempt * 2 ))
+          done
+          if [ -z "$refs" ]; then
+            echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${REF_NAME} is the highest stable release and nothing is published."
+            exit 1
+          fi
+
+          stable_tags="$(printf '%s\n' "$refs" | sed 's#^refs/tags/##' | { grep -E "$stable" || true; })"
+          highest="$(printf '%s\n%s\n' "$stable_tags" "$REF_NAME" | { grep -E "$stable" || true; } | sort -V | tail -n 1)"
+
+          if [ "$highest" = "$REF_NAME" ]; then
+            decide true "tag ${REF_NAME} is the highest stable release, so \`latest\` moves to it."
+          else
+            decide false "tag ${REF_NAME} is below ${highest}, the highest stable release, so \`latest\` stays on that one."
+          fi
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ steps.latest.outputs.publish_latest == 'true' }}
             type=ref,event=branch
             type=ref,event=tag
             type=sha
@@ -1200,7 +1280,7 @@ jobs:
         #
         # The identity is matched by prefix rather than by ref, because this
         # workflow signs under two of them: `refs/tags/vX.Y.Z` on a release and
-        # `refs/heads/main` when ci.yml calls it for `:latest`. README.md pins
+        # `refs/heads/main` when ci.yml calls it for `:main`. README.md pins
         # the tag form, which is the stricter question an operator asks about a
         # release; this is the workflow asserting its own identity.
         shell: bash
@@ -1242,7 +1322,7 @@ jobs:
           echo "signature and provenance verified on ${IMAGE_DIGEST}, which may now be promoted."
 
       - name: Refuse to move the public aliases backwards
-        # `latest`, `main` and the Docker Hub mirror's copies of them are
+        # `main` and the Docker Hub mirror's copy of it are
         # rewritten unconditionally by the steps below, so a run for an OLDER
         # commit that reaches them after a newer one has published puts the
         # older build back, and every later check compares an alias to this
@@ -1262,8 +1342,10 @@ jobs:
         # Unreadable is refused, not waved through: a registry or API that does
         # not answer leaves nothing to say the alias would move forward. The one
         # absence that is an answer is no `main` tag at all, the first publish.
-        # A release tag publishes names for one commit and moves no alias, so
-        # it is not asked. The refusal fails the job on purpose: the digest this
+        # A release tag publishes names for one commit and moves no branch
+        # alias, so it is not asked; whether it moves `latest` is the step
+        # `Decide whether this run moves latest`'s question, answered against
+        # the tags that exist rather than against what is live. The refusal fails the job on purpose: the digest this
         # run pushed stays untagged, nothing is promoted or mirrored, and the
         # newer commit's publish owns the aliases.
         shell: bash
@@ -1381,7 +1463,7 @@ jobs:
               echo "${GITHUB_SHA} is '${relation}' relative to ${live_sha}, the commit the live aliases serve, so promoting it moves them forward."
               ;;
             behind)
-              echo "::error::this run publishes ${GITHUB_SHA}, an ancestor of ${live_sha}, the commit \`main\` and \`latest\` already serve. Promoting it would put an older build back on both registries, so nothing is promoted or mirrored: the digest pushed above stays untagged and the newer commit's publish owns the aliases."
+              echo "::error::this run publishes ${GITHUB_SHA}, an ancestor of ${live_sha}, the commit \`main\` already serves. Promoting it would put an older build back on both registries, so nothing is promoted or mirrored: the digest pushed above stays untagged and the newer commit's publish owns the aliases."
               exit 1
               ;;
             *)
@@ -1664,7 +1746,7 @@ jobs:
       # answer at all.
       #
       # Absent the publishing credential all four steps skip and GHCR
-      # publishes exactly as before on the `:latest` path. On a release tag
+      # publishes exactly as before on the `:main` path. On a release tag
       # that skip is refused instead, by the step right after checkout, before
       # anything is pushed: a release is the one publish nothing replaces, and
       # a mirror that is missing from it must be an error, not a quiet gap. The credential is deliberately NOT the

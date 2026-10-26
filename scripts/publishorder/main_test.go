@@ -287,7 +287,9 @@ func TestOnlyReviewedStepsRunBeforeThePromotion(t *testing.T) {
 		"Log in to Docker Hub",
 		"Log in to GHCR",
 		resolveStep,
-		"Extract Docker metadata",
+		// Lists the repository's tags and writes one output; it writes no tag.
+		latestStep,
+		metadataStep,
 		pushStep,
 		pullTrivyStep,
 		scanStep,
