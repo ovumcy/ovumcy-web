@@ -9,41 +9,6 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/csrf"
 )
 
-// CSRFCookieName is the name of the double-submit cookie the CSRF middleware
-// mints. The composition root configures the middleware with it, and the
-// handlers that rotate the token read the cookie back by it.
-const CSRFCookieName = "ovumcy_csrf"
-
-// csrfCookieSpec names the middleware's cookie for the one write this package
-// makes to it — the retraction below. The value is the middleware's random
-// token, not a sealed payload, so no reader here opens it; the spec only lends
-// the retraction the canonical attribute set (path, HttpOnly, Lax, Secure per
-// deployment) the middleware itself writes it with.
-var csrfCookieSpec = sealedCookieSpec{name: CSRFCookieName, path: "/"}
-
-// rotateCSRFToken retires the CSRF token the request arrived with. It runs at
-// every change of authentication state — each fresh sign-in, and every session
-// end through clearSessionEndCookies — so a token minted for the signed-out
-// page, or kept from a session that ended, is not accepted on the session that
-// follows: the browser's next safe request mints a new one. Where the
-// middleware is on the request, the token is also deleted from its storage, so
-// the value cannot be replayed by a client that can still present the cookie.
-// The OIDC callback is exempt from the middleware (and in form_post mode
-// arrives cross-site without the Lax cookie), so there only the cookie can be
-// expired, which still unpairs the browser from the old value; the storage
-// entry idles out as before. A delete the storage refuses falls through to the
-// same retraction: the cookie is what this browser pairs with.
-//
-// TestEverySignInSiteRotatesTheCSRFToken walks the callers of writeAuthCookie
-// and refuses a sign-in that does not call this.
-func (handler *Handler) rotateCSRFToken(c fiber.Ctx) {
-	middleware := csrf.HandlerFromContext(c)
-	if middleware != nil && c.Cookies(CSRFCookieName) != "" && middleware.DeleteToken(c) == nil {
-		return
-	}
-	handler.clearSealedCookie(c, csrfCookieSpec)
-}
-
 // CSRFTokenExtractor builds the Fiber v3 extractor that pulls the CSRF token
 // from a request. It accepts the legacy `csrf_token` form field (used by
 // browser HTMX submissions) and the `X-CSRF-Token` request header (used by

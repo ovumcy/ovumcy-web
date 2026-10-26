@@ -132,7 +132,6 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	handler.clearOIDCLogoutBridgeCookie(c)
-	handler.rotateCSRFToken(c)
 
 	handler.loginService.ResetAttempts(clientKey)
 	handler.logSecurityEvent(

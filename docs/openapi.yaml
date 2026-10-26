@@ -2177,10 +2177,7 @@ paths:
       description: |
         Bumps `auth_session_version` (invalidating every other auth cookie for
         the account), clears auth-related cookies, and may return an OIDC
-        end-session bridge URL if the session was OIDC-backed. The CSRF token
-        the request carried is retired with the session: a later request
-        presenting it is refused `403 csrf_refused`, and a fresh token comes
-        from any page. The same rotation follows every sign-in.
+        end-session bridge URL if the session was OIDC-backed.
         Per-account rate limit: 60 / 15 min.
       responses:
         '200':

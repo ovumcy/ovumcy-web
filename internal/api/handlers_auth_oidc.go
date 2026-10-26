@@ -241,7 +241,6 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	handler.clearOIDCLogoutBridgeCookie(c)
-	handler.rotateCSRFToken(c)
 	if result.Logout != nil {
 		if err := handler.oidcLogoutStateSvc.Save(c.Context(), sessionID, *result.Logout, time.Now()); err != nil { // codecov:ignore -- OIDC logout-state save error; covered by the e2e OIDC lanes
 			spec := authSessionCreateErrorSpec()

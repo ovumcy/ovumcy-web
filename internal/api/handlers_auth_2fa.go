@@ -201,7 +201,6 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	// minted and its provider-logout state has followed it: a correct code
 	// whose session could not be issued proved nothing lasting, so a refusal
 	// above keeps the count it found.
-	handler.rotateCSRFToken(c)
 	handler.totpService.ResetAttempts(handler.secretKey, c.IP(), userID)
 	handler.logSecurityEvent(c, "auth.2fa", "success")
 	return redirectOrJSON(c, "/")

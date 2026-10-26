@@ -1,17 +1,11 @@
 package api
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -296,7 +290,7 @@ func TestLogoutBeforeOnboardingEndsTheSession(t *testing.T) {
 		bodyStringMatch{fragment: `action="/logout"`, message: "expected the onboarding sign-out control to post to /logout"},
 	)
 	csrfToken := extractCSRFTokenFromHTML(t, page)
-	csrfCookie := responseCookie(pageResponse.Cookies(), CSRFCookieName)
+	csrfCookie := responseCookie(pageResponse.Cookies(), "ovumcy_csrf")
 	if csrfCookie == nil || csrfCookie.Value == "" {
 		t.Fatal("expected the onboarding page to mint a csrf cookie")
 	}
@@ -320,160 +314,4 @@ func TestLogoutBeforeOnboardingEndsTheSession(t *testing.T) {
 	if location := afterResponse.Header.Get("Location"); location != "/login" {
 		t.Fatalf("expected the ended session to be refused with a /login redirect, got %q", location)
 	}
-}
-
-// TestEverySignInSiteRotatesTheCSRFToken walks every non-test function in this
-// package that writes an auth cookie and requires it to retire the CSRF token
-// in the same body. The sign-in sites are derived from the source, not
-// re-listed here: a sixth way to mint a session that forgets the rotation
-// fails by name. The two exemptions are re-issues of a session the request
-// already held — the same principal keeps the page's token so its HTMX forms
-// keep working — and the two cookie writers themselves.
-func TestEverySignInSiteRotatesTheCSRFToken(t *testing.T) {
-	t.Parallel()
-
-	reissueSites := map[string]string{
-		"setAuthCookie":           "the sign-in writer the sign-in sites call",
-		"writeAuthCookie":         "the cookie writer every site calls",
-		"installRefreshedSession": "re-issues the request's own session after a posture change",
-		"RegenerateRecoveryCode":  "re-issues the request's own session around the recovery-code rotation",
-	}
-
-	sources, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("glob package sources: %v", err)
-	}
-	signInSites := []string{}
-	missing := []string{}
-	for _, name := range sources {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		source, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
-		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), name, source, 0)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		ast.Inspect(parsed, func(node ast.Node) bool {
-			funcDecl, ok := node.(*ast.FuncDecl)
-			if !ok || funcDecl.Body == nil {
-				return true
-			}
-			if _, exempt := reissueSites[funcDecl.Name.Name]; exempt {
-				return true
-			}
-			mints, rotates := false, false
-			ast.Inspect(funcDecl.Body, func(inner ast.Node) bool {
-				call, ok := inner.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				selector, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				switch selector.Sel.Name {
-				case "setAuthCookie", "writeAuthCookie":
-					mints = true
-				case "rotateCSRFToken":
-					rotates = true
-				}
-				return true
-			})
-			if !mints {
-				return true
-			}
-			site := name + ":" + funcDecl.Name.Name
-			signInSites = append(signInSites, site)
-			if !rotates {
-				missing = append(missing, site)
-			}
-			return true
-		})
-	}
-	sort.Strings(signInSites)
-	if len(signInSites) < 5 {
-		t.Fatalf("expected the walk to find the five known sign-in sites (password, TOTP challenge, OIDC callback, reset, register pickup), found %v", signInSites)
-	}
-	if len(missing) > 0 {
-		t.Fatalf("sign-in sites that mint a session without rotateCSRFToken: %v", missing)
-	}
-}
-
-// TestCSRFTokenDoesNotSurviveASignOutOrASignIn pins WEB-242 (b): the CSRF token
-// is tied to the authentication state it was minted under. A token the browser
-// held before signing out is refused on the session signed in afterwards, and
-// the token the signed-out sign-in page carried is refused once the sign-in
-// has landed. Before the fix both were accepted for the token's whole idle
-// window: the storage entry outlived the session change and the cookie still
-// paired with it.
-func TestCSRFTokenDoesNotSurviveASignOutOrASignIn(t *testing.T) {
-	assertCSRFCookieRetracted := func(t *testing.T, response *http.Response, when string) {
-		t.Helper()
-		cookie := responseCookie(response.Cookies(), CSRFCookieName)
-		if cookie == nil {
-			t.Fatalf("expected %s to retract the csrf cookie, got no Set-Cookie for it", when)
-		}
-		if cookie.Value != "" || (cookie.MaxAge >= 0 && !cookie.Expires.Before(time.Now())) {
-			t.Fatalf("expected %s to expire the csrf cookie, got value=%q max-age=%d expires=%s", when, cookie.Value, cookie.MaxAge, cookie.Expires)
-		}
-	}
-	deleteSessionWith := func(t *testing.T, app *fiber.App, authCookie string, csrfCookie *http.Cookie, csrfToken string) int {
-		t.Helper()
-		request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", nil)
-		request.Header.Set("Accept", "application/json")
-		request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
-		request.Header.Set("X-CSRF-Token", csrfToken)
-		response := mustAppResponse(t, app, request)
-		_ = response.Body.Close()
-		return response.StatusCode
-	}
-
-	t.Run("a token held before sign-out is refused on the next session", func(t *testing.T) {
-		app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
-
-		form := url.Values{"csrf_token": {csrfToken}}
-		logoutRequest := httptest.NewRequest(http.MethodPost, "/logout", strings.NewReader(form.Encode()))
-		logoutRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		logoutRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
-		logoutResponse := mustAppResponse(t, app, logoutRequest)
-		_ = logoutResponse.Body.Close()
-		assertStatusCode(t, logoutResponse, http.StatusSeeOther)
-		assertCSRFCookieRetracted(t, logoutResponse, "sign-out")
-
-		nextAuthCookie := loginAndExtractAuthCookieWithCSRF(t, app, "logout-csrf@example.com", "StrongPass1")
-		if status := deleteSessionWith(t, app, nextAuthCookie, csrfCookie, csrfToken); status != http.StatusForbidden {
-			t.Fatalf("expected the pre-sign-out csrf token to be refused with 403 on the next session, got %d", status)
-		}
-	})
-
-	t.Run("the sign-in page token is refused once the sign-in has landed", func(t *testing.T) {
-		app, database := newOnboardingTestAppWithCSRF(t)
-		user := createOnboardingTestUser(t, database, "login-csrf-rotation@example.com", "StrongPass1", true)
-
-		pageResponse := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/login", nil))
-		assertStatusCode(t, pageResponse, http.StatusOK)
-		csrfToken := extractCSRFTokenFromAuthPage(t, mustReadBodyString(t, pageResponse.Body))
-		csrfCookie := responseCookie(pageResponse.Cookies(), CSRFCookieName)
-		if csrfCookie == nil || csrfCookie.Value == "" {
-			t.Fatal("expected the sign-in page to mint a csrf cookie")
-		}
-
-		form := url.Values{"email": {user.Email}, "password": {"StrongPass1"}, "csrf_token": {csrfToken}}
-		loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
-		loginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		loginRequest.Header.Set("Cookie", cookiePair(csrfCookie))
-		loginResponse := mustAppResponse(t, app, loginRequest)
-		_ = loginResponse.Body.Close()
-		assertStatusCode(t, loginResponse, http.StatusSeeOther)
-		assertCSRFCookieRetracted(t, loginResponse, "sign-in")
-		authCookie := cookiePair(responseCookie(loginResponse.Cookies(), authCookieName))
-
-		if status := deleteSessionWith(t, app, authCookie, csrfCookie, csrfToken); status != http.StatusForbidden {
-			t.Fatalf("expected the sign-in page's csrf token to be refused with 403 after sign-in, got %d", status)
-		}
-	})
 }

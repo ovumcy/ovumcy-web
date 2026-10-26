@@ -177,7 +177,6 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 
 	handler.writeAuthCookie(c, &user, session)
 	handler.clearOIDCLogoutBridgeCookie(c)
-	handler.rotateCSRFToken(c)
 	handler.writeSealed(c, reveal)
 
 	handler.logSecurityEvent(c, "auth.register_pickup", "success")
