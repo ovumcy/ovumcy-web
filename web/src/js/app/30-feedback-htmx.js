@@ -346,12 +346,6 @@
     if (window.htmx && typeof window.htmx.trigger === "function") {
       window.htmx.trigger(document.body, "calendar-day-updated");
     }
-
-    var postPath = form.getAttribute("hx-post") || "";
-    var match = postPath.match(/\/api\/days\/(\d{4}-\d{2}-\d{2})$/);
-    if (match && window.htmx && typeof window.htmx.ajax === "function") {
-      window.htmx.ajax("GET", "/calendar/day/" + match[1], { target: "#day-editor", swap: "innerHTML" });
-    }
   }
 
   // Parses a server error response into the message the client may show. The
