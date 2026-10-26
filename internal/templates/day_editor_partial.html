@@ -1,7 +1,7 @@
 {{define "day_editor_partial"}}
-<div class="space-y-4">
+<div class="space-y-4" role="region" aria-labelledby="day-editor-heading">
   <div>
-    <h2 class="journal-subtitle">{{.DateLabel}}</h2>
+    <h2 id="day-editor-heading" class="journal-subtitle" tabindex="-1" data-day-editor-heading>{{.DateLabel}}</h2>
     <p class="journal-muted text-xs">{{t .Messages "daylog.title"}}</p>
   </div>
 

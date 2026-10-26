@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/net/html"
 )
 
 func TestBuildCalendarDaysRendersFuturePeriodEntryAsRecordedPeriod(t *testing.T) {
@@ -411,5 +413,113 @@ func TestBuildCalendarDaysMapsStateToTemplateClasses(t *testing.T) {
 	}
 	if !days[2].HasData {
 		t.Fatalf("expected third day to preserve logged-data marker state")
+	}
+}
+
+// A screen reader hears a cell's accessible name, not its fill or its markers,
+// so the name has to say what they say: today, the one state the ladder chose,
+// the ovulation mark and the logged-entry markers (WEB-227). Each name is the
+// legend's own entry for that concept, so the two can never disagree; a tier
+// the legend does not list (pre-fertile) adds nothing.
+func TestBuildCalendarDaysNamesWhatTheCellDraws(t *testing.T) {
+	handler := &Handler{}
+	days := handler.buildCalendarDays([]services.CalendarDayState{
+		{DateString: "2026-03-01", InMonth: true, IsToday: true, IsPeriod: true, IsOvulation: true, HasData: true, HasSex: true},
+		{DateString: "2026-03-10", InMonth: true, IsOvulation: true, IsFertilityPeak: true},
+		{DateString: "2026-03-11", InMonth: true, IsTentativeOvulation: true, IsFertilityPeak: true},
+		{DateString: "2026-03-12", InMonth: true, IsFertility: true, IsFertilityEdge: true},
+		{DateString: "2026-03-23", InMonth: true, IsPredicted: true, IsPredictedStartWindow: true, IsFertilityEdge: true, IsPredictedFertileOverlap: true},
+		{DateString: "2026-03-24", InMonth: true, IsPredictedStartWindow: true},
+		{DateString: "2026-03-25", InMonth: true, IsPredicted: true, IsFertilityEdge: true, IsPredictedFertileOverlap: true},
+		{DateString: "2026-03-26", InMonth: true, IsPredicted: true},
+		{DateString: "2026-03-05", InMonth: true, IsPreFertile: true},
+		{DateString: "2026-03-06", InMonth: true},
+	})
+
+	want := [][]string{
+		{"calendar.tag.today", "calendar.legend.period_recorded", "calendar.ovulation_icon", "calendar.data_logged", "calendar.sex_logged"},
+		{"calendar.legend.fertility", "calendar.ovulation_icon"},
+		{"calendar.ovulation_tentative"},
+		{"calendar.legend.fertility"},
+		{"calendar.legend.start_window", "calendar.legend.fertility"},
+		{"calendar.legend.start_window"},
+		{"calendar.legend.predicted_period_in_fertility"},
+		{"calendar.legend.predicted_period"},
+		nil,
+		nil,
+	}
+	for index, day := range days {
+		if !slices.Equal(day.NameKeys, want[index]) {
+			t.Errorf("day %s (%s): NameKeys = %v, want %v", day.DateString, day.StateKey, day.NameKeys, want[index])
+		}
+	}
+}
+
+// The rendered half of the same contract, on a real page: the composed name
+// reaches the button, today is the one aria-current="date" cell, and the
+// selected day is the one pressed button among the selectable ones.
+func TestCalendarDayButtonsNameTheirStateTodayAndSelection(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-cell-names@example.com", "StrongPass1", true)
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	if err := database.Create(&models.DailyLog{UserID: user.ID, Date: today, IsPeriod: true, Flow: models.FlowMedium}).Error; err != nil {
+		t.Fatalf("create period log: %v", err)
+	}
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	messages := manager.Messages(i18n.LangEN)
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	todayValue := today.Format("2006-01-02")
+	rendered := renderCalendarMonthHTML(t, app, authCookie, today.Format("2006-01")+"&day="+todayValue)
+	document := mustParseHTMLDocument(t, rendered)
+
+	cells := htmlFindElements(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "button" && htmlHasAttr(node, "data-day")
+	})
+	if len(cells) < 28 {
+		t.Fatalf("expected a month of day buttons, got %d", len(cells))
+	}
+
+	var current, pressed []string
+	for _, cell := range cells {
+		day := htmlAttr(cell, "data-day")
+		if htmlHasAttr(cell, "aria-current") {
+			if got := htmlAttr(cell, "aria-current"); got != "date" {
+				t.Errorf("day %s: aria-current = %q, want date", day, got)
+			}
+			current = append(current, day)
+		}
+		if htmlHasAttr(cell, "disabled") {
+			if htmlHasAttr(cell, "aria-pressed") {
+				t.Errorf("day %s: a disabled cell must not claim a pressed state", day)
+			}
+			continue
+		}
+		switch htmlAttr(cell, "aria-pressed") {
+		case "true":
+			pressed = append(pressed, day)
+		case "false":
+		default:
+			t.Errorf("day %s: aria-pressed = %q, want true or false on a selectable cell", day, htmlAttr(cell, "aria-pressed"))
+		}
+	}
+	if !slices.Equal(current, []string{todayValue}) {
+		t.Fatalf("aria-current cells = %v, want only today %s", current, todayValue)
+	}
+	if !slices.Equal(pressed, []string{todayValue}) {
+		t.Fatalf("pressed cells = %v, want only the selected day %s", pressed, todayValue)
+	}
+
+	todayCell := htmlElementByAttr(document, "data-day", todayValue)
+	wantSuffix := ", " + strings.Join([]string{
+		messages["calendar.tag.today"],
+		messages["calendar.legend.period_recorded"],
+		messages["calendar.data_logged"],
+	}, ", ")
+	if label := htmlAttr(todayCell, "aria-label"); !strings.HasSuffix(label, wantSuffix) || len(label) == len(wantSuffix) {
+		t.Fatalf("today's accessible name = %q, want the date followed by %q", label, wantSuffix)
 	}
 }

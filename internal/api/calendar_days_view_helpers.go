@@ -92,6 +92,7 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 		}
 
 		days = append(days, CalendarDay{
+			NameKeys:               calendarDayNameKeys(state, stateKey),
 			Date:                   state.Date,
 			DateString:             state.DateString,
 			Day:                    state.Day,
@@ -108,4 +109,41 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 		})
 	}
 	return days
+}
+
+// calendarStateNameKeys words each fill the ladder can choose with the legend
+// entry that explains it, so a screen reader hears the concept a sighted reader
+// looks up. A fill the legend lists no entry for (pre-fertile, default) adds
+// nothing, and the tentative-ovulation fill is said by its dash below.
+var calendarStateNameKeys = map[string][]string{
+	"period": {"calendar.legend.period_recorded"},
+	"predicted-start-window-in-fertile-window": {"calendar.legend.start_window", "calendar.legend.fertility"},
+	"predicted-start-window":                   {"calendar.legend.start_window"},
+	"predicted-period-in-fertile-window":       {"calendar.legend.predicted_period_in_fertility"},
+	"predicted-period":                         {"calendar.legend.predicted_period"},
+	"ovulation":                                {"calendar.legend.fertility"},
+	"fertile-peak":                             {"calendar.legend.fertility"},
+	"fertile-edge":                             {"calendar.legend.fertility"},
+	"fertile":                                  {"calendar.legend.fertility"},
+}
+
+func calendarDayNameKeys(state services.CalendarDayState, stateKey string) []string {
+	var keys []string
+	if state.IsToday {
+		keys = append(keys, "calendar.tag.today")
+	}
+	keys = append(keys, calendarStateNameKeys[stateKey]...)
+	if state.IsOvulation {
+		keys = append(keys, "calendar.ovulation_icon")
+	}
+	if state.IsTentativeOvulation {
+		keys = append(keys, "calendar.ovulation_tentative")
+	}
+	if state.HasData {
+		keys = append(keys, "calendar.data_logged")
+	}
+	if state.HasSex {
+		keys = append(keys, "calendar.sex_logged")
+	}
+	return keys
 }

@@ -152,6 +152,41 @@ func TestCalendarDayPanelEditActionCarriesThePrimaryWeight(t *testing.T) {
 	}
 }
 
+// Opening a day moves focus to the panel's heading (WEB-228), so the heading
+// must be focusable from script without joining the Tab order, and the panel
+// must be a region it names — in both modes, since Edit and Cancel each swap
+// the panel and drop the control that had focus.
+func TestCalendarDayPanelIsARegionNamedByAFocusableHeading(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-panel-heading@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	for _, mode := range []string{"", "?mode=edit"} {
+		request := httptest.NewRequest(http.MethodGet, "/calendar/day/2026-02-17"+mode, nil)
+		request.Header.Set("Accept-Language", "en")
+		request.Header.Set("Cookie", authCookie)
+		response := mustAppResponse(t, app, request)
+		assertStatusCode(t, response, http.StatusOK)
+		document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+
+		heading := htmlFindElement(document, htmlNodeHasAttr("data-day-editor-heading"))
+		if heading == nil || heading.Data != "h2" {
+			t.Fatalf("mode %q: expected the day panel heading to be the h2 carrying data-day-editor-heading", mode)
+		}
+		if got := htmlAttr(heading, "tabindex"); got != "-1" {
+			t.Fatalf("mode %q: heading tabindex = %q, want -1", mode, got)
+		}
+		headingID := htmlAttr(heading, "id")
+		if headingID == "" {
+			t.Fatalf("mode %q: the heading needs an id for the region to name it by", mode)
+		}
+		region := htmlFindElement(document, htmlNodeAttrEquals("aria-labelledby", headingID))
+		if region == nil || htmlAttr(region, "role") != "region" || !htmlNodeContains(region, heading) {
+			t.Fatalf("mode %q: expected a role=region labelled by %q around the heading", mode, headingID)
+		}
+	}
+}
+
 func TestCalendarTodayControlCarriesTheCompactSecondaryWeight(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "calendar-today-weight@example.com", "StrongPass1", true)

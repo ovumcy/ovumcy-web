@@ -88,16 +88,19 @@ func (handler *Handler) clockNow() time.Time {
 // re-decide something buildCalendarDays already decided; the barrier in
 // declaration_reachability_barrier_test.go refuses a field nothing reads.
 type CalendarDay struct {
-	Date                   time.Time
-	DateString             string
-	Day                    int
-	IsToday                bool
-	OpenEditDirectly       bool
-	HasData                bool
-	HasSex                 bool
-	CellClass              string
-	TextClass              string
-	StateKey               string
+	Date             time.Time
+	DateString       string
+	Day              int
+	IsToday          bool
+	OpenEditDirectly bool
+	HasData          bool
+	HasSex           bool
+	CellClass        string
+	TextClass        string
+	StateKey         string
+	// NameKeys are the message keys the cell's accessible name reads after
+	// its date, in order: what the fill and the markers show, said in words.
+	NameKeys               []string
 	OvulationDot           bool
 	TentativeOvulationMark bool
 	Selectable             bool
