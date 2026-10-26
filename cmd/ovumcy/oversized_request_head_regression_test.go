@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -144,6 +145,33 @@ func TestMalformedRequestHeadSetsNoCookie(t *testing.T) {
 	if cookies := headers.Values("Set-Cookie"); len(cookies) != 0 {
 		t.Fatalf("400 for a head that never parsed must set no cookie, got %q", cookies)
 	}
+}
+
+// The cookie drop is keyed on the reset head, not on an error status: a parsed
+// request refused with 413 renders a page whose form token rides the cookie
+// set on that same answer, so the error handler must leave it in place.
+func TestParsedRequestErrorKeepsItsCookie(t *testing.T) {
+	app := fiber.New(fiberConfig(proxySettings{}, newRateLimitTestHandler(t)))
+	app.Get("/probe-parsed-413", func(c fiber.Ctx) error {
+		c.Cookie(&fiber.Cookie{Name: "ovumcy_probe", Value: "kept"})
+		return fiber.ErrRequestEntityTooLarge
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/probe-parsed-413", nil)
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("app.Test: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", response.StatusCode)
+	}
+	for _, cookie := range response.Header.Values("Set-Cookie") {
+		if strings.HasPrefix(cookie, "ovumcy_probe=kept") {
+			return
+		}
+	}
+	t.Fatalf("a parsed request's 413 must keep the cookie set on it, got %q", response.Header.Values("Set-Cookie"))
 }
 
 func requestWithCookieOfSize(t *testing.T, address string, size int) (int, string, http.Header) {
