@@ -419,8 +419,9 @@ func TestBuildCalendarDaysMapsStateToTemplateClasses(t *testing.T) {
 // A screen reader hears a cell's accessible name, not its fill or its markers,
 // so the name has to say what they say: today, the one state the ladder chose,
 // the ovulation mark and the logged-entry markers (WEB-227). Each name is the
-// legend's own entry for that concept, so the two can never disagree; a tier
-// the legend does not list (pre-fertile) adds nothing.
+// legend's own entry for that concept, so the two can never disagree — except
+// the fertile window, which the name calls an estimate the way the ovulation
+// mark does; a tier the legend does not list (pre-fertile) adds nothing.
 func TestBuildCalendarDaysNamesWhatTheCellDraws(t *testing.T) {
 	handler := &Handler{}
 	days := handler.buildCalendarDays([]services.CalendarDayState{
@@ -438,10 +439,10 @@ func TestBuildCalendarDaysNamesWhatTheCellDraws(t *testing.T) {
 
 	want := [][]string{
 		{"calendar.tag.today", "calendar.legend.period_recorded", "calendar.ovulation_icon", "calendar.data_logged", "calendar.sex_logged"},
-		{"calendar.legend.fertility", "calendar.ovulation_icon"},
+		{"calendar.fertility_estimate", "calendar.ovulation_icon"},
 		{"calendar.ovulation_tentative"},
-		{"calendar.legend.fertility"},
-		{"calendar.legend.start_window", "calendar.legend.fertility"},
+		{"calendar.fertility_estimate"},
+		{"calendar.legend.start_window", "calendar.fertility_estimate"},
 		{"calendar.legend.start_window"},
 		{"calendar.legend.predicted_period_in_fertility"},
 		{"calendar.legend.predicted_period"},

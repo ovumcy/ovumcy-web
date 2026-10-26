@@ -6955,33 +6955,36 @@
     }
   }
 
-  // The month is one Tab stop: the selected day, else today, else the first
-  // open day takes tabindex 0 and the arrow keys reach the rest.
-  function calendarTabStop(buttons, selectedDate) {
-    var today = null;
-    var first = null;
+  function calendarDayButton(root, date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return null;
+    }
+    var button = root.querySelector('button[data-day="' + date + '"]');
+    return button && !button.disabled ? button : null;
+  }
+
+  // The month is one Tab stop: the day the arrow keys last reached, else the
+  // selected day, else today, else the first open day takes tabindex 0. The
+  // arrowed-to day is kept across swaps, which re-run this on every one.
+  function calendarTabStop(root, buttons, selectedDate) {
+    var stop = calendarDayButton(root, String(root.dataset.calendarFocusDay || "")) ||
+      calendarDayButton(root, selectedDate) ||
+      root.querySelector('button[data-day][aria-current="date"]:not([disabled])');
+    if (stop) {
+      return stop;
+    }
     for (var index = 0; index < buttons.length; index++) {
-      var button = buttons[index];
-      if (button.disabled) {
-        continue;
-      }
-      if (button.getAttribute("data-day") === selectedDate) {
-        return button;
-      }
-      if (!today && button.getAttribute("aria-current") === "date") {
-        today = button;
-      }
-      if (!first) {
-        first = button;
+      if (!buttons[index].disabled) {
+        return buttons[index];
       }
     }
-    return today || first;
+    return null;
   }
 
   function syncCalendarSelection(root) {
     var selectedDate = String(root.getAttribute("data-selected-date") || "");
     var buttons = root.querySelectorAll("button[data-day]");
-    var tabStop = calendarTabStop(buttons, selectedDate);
+    var tabStop = calendarTabStop(root, buttons, selectedDate);
 
     for (var index = 0; index < buttons.length; index++) {
       var button = buttons[index];
@@ -7001,40 +7004,46 @@
     var index = Array.prototype.indexOf.call(buttons, from);
     for (index += step; index >= 0 && index < buttons.length; index += step) {
       if (!buttons[index].disabled) {
-        for (var other = 0; other < buttons.length; other++) {
-          buttons[other].setAttribute("tabindex", other === index ? "0" : "-1");
-        }
+        root.dataset.calendarFocusDay = buttons[index].getAttribute("data-day");
+        syncCalendarSelection(root);
         buttons[index].focus();
         return;
       }
     }
   }
 
-  function selectedCalendarButton(root) {
-    var selectedDate = String(root.getAttribute("data-selected-date") || "");
-    var buttons = root.querySelectorAll("button[data-day]");
-    for (var index = 0; index < buttons.length; index++) {
-      if (buttons[index].getAttribute("data-day") === selectedDate) {
-        return buttons[index];
-      }
-    }
-    return null;
+  // The sticky header covers the top of the viewport, so a panel scrolled to
+  // the very top would sit under it.
+  function calendarHeaderBottom() {
+    var header = document.querySelector(".paper-header");
+    return header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
   }
 
-  function isInViewport(element) {
-    if (typeof element.getBoundingClientRect !== "function") {
-      return true;
+  // Below the month (the stacked phone and tablet layout) the panel is always
+  // brought up: there its heading can sit on the last line of the screen, in
+  // view and yet behind the tab bar, while everything it opened stays below the
+  // fold. Beside the month it moves only when its heading is out of view.
+  function revealDayPanel(panel, heading) {
+    var grid = document.getElementById("calendar-grid-panel");
+    var panelTop = panel.getBoundingClientRect().top;
+    var stacked = Boolean(grid) && panelTop >= grid.getBoundingClientRect().bottom;
+    var headerBottom = calendarHeaderBottom();
+    var headingRect = heading.getBoundingClientRect();
+    var viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    var hidden = headingRect.top < headerBottom || headingRect.bottom > viewportHeight;
+    if (!stacked && !hidden) {
+      return;
     }
-    var rect = element.getBoundingClientRect();
-    var height = window.innerHeight || document.documentElement.clientHeight;
-    return rect.top >= 0 && rect.bottom <= height;
+    window.scrollTo({
+      top: window.scrollY + panelTop - headerBottom - 12,
+      behavior: scrollIntoViewOptions("start").behavior || "auto",
+    });
   }
 
   // A day opened from the grid, or re-opened by Edit, Cancel or Delete,
   // replaces the control that had focus. Focus goes to the panel heading so it
-  // is announced and never falls to the body; the panel is scrolled in only
-  // when it is off screen, which on a phone is below the month. The panel a
-  // ?day= URL loads on its own leaves focus where the page put it.
+  // is announced and never falls to the body. The panel a ?day= URL loads on
+  // its own leaves focus where the page put it.
   function focusOpenedDayPanel(event) {
     var detail = event.detail || {};
     var target = detail.target || event.target;
@@ -7049,9 +7058,7 @@
     if (!heading) {
       return;
     }
-    if (!isInViewport(heading) && typeof target.scrollIntoView === "function") {
-      target.scrollIntoView(scrollIntoViewOptions("start"));
-    }
+    revealDayPanel(target, heading);
     heading.focus({ preventScroll: true });
   }
 
@@ -7070,6 +7077,7 @@
 
           var selectedDate = String(button.getAttribute("data-day") || "");
           this.setAttribute("data-selected-date", selectedDate);
+          delete this.dataset.calendarFocusDay;
           syncCalendarSelection(this);
           syncCalendarURL(selectedDate);
         });
@@ -7085,9 +7093,11 @@
             return;
           }
           if (event.key === "Escape" && closestFromEvent(event, "#day-editor")) {
-            var selected = selectedCalendarButton(this);
-            if (selected && !selected.disabled) {
+            var selected = calendarDayButton(this, String(this.getAttribute("data-selected-date") || ""));
+            if (selected) {
               event.preventDefault();
+              delete this.dataset.calendarFocusDay;
+              syncCalendarSelection(this);
               selected.focus();
             }
           }

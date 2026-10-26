@@ -561,6 +561,7 @@
   "calendar.ovulation_tentative": "Estimated ovulation. No temperature shift confirmed yet.",
   "calendar.sex_logged": "Sex",
   "calendar.data_logged": "Logged entry",
+  "calendar.fertility_estimate": "Fertility window (estimate)",
   "calendar.weekday.sun": "Sun",
   "calendar.weekday.mon": "Mon",
   "calendar.weekday.tue": "Tue",

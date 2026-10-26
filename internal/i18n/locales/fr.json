@@ -702,6 +702,7 @@
   "calendar.ovulation_tentative": "Ovulation estimée. Aucune hausse de température confirmée pour l'instant.",
   "calendar.sex_logged": "Rapports sexuels",
   "calendar.data_logged": "Entrée enregistrée",
+  "calendar.fertility_estimate": "Fenêtre fertile (estimation)",
   "calendar.weekday.sun": "Dim",
   "calendar.weekday.mon": "Lun",
   "calendar.weekday.tue": "Mar",

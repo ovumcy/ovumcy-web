@@ -15,6 +15,10 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 		cellClass := "calendar-cell"
 		textClass := "calendar-day-number"
 		stateKey := "default"
+		// The words a screen reader hears for the fill: the legend entry that
+		// explains it, with the estimate named for a fertile fill. A fill the
+		// legend lists no entry for adds none.
+		var stateNames []string
 		if state.IsPeriod {
 			// A period entry is always a recorded fact, even when dated in the
 			// future: auto-fill never writes rows past today, so a future entry
@@ -22,6 +26,7 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			// Rendering it as a projection would misstate the record.
 			cellClass += " calendar-cell-period"
 			stateKey = "period"
+			stateNames = []string{"calendar.legend.period_recorded"}
 		} else if state.IsPredictedStartWindow && (state.IsFertilityEdge || state.IsFertilityPeak) {
 			// A start-window day the fertile window also covers. The rung is
 			// needed because the start window outranks both the band and the
@@ -39,6 +44,7 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			// projected bleeding days inside it.
 			cellClass += " calendar-cell-overlap-period-fertile calendar-cell-overlap-start-window"
 			stateKey = "predicted-start-window-in-fertile-window"
+			stateNames = []string{"calendar.legend.start_window", "calendar.fertility_estimate"}
 		} else if state.IsPredictedStartWindow {
 			// The window the next period may START in outranks the projected
 			// bleeding days it overlaps: it is the more specific statement about
@@ -47,6 +53,7 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			// never tie with the hatched one on the same cell.
 			cellClass += " calendar-cell-start-window"
 			stateKey = "predicted-start-window"
+			stateNames = []string{"calendar.legend.start_window"}
 		} else if state.IsPredictedFertileOverlap {
 			// A projected bleeding day that is also inside the fertile window.
 			// One class per cell means the predicted-period rung below simply
@@ -61,24 +68,30 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			// longer name built on either would satisfy silently.
 			cellClass += " calendar-cell-overlap-period-fertile"
 			stateKey = "predicted-period-in-fertile-window"
+			stateNames = []string{"calendar.legend.predicted_period_in_fertility"}
 		} else if state.IsPredicted {
 			cellClass += " calendar-cell-predicted"
 			stateKey = "predicted-period"
+			stateNames = []string{"calendar.legend.predicted_period"}
 		} else if state.IsTentativeOvulation {
 			cellClass += " calendar-cell-ovulation-tentative"
 			stateKey = "tentative-ovulation"
 		} else if state.IsOvulation {
 			cellClass += " calendar-cell-fertile"
 			stateKey = "ovulation"
+			stateNames = []string{"calendar.fertility_estimate"}
 		} else if state.IsFertilityPeak {
 			cellClass += " calendar-cell-fertile calendar-cell-fertile-peak"
 			stateKey = "fertile-peak"
+			stateNames = []string{"calendar.fertility_estimate"}
 		} else if state.IsFertilityEdge {
 			cellClass += " calendar-cell-fertile calendar-cell-fertile-edge"
 			stateKey = "fertile-edge"
+			stateNames = []string{"calendar.fertility_estimate"}
 		} else if state.IsFertility {
 			cellClass += " calendar-cell-fertile"
 			stateKey = "fertile"
+			stateNames = []string{"calendar.fertility_estimate"}
 		} else if state.IsPreFertile {
 			cellClass += " calendar-cell-pre-fertile"
 			stateKey = "pre-fertile"
@@ -92,7 +105,7 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 		}
 
 		days = append(days, CalendarDay{
-			NameKeys:               calendarDayNameKeys(state, stateKey),
+			NameKeys:               calendarDayNameKeys(state, stateNames),
 			Date:                   state.Date,
 			DateString:             state.DateString,
 			Day:                    state.Day,
@@ -111,28 +124,15 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 	return days
 }
 
-// calendarStateNameKeys words each fill the ladder can choose with the legend
-// entry that explains it, so a screen reader hears the concept a sighted reader
-// looks up. A fill the legend lists no entry for (pre-fertile, default) adds
-// nothing, and the tentative-ovulation fill is said by its dash below.
-var calendarStateNameKeys = map[string][]string{
-	"period": {"calendar.legend.period_recorded"},
-	"predicted-start-window-in-fertile-window": {"calendar.legend.start_window", "calendar.legend.fertility"},
-	"predicted-start-window":                   {"calendar.legend.start_window"},
-	"predicted-period-in-fertile-window":       {"calendar.legend.predicted_period_in_fertility"},
-	"predicted-period":                         {"calendar.legend.predicted_period"},
-	"ovulation":                                {"calendar.legend.fertility"},
-	"fertile-peak":                             {"calendar.legend.fertility"},
-	"fertile-edge":                             {"calendar.legend.fertility"},
-	"fertile":                                  {"calendar.legend.fertility"},
-}
-
-func calendarDayNameKeys(state services.CalendarDayState, stateKey string) []string {
+// calendarDayNameKeys orders what a cell's accessible name reads after its
+// date. The tentative-ovulation fill has no legend entry of its own; its dash
+// says it.
+func calendarDayNameKeys(state services.CalendarDayState, stateNames []string) []string {
 	var keys []string
 	if state.IsToday {
 		keys = append(keys, "calendar.tag.today")
 	}
-	keys = append(keys, calendarStateNameKeys[stateKey]...)
+	keys = append(keys, stateNames...)
 	if state.IsOvulation {
 		keys = append(keys, "calendar.ovulation_icon")
 	}

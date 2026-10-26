@@ -561,6 +561,7 @@
   "calendar.ovulation_tentative": "Ovulazione stimata. Nessuno spostamento della temperatura confermato ancora.",
   "calendar.sex_logged": "Sesso",
   "calendar.data_logged": "Voce registrata",
+  "calendar.fertility_estimate": "Finestra fertile (stima)",
   "calendar.weekday.sun": "Dom",
   "calendar.weekday.mon": "Lun",
   "calendar.weekday.tue": "Mar",

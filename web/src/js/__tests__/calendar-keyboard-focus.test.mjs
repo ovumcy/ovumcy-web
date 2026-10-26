@@ -23,6 +23,7 @@ function calendarPage(selectedDate) {
     cells.push(dayButton(day, { disabled: day === 1 || day === 9, today: day === 10 }));
   }
   return `<!doctype html><html><head></head><body>
+  <header class="paper-header"></header>
   <div data-calendar-view data-selected-date="${selectedDate}">
     <section id="calendar-grid-panel">${cells.join("")}</section>
     <aside id="day-editor"><div data-day-editor-autoload></div></aside>
@@ -34,16 +35,34 @@ const PANEL = `<div role="region" aria-labelledby="day-editor-heading">
   <textarea name="notes"></textarea>
 </div>`;
 
-async function load(selectedDate = "", { scrolls } = {}) {
+async function load(selectedDate = "", { scrolls = [], reduce = false } = {}) {
   return loadDOMWithScript(APP_BUNDLE, {
     html: calendarPage(selectedDate),
     beforeRun(window) {
-      window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
-      window.Element.prototype.scrollIntoView = function (arg) {
-        if (scrolls) scrolls.push({ element: this, arg });
-      };
+      window.matchMedia = (query) => ({
+        matches: query === "(prefers-reduced-motion: reduce)" ? reduce : false,
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+      });
+      window.scrollTo = (arg) => scrolls.push(arg);
     },
   });
+}
+
+function rect(top, bottom) {
+  return () => ({ top, bottom, left: 0, right: 0, width: 0, height: bottom - top });
+}
+
+// Lays the page out: an 80px sticky header, the month ending at gridBottom,
+// the panel starting at panelTop, and its heading 20px into it.
+function layout(window, { gridBottom, panelTop }) {
+  const document = window.document;
+  document.querySelector(".paper-header").getBoundingClientRect = rect(0, 80);
+  document.getElementById("calendar-grid-panel").getBoundingClientRect = rect(100, gridBottom);
+  document.getElementById("day-editor").getBoundingClientRect = rect(panelTop, panelTop + 600);
+  window.HTMLHeadingElement.prototype.getBoundingClientRect = rect(panelTop + 20, panelTop + 50);
 }
 
 function cell(document, day) {
@@ -113,31 +132,70 @@ test("arrow keys move between open days by day and by week, skipping closed ones
   }
 });
 
-test("opening a day from the grid moves focus to the panel heading and brings an off-screen panel into view", async () => {
+// The reported phone case: at 375×812 the panel starts at 630, under the
+// month, so its heading is technically on screen while everything it opened
+// is below the fold.
+for (const reduce of [false, true]) {
+  test(`a panel stacked below the month is brought up under the header, even with its heading on screen (reduce=${reduce})`, async () => {
+    const scrolls = [];
+    const dom = await load("", { scrolls, reduce });
+    try {
+      const { window } = dom;
+      layout(window, { gridBottom: 610, panelTop: 630 });
+      const day = cell(window.document, 4);
+      day.focus();
+      const editor = swapPanel(window, day);
+      assert.equal(window.document.activeElement, editor.querySelector("[data-day-editor-heading]"));
+      // Spread: the options object is built in the page's realm.
+      assert.deepEqual(scrolls.map((entry) => ({ ...entry })), [{ top: 630 - 80 - 12, behavior: reduce ? "auto" : "smooth" }]);
+    } finally {
+      dom.window.close();
+    }
+  });
+}
+
+test("a panel beside the month takes focus without a scroll while its heading is in view", async () => {
   const scrolls = [];
   const dom = await load("", { scrolls });
   try {
     const { window } = dom;
-    window.HTMLHeadingElement.prototype.getBoundingClientRect = () => ({ top: 2000, bottom: 2030 });
-    const day = cell(window.document, 4);
-    day.focus();
-    const editor = swapPanel(window, day);
+    layout(window, { gridBottom: 900, panelTop: 100 });
+    const editor = swapPanel(window, cell(window.document, 4));
     assert.equal(window.document.activeElement, editor.querySelector("[data-day-editor-heading]"));
-    assert.deepEqual(scrolls.filter((entry) => entry.element === editor).map((entry) => entry.arg.block), ["start"]);
+    assert.deepEqual(scrolls, []);
   } finally {
     dom.window.close();
   }
 });
 
-test("a panel already on screen takes focus without a scroll", async () => {
+test("a panel beside the month whose heading is under the sticky header is brought down", async () => {
   const scrolls = [];
   const dom = await load("", { scrolls });
   try {
     const { window } = dom;
-    window.HTMLHeadingElement.prototype.getBoundingClientRect = () => ({ top: 100, bottom: 130 });
-    const editor = swapPanel(window, cell(window.document, 4));
-    assert.equal(window.document.activeElement, editor.querySelector("[data-day-editor-heading]"));
-    assert.equal(scrolls.length, 0);
+    layout(window, { gridBottom: 600, panelTop: -200 });
+    swapPanel(window, cell(window.document, 4));
+    assert.equal(scrolls.length, 1);
+    assert.equal(scrolls[0].top, -200 - 80 - 12);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("the arrowed-to day keeps the Tab stop across a swap; a click hands it back to the selection", async () => {
+  const dom = await load("2026-10-02");
+  try {
+    const { window } = dom;
+    const document = window.document;
+    cell(document, 2).focus();
+    key(window, cell(document, 2), "ArrowRight");
+    key(window, cell(document, 3), "ArrowRight");
+    document.body.dispatchEvent(new window.CustomEvent("htmx:afterSwap", { detail: { target: document.body }, bubbles: true }));
+    const stop = () => [...document.querySelectorAll("button[data-day]")].filter((button) => button.getAttribute("tabindex") === "0");
+    assert.deepEqual(stop(), [cell(document, 4)]);
+
+    cell(document, 6).click();
+    assert.deepEqual(stop(), [cell(document, 6)]);
   } finally {
     dom.window.close();
   }

@@ -569,6 +569,7 @@
   "calendar.ovulation_tentative": "Овуляция предполагается, сдвиг базальной температуры пока не подтверждён.",
   "calendar.sex_logged": "Секс",
   "calendar.data_logged": "Есть запись",
+  "calendar.fertility_estimate": "Фертильное окно (оценка)",
   "calendar.weekday.sun": "Вс",
   "calendar.weekday.mon": "Пн",
   "calendar.weekday.tue": "Вт",

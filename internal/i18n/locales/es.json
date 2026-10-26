@@ -561,6 +561,7 @@
   "calendar.ovulation_tentative": "Ovulación estimada. Aún no hay un cambio térmico confirmado.",
   "calendar.sex_logged": "Sexo",
   "calendar.data_logged": "Registro guardado",
+  "calendar.fertility_estimate": "Ventana fértil (estimación)",
   "calendar.weekday.sun": "dom",
   "calendar.weekday.mon": "lun",
   "calendar.weekday.tue": "mar",

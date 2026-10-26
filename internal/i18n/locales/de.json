@@ -561,6 +561,7 @@
   "calendar.ovulation_tentative": "Geschätzter Eisprung. Es wurde noch keine Temperaturverschiebung bestätigt.",
   "calendar.sex_logged": "Sex",
   "calendar.data_logged": "Erfasster Eintrag",
+  "calendar.fertility_estimate": "Fruchtbares Fenster (Schätzung)",
   "calendar.weekday.sun": "So",
   "calendar.weekday.mon": "Mo",
   "calendar.weekday.tue": "Di",
