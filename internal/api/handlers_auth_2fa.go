@@ -29,6 +29,10 @@ func (handler *Handler) ShowTOTPChallengePage(c fiber.Ctx) error {
 		"Title":         localizedPageTitle(messages, "auth.2fa.title", "Ovumcy | Two-Factor Authentication"),
 		"ErrorKey":      errorKey,
 		"InvalidFields": services.InvalidAuthFields(errorKey),
+		// The recovery flow the link leads to is the public forgot-password
+		// flow, closed under OIDC_LOGIN_MODE=oidc_only (ShowForgotPasswordPage
+		// redirects to /login), so the link is not offered there.
+		"LocalPublicAuthEnabled": handler.localPublicAuthEnabled(),
 	}
 	return handler.render(c, "auth_2fa", data)
 }

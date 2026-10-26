@@ -32,7 +32,8 @@
           maxlength="6"
           autocomplete="one-time-code"
           required
-          autofocus{{template "auth_invalid_field_attrs" (index .InvalidFields "code")}}
+          autofocus
+          {{if index .InvalidFields "code"}}aria-invalid="true" aria-describedby="auth-server-error"{{end}}
           class="input-field tracking-widest text-center text-xl"
           placeholder="{{t .Messages "auth.2fa.code_placeholder"}}" />
       </div>
@@ -46,11 +47,13 @@
          the authenticator and rotates both. /recovery-code is the one-time
          reveal page and answers a visitor with no reveal pending by sending
          them back to sign-in. */}}
+    {{if .LocalPublicAuthEnabled}}
     <div class="mt-5 text-sm">
       <p class="journal-muted">
         <a href="/forgot-password" class="inline-link" data-auth-lost-authenticator>{{t .Messages "auth.2fa.lost_access"}}</a>
       </p>
     </div>
+    {{end}}
   </div>
 </section>
 {{end}}

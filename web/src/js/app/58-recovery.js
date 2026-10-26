@@ -209,6 +209,9 @@
           var statusTarget = this.querySelector("[data-recovery-code-status]");
           var requiredMessage = recoveryCodeRequiredMessage(this);
           if (!checkbox) {
+            // Nothing to acknowledge on this form: the native submit goes on,
+            // and so must the navigation it starts.
+            recoveryCodeAcknowledged = true;
             syncRecoveryCodeConfirmForm(this);
             return;
           }
