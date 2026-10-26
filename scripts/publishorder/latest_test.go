@@ -221,7 +221,8 @@ func TestNoWorkflowWritesLatestExceptTheTwoThatOwnIt(t *testing.T) {
 // listing, or fails when GH_FAIL is set, and logs its arguments so the listing
 // the step asked for can be read.
 const ghStub = `gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf '%s\n' "$GH_REFS"; }
-sleep() { :; }`
+sleep() { :; }
+` + highestTagExports
 
 func refsOf(tags ...string) string {
 	var lines []string
@@ -356,25 +357,25 @@ func TestThePromotionVerifiesEverythingBeforeItWritesAnything(t *testing.T) {
 
 	chainNames := []string{
 		promoteRefuseStep, promoteResolveStep, promoteVerifyStep, promoteHubCopyStep, promoteHubVerifyStep, promoteRecheckStep,
-		promoteGhcrMoveStep, promoteGhcrCheckStep, promoteHubMoveStep, promoteHubCheckStep, promoteReportStep,
+		promoteHubMoveStep, promoteHubCheckStep, promoteGhcrMoveStep, promoteGhcrCheckStep, promoteReportStep,
 	}
 	for i := 1; i < len(chainNames); i++ {
 		if index(chainNames[i-1]) >= index(chainNames[i]) {
-			t.Errorf("%s: %q runs at or after %q. Every refusal and every signature check — the Docker Hub copy's included — comes before the first write of `latest`, and the Docker Hub write waits for GHCR's to be read back", promoteWorkflow, chainNames[i-1], chainNames[i])
+			t.Errorf("%s: %q runs at or after %q. Every refusal and every signature check — the Docker Hub copy's included — comes before the first write of `latest`, Docker Hub is written and read back before GHCR is touched, so a mirror failure leaves GHCR where it was", promoteWorkflow, chainNames[i-1], chainNames[i])
 		}
 	}
 
 	// The re-check of "still the highest stable tag" is the step right before
 	// the first write of `latest`: anything between them is time in which a
 	// higher tag can appear unseen.
-	if index(promoteRecheckStep)+1 != index(promoteGhcrMoveStep) {
-		t.Errorf("%s: %q is not immediately before %q", promoteWorkflow, promoteRecheckStep, promoteGhcrMoveStep)
+	if index(promoteRecheckStep)+1 != index(promoteHubMoveStep) {
+		t.Errorf("%s: %q is not immediately before %q", promoteWorkflow, promoteRecheckStep, promoteHubMoveStep)
 	}
 
 	// And nothing else may write: a step added between the verdicts and the
 	// writes, or after them, has to be read for whether it can move a tag.
 	job := workflowfile.Job(t, promoteWorkflow, promoteJob)
-	for _, name := range steps[:index(promoteGhcrMoveStep)] {
+	for _, name := range steps[:index(promoteHubMoveStep)] {
 		if strings.Contains(withoutComments(workflowfile.Step(t, promoteWorkflow, promoteJob, job, name)), "-X PUT") {
 			t.Errorf("%s: %q runs before the first write and writes a tag", promoteWorkflow, name)
 		}
@@ -434,7 +435,8 @@ func TestThePromotionRefusesAnythingButAnExistingStableReleaseTag(t *testing.T) 
     *matching-refs*) if [ -n "${GH_LIST_FAIL:-}" ]; then return 1; fi; printf '%s\n' "$GH_REFS" ;;
     *) if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf 'refs/tags/x\n' ;;
   esac; }
-sleep() { :; }`
+sleep() { :; }
+` + highestTagExports
 
 	for _, testCase := range []struct {
 		name        string
@@ -599,6 +601,7 @@ const registryCurl = bearerArgument + "\n" + `curl() {
     shift
   done
   printf 'CURL %s\n' "$url" >&2
+  if rateLimited "$url"; then printf '429'; return 0; fi
   case "$url" in
     *token*)
       [ -n "$out" ] && printf '{"token":"t"}' > "$out"
@@ -623,6 +626,14 @@ const bearerArgument = `bearerArgument() {
     "Authorization: Bearer"*) printf 'ARGV-BEARER\n' >&2 ;;
     @*) printf 'HEADER-FILE %s\n' "$(cat "${1#@}")" >&2 ;;
   esac
+}
+rateLimited() {
+  [ -n "${STUB_RATE_LIMITS:-}" ] || return 1
+  case "$1" in *${STUB_RATE_URL:-}*) ;; *) return 1 ;; esac
+  local seen
+  seen="$(cat "$STUB_COUNTER" 2>/dev/null || echo 0)"
+  [ "$seen" -lt "$STUB_RATE_LIMITS" ] || return 1
+  echo $(( seen + 1 )) > "$STUB_COUNTER"
 }`
 
 const signedDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -691,6 +702,7 @@ func TestThePromotionReadsAndChecksDigests(t *testing.T) {
 				env := map[string]string{
 					"DIGEST": signedDigest, "IMAGE_PATH": imagePath, "MANIFEST_ACCEPT": "x", "TAG": "v1.9.2",
 					"STUB_DIGEST": testCase.stubDigest, "STUB_HEAD_STATUS": testCase.headStatus,
+					"RATE_LIMIT_ATTEMPTS": "3", "RATE_LIMIT_DELAY_SECONDS": "0",
 				}
 				output, _, err := runWorkflowStep(t, promoteWorkflow, promoteJob, check.step, registryCurl, env)
 
@@ -734,6 +746,7 @@ cosign() { printf 'COSIGN %s\n' "$*" >&2; n=$(( n + 1 )); if [ "$n" -le "${COSIG
 		name        string
 		env         map[string]string
 		wantCalls   int
+		wantCurls   int
 		wantTagWord string
 		wantRefusal string
 	}{
@@ -746,6 +759,14 @@ cosign() { printf 'COSIGN %s\n' "$*" >&2; n=$(( n + 1 )); if [ "$n" -le "${COSIG
 		{name: "the signature never appears", env: map[string]string{"STUB_DIGEST": signedDigest, "COSIGN_FAILS": "99"}, wantCalls: 3, wantRefusal: "carries no signature of the release over 3 attempts"},
 		{name: "a signer that is not the release is an answer, asked once", env: map[string]string{"STUB_DIGEST": signedDigest, "COSIGN_FAILS": "99", "COSIGN_MESSAGE": "none of the signatures were verified against the certificate identity"}, wantCalls: 1, wantRefusal: "did not verify against the release's signer identity"},
 		{name: "an empty identity", env: map[string]string{"STUB_DIGEST": signedDigest, "IDENTITY_REGEXP": ""}, wantRefusal: "accepts any signer"},
+		// A rate limit is the second verdict worth asking again about, and a
+		// separate budget from the missing listing: three attempts here.
+		{name: "a rate limit on the verification lifts", env: map[string]string{"STUB_DIGEST": signedDigest, "COSIGN_FAILS": "2", "COSIGN_MESSAGE": "Error: TOOMANYREQUESTS: You have reached your pull rate limit"}, wantCalls: 3, wantTagWord: "present"},
+		{name: "a rate limit on the verification that never lifts", env: map[string]string{"STUB_DIGEST": signedDigest, "COSIGN_FAILS": "99", "COSIGN_MESSAGE": "Error: TOOMANYREQUESTS: You have reached your pull rate limit"}, wantCalls: 3, wantRefusal: "was refused by a registry's rate limit on all 3 attempts"},
+		{name: "a rate limit on the digest query lifts", env: map[string]string{"STUB_DIGEST": signedDigest, "STUB_RATE_LIMITS": "2", "STUB_RATE_URL": "/manifests/sha256:"}, wantCalls: 1, wantCurls: 3, wantTagWord: "present"},
+		{name: "a rate limit on the digest query that never lifts", env: map[string]string{"STUB_DIGEST": signedDigest, "STUB_RATE_LIMITS": "99", "STUB_RATE_URL": "/manifests/sha256:"}, wantCurls: 3, wantRefusal: "answered HTTP 429"},
+		{name: "a rate limit on the token request lifts", env: map[string]string{"STUB_DIGEST": signedDigest, "STUB_RATE_LIMITS": "1", "STUB_RATE_URL": "auth.docker.io/token"}, wantCalls: 1, wantTagWord: "present"},
+		{name: "a refusal that is not a rate limit is asked once", env: map[string]string{"STUB_DIGEST": signedDigest, "STUB_DIGEST_STATUS": "500"}, wantCurls: 1, wantRefusal: "answered HTTP 500"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			env := map[string]string{
@@ -755,6 +776,8 @@ cosign() { printf 'COSIGN %s\n' "$*" >&2; n=$(( n + 1 )); if [ "$n" -le "${COSIG
 				// fixtures use theirs: what the step owes is to wait out a late
 				// listing and refuse one that never comes.
 				"VERIFY_ATTEMPTS": "3", "VERIFY_DELAY_SECONDS": "0",
+				"RATE_LIMIT_ATTEMPTS": "3", "RATE_LIMIT_DELAY_SECONDS": "0",
+				"STUB_COUNTER": filepath.ToSlash(filepath.Join(t.TempDir(), "counter")),
 			}
 			for key, value := range testCase.env {
 				env[key] = value
@@ -764,6 +787,11 @@ cosign() { printf 'COSIGN %s\n' "$*" >&2; n=$(( n + 1 )); if [ "$n" -le "${COSIG
 			if testCase.wantCalls > 0 {
 				if got := strings.Count(output, "COSIGN verify "); got != testCase.wantCalls {
 					t.Errorf("the step ran `cosign verify` %d time(s), want %d:\n%s", got, testCase.wantCalls, output)
+				}
+			}
+			if testCase.wantCurls > 0 {
+				if got := strings.Count(output, "CURL https://registry-1.docker.io/v2/"+imagePath+"/manifests/"+signedDigest+"\n"); got != testCase.wantCurls {
+					t.Errorf("the step asked Docker Hub for the digest %d time(s), want %d:\n%s", got, testCase.wantCurls, output)
 				}
 			}
 			if testCase.wantRefusal != "" {
@@ -824,6 +852,7 @@ const hubCurl = bearerArgument + "\n" + `curl() {
     shift
   done
   printf 'CURL %s\n' "$url" >&2
+  if rateLimited "$url"; then printf '429'; return 0; fi
   case "$url" in
     *token*)
       [ -n "$out" ] && printf '{"token":"t"}' > "$out"
@@ -858,6 +887,7 @@ const putCurl = bearerArgument + "\n" + `curl() {
     shift
   done
   printf 'CURL %s %s\n' "$method" "$url" >&2
+  if rateLimited "$url"; then printf '429'; return 0; fi
   case "$method $url" in
     "GET "*token*)
       printf '{"token":"t"}' > "$out"
@@ -903,6 +933,7 @@ func TestLatestIsWrittenAsTheSignedBytesPutUnderTheTag(t *testing.T) {
 				env := map[string]string{
 					"DIGEST": digest, "IMAGE_PATH": imagePath, "MANIFEST_ACCEPT": "x",
 					"STUB_BODY": testCase.body, "STUB_PUT_STATUS": testCase.putStatus,
+					"RATE_LIMIT_ATTEMPTS": "3", "RATE_LIMIT_DELAY_SECONDS": "0",
 				}
 				for key, value := range step.env {
 					env[key] = value

@@ -363,6 +363,7 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 		return `n=0` + "\n" +
 			`gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf '%s\n' "${GH_REFS-refs/tags/v2.0.0}"; }` + "\n" +
 			`sleep() { :; }` + "\n" +
+			highestTagExports + "\n" +
 			`cosign() { printf 'COSIGN %s\n' "$*" >&2; if [ "$1" = verify ]; then n=$(( n + 1 )); ` +
 			`if [ "$n" -gt ` + strconv.Itoa(verifyFailures) + ` ]; then return 0; fi; ` +
 			`printf '%s\n' ` + shellQuote(failureMessage) + ` >&2; return 1; fi; }`
@@ -1754,6 +1755,7 @@ func stubRegistry(dir string, reg registry) string {
 		// the listing unreadable.
 		`gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf '%s\n' "${GH_REFS-refs/tags/v2.0.0}"; }`,
 		`sleep() { :; }`,
+		highestTagExports,
 		`curl() {`,
 		`  local out="" dump="" method=GET url="" body="" content_type=""`,
 		`  while [ $# -gt 0 ]; do`,

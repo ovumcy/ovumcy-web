@@ -1,6 +1,7 @@
 package publishorder
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -16,18 +17,29 @@ import (
 
 const (
 	signedRef = imageName + "@" + signedDigest
-	mirrorRef = mirrorName + "@" + signedDigest
+
+	// The destination is the bare repository, the form `oras copy` documents:
+	// the source is a digest, so the content lands under that digest and
+	// nothing gets a tag.
+	mirrorRepository = mirrorName
+
+	// What oras and cosign print for Docker Hub's rate limit. oras words it in
+	// lower case after the status; cosign keeps the registry's own code.
+	orasRateLimit   = "Error response from registry: PUT \"https://registry-1.docker.io/v2/x\": response status code 429: toomanyrequests: You have reached your rate limit"
+	cosignRateLimit = "Error: TOOMANYREQUESTS: You have reached your pull rate limit"
 )
 
 // TestTheReleaseIsCopiedOntoDockerHubByteForByteOrNotAtAll runs the copy step.
-// A mirror that lacks the digest receives it with `oras copy --recursive`
-// between two DIGEST references and nothing else; one that holds it is left
-// alone; an answer that is neither is not guessed at.
+// The copy runs whether the mirror lacks the digest or already holds it (a
+// previous copy can have left the index and not the signature bundle), between
+// the source DIGEST and the bare destination repository and nothing else; a
+// mirror that answers another digest for these bytes, or none, is not guessed
+// at; only a rate limit is asked again.
 func TestTheReleaseIsCopiedOntoDockerHubByteForByteOrNotAtAll(t *testing.T) {
 	const orasStub = `n=0
 sleep() { :; }
-oras() { printf 'ORAS %s\n' "$*" >&2; n=$(( n + 1 )); if [ "$n" -le "${ORAS_FAILS:-0}" ]; then return 1; fi; }`
-	const wantCopy = "ORAS copy --recursive " + signedRef + " " + mirrorRef
+oras() { printf 'ORAS %s\n' "$*" >&2; n=$(( n + 1 )); if [ "$n" -le "${ORAS_FAILS:-0}" ]; then printf '%s\n' "${ORAS_MESSAGE:-boom}" >&2; return 1; fi; }`
+	const wantCopy = "ORAS copy --recursive " + signedRef + " " + mirrorRepository
 
 	for _, testCase := range []struct {
 		name        string
@@ -36,16 +48,22 @@ oras() { printf 'ORAS %s\n' "$*" >&2; n=$(( n + 1 )); if [ "$n" -le "${ORAS_FAIL
 		wantRefusal string
 	}{
 		{name: "the mirror lacks the digest", env: map[string]string{"STUB_DIGEST_STATUS": "404"}, wantCopies: 1},
-		{name: "the mirror already holds it", env: map[string]string{"STUB_DIGEST": signedDigest}, wantCopies: 0},
+		{name: "the mirror already holds it, and may lack its signature", env: map[string]string{"STUB_DIGEST": signedDigest}, wantCopies: 1},
 		{name: "the mirror answers another digest for it", env: map[string]string{"STUB_DIGEST": hubTagDigest}, wantRefusal: "which is not that digest"},
 		{name: "the mirror cannot say", env: map[string]string{"STUB_DIGEST_STATUS": "500"}, wantRefusal: "is not known"},
-		{name: "a copy that fails twice and then lands", env: map[string]string{"STUB_DIGEST_STATUS": "404", "ORAS_FAILS": "2"}, wantCopies: 3},
-		{name: "a copy that never lands", env: map[string]string{"STUB_DIGEST_STATUS": "404", "ORAS_FAILS": "99"}, wantCopies: 3, wantRefusal: "failed on all 3 attempts"},
+		{name: "a rate limit on the digest query lifts", env: map[string]string{"STUB_DIGEST_STATUS": "404", "STUB_RATE_LIMITS": "2", "STUB_RATE_URL": "/manifests/sha256:"}, wantCopies: 1},
+		{name: "a rate limit on the digest query that never lifts", env: map[string]string{"STUB_DIGEST_STATUS": "404", "STUB_RATE_LIMITS": "99", "STUB_RATE_URL": "/manifests/sha256:"}, wantRefusal: "answered HTTP 429"},
+		{name: "a rate limit on the copy lifts", env: map[string]string{"STUB_DIGEST_STATUS": "404", "ORAS_FAILS": "2", "ORAS_MESSAGE": orasRateLimit}, wantCopies: 3},
+		{name: "a rate limit on the copy in cosign's words lifts", env: map[string]string{"STUB_DIGEST_STATUS": "404", "ORAS_FAILS": "1", "ORAS_MESSAGE": cosignRateLimit}, wantCopies: 2},
+		{name: "a rate limit on the copy that never lifts", env: map[string]string{"STUB_DIGEST_STATUS": "404", "ORAS_FAILS": "99", "ORAS_MESSAGE": orasRateLimit}, wantCopies: 3, wantRefusal: "was refused by a registry's rate limit on all 3 attempts"},
+		{name: "any other failure of the copy is an answer, asked once", env: map[string]string{"STUB_DIGEST_STATUS": "404", "ORAS_FAILS": "99", "ORAS_MESSAGE": "Error: unauthorized: authentication required"}, wantCopies: 1, wantRefusal: "and not on a registry's rate limit"},
+		{name: "a digest that merely contains 429 is not a rate limit", env: map[string]string{"STUB_DIGEST_STATUS": "404", "ORAS_FAILS": "99", "ORAS_MESSAGE": "Error: manifest unknown: sha256:429429429429429429429429429429429429429429429429429429429429abcd"}, wantCopies: 1, wantRefusal: "and not on a registry's rate limit"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			env := map[string]string{
 				"DIGEST": signedDigest, "IMAGE_PATH": imagePath, "MANIFEST_ACCEPT": "x",
-				"COPY_ATTEMPTS": "3", "COPY_DELAY_SECONDS": "0",
+				"RATE_LIMIT_ATTEMPTS": "3", "RATE_LIMIT_DELAY_SECONDS": "0",
+				"STUB_COUNTER": filepath.ToSlash(filepath.Join(t.TempDir(), "counter")),
 			}
 			for key, value := range testCase.env {
 				env[key] = value
@@ -77,7 +95,8 @@ oras() { printf 'ORAS %s\n' "$*" >&2; n=$(( n + 1 )); if [ "$n" -le "${ORAS_FAIL
 // the verification takes keeps `latest`; this run then writes nothing.
 func TestThePromotionAsksAgainBeforeItWritesLatest(t *testing.T) {
 	const stubs = `gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf '%s\n' "$GH_REFS"; }
-sleep() { :; }`
+sleep() { :; }
+` + highestTagExports
 
 	for _, testCase := range []struct {
 		name        string
@@ -137,6 +156,7 @@ func TestTheDockerHubWriteNamesTheReleaseOnlyWhereTheVerificationFoundItAbsent(t
 			output, _, err := runWorkflowStep(t, promoteWorkflow, promoteJob, promoteHubMoveStep, putCurl, map[string]string{
 				"DIGEST": digest, "IMAGE_PATH": imagePath, "MANIFEST_ACCEPT": "x", "STUB_BODY": canonicalManifest,
 				"REGISTRY_USER": "publisher", "REGISTRY_PASSWORD": "secret", "TAG": "v1.9.2", "TAG_ON_HUB": testCase.tagOnHub,
+				"RATE_LIMIT_ATTEMPTS": "3", "RATE_LIMIT_DELAY_SECONDS": "0",
 			})
 
 			if testCase.wantRefusal != "" {
@@ -172,7 +192,7 @@ func trimNewlines(lines []string) []string {
 // release under its own name, and that name has to be the signed digest.
 func TestTheDockerHubCheckAsksAboutTheReleaseTagToo(t *testing.T) {
 	env := func(extra map[string]string) map[string]string {
-		base := map[string]string{"DIGEST": signedDigest, "IMAGE_PATH": imagePath, "MANIFEST_ACCEPT": "x", "TAG": "v1.9.2", "STUB_DIGEST": signedDigest}
+		base := map[string]string{"DIGEST": signedDigest, "IMAGE_PATH": imagePath, "MANIFEST_ACCEPT": "x", "TAG": "v1.9.2", "STUB_DIGEST": signedDigest, "RATE_LIMIT_ATTEMPTS": "3", "RATE_LIMIT_DELAY_SECONDS": "0"}
 		for key, value := range extra {
 			base[key] = value
 		}
@@ -266,13 +286,18 @@ func TestThePromotionNeverSignsAndCopiesOnlyWithOras(t *testing.T) {
 		}
 	}
 
-	orasCall := regexp.MustCompile(`(?m)^\s*(?:if\s+)?oras\s+(\S+)(.*)$`)
+	// A call is `oras` followed by one of the tool's subcommands, wherever it
+	// stands on the line (it runs behind the rate-limit wrapper); the words
+	// "the oras output" in a message are not one.
+	orasCall := regexp.MustCompile(`(?m)\boras\s+(copy|cp|push|pull|tag|attach|discover|resolve|login|logout|manifest|blob|repo|backup|restore)\b(.*)$`)
 	calls := orasCall.FindAllStringSubmatch(text, -1)
 	if len(calls) != 1 {
 		t.Fatalf("%s runs oras %d times, want exactly the one copy", promoteWorkflow, len(calls))
 	}
-	if calls[0][1] != "copy" || !strings.Contains(calls[0][2], `--recursive "ghcr.io/${IMAGE_PATH}@${DIGEST}" "docker.io/${IMAGE_PATH}@${DIGEST}"`) {
-		t.Errorf("%s: the oras call is %q, want `oras copy --recursive` from the GHCR digest to the same digest on Docker Hub", promoteWorkflow, strings.TrimSpace(calls[0][0]))
+	// The destination is the bare repository `oras copy` documents (`<to>[:<tag>]`):
+	// a digest source lands under its own digest, with no tag.
+	if calls[0][1] != "copy" || !strings.HasPrefix(strings.TrimSpace(calls[0][2]), `--recursive "ghcr.io/${IMAGE_PATH}@${DIGEST}" "docker.io/${IMAGE_PATH}";`) {
+		t.Errorf("%s: the oras call is %q, want `oras copy --recursive` from the GHCR digest to the bare Docker Hub repository", promoteWorkflow, strings.TrimSpace(calls[0][0]))
 	}
 	job := workflowfile.Job(t, promoteWorkflow, promoteJob)
 	if !strings.Contains(stepBlockOf(t, job, promoteHubCopyStep), "oras copy --recursive") {

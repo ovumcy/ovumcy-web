@@ -18,8 +18,12 @@
   over that digest (pinned to the release's own workflow and tag ref), and, when the Docker Hub
   mirror lacks the release, copies it there byte for byte — the index, platform manifests, blobs and
   the release's own signature bundle, so the digest is unchanged and the copy verifies under the
-  release's signer identity; nothing is re-signed. The copy is verified on Docker Hub before any tag
-  moves on either registry. Only then are the release tag (if the mirror lacked it) and `latest`
-  written. A failed run prints where `latest` points on each registry.
+  release's signer identity; nothing is re-signed. The copy is idempotent and runs on every
+  dispatch, so a mirror left with the index but without the signature bundle by an earlier attempt
+  is completed rather than wedged. The copy is verified on Docker Hub before any tag moves on either
+  registry. Only then are the release tag (if the mirror lacked it) and `latest` written — on Docker
+  Hub first and on GHCR last, so a mirror failure leaves GHCR's `latest` where it was. Docker Hub's
+  rate limit is asked again within a bounded budget at each of its calls; any other refusal ends the
+  step. A failed run prints where `latest` points on each registry.
 
   Pin a release tag in `OVUMCY_IMAGE` as before; `:main` is not for production.

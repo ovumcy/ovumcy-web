@@ -1092,33 +1092,25 @@ jobs:
             exit 0
           fi
 
-          stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-          if [[ ! "$REF_NAME" =~ $stable ]]; then
-            decide false "tag ${REF_NAME} is not a stable vMAJOR.MINOR.PATCH release, so it is published under its own name and \`latest\` stays put."
-            exit 0
-          fi
-
-          refs=""
-          for attempt in 1 2 3; do
-            if refs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq '.[].ref')"; then
-              break
-            fi
-            refs=""
-            sleep $(( attempt * 2 ))
-          done
-          if [ -z "$refs" ]; then
-            echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${REF_NAME} is the highest stable release and nothing is published."
-            exit 1
-          fi
-
-          stable_tags="$(printf '%s\n' "$refs" | sed 's#^refs/tags/##' | { grep -E "$stable" || true; })"
-          highest="$(printf '%s\n%s\n' "$stable_tags" "$REF_NAME" | { grep -E "$stable" || true; } | sort -V | tail -n 1)"
-
-          if [ "$highest" = "$REF_NAME" ]; then
-            decide true "tag ${REF_NAME} is the highest stable release, so \`latest\` moves to it."
-          else
-            decide false "tag ${REF_NAME} is below ${highest}, the highest stable release, so \`latest\` stays on that one."
-          fi
+          # The shape of a stable tag, the listing, the retries and `sort -V`
+          # are the checked-in script's, the same one every other place that
+          # asks this question runs; what each verdict means here is decided
+          # below.
+          rc=0
+          highest="$(bash "${GITHUB_WORKSPACE}/scripts/ci/highest-stable-tag.sh" "$REF_NAME")" || rc=$?
+          case "$rc" in
+            0) decide true "tag ${REF_NAME} is the highest stable release, so \`latest\` moves to it." ;;
+            1) decide false "tag ${REF_NAME} is below ${highest}, the highest stable release, so \`latest\` stays on that one." ;;
+            2)
+              echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${REF_NAME} is the highest stable release and nothing is published."
+              exit 1
+              ;;
+            3) decide false "tag ${REF_NAME} is not a stable vMAJOR.MINOR.PATCH release, so it is published under its own name and \`latest\` stays put." ;;
+            *)
+              echo "::error::the highest-stable-tag check ended with status ${rc}, so there is no way to tell whether ${REF_NAME} is the highest stable release and nothing is published."
+              exit 1
+              ;;
+          esac
 
       - name: Extract Docker metadata
         id: meta
@@ -1513,25 +1505,23 @@ jobs:
           # not serialise (a pending run in a shared group is cancelled, which a
           # release must never be), so the answer is asked again here, right
           # before `latest` could be written. The same listing and the same
-          # `sort -V` as that step; a listing that cannot be read ends the step
+          # script as that step; a listing that cannot be read ends the step
           # with nothing written, as it does there.
           still_highest_stable_tag() {
-            local stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-            local refs="" attempt stable_tags highest
-            for attempt in 1 2 3; do
-              if refs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq '.[].ref')"; then
-                break
-              fi
-              refs=""
-              sleep $(( attempt * 2 ))
-            done
-            if [ -z "$refs" ]; then
-              echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${REF_NAME} is still the highest stable release, and nothing is promoted."
-              exit 1
-            fi
-            stable_tags="$(printf '%s\n' "$refs" | sed 's#^refs/tags/##' | { grep -E "$stable" || true; })"
-            highest="$(printf '%s\n%s\n' "$stable_tags" "$REF_NAME" | { grep -E "$stable" || true; } | sort -V | tail -n 1)"
-            [ "$highest" = "$REF_NAME" ]
+            local rc=0
+            bash "${GITHUB_WORKSPACE}/scripts/ci/highest-stable-tag.sh" "$REF_NAME" > /dev/null || rc=$?
+            case "$rc" in
+              0) return 0 ;;
+              1) return 1 ;;
+              2)
+                echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${REF_NAME} is still the highest stable release, and nothing is promoted."
+                exit 1
+                ;;
+              *)
+                echo "::error::the highest-stable-tag check ended with status ${rc}, so there is no way to tell whether ${REF_NAME} is still the highest stable release, and nothing is promoted."
+                exit 1
+                ;;
+            esac
           }
 
           if [ -z "$(printf '%s' "${TAG_REFS}" | tr -d '[:space:]')" ]; then
@@ -1950,22 +1940,20 @@ jobs:
           # rate limit. A listing that cannot be read ends the step before any
           # alias is written.
           still_highest_stable_tag() {
-            local stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-            local refs="" attempt stable_tags highest
-            for attempt in 1 2 3; do
-              if refs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq '.[].ref')"; then
-                break
-              fi
-              refs=""
-              sleep $(( attempt * 2 ))
-            done
-            if [ -z "$refs" ]; then
-              echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${REF_NAME} is still the highest stable release. No Docker Hub alias is written, so nothing is published there this run."
-              exit 1
-            fi
-            stable_tags="$(printf '%s\n' "$refs" | sed 's#^refs/tags/##' | { grep -E "$stable" || true; })"
-            highest="$(printf '%s\n%s\n' "$stable_tags" "$REF_NAME" | { grep -E "$stable" || true; } | sort -V | tail -n 1)"
-            [ "$highest" = "$REF_NAME" ]
+            local rc=0
+            bash "${GITHUB_WORKSPACE}/scripts/ci/highest-stable-tag.sh" "$REF_NAME" > /dev/null || rc=$?
+            case "$rc" in
+              0) return 0 ;;
+              1) return 1 ;;
+              2)
+                echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${REF_NAME} is still the highest stable release. No Docker Hub alias is written, so nothing is published there this run."
+                exit 1
+                ;;
+              *)
+                echo "::error::the highest-stable-tag check ended with status ${rc}, so there is no way to tell whether ${REF_NAME} is still the highest stable release. No Docker Hub alias is written, so nothing is published there this run."
+                exit 1
+                ;;
+            esac
           }
 
           if [ -z "$(printf '%s' "${TAG_REFS}" | tr -d '[:space:]')" ]; then

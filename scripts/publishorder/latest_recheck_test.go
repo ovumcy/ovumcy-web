@@ -113,6 +113,7 @@ func runMirrorStep(t *testing.T, env map[string]string, ghRefs string, ghFails b
 	bash := requireBash(t)
 	preamble := `gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf '%s\n' "$GH_REFS"; }` + "\n" +
 		`sleep() { :; }` + "\n" +
+		highestTagExports + "\n" +
 		`cosign() { printf 'COSIGN %s\n' "$*" >&2; }`
 
 	outputs := filepath.ToSlash(filepath.Join(t.TempDir(), "github_output"))

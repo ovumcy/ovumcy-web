@@ -21,6 +21,13 @@ name: Promote latest
 # refused, and there is no input that overrides that: moving `latest` backwards
 # is not a repair, and a release the operator wants served is released.
 #
+# The writes go to Docker Hub first and to GHCR last. By then the Docker Hub
+# copy is the part that has been through the most: copied, verified there under
+# the release's own signer, and subject to a rate limit that can refuse a write.
+# A failure on that side therefore leaves GHCR untouched, and GHCR's `latest` —
+# the registry operators pull from by default — moves only once the mirror
+# already names the same digest.
+#
 # Run it from `main`, with the release tag as the input:
 #   gh workflow run promote-latest.yml --ref main -f tag=v1.9.2
 on:
@@ -59,6 +66,15 @@ jobs:
       MANIFEST_ACCEPT: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json
 
     steps:
+      # For the checked-in script that decides whether a tag is the highest
+      # stable release: the same file docker-image.yml runs, so the two
+      # workflows cannot come to different answers. Nothing is pushed from this
+      # checkout, so it keeps no credential.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       # No `if:` on any step that refuses: the condition is in the script, so a
       # runner-side skip cannot pass it.
       - name: Refuse anything but the highest existing stable release tag
@@ -77,11 +93,18 @@ jobs:
             exit 1
           fi
 
-          # Exactly vMAJOR.MINOR.PATCH. A pre-release (`v1.10.0-rc.1`), a build
-          # suffix, a leading zero or a name that is not a version at all is
-          # never `latest`; the same shape docker-image.yml's own decision uses.
-          stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-          if [[ ! "$TAG" =~ $stable ]]; then
+          # Asked first, because the answer includes whether the name is a
+          # stable release tag at all (exactly vMAJOR.MINOR.PATCH: a
+          # pre-release such as `v1.10.0-rc.1`, a build suffix, a leading zero
+          # or a name that is not a version is never `latest`), and a name that
+          # is not one must be refused before it is put into the lookup below.
+          # The shape, the listing and the `sort -V` (v1.10.0 is above v1.9.2)
+          # are the checked-in script's, the one docker-image.yml's decision
+          # runs too. A listing that cannot be read refuses: guessing either
+          # way could move `latest` backwards.
+          rc=0
+          highest="$(bash "${GITHUB_WORKSPACE}/scripts/ci/highest-stable-tag.sh" "$TAG")" || rc=$?
+          if [ "$rc" = "3" ]; then
             echo "::error::'${TAG}' is not a stable release tag (vMAJOR.MINOR.PATCH with no pre-release suffix), so latest is not pointed at it. Nothing was changed."
             exit 1
           fi
@@ -93,29 +116,21 @@ jobs:
             exit 1
           fi
 
-          # The highest stable tag of the repository, by the listing and the
-          # `sort -V` that docker-image.yml's decision step uses (v1.10.0 is
-          # above v1.9.2). A listing that cannot be read refuses: guessing
-          # either way could move `latest` backwards.
-          refs=""
-          for attempt in 1 2 3; do
-            if refs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq '.[].ref')"; then
-              break
-            fi
-            refs=""
-            sleep $(( attempt * 2 ))
-          done
-          if [ -z "$refs" ]; then
-            echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${TAG} is the highest stable release. Nothing was changed."
-            exit 1
-          fi
-
-          stable_tags="$(printf '%s\n' "$refs" | sed 's#^refs/tags/##' | { grep -E "$stable" || true; })"
-          highest="$(printf '%s\n%s\n' "$stable_tags" "$TAG" | { grep -E "$stable" || true; } | sort -V | tail -n 1)"
-          if [ "$highest" != "$TAG" ]; then
-            echo "::error::${TAG} is below ${highest}, the highest stable release, and latest never moves backwards. There is no override: release the version that should be served. Nothing was changed."
-            exit 1
-          fi
+          case "$rc" in
+            0) ;;
+            1)
+              echo "::error::${TAG} is below ${highest}, the highest stable release, and latest never moves backwards. There is no override: release the version that should be served. Nothing was changed."
+              exit 1
+              ;;
+            2)
+              echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${TAG} is the highest stable release. Nothing was changed."
+              exit 1
+              ;;
+            *)
+              echo "::error::the highest-stable-tag check ended with status ${rc}, so there is no way to tell whether ${TAG} is the highest stable release. Nothing was changed."
+              exit 1
+              ;;
+          esac
 
           echo "${TAG} is the highest existing stable release tag."
 
@@ -300,26 +315,94 @@ jobs:
         # identity signs nothing, and a Docker Hub copy that only verified under
         # it would not be the release.
         #
-        # The destination is a digest, so oras refuses a copy whose bytes hash
-        # to anything else. A mirror that already holds the digest is left as
-        # it is; its signature is judged by the next step either way.
+        # The copy runs EVERY time, whether or not the mirror holds the index.
+        # A copy that died after the index and before the sigstore bundle leaves
+        # a mirror that has the digest and cannot verify it; a step that skipped
+        # on "the digest is there" would fail the next step forever. `oras copy`
+        # is idempotent: it finds each blob and manifest already present, moves
+        # only what is missing, and writes the bundle's fallback tag again.
+        # What the mirror's digest query still decides is a refusal: a mirror
+        # that answers another digest for these bytes is not trusted.
+        #
+        # The destination is the bare repository, the form `oras copy` documents
+        # (`<to>[:<tag>]`): the source is a digest, so the content is copied by
+        # that digest and nothing gets a tag. A digest on the destination would
+        # not make oras check anything more — the source's own digest already
+        # fixes the bytes, and the next step reads the mirror back.
+        #
+        # Docker Hub refuses with a rate limit now and then. That one refusal is
+        # asked again, within a bounded budget, by the same words as
+        # docker-image.yml's mirror step; any other failure is an answer and ends
+        # the step on its first attempt. oras words the status as `response status
+        # code 429: toomanyrequests: …`, so the match is not case-sensitive.
         shell: bash
         timeout-minutes: 20
         env:
           DIGEST: ${{ steps.release.outputs.digest }}
           IMAGE_PATH: ${{ steps.image.outputs.path }}
-          COPY_ATTEMPTS: 3
-          COPY_DELAY_SECONDS: 20
+          RATE_LIMIT_ATTEMPTS: 4
+          RATE_LIMIT_DELAY_SECONDS: 30
         run: |
           set -euo pipefail
 
           token_body="$(mktemp)"
           headers="$(mktemp)"
           auth="$(mktemp)"
-          trap 'rm -f "$token_body" "$headers" "$auth"' EXIT
+          call_log="$(mktemp)"
+          trap 'rm -f "$token_body" "$headers" "$auth" "$call_log"' EXIT
+
+          # Docker Hub's rate limit is the one answer a curl call asks again.
+          # For curl it is the status itself, 429, which `-w '%{http_code}'`
+          # prints — never a number searched for in a body, where a digest can
+          # contain it. Any other status, and a curl that fails, goes straight
+          # back to the caller, which judges it on the first attempt; a limit
+          # still standing after the last attempt is returned as the 429 it is,
+          # and the caller's refusal names it. Asking again is safe: each call
+          # is a read.
+          hub_curl() {
+            local attempt=1 status
+            while true; do
+              status="$(curl "$@")" || return $?
+              if [ "$status" != "429" ] || [ "${attempt}" -ge "${RATE_LIMIT_ATTEMPTS}" ]; then
+                printf '%s' "$status"
+                return 0
+              fi
+              echo "attempt ${attempt} of ${RATE_LIMIT_ATTEMPTS} at ${*: -1} hit Docker Hub's rate limit; waiting $(( attempt * RATE_LIMIT_DELAY_SECONDS ))s." >&2
+              sleep "$(( attempt * RATE_LIMIT_DELAY_SECONDS ))"
+              attempt=$(( attempt + 1 ))
+            done
+          }
+
+          # The same question for a command that prints its refusal, which is
+          # how oras and cosign answer. Matched by words and never by a bare
+          # `429`, which a digest in any other error can contain.
+          rate_limited() {
+            local what="$1" attempt=1
+            shift
+            while true; do
+              if "$@" > "$call_log" 2>&1; then
+                cat "$call_log"
+                return 0
+              fi
+              cat "$call_log"
+
+              if ! grep -qiE 'TOOMANYREQUESTS|429 Too Many Requests|response status code 429' "$call_log"; then
+                return 1
+              fi
+
+              if [ "${attempt}" -ge "${RATE_LIMIT_ATTEMPTS}" ]; then
+                echo "::error::${what} was refused by a registry's rate limit on all ${RATE_LIMIT_ATTEMPTS} attempts. Nothing public changed on either registry."
+                exit 1
+              fi
+
+              echo "attempt ${attempt} of ${RATE_LIMIT_ATTEMPTS} ${what} hit a registry's rate limit; waiting $(( attempt * RATE_LIMIT_DELAY_SECONDS ))s."
+              sleep "$(( attempt * RATE_LIMIT_DELAY_SECONDS ))"
+              attempt=$(( attempt + 1 ))
+            done
+          }
 
           token_status="$(
-            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+            hub_curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
               -o "$token_body" -w '%{http_code}' \
               "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${IMAGE_PATH}:pull"
           )"
@@ -339,7 +422,7 @@ jobs:
           # By DIGEST, not by tag: a tag on the mirror is a mutable pointer, and
           # the question is whether these exact bytes are there.
           head_status="$(
-            curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+            hub_curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
               -o /dev/null -D "$headers" -w '%{http_code}' -I \
               -H "@${auth}" \
               -H "Accept: ${MANIFEST_ACCEPT}" \
@@ -357,8 +440,7 @@ jobs:
                 echo "::error::Docker Hub answered ${held:-nothing} for docker.io/${IMAGE_PATH}@${DIGEST}, which is not that digest. Nothing was changed."
                 exit 1
               fi
-              echo "docker.io/${IMAGE_PATH} already holds ${DIGEST}; nothing to copy."
-              exit 0
+              echo "docker.io/${IMAGE_PATH} already holds ${DIGEST}; the copy below fills in whatever of the release it lacks."
               ;;
             404) ;;
             *)
@@ -367,21 +449,10 @@ jobs:
               ;;
           esac
 
-          # Asking again is safe: a copy moves content-addressed bytes to a
-          # digest, and a repeated one finds each blob already there.
-          attempt=1
-          while true; do
-            if oras copy --recursive "ghcr.io/${IMAGE_PATH}@${DIGEST}" "docker.io/${IMAGE_PATH}@${DIGEST}"; then
-              break
-            fi
-            if [ "${attempt}" -ge "${COPY_ATTEMPTS}" ]; then
-              echo "::error::copying ghcr.io/${IMAGE_PATH}@${DIGEST} to Docker Hub failed on all ${COPY_ATTEMPTS} attempts. The mirror holds no tag for it and nothing public changed on either registry."
-              exit 1
-            fi
-            echo "attempt ${attempt} of ${COPY_ATTEMPTS} to copy the release failed; waiting $(( attempt * COPY_DELAY_SECONDS ))s."
-            sleep "$(( attempt * COPY_DELAY_SECONDS ))"
-            attempt=$(( attempt + 1 ))
-          done
+          if ! rate_limited "copying ghcr.io/${IMAGE_PATH}@${DIGEST} to Docker Hub" oras copy --recursive "ghcr.io/${IMAGE_PATH}@${DIGEST}" "docker.io/${IMAGE_PATH}"; then
+            echo "::error::copying ghcr.io/${IMAGE_PATH}@${DIGEST} to Docker Hub failed, and not on a registry's rate limit — the oras output above says what it is. The mirror holds no tag for it and nothing public changed on either registry."
+            exit 1
+          fi
 
           echo "docker.io/${IMAGE_PATH}@${DIGEST} copied, referrers included, under no tag."
 
@@ -391,10 +462,11 @@ jobs:
         # signer, the identity pattern the GHCR step built, before `latest`
         # moves on either registry. A failure here changes no public tag.
         #
-        # ASKED REPEATEDLY, and only about one verdict: Docker Hub accepts a
+        # ASKED REPEATEDLY, and only about two verdicts: Docker Hub accepts a
         # signature before its referrers listing shows it (docker-image.yml's
         # mirror step documents the measurement), so `no signatures found` is
-        # asked again within a bounded budget and any other refusal — an
+        # asked again within a bounded budget, and so is a registry's rate
+        # limit, by the same words as the copy step. Any other refusal — an
         # identity that does not match, a transport error — is an answer and
         # ends the step on the first attempt.
         #
@@ -410,6 +482,8 @@ jobs:
           IDENTITY_REGEXP: ${{ steps.verify.outputs.identity_regexp }}
           VERIFY_ATTEMPTS: 6
           VERIFY_DELAY_SECONDS: 10
+          RATE_LIMIT_ATTEMPTS: 4
+          RATE_LIMIT_DELAY_SECONDS: 30
         run: |
           set -euo pipefail
 
@@ -424,8 +498,59 @@ jobs:
           call_log="$(mktemp)"
           trap 'rm -f "$token_body" "$headers" "$auth" "$call_log"' EXIT
 
+          # Docker Hub's rate limit is the one answer a curl call asks again.
+          # For curl it is the status itself, 429, which `-w '%{http_code}'`
+          # prints — never a number searched for in a body, where a digest can
+          # contain it. Any other status, and a curl that fails, goes straight
+          # back to the caller, which judges it on the first attempt; a limit
+          # still standing after the last attempt is returned as the 429 it is,
+          # and the caller's refusal names it. Asking again is safe: each call
+          # is a read.
+          hub_curl() {
+            local attempt=1 status
+            while true; do
+              status="$(curl "$@")" || return $?
+              if [ "$status" != "429" ] || [ "${attempt}" -ge "${RATE_LIMIT_ATTEMPTS}" ]; then
+                printf '%s' "$status"
+                return 0
+              fi
+              echo "attempt ${attempt} of ${RATE_LIMIT_ATTEMPTS} at ${*: -1} hit Docker Hub's rate limit; waiting $(( attempt * RATE_LIMIT_DELAY_SECONDS ))s." >&2
+              sleep "$(( attempt * RATE_LIMIT_DELAY_SECONDS ))"
+              attempt=$(( attempt + 1 ))
+            done
+          }
+
+          # The same question for a command that prints its refusal, which is
+          # how cosign answers. Matched by words and never by a bare `429`,
+          # which a digest in any other error can contain. The last attempt's
+          # output stays in `call_log` for the verdict below.
+          rate_limited() {
+            local what="$1" attempt=1
+            shift
+            while true; do
+              if "$@" > "$call_log" 2>&1; then
+                cat "$call_log"
+                return 0
+              fi
+              cat "$call_log"
+
+              if ! grep -qiE 'TOOMANYREQUESTS|429 Too Many Requests|response status code 429' "$call_log"; then
+                return 1
+              fi
+
+              if [ "${attempt}" -ge "${RATE_LIMIT_ATTEMPTS}" ]; then
+                echo "::error::${what} was refused by a registry's rate limit on all ${RATE_LIMIT_ATTEMPTS} attempts. Nothing was changed."
+                exit 1
+              fi
+
+              echo "attempt ${attempt} of ${RATE_LIMIT_ATTEMPTS} ${what} hit a registry's rate limit; waiting $(( attempt * RATE_LIMIT_DELAY_SECONDS ))s."
+              sleep "$(( attempt * RATE_LIMIT_DELAY_SECONDS ))"
+              attempt=$(( attempt + 1 ))
+            done
+          }
+
           token_status="$(
-            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+            hub_curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
               -o "$token_body" -w '%{http_code}' \
               "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${IMAGE_PATH}:pull"
           )"
@@ -447,7 +572,7 @@ jobs:
           resolve() {
             local status found
             status="$(
-              curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              hub_curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
                 -o /dev/null -D "$headers" -w '%{http_code}' -I \
                 -H "@${auth}" \
                 -H "Accept: ${MANIFEST_ACCEPT}" \
@@ -487,14 +612,12 @@ jobs:
 
           attempt=1
           while true; do
-            if cosign verify \
+            if rate_limited "verifying docker.io/${IMAGE_PATH}@${DIGEST}" cosign verify \
               --certificate-identity-regexp "${IDENTITY_REGEXP}" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              "docker.io/${IMAGE_PATH}@${DIGEST}" > "$call_log" 2>&1; then
-              cat "$call_log"
+              "docker.io/${IMAGE_PATH}@${DIGEST}"; then
               break
             fi
-            cat "$call_log"
 
             if ! grep -q 'no signatures found' "$call_log"; then
               echo "::error::docker.io/${IMAGE_PATH}@${DIGEST} did not verify against the release's signer identity, and the refusal is not a missing signature — the cosign output above says what it is. Nothing was changed."
@@ -520,6 +643,7 @@ jobs:
         # Asked once more, immediately before the first write of `latest` on
         # either registry: the answer at the top of this run is stale by now.
         # A higher tag keeps `latest` for its own run; this one writes nothing.
+        # The question is the checked-in script's, as at the top of the run.
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -527,28 +651,243 @@ jobs:
         run: |
           set -euo pipefail
 
-          stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-          refs=""
-          for attempt in 1 2 3; do
-            if refs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq '.[].ref')"; then
-              break
-            fi
-            refs=""
-            sleep $(( attempt * 2 ))
-          done
-          if [ -z "$refs" ]; then
-            echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${TAG} is still the highest stable release. latest was not moved on either registry."
-            exit 1
-          fi
-
-          stable_tags="$(printf '%s\n' "$refs" | sed 's#^refs/tags/##' | { grep -E "$stable" || true; })"
-          highest="$(printf '%s\n%s\n' "$stable_tags" "$TAG" | { grep -E "$stable" || true; } | sort -V | tail -n 1)"
-          if [ "$highest" != "$TAG" ]; then
-            echo "::error::${highest} was tagged while this run verified ${TAG}, so latest belongs to ${highest} and is not moved. Nothing public changed on either registry."
-            exit 1
-          fi
+          rc=0
+          highest="$(bash "${GITHUB_WORKSPACE}/scripts/ci/highest-stable-tag.sh" "$TAG")" || rc=$?
+          case "$rc" in
+            0) ;;
+            1)
+              echo "::error::${highest} was tagged while this run verified ${TAG}, so latest belongs to ${highest} and is not moved. Nothing public changed on either registry."
+              exit 1
+              ;;
+            2)
+              echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${TAG} is still the highest stable release. latest was not moved on either registry."
+              exit 1
+              ;;
+            *)
+              echo "::error::the highest-stable-tag check ended with status ${rc}, so there is no way to tell whether ${TAG} is still the highest stable release. latest was not moved on either registry."
+              exit 1
+              ;;
+          esac
 
           echo "${TAG} is still the highest stable release."
+
+      - name: Point latest at the signed digest on Docker Hub
+        # The first write, and the one that can be refused for a rate limit, so
+        # it goes before GHCR's: a failure here leaves GHCR untouched. The same
+        # fetch-by-digest and PUT as the GHCR step below, read from the
+        # MIRROR's own copy of the digest, the one verified there above, and
+        # written with the publishing credential (not the pull-auth pair).
+        #
+        # Two names are written: `latest`, and the release's own tag when the
+        # verification step found the mirror without it. The release tag goes
+        # first, so a failure between the two leaves the mirror with a release
+        # tag and the old `latest`, never the reverse. Which names to write is
+        # an output of the verification, not a guess made here: an answer that
+        # is neither `present` nor `absent` writes nothing.
+        #
+        # Every Docker Hub call asks again on a rate limit (HTTP 429) and on
+        # nothing else; the PUT writes the same bytes to the same name, so
+        # repeating it is the same registry state as doing it once.
+        shell: bash
+        env:
+          IMAGE_PATH: ${{ steps.image.outputs.path }}
+          DIGEST: ${{ steps.release.outputs.digest }}
+          TAG: ${{ inputs.tag }}
+          TAG_ON_HUB: ${{ steps.hubverify.outputs.tag_on_hub }}
+          REGISTRY_USER: ${{ secrets.DOCKERHUB_PUBLISH_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_PUBLISH_TOKEN }}
+          RATE_LIMIT_ATTEMPTS: 4
+          RATE_LIMIT_DELAY_SECONDS: 30
+        run: |
+          set -euo pipefail
+
+          case "${TAG_ON_HUB:-}" in
+            present) targets=(latest) ;;
+            absent) targets=("${TAG}" latest) ;;
+            *)
+              echo "::error::the verification of the Docker Hub copy did not say whether the mirror holds ${TAG} ('${TAG_ON_HUB:-}'), so there is no list of names to write. Nothing was changed on either registry."
+              exit 1
+              ;;
+          esac
+
+          manifest="$(mktemp)"
+          headers="$(mktemp)"
+          token_body="$(mktemp)"
+          credential="$(mktemp)"
+          auth="$(mktemp)"
+          trap 'rm -f "$manifest" "$headers" "$token_body" "$credential" "$auth"' EXIT
+
+          # Docker Hub's rate limit is the one answer a curl call asks again.
+          # For curl it is the status itself, 429, which `-w '%{http_code}'`
+          # prints — never a number searched for in a body, where a digest can
+          # contain it. Any other status, and a curl that fails, goes straight
+          # back to the caller, which judges it on the first attempt; a limit
+          # still standing after the last attempt is returned as the 429 it is,
+          # and the caller's refusal names it.
+          hub_curl() {
+            local attempt=1 status
+            while true; do
+              status="$(curl "$@")" || return $?
+              if [ "$status" != "429" ] || [ "${attempt}" -ge "${RATE_LIMIT_ATTEMPTS}" ]; then
+                printf '%s' "$status"
+                return 0
+              fi
+              echo "attempt ${attempt} of ${RATE_LIMIT_ATTEMPTS} at ${*: -1} hit Docker Hub's rate limit; waiting $(( attempt * RATE_LIMIT_DELAY_SECONDS ))s." >&2
+              sleep "$(( attempt * RATE_LIMIT_DELAY_SECONDS ))"
+              attempt=$(( attempt + 1 ))
+            done
+          }
+
+          printf 'user = "%s:%s"\n' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" > "$credential"
+
+          token_status="$(
+            hub_curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$token_body" -w '%{http_code}' -K "$credential" \
+              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${IMAGE_PATH}:pull,push"
+          )"
+          if [ "$token_status" != "200" ]; then
+            echo "::error::Docker Hub returned HTTP ${token_status} for a push token on ${IMAGE_PATH}. Nothing was changed on either registry."
+            exit 1
+          fi
+          token="$(
+            python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
+          )"
+          if [ -z "$token" ]; then
+            echo "::error::Docker Hub returned no push token for ${IMAGE_PATH}. Nothing was changed on either registry."
+            exit 1
+          fi
+          printf 'Authorization: Bearer %s\n' "$token" > "$auth"
+
+          manifest_status="$(
+            hub_curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$manifest" -D "$headers" -w '%{http_code}' \
+              -H "@${auth}" \
+              -H "Accept: ${MANIFEST_ACCEPT}" \
+              "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${DIGEST}"
+          )"
+          if [ "$manifest_status" != "200" ]; then
+            echo "::error::reading the signed manifest ${DIGEST} on Docker Hub returned HTTP ${manifest_status}. Nothing was changed on either registry."
+            exit 1
+          fi
+
+          fetched="sha256:$(sha256sum "$manifest" | awk '{print $1}')"
+          if [ "$fetched" != "$DIGEST" ]; then
+            echo "::error::the manifest fetched for ${DIGEST} on Docker Hub hashes to ${fetched}, so writing it under a tag would not name the signed digest. Nothing was changed on either registry."
+            exit 1
+          fi
+
+          content_type="$(
+            tr -d '\r' < "$headers" \
+              | awk 'tolower($0) ~ /^content-type:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]*;.*$/, ""); sub(/[ \t]+$/, ""); print }' \
+              | tail -1
+          )"
+          if [ -z "$content_type" ]; then
+            echo "::error::Docker Hub returned the signed manifest with no Content-Type, so the tag write has no media type to declare. Nothing was changed on either registry."
+            exit 1
+          fi
+
+          for name in "${targets[@]}"; do
+            put_status="$(
+              hub_curl -sS --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 2 --retry-all-errors \
+                -o /dev/null -w '%{http_code}' -X PUT \
+                -H "@${auth}" \
+                -H "Content-Type: ${content_type}" \
+                --data-binary "@${manifest}" \
+                "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${name}"
+            )"
+            if [ "$put_status" != "201" ]; then
+              echo "::error::pointing docker.io/${IMAGE_PATH}:${name} at ${DIGEST} returned HTTP ${put_status}. GHCR latest was not touched; the mirror's may have moved."
+              exit 1
+            fi
+
+            echo "docker.io/${IMAGE_PATH}:${name} -> ${DIGEST}"
+          done
+
+      - name: Check Docker Hub latest anonymously and against the signed digest
+        # The release tag is asked as well as `latest`: the mirror now carries
+        # the release under its own name, and the name has to be the digest.
+        # Before GHCR's write, so a mirror that does not name the digest keeps
+        # GHCR where it is.
+        shell: bash
+        env:
+          DIGEST: ${{ steps.release.outputs.digest }}
+          IMAGE_PATH: ${{ steps.image.outputs.path }}
+          TAG: ${{ inputs.tag }}
+          RATE_LIMIT_ATTEMPTS: 4
+          RATE_LIMIT_DELAY_SECONDS: 30
+        run: |
+          set -euo pipefail
+
+          token_body="$(mktemp)"
+          headers="$(mktemp)"
+          auth="$(mktemp)"
+          trap 'rm -f "$token_body" "$headers" "$auth"' EXIT
+
+          # Docker Hub's rate limit is the one answer a curl call asks again.
+          # For curl it is the status itself, 429, which `-w '%{http_code}'`
+          # prints — never a number searched for in a body, where a digest can
+          # contain it. Any other status, and a curl that fails, goes straight
+          # back to the caller, which judges it on the first attempt; a limit
+          # still standing after the last attempt is returned as the 429 it is,
+          # and the caller's refusal names it. Asking again is safe: each call
+          # is a read.
+          hub_curl() {
+            local attempt=1 status
+            while true; do
+              status="$(curl "$@")" || return $?
+              if [ "$status" != "429" ] || [ "${attempt}" -ge "${RATE_LIMIT_ATTEMPTS}" ]; then
+                printf '%s' "$status"
+                return 0
+              fi
+              echo "attempt ${attempt} of ${RATE_LIMIT_ATTEMPTS} at ${*: -1} hit Docker Hub's rate limit; waiting $(( attempt * RATE_LIMIT_DELAY_SECONDS ))s." >&2
+              sleep "$(( attempt * RATE_LIMIT_DELAY_SECONDS ))"
+              attempt=$(( attempt + 1 ))
+            done
+          }
+
+          token_status="$(
+            hub_curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+              -o "$token_body" -w '%{http_code}' \
+              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${IMAGE_PATH}:pull"
+          )"
+          if [ "$token_status" != "200" ]; then
+            echo "::error::anonymous Docker Hub token request for ${IMAGE_PATH} returned HTTP ${token_status}. GHCR latest was not touched."
+            exit 1
+          fi
+          token="$(
+            python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
+          )"
+          if [ -z "$token" ]; then
+            echo "::error::anonymous Docker Hub token response for ${IMAGE_PATH} carried no token. GHCR latest was not touched."
+            exit 1
+          fi
+          printf 'Authorization: Bearer %s\n' "$token" > "$auth"
+
+          for name in latest "${TAG}"; do
+            head_status="$(
+              hub_curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+                -o /dev/null -D "$headers" -w '%{http_code}' -I \
+                -H "@${auth}" \
+                -H "Accept: ${MANIFEST_ACCEPT}" \
+                "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${name}"
+            )"
+            if [ "$head_status" != "200" ]; then
+              echo "::error::anonymous Docker Hub manifest request for docker.io/${IMAGE_PATH}:${name} returned HTTP ${head_status}. GHCR latest was not touched."
+              exit 1
+            fi
+
+            published="$(
+              tr -d '\r' < "$headers" \
+                | awk 'tolower($0) ~ /^docker-content-digest:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]+$/, ""); print }' \
+                | tail -1
+            )"
+            if [ "$published" != "$DIGEST" ]; then
+              echo "::error::docker.io/${IMAGE_PATH}:${name} resolves to ${published:-nothing}, not to the signed digest ${DIGEST}. A mirrored alias pointing anywhere else is an unsigned release however green this run is. GHCR latest was not touched."
+              exit 1
+            fi
+
+            echo "docker.io/${IMAGE_PATH}:${name} is anonymously pullable and resolves to ${DIGEST}."
+          done
 
       - name: Point latest at the signed digest on GHCR
         # A registry tag write and nothing else, as docker-image.yml's own
@@ -559,6 +898,10 @@ jobs:
         # to the digest the signature covers. The bytes are also hashed here
         # and must equal the digest before the PUT, and the check right after
         # this step reads the alias back anonymously.
+        #
+        # The last write: the mirror already names this digest, read back
+        # anonymously, so a failure here leaves GHCR on its old `latest` and
+        # the mirror on the new one, which the report step prints.
         shell: bash
         env:
           IMAGE_PATH: ${{ steps.image.outputs.path }}
@@ -585,14 +928,14 @@ jobs:
               "https://ghcr.io/token?service=ghcr.io&scope=repository:${IMAGE_PATH}:pull,push"
           )"
           if [ "$token_status" != "200" ]; then
-            echo "::error::GHCR returned HTTP ${token_status} for a push token on ${IMAGE_PATH}. Nothing was changed."
+            echo "::error::GHCR returned HTTP ${token_status} for a push token on ${IMAGE_PATH}. GHCR latest was not moved; the Docker Hub mirror's has."
             exit 1
           fi
           token="$(
             python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
           )"
           if [ -z "$token" ]; then
-            echo "::error::GHCR returned no push token for ${IMAGE_PATH}. Nothing was changed."
+            echo "::error::GHCR returned no push token for ${IMAGE_PATH}. GHCR latest was not moved; the Docker Hub mirror's has."
             exit 1
           fi
           printf 'Authorization: Bearer %s\n' "$token" > "$auth"
@@ -605,13 +948,13 @@ jobs:
               "https://ghcr.io/v2/${IMAGE_PATH}/manifests/${DIGEST}"
           )"
           if [ "$manifest_status" != "200" ]; then
-            echo "::error::reading the signed manifest ${DIGEST} returned HTTP ${manifest_status}. Nothing was changed."
+            echo "::error::reading the signed manifest ${DIGEST} returned HTTP ${manifest_status}. GHCR latest was not moved; the Docker Hub mirror's has."
             exit 1
           fi
 
           fetched="sha256:$(sha256sum "$manifest" | awk '{print $1}')"
           if [ "$fetched" != "$DIGEST" ]; then
-            echo "::error::the manifest fetched for ${DIGEST} hashes to ${fetched}, so writing it under a tag would not name the signed digest. Nothing was changed."
+            echo "::error::the manifest fetched for ${DIGEST} hashes to ${fetched}, so writing it under a tag would not name the signed digest. GHCR latest was not moved; the Docker Hub mirror's has."
             exit 1
           fi
 
@@ -623,7 +966,7 @@ jobs:
               | tail -1
           )"
           if [ -z "$content_type" ]; then
-            echo "::error::GHCR returned the signed manifest with no Content-Type, so the tag write has no media type to declare. Nothing was changed."
+            echo "::error::GHCR returned the signed manifest with no Content-Type, so the tag write has no media type to declare. GHCR latest was not moved; the Docker Hub mirror's has."
             exit 1
           fi
 
@@ -636,7 +979,7 @@ jobs:
               "https://ghcr.io/v2/${IMAGE_PATH}/manifests/latest"
           )"
           if [ "$put_status" != "201" ]; then
-            echo "::error::pointing ghcr.io/${IMAGE_PATH}:latest at ${DIGEST} returned HTTP ${put_status}."
+            echo "::error::pointing ghcr.io/${IMAGE_PATH}:latest at ${DIGEST} returned HTTP ${put_status}. The Docker Hub mirror's latest has already moved."
             exit 1
           fi
 
@@ -691,180 +1034,19 @@ jobs:
               | tail -1
           )"
           if [ "$published" != "$DIGEST" ]; then
-            echo "::error::ghcr.io/${IMAGE_PATH}:latest resolves to ${published:-nothing}, not to the signed digest ${DIGEST}. The signature covers the digest, so that alias is not the release however green this run is. The Docker Hub mirror was not touched."
+            echo "::error::ghcr.io/${IMAGE_PATH}:latest resolves to ${published:-nothing}, not to the signed digest ${DIGEST}. The signature covers the digest, so that alias is not the release however green this run is. The Docker Hub mirror's latest has already moved."
             exit 1
           fi
 
           echo "ghcr.io/${IMAGE_PATH}:latest is anonymously pullable and resolves to ${DIGEST}."
 
-      - name: Point latest at the signed digest on Docker Hub
-        # The same fetch-by-digest and PUT as the GHCR step, read from the
-        # MIRROR's own copy of the digest, the one verified there above, and
-        # written with the publishing credential (not the pull-auth pair).
-        #
-        # Two names are written: `latest`, and the release's own tag when the
-        # verification step found the mirror without it. The release tag goes
-        # first, so a failure between the two leaves the mirror with a release
-        # tag and the old `latest`, never the reverse. Which names to write is
-        # an output of the verification, not a guess made here: an answer that
-        # is neither `present` nor `absent` writes nothing.
-        shell: bash
-        env:
-          IMAGE_PATH: ${{ steps.image.outputs.path }}
-          DIGEST: ${{ steps.release.outputs.digest }}
-          TAG: ${{ inputs.tag }}
-          TAG_ON_HUB: ${{ steps.hubverify.outputs.tag_on_hub }}
-          REGISTRY_USER: ${{ secrets.DOCKERHUB_PUBLISH_USERNAME }}
-          REGISTRY_PASSWORD: ${{ secrets.DOCKERHUB_PUBLISH_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          case "${TAG_ON_HUB:-}" in
-            present) targets=(latest) ;;
-            absent) targets=("${TAG}" latest) ;;
-            *)
-              echo "::error::the verification of the Docker Hub copy did not say whether the mirror holds ${TAG} ('${TAG_ON_HUB:-}'), so there is no list of names to write. GHCR latest has moved; the mirror's has not."
-              exit 1
-              ;;
-          esac
-
-          manifest="$(mktemp)"
-          headers="$(mktemp)"
-          token_body="$(mktemp)"
-          credential="$(mktemp)"
-          auth="$(mktemp)"
-          trap 'rm -f "$manifest" "$headers" "$token_body" "$credential" "$auth"' EXIT
-
-          printf 'user = "%s:%s"\n' "${REGISTRY_USER}" "${REGISTRY_PASSWORD}" > "$credential"
-
-          token_status="$(
-            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
-              -o "$token_body" -w '%{http_code}' -K "$credential" \
-              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${IMAGE_PATH}:pull,push"
-          )"
-          if [ "$token_status" != "200" ]; then
-            echo "::error::Docker Hub returned HTTP ${token_status} for a push token on ${IMAGE_PATH}. GHCR latest has moved; the mirror's has not."
-            exit 1
-          fi
-          token="$(
-            python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
-          )"
-          if [ -z "$token" ]; then
-            echo "::error::Docker Hub returned no push token for ${IMAGE_PATH}. GHCR latest has moved; the mirror's has not."
-            exit 1
-          fi
-          printf 'Authorization: Bearer %s\n' "$token" > "$auth"
-
-          manifest_status="$(
-            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
-              -o "$manifest" -D "$headers" -w '%{http_code}' \
-              -H "@${auth}" \
-              -H "Accept: ${MANIFEST_ACCEPT}" \
-              "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${DIGEST}"
-          )"
-          if [ "$manifest_status" != "200" ]; then
-            echo "::error::reading the signed manifest ${DIGEST} on Docker Hub returned HTTP ${manifest_status}. GHCR latest has moved; the mirror's has not."
-            exit 1
-          fi
-
-          fetched="sha256:$(sha256sum "$manifest" | awk '{print $1}')"
-          if [ "$fetched" != "$DIGEST" ]; then
-            echo "::error::the manifest fetched for ${DIGEST} on Docker Hub hashes to ${fetched}, so writing it under a tag would not name the signed digest. GHCR latest has moved; the mirror's has not."
-            exit 1
-          fi
-
-          content_type="$(
-            tr -d '\r' < "$headers" \
-              | awk 'tolower($0) ~ /^content-type:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]*;.*$/, ""); sub(/[ \t]+$/, ""); print }' \
-              | tail -1
-          )"
-          if [ -z "$content_type" ]; then
-            echo "::error::Docker Hub returned the signed manifest with no Content-Type, so the tag write has no media type to declare. GHCR latest has moved; the mirror's has not."
-            exit 1
-          fi
-
-          for name in "${targets[@]}"; do
-            put_status="$(
-              curl -sS --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 2 --retry-all-errors \
-                -o /dev/null -w '%{http_code}' -X PUT \
-                -H "@${auth}" \
-                -H "Content-Type: ${content_type}" \
-                --data-binary "@${manifest}" \
-                "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${name}"
-            )"
-            if [ "$put_status" != "201" ]; then
-              echo "::error::pointing docker.io/${IMAGE_PATH}:${name} at ${DIGEST} returned HTTP ${put_status}. GHCR latest has moved; the mirror's may not have."
-              exit 1
-            fi
-
-            echo "docker.io/${IMAGE_PATH}:${name} -> ${DIGEST}"
-          done
-
-      - name: Check Docker Hub latest anonymously and against the signed digest
-        # The release tag is asked as well as `latest`: the mirror now carries
-        # the release under its own name, and the name has to be the digest.
-        shell: bash
-        env:
-          DIGEST: ${{ steps.release.outputs.digest }}
-          IMAGE_PATH: ${{ steps.image.outputs.path }}
-          TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-
-          token_body="$(mktemp)"
-          headers="$(mktemp)"
-          auth="$(mktemp)"
-          trap 'rm -f "$token_body" "$headers" "$auth"' EXIT
-
-          token_status="$(
-            curl -sSL --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
-              -o "$token_body" -w '%{http_code}' \
-              "https://auth.docker.io/token?service=registry.docker.io&scope=repository:${IMAGE_PATH}:pull"
-          )"
-          if [ "$token_status" != "200" ]; then
-            echo "::error::anonymous Docker Hub token request for ${IMAGE_PATH} returned HTTP ${token_status}."
-            exit 1
-          fi
-          token="$(
-            python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
-          )"
-          if [ -z "$token" ]; then
-            echo "::error::anonymous Docker Hub token response for ${IMAGE_PATH} carried no token."
-            exit 1
-          fi
-          printf 'Authorization: Bearer %s\n' "$token" > "$auth"
-
-          for name in latest "${TAG}"; do
-            head_status="$(
-              curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
-                -o /dev/null -D "$headers" -w '%{http_code}' -I \
-                -H "@${auth}" \
-                -H "Accept: ${MANIFEST_ACCEPT}" \
-                "https://registry-1.docker.io/v2/${IMAGE_PATH}/manifests/${name}"
-            )"
-            if [ "$head_status" != "200" ]; then
-              echo "::error::anonymous Docker Hub manifest request for docker.io/${IMAGE_PATH}:${name} returned HTTP ${head_status}."
-              exit 1
-            fi
-
-            published="$(
-              tr -d '\r' < "$headers" \
-                | awk 'tolower($0) ~ /^docker-content-digest:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]+$/, ""); print }' \
-                | tail -1
-            )"
-            if [ "$published" != "$DIGEST" ]; then
-              echo "::error::docker.io/${IMAGE_PATH}:${name} resolves to ${published:-nothing}, not to the signed digest ${DIGEST}. A mirrored alias pointing anywhere else is an unsigned release however green this run is."
-              exit 1
-            fi
-
-            echo "docker.io/${IMAGE_PATH}:${name} is anonymously pullable and resolves to ${DIGEST}."
-          done
-
       - name: Report where latest points on each registry
         # A failed run can stop between the two registries' writes, and the log
         # of the step that failed names only its own. This prints both aliases
         # as the registries answer them now, anonymously, so the state to repair
-        # is read in one place. It reports and never fails.
+        # is read in one place. It reports and never fails, and asks each
+        # registry once: a report that waited out a rate limit would hold a
+        # failed run open for minutes.
         if: failure()
         shell: bash
         env:
