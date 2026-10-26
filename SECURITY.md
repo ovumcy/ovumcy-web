@@ -30,7 +30,11 @@ The tag is written last. The release workflow pushes the image by digest under n
 and attests that digest, reads both back from the registry, and only then points `vX.Y.Z` at it,
 and `latest` too when the release is the highest stable one — so a tag that resolves at all
 resolves to a signed digest. `latest` names the newest stable release, never a build of `main`;
-`main` is the moving pre-release channel, signed and attested the same way. A failure before the tags
+`main` is the moving pre-release channel, signed and attested the same way, and a pre-release tag
+never moves `latest`. The manually dispatched `promote-latest` workflow refuses a tag below the
+highest stable one, copies a release the Docker Hub mirror lacks onto it byte for byte (index,
+platform manifests, blobs and the release's own signature bundle, with no re-signing), and writes a
+Docker Hub tag only once `cosign verify` accepts that copy under the release's own signer identity. A failure before the tags
 are written leaves none of them; one during the write can leave the tags written before it, and
 those resolve to the signed digest like any other. There is no failure that produces an unsigned
 one.
