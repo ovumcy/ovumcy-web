@@ -175,6 +175,9 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 				// The run's own tag is the only stable one, so `latest` stays in
 				// the alias list when the step asks whether it still belongs.
 				`gh() { printf 'refs/tags/v2.0.0\n'; }` + "\n" +
+				// The question runs the checked-in script in a child bash, which
+				// sees the shims only when they are exported.
+				`export -f gh sleep` + "\n" +
 				`cosign() { printf 'COSIGN %s\n' "$*" >&2; ` +
 				`if [ "$1" = ` + shellQuote(testCase.verb) + ` ] && [ "${@: -1}" = ` + shellQuote(testCase.failDest) + ` ]; then calls=$(( calls + 1 )); ` +
 				`if [ "$calls" -le ` + strconv.Itoa(testCase.failures) + ` ]; then printf '%s\n' ` + shellQuote(testCase.message) + ` >&2; return 1; fi; fi; ` +
@@ -188,6 +191,7 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 				"IDENTITY_REGEXP="+mirrorIdentity,
 				"GITHUB_OUTPUT=/dev/null",
 				"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
+				"GITHUB_WORKSPACE="+checkoutRoot(t),
 				"REF_TYPE=tag",
 				"REF_NAME=v2.0.0",
 				"VERIFY_ATTEMPTS=1",
