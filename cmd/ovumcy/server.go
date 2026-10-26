@@ -47,6 +47,16 @@ const (
 	// "request_too_large") rather than a bare fasthttp error.
 	maxRequestBodyBytes = 16 << 20
 
+	// maxRequestHeadBytes is the server read buffer, which bounds a request's
+	// whole head — start line plus every header, cookies included. A head that
+	// does not fit is refused with a mapped 431 (newOvumcyErrorHandler →
+	// handler.RespondRequestHeadersTooLarge, stable key
+	// "request_headers_too_large") before any middleware runs. It is pinned
+	// here rather than left to the framework default, which a Fiber release
+	// may change (3.6 doubled it to 8 KB): the limit is a documented operator
+	// fact (docs/self-hosted.md), not an implementation detail.
+	maxRequestHeadBytes = 4096
+
 	// staticAssetMaxAgeSeconds is the Cache-Control max-age (1 hour) fiber sets
 	// on /static responses. Assets are cache-busted by a ?v=<build revision>
 	// query on their <link>/<script> URLs (see base.html), so a stale bundle
@@ -111,10 +121,11 @@ func newStaticAssetHandler() fiber.Handler {
 
 func fiberConfig(proxy proxySettings, handler *api.Handler) fiber.Config {
 	appConfig := fiber.Config{
-		AppName:      "Ovumcy",
-		ErrorHandler: newOvumcyErrorHandler(handler),
-		BodyLimit:    maxRequestBodyBytes,
-		ReadTimeout:  30 * time.Second,
+		AppName:        "Ovumcy",
+		ErrorHandler:   newOvumcyErrorHandler(handler),
+		BodyLimit:      maxRequestBodyBytes,
+		ReadBufferSize: maxRequestHeadBytes,
+		ReadTimeout:    30 * time.Second,
 		// Socket deadlines, not work budgets. fasthttp arms the write deadline
 		// only after the handler has returned, so WriteTimeout caps writing a
 		// finished response and never how long the handler took to build it.

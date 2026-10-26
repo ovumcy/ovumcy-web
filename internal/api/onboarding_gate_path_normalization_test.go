@@ -1,84 +1,128 @@
 package api
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
-
-	"github.com/gofiber/fiber/v3"
-	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-// The onboarding gate compares `c.Path()` against a literal prefix
-// (services.ShouldEnforceOnboardingAccess, called from AuthRequired), and
-// `/api/v1/onboarding/../days/2026-03-01` reads as an onboarding path to that
-// comparison, so the gate lets it through. That is safe today for one reason
-// and one only: the router matches the same unnormalized string, so the request
-// reaches no handler at all.
+// The onboarding gate (services.ShouldEnforceOnboardingAccess, called from
+// AuthRequired) exempts the onboarding page and the onboarding API by path
+// prefix, and `/api/v1/onboarding/../days/2026-03-01` carries that prefix. Its
+// safety used to rest on the router taking the traversal segment literally, so
+// the request matched no route — an assumption about a dependency, and one a
+// Fiber release that normalizes the request path before matching breaks: the
+// router then dispatches the request to the days handler.
 //
-// internal/services pins the first half of that argument — the string function's
-// answer — and nothing pinned the second, which is the half that lives outside
-// this repository. A Fiber upgrade that routes on `URI().Path()` instead of
-// `URI().PathOriginal()`, or a config that enables UnescapePath, collapses the
-// traversal segment: the days route starts matching while the gate still reads
-// the raw string and waves the request past onboarding. The services test stays
-// green through all of it, because a pure string function cannot see a router.
-//
-// So this is the other half, asserted rather than assumed, and it fails in the
-// same release the assumption does.
-func TestRouterDoesNotNormalizeATraversalSegmentIntoAGatedRoute(t *testing.T) {
+// The gate no longer leans on it. It decides on the path the router dispatches
+// on, and refuses any request whose routed path is not canonical or is not the
+// path the request arrived with. This test drives the real middleware and the
+// real routes, so it holds on a router that takes the segment literally and on
+// one that removes it, and fails if the gate ever goes back to reading the raw
+// prefix.
+func TestOnboardingGateRefusesATraversalSegmentWhateverTheRouterMakesOfIt(t *testing.T) {
 	t.Parallel()
 
-	const traversal = "/api/v1/onboarding/../days/2026-03-01"
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "gate-traversal@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	// The gate's own reading of the path, restated here so the two halves are
-	// visible together: it does NOT enforce onboarding on this path.
-	if services.ShouldEnforceOnboardingAccess(traversal) {
-		t.Fatal("fixture anchor: the gate is expected to read the traversal path as an onboarding path; " +
-			"if it no longer does, this guard's premise is gone and the services-side row is what changed")
+	get := func(target string) (int, string, string) {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		request.Header.Set("Cookie", authCookie)
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("app.Test(%q): %v", target, err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read body for %q: %v", target, err)
+		}
+		return response.StatusCode, string(body), response.Header.Get("Location")
 	}
 
-	app := fiber.New()
-	reached := ""
-	app.Get("/api/v1/days/:date", func(c fiber.Ctx) error {
-		reached = "days"
-		return c.SendStatus(fiber.StatusOK)
-	})
-	app.Get("/api/v1/onboarding/steps/:step", func(c fiber.Ctx) error {
-		reached = "onboarding"
-		return c.SendStatus(fiber.StatusOK)
-	})
-
-	response, err := app.Test(httptest.NewRequest(http.MethodGet, traversal, nil))
-	if err != nil {
-		t.Fatalf("app.Test(%q): %v", traversal, err)
+	// Positive anchors. The plain days path is refused by the gate, so the
+	// refusal below is recognisable as the gate's; the onboarding page is
+	// served, so the refusal is not a gate that refuses everything.
+	status, body, _ := get("/api/v1/days/2026-03-01")
+	if status != http.StatusForbidden || !strings.Contains(body, "onboarding required") {
+		t.Fatalf("fixture anchor: the plain days path must be refused by the onboarding gate, got %d %q", status, body)
 	}
-	defer func() {
-		_ = response.Body.Close()
-	}()
-
-	if reached != "" {
-		t.Fatalf("the router resolved %q to the %s handler; it now normalizes the traversal segment, "+
-			"so the onboarding gate — which still compares the raw path — passes a request that reaches a gated route. "+
-			"Clean the path in services.ShouldEnforceOnboardingAccess before this ships",
-			traversal, reached)
-	}
-	if response.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected %q to match no route (404), got %d", traversal, response.StatusCode)
+	if status, _, _ := get("/onboarding"); status != http.StatusOK {
+		t.Fatalf("fixture anchor: the onboarding page must be served to an owner still onboarding, got %d", status)
 	}
 
-	// Positive control: the same router does resolve the plain path, so a
-	// 404 above is the traversal segment being taken literally and not a
-	// fixture that registered nothing.
-	plain := httptest.NewRequest(http.MethodGet, "/api/v1/days/2026-03-01", nil)
-	plainResponse, err := app.Test(plain)
-	if err != nil {
-		t.Fatalf("app.Test(plain days path): %v", err)
+	for _, traversal := range []string{
+		"/api/v1/onboarding/../days/2026-03-01",
+		"/api/v1/onboarding/./../days/2026-03-01",
+	} {
+		status, body, _ := get(traversal)
+		if status != http.StatusForbidden || !strings.Contains(body, "onboarding required") {
+			t.Fatalf("%q must be refused by the onboarding gate (403 onboarding required) whether the router "+
+				"takes the traversal segment literally or dispatches it to the days route; got %d %q",
+				traversal, status, body)
+		}
 	}
-	defer func() {
-		_ = plainResponse.Body.Close()
-	}()
-	if plainResponse.StatusCode != http.StatusOK || reached != "days" {
-		t.Fatalf("fixture anchor: the plain days path must reach its handler, got status %d and reached %q", plainResponse.StatusCode, reached)
+
+	// An escaped traversal is matched by no route on a router that keeps the
+	// escape, and is decoded onto the days route by one that does not. Either
+	// way it must never reach the days handler: the gate refuses the second,
+	// and only a gate that read the wire path instead of the routed one would
+	// let it through.
+	const escaped = "/api/v1/onboarding/%2e%2e/days/2026-03-01"
+	status, body, _ = get(escaped)
+	refusedByGate := status == http.StatusForbidden && strings.Contains(body, "onboarding required")
+	if !refusedByGate && status != http.StatusNotFound {
+		t.Fatalf("%q must be refused by the onboarding gate or match no route; got %d %q", escaped, status, body)
+	}
+}
+
+// A request the router would dispatch to an exempt route is still refused when
+// its path had to be normalized to get there: no page or form of this app
+// produces such a path, so the gate treats it as illegitimate rather than
+// guessing what it meant.
+func TestOnboardingGateRefusesAPathTheRouterHadToNormalize(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "gate-normalized@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	get := func(target string) (int, string) {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		request.Header.Set("Cookie", authCookie)
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("app.Test(%q): %v", target, err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read body for %q: %v", target, err)
+		}
+		return response.StatusCode, string(body)
+	}
+
+	// Positive anchor: the canonical spelling of the same exempt prefix passes
+	// the gate (it reaches no GET handler, so it ends in the router's answer,
+	// not the gate's), so the refusal below is the dot segment's alone.
+	if status, body := get("/api/v1/onboarding/steps/1"); status == http.StatusForbidden || strings.Contains(body, "onboarding required") {
+		t.Fatalf("fixture anchor: the canonical onboarding step path must pass the gate, got %d %q", status, body)
+	}
+
+	for _, normalized := range []string{
+		"/api/v1/onboarding/./steps/1",
+		"/api/v1/onboarding//steps/1",
+	} {
+		status, body := get(normalized)
+		if status != http.StatusForbidden || !strings.Contains(body, "onboarding required") {
+			t.Fatalf("%q must be refused by the onboarding gate (403 onboarding required) although it names an exempt route; got %d %q",
+				normalized, status, body)
+		}
 	}
 }

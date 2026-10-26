@@ -43,8 +43,14 @@ func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 
 	c.Locals(contextUserKey, user)
 	if services.RequiresOnboarding(user) {
+		// The gate decides on the path the router dispatches on, and is handed
+		// the path the request arrived with so it can refuse a request the
+		// router rewrote: a release that removes dot segments before matching
+		// would otherwise route an exempt-looking onboarding spelling onto a
+		// gated handler.
 		path := httpx.RoutingNormalizedPath(c.Path())
-		if services.ShouldEnforceOnboardingAccess(path) {
+		wirePath := httpx.RoutingNormalizedPath(string(c.Request().URI().PathOriginal()))
+		if services.ShouldEnforceOnboardingAccess(wirePath, path) {
 			if strings.HasPrefix(path, "/api/") || acceptsJSON(c) {
 				return handler.respondGlobalMappedError(c, onboardingRequiredErrorSpec())
 			}
