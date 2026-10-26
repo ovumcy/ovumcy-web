@@ -236,6 +236,45 @@ func TestManualCycleStartPolicyReadsTheStartTheTransactionHolds(t *testing.T) {
 	}
 }
 
+// A manual mark whose stored-start lock cannot be taken is refused as a load
+// failure, and nothing is written.
+func TestManualCycleStartRefusesWhenTheStartLockFails(t *testing.T) {
+	day := time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC)
+	logs := newTxStartDayLogs()
+	logs.startErr = errors.New("driver: bad connection")
+	service := NewDayService(logs, &dayUserRepositoryStub{})
+
+	err := service.MarkCycleStartManually(context.Background(), 7, day, day.Add(12*time.Hour), time.UTC, ManualCycleStartOptions{})
+	if !errors.Is(err, ErrDayEntryLoadFailed) {
+		t.Fatalf("expected ErrDayEntryLoadFailed, got %v", err)
+	}
+	if logs.startReads == 0 {
+		t.Fatal("expected the start lock attempted on the transaction handle")
+	}
+	if len(logs.entries) != 0 {
+		t.Fatalf("a refused mark must store nothing, got %v", logs.entries)
+	}
+}
+
+// The policy judges the history and settings read inside the transaction; a
+// failed read of them refuses the mark as a load failure and writes nothing.
+func TestManualCycleStartRefusesWhenThePolicyReadFails(t *testing.T) {
+	day := time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC)
+	logs := newTxStartDayLogs()
+	service := NewDayService(logs, &dayUserRepositoryStub{loadErr: errors.New("driver: database is locked")})
+
+	err := service.MarkCycleStartManually(context.Background(), 7, day, day.Add(12*time.Hour), time.UTC, ManualCycleStartOptions{})
+	if !errors.Is(err, ErrDayEntryLoadFailed) {
+		t.Fatalf("expected ErrDayEntryLoadFailed, got %v", err)
+	}
+	if logs.startReads != 1 {
+		t.Fatalf("expected the start lock taken before the policy read, got %d reads", logs.startReads)
+	}
+	if len(logs.entries) != 0 {
+		t.Fatalf("a refused mark must store nothing, got %v", logs.entries)
+	}
+}
+
 // The inline cycle-start answer's policy judges the start the write's own
 // transaction holds; a failed read of it refuses the answer's write.
 func TestConfirmedCycleStartRefusesWhenTheTransactionsStartReadFails(t *testing.T) {
