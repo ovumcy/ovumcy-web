@@ -97,11 +97,90 @@ type txStartDayLogs struct {
 	*startClearingDayLogs
 	txStart    *time.Time
 	startReads int
+	startErr   error
+	// createdDuringStartRead is the row a concurrent write of the same day
+	// commits while this write's locking read of the start waits for it.
+	createdDuringStartRead *models.DailyLog
+	// refindErr fails the day read taken after the start read.
+	refindErr error
 }
 
-func (stub *txStartDayLogs) LoadLastPeriodStartForUpdate(_ context.Context, _ uint) (*time.Time, error) {
+func (stub *txStartDayLogs) LoadLastPeriodStartForUpdate(ctx context.Context, _ uint) (*time.Time, error) {
 	stub.startReads++
-	return stub.txStart, nil
+	if stub.createdDuringStartRead != nil {
+		if err := stub.Create(ctx, stub.createdDuringStartRead); err != nil {
+			return nil, err
+		}
+		stub.createdDuringStartRead = nil
+	}
+	return stub.txStart, stub.startErr
+}
+
+func (stub *txStartDayLogs) FindByUserAndDayRangeForUpdate(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
+	if stub.startReads > 0 && stub.refindErr != nil {
+		return models.DailyLog{}, false, stub.refindErr
+	}
+	return stub.startClearingDayLogs.FindByUserAndDayRangeForUpdate(ctx, userID, dayStart, dayEnd)
+}
+
+func newTxStartDayLogs() *txStartDayLogs {
+	return &txStartDayLogs{startClearingDayLogs: &startClearingDayLogs{dayLogRepositoryStub: newDayLogRepositoryStub()}}
+}
+
+// The locking read of the start can wait for a concurrent write of the same
+// row-less day; the row that write committed is the one this write merges
+// onto, so neither write erases the other's field.
+func TestPatchDayEntryMergesOntoTheRowCommittedWhileTheStartReadWaited(t *testing.T) {
+	day := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	logs := newTxStartDayLogs()
+	logs.createdDuringStartRead = &models.DailyLog{UserID: 7, Date: day, Mood: 3}
+	service := NewDayService(logs, &dayUserRepositoryStub{})
+
+	saved, err := service.PatchDayEntryWithAutoFillAt(context.Background(), 7, day,
+		DayEntryInput{Notes: "after"}, DayEntryFields{Notes: true}, DayEntryBase{}, day.Add(12*time.Hour), time.UTC)
+	if err != nil {
+		t.Fatalf("expected the notes save to save, got %v", err)
+	}
+	if saved.Mood != 3 || saved.Notes != "after" {
+		t.Fatalf("expected both writes' fields kept (mood=3, notes=after), got mood=%d notes=%q", saved.Mood, saved.Notes)
+	}
+}
+
+func TestPatchDayEntryRefusesWhenTheStartOrTheDayReReadFails(t *testing.T) {
+	day := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	failing := func(startErr error, refindErr error) *txStartDayLogs {
+		logs := newTxStartDayLogs()
+		logs.startErr, logs.refindErr = startErr, refindErr
+		return logs
+	}
+	for name, logs := range map[string]*txStartDayLogs{
+		"start read":  failing(errors.New("driver: bad connection"), nil),
+		"day re-read": failing(nil, errors.New("driver: bad connection")),
+	} {
+		_, err := NewDayService(logs, &dayUserRepositoryStub{}).PatchDayEntryWithAutoFillAt(context.Background(), 7, day,
+			DayEntryInput{Mood: 4}, DayEntryFields{Mood: true}, DayEntryBase{}, day.Add(12*time.Hour), time.UTC)
+		if !errors.Is(err, ErrDayEntryLoadFailed) {
+			t.Fatalf("%s: expected ErrDayEntryLoadFailed, got %v", name, err)
+		}
+	}
+}
+
+// The inline cycle-start answer's policy judges the start the write's own
+// transaction holds; a failed read of it refuses the answer's write.
+func TestConfirmedCycleStartRefusesWhenTheTransactionsStartReadFails(t *testing.T) {
+	day := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	logs := newTxStartDayLogs()
+	logs.startErr = errors.New("driver: bad connection")
+	service := NewDayService(logs, &dayUserRepositoryStub{})
+
+	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 7, day,
+		DayEntryInput{IsPeriod: true, Flow: models.FlowMedium, ConfirmCycleStart: true}, day.Add(12*time.Hour), time.UTC)
+	if !errors.Is(err, ErrDayEntryLoadFailed) {
+		t.Fatalf("expected ErrDayEntryLoadFailed, got %v", err)
+	}
+	if logs.startReads == 0 {
+		t.Fatal("expected the policy's start read on the transaction handle")
+	}
 }
 
 // A Settings withdrawal of the start committed before the day write is the

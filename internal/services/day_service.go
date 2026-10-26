@@ -534,16 +534,29 @@ func (service *DayService) PatchDayEntryWithAutoFillAt(ctx context.Context, user
 		}
 		tickedFromStart := false
 		if !found {
-			existing = models.DailyLog{}
 			// The stored start is read on the transaction's own handle: a
 			// Settings withdrawal committed before this write is the start it
 			// reads, never a snapshot taken beside it.
-			start, loadErr := (&DayService{logs: txLogs, users: service.users}).loadStoredStart(ctx, userID)
+			start, locked, loadErr := (&DayService{logs: txLogs, users: service.users}).loadStoredStart(ctx, userID)
 			if loadErr != nil {
 				return DayEntryInput{}, ErrDayEntryLoadFailed
 			}
-			tickedFromStart = onboardingStartTicks(&models.User{LastPeriodStart: start}, dayStart, now, location)
-			existing.IsPeriod = tickedFromStart
+			// A locking read of the start can have waited for a concurrent
+			// write of this same row-less day to commit — and with it the row
+			// that write created. The day is read again after it, so this
+			// write merges onto that row instead of onto the empty day it saw
+			// before the wait.
+			if locked {
+				existing, found, err = txLogs.FindByUserAndDayRangeForUpdate(ctx, userID, dayStart, dayEnd)
+				if err != nil {
+					return DayEntryInput{}, ErrDayEntryLoadFailed
+				}
+			}
+			if !found {
+				existing = models.DailyLog{}
+				tickedFromStart = onboardingStartTicks(&models.User{LastPeriodStart: start}, dayStart, now, location)
+				existing.IsPeriod = tickedFromStart
+			}
 		}
 		written, err := NormalizeDayEntryInput(mergeDayEntryPatch(existing, patch, fields))
 		if err != nil {
@@ -673,18 +686,20 @@ type lastPeriodStartReader interface {
 }
 
 // loadStoredStart reads the stored onboarding start through the day-log
-// repository when it can, which inside withinTransaction is the transaction.
-// A repository without that read is one with no transaction around it (the
-// in-memory stubs), where the settings projection is the same read.
-func (service *DayService) loadStoredStart(ctx context.Context, userID uint) (*time.Time, error) {
+// repository when it can, which inside withinTransaction is the transaction's
+// locking read; locked reports that it was. A repository without that read is
+// one with no transaction around it (the in-memory stubs), where the settings
+// projection is the same read.
+func (service *DayService) loadStoredStart(ctx context.Context, userID uint) (*time.Time, bool, error) {
 	if reader, ok := service.logs.(lastPeriodStartReader); ok {
-		return reader.LoadLastPeriodStartForUpdate(ctx, userID)
+		start, err := reader.LoadLastPeriodStartForUpdate(ctx, userID)
+		return start, true, err
 	}
 	user, err := service.users.LoadSettingsByID(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return user.LastPeriodStart, nil
+	return user.LastPeriodStart, false, nil
 }
 
 // applyConfirmedCycleStart marks the day the owner just saved as a cycle start,
