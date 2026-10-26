@@ -662,8 +662,9 @@
   // replaces this one.
   //
   // A conflict choice's read of the stored day is refused the same way, on
-  // either day form: it names its form, and the calendar editor, which carries
-  // no copy of its own for this, shows the server's (serverText).
+  // either day form: it names its form. Each day form carries the copy, since
+  // the refusal's JSON envelope carries a key and no text; the server's own
+  // text (serverText) stands in only for a form without it.
   function noteDashboardRefreshAccountChanged(dayForm, serverText) {
     var form = dayForm || document.querySelector("[data-dashboard-save-form]");
     var message = form ? String(form.getAttribute("data-day-open-refused-text") || serverText || "").trim() : "";

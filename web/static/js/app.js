@@ -1839,6 +1839,11 @@
     if (!target || target.querySelector(".status-ok") || target.querySelector(".status-error")) {
       return;
     }
+    // A success status taken down after the account-changed notice replaced it
+    // (its clear timer, a dismiss) leaves that notice standing.
+    if (saveStatusHoldsAccountChange(target)) {
+      return;
+    }
     target.textContent = "";
   }
 
@@ -2089,12 +2094,29 @@
   }
 
   // The next save of the form starts: what it answers is about the session as
-  // it is now, so the account-changed notice stops holding the region.
-  function releaseAccountChangedNotice(form) {
-    var target = form && form.querySelector ? form.querySelector(".save-status") : null;
+  // it is now, so the account-changed notice stops holding the region. A
+  // request of another control whose answer is written to the same region (the
+  // cycle-start form beside a day form) starts the same way.
+  function releaseAccountChangedRegion(target) {
     if (saveStatusHoldsAccountChange(target)) {
       target.replaceChildren();
     }
+  }
+
+  function releaseAccountChangedNotice(form) {
+    releaseAccountChangedRegion(form && form.querySelector ? form.querySelector(".save-status") : null);
+  }
+
+  // Whether an answer to a request sent before the region took the
+  // account-changed notice is kept out of it: every answer is, except that same
+  // refusal. The htmx swap and the error rendering both ask here, so neither
+  // route of a stale answer reaches the region.
+  function accountChangeHoldRefuses(target, responseText) {
+    if (!saveStatusHoldsAccountChange(target)) {
+      return false;
+    }
+    var parsed = parseServerStatusError(String(responseText || ""));
+    return !(parsed && isAccountChangedNoticeKey(parsed.key));
   }
 
   function renderDaySaveFailure(form, message, origin, messageKey) {
@@ -2559,7 +2581,22 @@
       // A day save sent through htmx (the calendar's Save and its retry) is the
       // start the dashboard runner marks by clearing its notice.
       releaseAccountChangedNotice(dayEditorFormFromEvent(event));
+      releaseAccountChangedRegion(statusTarget);
       setSaveButtonState(getSaveFeedbackFormFromEvent(event), true);
+    });
+
+    // htmx writes a successful answer into its target itself, past every
+    // renderer above: an answer to a request sent before the account-changed
+    // notice (the calendar's Save that landed before the switch) would replace
+    // the notice whenever it arrives last.
+    document.body.addEventListener("htmx:beforeSwap", function (event) {
+      var detail = event ? event.detail : null;
+      if (!detail || !detail.shouldSwap) {
+        return;
+      }
+      if (accountChangeHoldRefuses(statusContainerFor(detail.target), detail.xhr ? detail.xhr.responseText : "")) {
+        detail.shouldSwap = false;
+      }
     });
 
     document.body.addEventListener("htmx:afterRequest", function (event) {
@@ -2680,6 +2717,12 @@
         if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
           window.__ovumcyFinalizeDashboardManualSave(form);
         }
+        return;
+      }
+
+      if (accountChangeHoldRefuses(target, xhr ? xhr.responseText : "")) {
+        // A refusal of a control beside the day form (the cycle-start form)
+        // sent before the notice: the region keeps the notice.
         return;
       }
 
@@ -4687,8 +4730,9 @@
   // replaces this one.
   //
   // A conflict choice's read of the stored day is refused the same way, on
-  // either day form: it names its form, and the calendar editor, which carries
-  // no copy of its own for this, shows the server's (serverText).
+  // either day form: it names its form. Each day form carries the copy, since
+  // the refusal's JSON envelope carries a key and no text; the server's own
+  // text (serverText) stands in only for a form without it.
   function noteDashboardRefreshAccountChanged(dayForm, serverText) {
     var form = dayForm || document.querySelector("[data-dashboard-save-form]");
     var message = form ? String(form.getAttribute("data-day-open-refused-text") || serverText || "").trim() : "";

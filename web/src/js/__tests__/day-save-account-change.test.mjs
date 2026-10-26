@@ -11,7 +11,13 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { readAppBundle, loadDOMWithScript } from "./_helpers.mjs";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+const TEMPLATES_DIR = path.join(REPO_ROOT, "internal", "templates");
 
 const APP_BUNDLE = readAppBundle();
 const TODAY = "2026-08-12";
@@ -82,6 +88,13 @@ function calendarPage() {
       <textarea id="calendar-notes" name="notes">mine</textarea>
       <button type="submit" data-save-button>Save</button>
       <div id="calendar-save-status" class="save-status" aria-live="polite"></div>
+    </form>
+    <form
+      hx-post="/api/v1/days/${TODAY}/cycle-start?source=calendar"
+      hx-target="#calendar-save-status"
+      data-cycle-start-confirm-form
+      data-day-cycle-start-form>
+      <button type="submit">Start</button>
     </form>
   </div></body></html>`;
 }
@@ -355,6 +368,162 @@ test("on the calendar the account-changed notice holds until the next Save start
     const notice = region.querySelector("[data-day-save-failed]");
     assert.equal(notice.getAttribute("data-day-save-failed"), "unreachable", "its own outcome is shown");
     assert.ok(notice.querySelector("[data-day-save-retry]"));
+  } finally {
+    dom.window.close();
+  }
+});
+
+// htmx writes a successful answer into its target itself. This mirrors it: the
+// swap happens only when htmx:beforeSwap leaves shouldSwap set, then afterSwap.
+const SAVED_FRAGMENT = '<div class="status-ok">Day saved.</div>';
+
+function htmxSwap(window, source, region, xhr) {
+  const detail = { target: region, xhr, shouldSwap: xhr.status < 400 };
+  source.dispatchEvent(new window.CustomEvent("htmx:beforeSwap", { detail, bubbles: true }));
+  if (detail.shouldSwap) {
+    region.innerHTML = xhr.responseText;
+    source.dispatchEvent(new window.CustomEvent("htmx:afterSwap", { detail: { target: region, xhr }, bubbles: true }));
+  }
+  return detail.shouldSwap;
+}
+
+async function calendarNoticeAfterAnEarlierSave(window) {
+  const region = window.document.getElementById("calendar-save-status");
+  fireOnCalendarForm(window, "htmx:responseError", { target: region, xhr: { status: 409, responseText: CONFLICT_FRAGMENT } });
+  // The owner presses Save again while the conflict choice is on screen: that
+  // save is on the wire, and its answer is about the session before the switch.
+  fireOnCalendarForm(window, "htmx:beforeRequest", { target: region });
+  choose(window, "mine");
+  await settleAll();
+  assertAccountChanged(region, SERVER_OPEN_REFUSED_TEXT);
+  return region;
+}
+
+test("on the calendar a Save that landed before the account changed is not swapped over the notice", async () => {
+  const { dom } = await load(calendarPage(), scriptedFetch([], response(409, OPEN_REFUSED_FRAGMENT)));
+  try {
+    const form = dom.window.document.querySelector("[data-day-editor-form]");
+    const region = await calendarNoticeAfterAnEarlierSave(dom.window);
+
+    const swapped = htmxSwap(dom.window, form, region, { status: 200, responseText: SAVED_FRAGMENT });
+    assert.equal(swapped, false, "htmx is told not to swap the earlier save's success");
+    assertAccountChanged(region, SERVER_OPEN_REFUSED_TEXT);
+
+    // The control: the next Save's own answer is swapped in.
+    fireOnCalendarForm(dom.window, "htmx:beforeRequest", { target: region });
+    assert.equal(htmxSwap(dom.window, form, region, { status: 200, responseText: SAVED_FRAGMENT }), true);
+    assert.ok(region.querySelector(".status-ok").textContent.includes("Day saved."), "the new Save's success is shown");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("on the calendar the cycle-start form's earlier answers do not replace the notice either", async () => {
+  const { dom } = await load(calendarPage(), scriptedFetch([], response(409, OPEN_REFUSED_FRAGMENT)));
+  try {
+    const cycleStart = dom.window.document.querySelector("[data-day-cycle-start-form]");
+    const region = await calendarNoticeAfterAnEarlierSave(dom.window);
+
+    cycleStart.dispatchEvent(
+      new dom.window.CustomEvent("htmx:responseError", { detail: { target: region, xhr: { status: 500, responseText: "" } }, bubbles: true })
+    );
+    assertAccountChanged(region, SERVER_OPEN_REFUSED_TEXT);
+    assert.equal(htmxSwap(dom.window, cycleStart, region, { status: 200, responseText: SAVED_FRAGMENT }), false);
+    assertAccountChanged(region, SERVER_OPEN_REFUSED_TEXT);
+
+    // The control: a cycle-start sent after the notice answers in the region.
+    cycleStart.dispatchEvent(new dom.window.CustomEvent("htmx:beforeRequest", { detail: { target: region }, bubbles: true }));
+    assert.equal(htmxSwap(dom.window, cycleStart, region, { status: 200, responseText: SAVED_FRAGMENT }), true);
+    assert.ok(region.querySelector(".status-ok"), "its own answer is shown");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The success the notice replaced still has its clear pending; when it runs, it
+// finds the success gone and must not empty the region of the notice.
+test("the clear of the success the notice replaced leaves the notice", async () => {
+  const { dom, calls } = await load(dashboardPage(), heldFetch, "https://ovumcy.test/dashboard");
+  try {
+    const parked = [];
+    const realSetTimeout = dom.window.setTimeout.bind(dom.window);
+    dom.window.setTimeout = (fn, delay, ...rest) => {
+      if (delay === 5200 || delay === 220) {
+        parked.push(fn);
+        return 0;
+      }
+      return realSetTimeout(fn, delay, ...rest);
+    };
+    const { feedback, refresh } = await savePregnancyResult(dom.window, calls);
+    feedback.resolve(SAVE_FEEDBACK);
+    await settleAll();
+    assert.ok(parked.length > 0, "the success scheduled its clear");
+    refresh.answer(response(409, OPEN_REFUSED_ENVELOPE));
+    await settleAll();
+    while (parked.length) {
+      parked.shift()();
+    }
+    assertAccountChanged(dom.window.document.querySelector("#save-status"), OPEN_REFUSED_TEXT);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The refusal's JSON envelope carries a key and no text, so the notice's copy
+// has to be on the form. Both day forms render it; the calendar's is read from
+// the shipped template, so a form that stops carrying it fails here.
+const OPEN_REFUSED_ATTRIBUTE = 'data-day-open-refused-text="{{t .Messages "daylog.open_account_changed"}}"';
+
+function templateFiles(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return templateFiles(full);
+    }
+    return entry.name.endsWith(".html") ? [full] : [];
+  });
+}
+
+function shippedDayFormTags() {
+  return templateFiles(TEMPLATES_DIR).flatMap((file) =>
+    (readFileSync(file, "utf8").match(/<form\b[^>]*>/g) || [])
+      .filter((tag) => /\sdata-(day-editor-form|dashboard-save-form)\s/.test(tag))
+      .map((tag) => ({ file: path.basename(file), tag }))
+  );
+}
+
+test("every day form in the shipped templates carries the account-changed copy", () => {
+  const forms = shippedDayFormTags();
+  assert.deepEqual(
+    forms.map((form) => form.file).sort(),
+    ["dashboard.html", "day_editor_partial.html"],
+    "the calendar editor and the dashboard journal are found"
+  );
+  for (const form of forms) {
+    assert.ok(form.tag.includes(OPEN_REFUSED_ATTRIBUTE), `${form.file}: the day form carries the account-changed copy`);
+  }
+});
+
+function shippedCalendarFormTag() {
+  const messages = JSON.parse(readFileSync(path.join(REPO_ROOT, "internal", "i18n", "locales", "en.json"), "utf8"));
+  const escape = (text) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const form = shippedDayFormTags().find((entry) => entry.file === "day_editor_partial.html");
+  return form.tag
+    .replace(/\{\{t \.Messages "([^"]+)"\}\}/g, (_, key) => escape(messages[key]))
+    .replace(/\{\{\.DateString\}\}/g, TODAY);
+}
+
+test("a calendar conflict choice refused with the JSON envelope shows the form's account-changed copy", async () => {
+  const html = calendarPage().replace(/<form\b[^>]*data-day-editor-form[^>]*>/, () => shippedCalendarFormTag());
+  const { dom } = await load(html, scriptedFetch([], response(409, OPEN_REFUSED_ENVELOPE)));
+  try {
+    const document = dom.window.document;
+    const region = document.getElementById("calendar-save-status");
+    fireOnCalendarForm(dom.window, "htmx:responseError", { target: region, xhr: { status: 409, responseText: CONFLICT_FRAGMENT } });
+    choose(dom.window, "mine");
+    await settleAll();
+    assertAccountChanged(region, OPEN_REFUSED_TEXT);
+    assert.equal(document.querySelector("#calendar-notes").value, "mine", "the entry stays in the form");
   } finally {
     dom.window.close();
   }
