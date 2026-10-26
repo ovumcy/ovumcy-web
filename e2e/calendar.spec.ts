@@ -457,7 +457,7 @@ test.describe('Calendar page', () => {
     // settle, so the entry is committed — not merely submitted — before the
     // delete flow starts (same reasoning as saveDayEditorForm in
     // calendar-autofill-clear.spec.ts).
-    const gridRefresh = watchCalendarGridRefresh(page);
+    const gridRefresh = await watchCalendarGridRefresh(page);
     const [saveRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>

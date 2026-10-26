@@ -295,7 +295,7 @@ test.describe('day-entry save resilience', () => {
     // Requirement: the retry resubmits the SAME form state. Let it through and
     // assert the server received exactly what is on screen.
     interceptor.set('allow');
-    const gridRefresh = watchCalendarGridRefresh(page);
+    const gridRefresh = await watchCalendarGridRefresh(page);
     const [retryRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
@@ -660,7 +660,7 @@ test.describe('a day save refused for an ended session', () => {
     expect(await csrfCookieValue(page)).toBe(csrfBefore);
     await expectDayEntryStillTyped(form, note);
 
-    const gridRefresh = watchCalendarGridRefresh(page);
+    const gridRefresh = await watchCalendarGridRefresh(page);
     const [retryResponse] = await Promise.all([
       page.waitForResponse(
         (response) => response.request().method() === 'PATCH' && response.url().includes(`/api/v1/days/${targetISO}`)

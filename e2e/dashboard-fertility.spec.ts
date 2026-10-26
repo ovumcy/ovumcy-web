@@ -67,7 +67,7 @@ async function registerAndSetEggwhiteToday(
   await dayForm
     .locator('label.choice-option:has(input[name="cervical_mucus"][value="eggwhite"])')
     .click();
-  const gridRefresh = watchCalendarGridRefresh(page);
+  const gridRefresh = await watchCalendarGridRefresh(page);
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>

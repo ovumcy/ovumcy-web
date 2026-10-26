@@ -141,32 +141,32 @@ export async function expectNoHtmxRequestInFlight(page: Page): Promise<void> {
  *
  * A committed day write fires `calendar-day-updated`, which the hidden
  * `#calendar-grid-refresh` element answers with a `GET /calendar?month=…` that
- * htmx tags with `HX-Trigger: calendar-grid-refresh`. Call this BEFORE the
+ * htmx tags with `HX-Trigger: calendar-grid-refresh`. Await this BEFORE the
  * click that saves — a response that has already arrived is never delivered to
- * a listener registered afterwards — and pass the returned promise to
+ * a listener registered afterwards — and pass the result to
  * `settleCalendarGridRefresh` once the save's own response was checked.
  *
- * The grid panel on screen is stamped here, before the save: the refresh
- * replaces that node (`hx-swap="outerHTML"`), so the stamp disappearing is the
- * page's own statement that the refresh was applied and the cascade after it
- * has begun.
+ * The grid panel on screen is stamped here, and the stamp has landed before
+ * this resolves: the refresh replaces that node (`hx-swap="outerHTML"`), so the
+ * stamp disappearing is the page's own statement that the refresh was applied.
  */
 export type CalendarGridRefresh = {
   response: Promise<Response>;
-  stamped: Promise<void>;
 };
 
 const STALE_GRID_ATTRIBUTE = 'data-e2e-grid-awaiting-refresh';
 
-export function watchCalendarGridRefresh(page: Page): CalendarGridRefresh {
-  const stamped = page.evaluate((attribute) => {
-    document.querySelector('#calendar-grid-panel')?.setAttribute(attribute, '');
-  }, STALE_GRID_ATTRIBUTE);
-  // A page that navigates away before the stamp lands has no refresh to wait
-  // for; the caller's own `await` still sees a real failure.
-  stamped.catch(() => undefined);
+export async function watchCalendarGridRefresh(page: Page): Promise<CalendarGridRefresh> {
   const response = watchGridRefreshResponse(page);
-  return { response, stamped };
+  const stamped = await page.evaluate((attribute) => {
+    const panel = document.querySelector('#calendar-grid-panel');
+    panel?.setAttribute(attribute, '');
+    return panel !== null;
+  }, STALE_GRID_ATTRIBUTE);
+  if (!stamped) {
+    throw new Error('watchCalendarGridRefresh: no #calendar-grid-panel on the page to watch');
+  }
+  return { response };
 }
 
 function watchGridRefreshResponse(page: Page): Promise<Response> {
@@ -186,17 +186,16 @@ function watchGridRefreshResponse(page: Page): Promise<Response> {
 
 /**
  * Waits for the refresh `watchCalendarGridRefresh` registered, then for the
- * cascade it starts (the grid swap and the day editor's reload) to finish.
+ * grid swap it carries to land and htmx to go idle.
  *
- * "No htmx request in flight" alone can hold before the cascade has started:
- * the refresh response has reached the browser, but htmx has not applied it
- * yet, so nothing carries the request class. The swap landing (the stamped
- * panel replaced by a fresh one) comes first, and only then is idle a
- * statement about the cascade rather than about the gap before it.
+ * "No htmx request in flight" alone can hold before the swap: the refresh
+ * response has reached the browser, but htmx has not applied it yet, so
+ * nothing carries the request class. The swap landing (the stamped panel
+ * replaced by a fresh one) comes first, and only then is idle a statement
+ * about the page rather than about the gap before it.
  */
 export async function settleCalendarGridRefresh(page: Page, refresh: CalendarGridRefresh): Promise<void> {
   await refresh.response;
-  await refresh.stamped;
   await expect(page.locator('#calendar-grid-panel')).toHaveCount(1);
   await expect(page.locator(`#calendar-grid-panel[${STALE_GRID_ATTRIBUTE}]`)).toHaveCount(0);
   await expectNoHtmxRequestInFlight(page);
@@ -341,7 +340,7 @@ export async function openCalendarDayEditor(page: Page, isoDate: string): Promis
 export async function saveDayEditorForm(page: Page, isoDate: string, form: Locator): Promise<void> {
   // Registered before the click: the grid refresh a committed save fires can
   // answer before any listener added after the click's own response exists.
-  const gridRefresh = watchCalendarGridRefresh(page);
+  const gridRefresh = await watchCalendarGridRefresh(page);
   // Bind the wait to the request this click issues, not to any PATCH response for
   // the date. waitForResponse would resolve on the first matching response to
   // arrive after registration — under CPU contention a still-in-flight earlier
@@ -415,7 +414,7 @@ export async function saveCycleFactorOnDay(
     `label.choice-option:has(input[name="cycle_factor_keys"][value="${factorKey}"]) .chip-lead`
   );
   await factorChip.click();
-  const gridRefresh = watchCalendarGridRefresh(page);
+  const gridRefresh = await watchCalendarGridRefresh(page);
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
@@ -466,7 +465,7 @@ export async function saveBBTOnDay(page: Page, isoDate: string, value: string): 
   const bbtInput = form.locator('#calendar-bbt');
   await expect(bbtInput).toBeVisible();
   await bbtInput.fill(value);
-  const gridRefresh = watchCalendarGridRefresh(page);
+  const gridRefresh = await watchCalendarGridRefresh(page);
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
