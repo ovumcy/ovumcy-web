@@ -234,7 +234,8 @@ async function loadHeldJournal(html) {
         new Promise((resolve) => {
           sent.push({
             body: new URLSearchParams(String(init.body || "")),
-            answer: () => resolve({ ok: true, status: 200, headers: { get: () => null }, text: () => Promise.resolve("") }),
+            answer: (status = 200, text = "") =>
+              resolve({ ok: status < 300, status, headers: { get: () => null }, text: () => Promise.resolve(text) }),
           });
         });
     },
@@ -247,6 +248,13 @@ function htmxSave(window, form) {
   form.dispatchEvent(new window.CustomEvent("htmx:configRequest", { bubbles: true, detail }));
   const answer = () => form.dispatchEvent(new window.CustomEvent("htmx:afterRequest", { bubbles: true, detail: { elt: form, successful: true } }));
   answer.body = () => new URLSearchParams(detail.formData);
+  // A refusal reaches the page as htmx delivers it: the error event first, then
+  // the end of the request.
+  answer.refuse = (status, responseText) => {
+    const xhr = { status, responseText, getResponseHeader: () => null };
+    form.dispatchEvent(new window.CustomEvent("htmx:responseError", { bubbles: true, detail: { elt: form, target: form, xhr } }));
+    form.dispatchEvent(new window.CustomEvent("htmx:afterRequest", { bubbles: true, detail: { elt: form, xhr, successful: false } }));
+  };
   return answer;
 }
 
@@ -291,6 +299,87 @@ test("an htmx save answered after a newer autosave does not take the base back",
     await editNotes(window, "second");
     const next = sent[sent.length - 1].body;
     assert.equal(next.has("mood"), false, "the autosave's mood is the base, not the older htmx save's");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// An answer older than the one the base already holds is about a state no
+// longer on the page, whatever it says: a refusal of it is not the owner's
+// problem, since the newer save carried everything typed up to it.
+function saveState(window) {
+  const document = window.document;
+  return {
+    conflict: document.querySelector("#save-status [data-day-save-conflict]"),
+    failed: document.querySelector("#save-status [data-day-save-failed]"),
+    indicator: document.querySelector("[data-dashboard-autosave-indicator]").getAttribute("data-autosave-state"),
+  };
+}
+
+test("an older autosave refused after a newer htmx save landed changes nothing on the page", async () => {
+  const { dom, sent } = await loadHeldJournal(page({ period: false, mood: "", notes: "" }));
+  try {
+    const window = dom.window;
+    const form = window.document.querySelector("[data-dashboard-save-form]");
+    await editNotes(window, "first");
+    assert.equal(sent.length, 1, "the autosave of the note is on the wire");
+
+    form.querySelector("input[name='mood'][value='4']").checked = true;
+    htmxSave(window, form)();
+    sent[0].answer(409, CONFLICT_FRAGMENT);
+    await settle();
+
+    const state = saveState(window);
+    assert.equal(state.conflict, null, "the newer save already holds the note: no conflict to choose");
+    assert.equal(state.failed, null, "no failure notice and no retry");
+    assert.notEqual(state.indicator, "error", "the indicator does not report a failure");
+    assert.notEqual(form.__ovumcyAutosaveFailed, true, "the runner is not stopped as failed");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("an older htmx save refused after a newer autosave landed changes nothing on the page", async () => {
+  const { dom, sent } = await loadHeldJournal(page({ period: false, mood: "", notes: "" }));
+  try {
+    const window = dom.window;
+    const form = window.document.querySelector("[data-dashboard-save-form]");
+    form.querySelector("input[name='mood'][value='4']").checked = true;
+    const answerHtmx = htmxSave(window, form);
+    await editNotes(window, "first");
+    sent[0].answer();
+    await settle();
+    assert.equal(saveState(window).indicator, "saved");
+
+    answerHtmx.refuse(409, CONFLICT_FRAGMENT);
+    await settle();
+
+    const state = saveState(window);
+    assert.equal(state.conflict, null, "the newer save already holds the mood: no conflict to choose");
+    assert.equal(state.failed, null, "no failure notice and no retry");
+    assert.equal(state.indicator, "saved", "the indicator keeps the newer save's answer");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("an older answer that the account changed is still shown", async () => {
+  const { dom, sent } = await loadHeldJournal(page({ period: false, mood: "", notes: "" }));
+  try {
+    const window = dom.window;
+    const form = window.document.querySelector("[data-dashboard-save-form]");
+    await editNotes(window, "first");
+    form.querySelector("input[name='mood'][value='4']").checked = true;
+    htmxSave(window, form)();
+    sent[0].answer(
+      409,
+      '<div class="status-error" data-flash-key="daylog.save_account_changed" data-flash-status="error">Another account is signed in.</div>'
+    );
+    await settle();
+
+    const key = window.document.querySelector("#save-status [data-notice-key]");
+    assert.ok(key, "no newer save can land under another account");
+    assert.equal(key.getAttribute("data-notice-key"), "daylog.save_account_changed");
   } finally {
     dom.window.close();
   }

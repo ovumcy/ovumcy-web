@@ -2499,12 +2499,22 @@
     );
   }
 
+  // A failed htmx day save older than the save the form's base already holds is
+  // not shown: the newer save carried everything typed up to it (the dashboard
+  // runner keeps the sequence; see __ovumcyHtmxDaySaveRefusalIgnored).
+  function daySaveRefusalIgnored(form, responseText) {
+    return typeof window.__ovumcyHtmxDaySaveRefusalIgnored === "function" &&
+      window.__ovumcyHtmxDaySaveRefusalIgnored(form, responseText);
+  }
+
   function handleDaySaveTransportFailure(event) {
     var form = dayEditorFormFromEvent(event);
     if (!form) {
       return;
     }
-    renderDaySaveUnreachable(form);
+    if (!daySaveRefusalIgnored(form, "")) {
+      renderDaySaveUnreachable(form);
+    }
     // htmx fires afterRequest before sendError, so the button is already back;
     // re-assert it anyway, because a save button left disabled would take the
     // retry with it.
@@ -2602,9 +2612,12 @@
     document.body.addEventListener("htmx:afterRequest", function (event) {
       var form = getSaveFeedbackFormFromEvent(event);
       var xhr = event && event.detail ? event.detail.xhr : null;
+      var ignored = !(event && event.detail && event.detail.successful) && form &&
+        daySaveRefusalIgnored(form, xhr ? xhr.responseText : "");
       setSaveButtonState(form, false);
       showResponseNotice(xhr);
-      if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
+      // A stale refusal leaves the indicator to the newer save that answered.
+      if (!ignored && form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
         window.__ovumcyFinalizeDashboardManualSave(form);
       }
     });
@@ -2693,6 +2706,9 @@
         return;
       }
 
+      if (dayForm && daySaveRefusalIgnored(dayForm, xhr ? xhr.responseText : "")) {
+        return;
+      }
       if (dayForm) {
         // The server answered, but not with a save. Keep its own message when
         // it sent one — it is more specific than any generic copy — and fall
@@ -4849,6 +4865,38 @@
     return true;
   }
 
+  // An answer to a save older than the one the base already holds is about a
+  // state no longer on the page: the newer save carried everything typed up to
+  // it. Whatever it says — a refusal, a conflict, an unreachable server — it
+  // changes neither the indicator nor the notice, and stops nothing.
+  function isStaleDaySaveAnswer(form, sequence) {
+    return (sequence || 0) < (form.__ovumcyDayBaseSequence || 0);
+  }
+
+  // Except that the account changed: no newer save can land under another
+  // account either, so that refusal is shown whichever save it answers.
+  function dayRefusalIsAccountChange(responseText) {
+    var parsed = parseServerStatusError(String(responseText || ""));
+    return !!(parsed && isAccountChangedNoticeKey(parsed.key)) || dashboardRefusalIsAccountChange(responseText);
+  }
+
+  function staleDayRefusalIgnored(form, sequence, responseText) {
+    return isStaleDaySaveAnswer(form, sequence) && !dayRefusalIsAccountChange(responseText);
+  }
+
+  // The htmx save's failure renderers run on both sides of promoteDaySaveBase
+  // (htmx fires responseError before afterRequest, sendError after it), so the
+  // verdict is read from the sequence still in flight, or from the one the
+  // answered request left behind.
+  function htmxDaySaveRefusalIgnored(form, responseText) {
+    var stale = form.__ovumcyDayPatchSentSequence
+      ? isStaleDaySaveAnswer(form, form.__ovumcyDayPatchSentSequence)
+      : !!form.__ovumcyDayPatchAnswerStale;
+    return stale && !dayRefusalIsAccountChange(responseText);
+  }
+
+  window.__ovumcyHtmxDaySaveRefusalIgnored = htmxDaySaveRefusalIgnored;
+
   function runDashboardAutosave(form, mode) {
     var requestVersion;
     var sentSequence;
@@ -4911,6 +4959,9 @@
         return response.text().catch(function () {
           return "";
         }).then(function (text) {
+          if (staleDayRefusalIgnored(form, sentSequence, text)) {
+            return true;
+          }
           failDashboardAutosave(form, text, response.status);
           return false;
         });
@@ -4943,6 +4994,9 @@
         return true;
       });
     }).catch(function () {
+      if (staleDayRefusalIgnored(form, sentSequence, "")) {
+        return true;
+      }
       failDashboardAutosave(form, "");
       return false;
     }).finally(function () {
@@ -5066,6 +5120,9 @@
         return response.text().catch(function () {
           return "";
         }).then(function (text) {
+          if (staleDayRefusalIgnored(form, sentSequence, text)) {
+            return true;
+          }
           failDashboardAutosave(form, text, response.status);
           return false;
         });
@@ -5082,6 +5139,9 @@
       reloadDashboardAfterUndo(response);
       return true;
     }).catch(function () {
+      if (staleDayRefusalIgnored(form, sentSequence, "")) {
+        return true;
+      }
       failDashboardAutosave(form, "");
       return false;
     }).finally(function () {
@@ -5558,7 +5618,13 @@
     var sent = [];
     var formData;
     var parameters = {};
+    var owner = dayEditorFormFromEvent(event);
 
+    // Any request of the form starts with no stale verdict: the last answered
+    // save's is not this one's.
+    if (owner) {
+      owner.__ovumcyDayPatchAnswerStale = false;
+    }
     if (!form || !form.matches || !form.matches(DAY_SAVE_FORM_SELECTOR)) {
       return;
     }
@@ -5594,6 +5660,7 @@
     if (!form || !form.__ovumcyDayPatchSentEntries) {
       return;
     }
+    form.__ovumcyDayPatchAnswerStale = isStaleDaySaveAnswer(form, form.__ovumcyDayPatchSentSequence);
     if (detail && detail.successful && acceptDaySaveSequence(form, form.__ovumcyDayPatchSentSequence)) {
       setDayFormBase(form, form.__ovumcyDayPatchSentEntries, false);
     }
