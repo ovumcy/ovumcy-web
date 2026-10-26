@@ -222,6 +222,7 @@
   "settings.change_password.submit": "Change password",
   "settings.local_password.title": "Set a local password",
   "settings.local_password.subtitle": "This account currently signs in through SSO only. Set a local password if you want recovery codes and password-confirmed safety actions.",
+  "settings.local_password.subtitle_sso_only": "This instance signs in through SSO only. A local password here does not sign you in and issues no recovery code; it only confirms safety actions and two-factor setup.",
   "settings.local_password.submit": "Set local password",
   "settings.current_password": "Current password",
   "settings.oidc_link.title": "Connected sign-in identity",
@@ -239,6 +240,7 @@
   "settings.recovery_code.subtitle": "Generate a new recovery code. Your previous code will stop working.",
   "settings.recovery_code.submit": "Regenerate recovery code",
   "settings.local_password.recovery_unavailable": "Recovery codes become available after you set a local password for this account.",
+  "settings.recovery_code.sso_only": "Recovery codes are not used on this instance: it signs in through SSO only. If you lose access to your identity provider, recover it there or ask the instance operator.",
   "settings.symptoms.title": "Custom symptoms",
   "settings.symptoms.subtitle": "Create short private labels for patterns you want to log. Hidden symptoms stay in past records and exports.",
   "settings.symptoms.name": "Name",
@@ -869,6 +871,7 @@
   "settings.2fa.disabled_status": "Two-factor authentication disabled.",
   "settings.2fa.disable_button": "Disable two-factor authentication",
   "settings.2fa.disable_confirm_password": "Confirm with your current password",
+  "settings.2fa.local_password_required": "Two-factor authentication is confirmed with your account password, and this account has none yet. Set a local password first, then come back here.",
 
   "error.totp_invalid_code": "Invalid authentication code. Please try again.",
   "error.totp_session_expired": "Your login session expired. Please sign in again.",

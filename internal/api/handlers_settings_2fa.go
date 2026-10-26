@@ -30,9 +30,15 @@ func (handler *Handler) ShowTOTPSetupPage(c fiber.Ctx) error {
 		"Title":       localizedPageTitle(messages, "settings.2fa.title", "Ovumcy | Two-Factor Authentication"),
 		"CurrentUser": user,
 		"TOTPEnabled": user.TOTPEnabled,
+		// Both 2FA writes re-authenticate against the account's own password
+		// (VerifyReauthPassword), so an account without one — SSO-provisioned,
+		// local password not yet set — cannot complete either form; it is
+		// offered the local-password setup instead. No enrollment seed is
+		// minted for a form that cannot succeed.
+		"LocalPasswordRequired": !user.LocalAuthEnabled,
 	}
 
-	if user.TOTPEnabled {
+	if user.TOTPEnabled || !user.LocalAuthEnabled {
 		return handler.render(c, "settings_2fa", data)
 	}
 

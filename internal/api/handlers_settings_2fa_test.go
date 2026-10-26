@@ -787,3 +787,33 @@ func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
 		t.Error("rate-limited disable request must not actually disable TOTP")
 	}
 }
+
+// TestShowTOTPSetupPageWithoutALocalPasswordOffersTheSetupNotTheForm pins
+// WEB-280: an account with no local password (SSO-provisioned, password not
+// yet set) is shown why 2FA cannot be enabled yet and where to set the
+// password, not the QR, the seed and a form every submit of which the
+// re-auth refuses as "invalid password". No enrollment seed is minted for it.
+func TestShowTOTPSetupPageWithoutALocalPasswordOffersTheSetupNotTheForm(t *testing.T) {
+	t.Parallel()
+
+	ctx := newOIDCOnlySettingsSecurityTestContext(t, "totp-no-local-password@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/settings/2fa", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+	response := mustAppResponse(t, ctx.app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	if cookie := responseCookie(response.Cookies(), totpSetupCookieName); cookie != nil {
+		t.Fatalf("expected no enrollment seed to be minted for an account that cannot confirm it, got Set-Cookie %#v", cookie)
+	}
+	rendered := mustReadBodyString(t, response.Body)
+	assertBodyContainsAll(t, rendered,
+		bodyStringMatch{fragment: "data-settings-2fa-local-password-required", message: "expected the local-password dependency notice"},
+		bodyStringMatch{fragment: `href="/settings#settings-change-password"`, message: "expected a link to the local-password setup"},
+	)
+	assertBodyNotContainsAll(t, rendered,
+		bodyStringMatch{fragment: "data:image/png;base64,", message: "did not expect a QR code for an account that cannot confirm enrollment"},
+		bodyStringMatch{fragment: "data-totp-manual-secret", message: "did not expect the manual seed for an account that cannot confirm enrollment"},
+		bodyStringMatch{fragment: `action="/api/v1/users/current/2fa"`, message: "did not expect an enrol or disable form the re-auth would refuse"},
+	)
+}

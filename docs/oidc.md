@@ -26,7 +26,8 @@ Ovumcy's OIDC support is optional, but the contract is broader than the first hy
 - `OIDC_AUTO_PROVISION=true` may create a new `owner` account only when `REGISTRATION_MODE=open`;
 - `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS` can restrict auto-provisioning to a comma-separated domain allowlist;
 - auto-provisioned accounts start without a local password or recovery code;
-- users who need recovery codes or password-confirmed sensitive actions must set a local password later in `Settings`;
+- users who need recovery codes or password-confirmed sensitive actions (and two-factor authentication, whose enrollment and disable forms are confirmed with that password) must set a local password later in `Settings`; the two-factor page says so and links to the setup while the account has none;
+- under `oidc_only` a recovery code has no consumer — the public recovery flow and local sign-in are both closed — so `Settings` neither offers to mint one nor promises one after a local password is set, and names the identity provider (or the operator) as the recovery path; the local password there still confirms safety actions and two-factor setup;
 - successful OIDC sign-in still ends with the normal local `ovumcy_auth` cookie, so the rest of the app keeps using the existing session model;
 - logout can stay local or redirect to the provider's `end_session_endpoint`, depending on `OIDC_LOGOUT_MODE` and the provider metadata.
 

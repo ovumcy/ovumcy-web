@@ -115,7 +115,11 @@
         {{else}}
         <div>
           <h3 class="field-label field-label-lg">{{t .Messages "settings.local_password.title"}}</h3>
+          {{if .LocalPublicAuthEnabled}}
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.local_password.subtitle"}}</p>
+          {{else}}
+          <p class="journal-muted mt-1 text-sm" data-settings-local-password-sso-only>{{t .Messages "settings.local_password.subtitle_sso_only"}}</p>
+          {{end}}
         </div>
 
         <form
@@ -275,7 +279,13 @@
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.recovery_code.subtitle"}}</p>
         </div>
 
-        {{if .CurrentUser.LocalAuthEnabled}}
+        {{if not .LocalPublicAuthEnabled}}
+        {{/* oidc_only instance: the two consumers of a recovery code — the
+             public recovery flow and local sign-in — are closed, so a code
+             minted here could never be redeemed. Access is recovered at the
+             identity provider, or by the operator. */}}
+        <p class="journal-muted text-sm" data-settings-recovery-code-sso-only>{{t .Messages "settings.recovery_code.sso_only"}}</p>
+        {{else if .CurrentUser.LocalAuthEnabled}}
         <form
           action="/api/v1/users/current/recovery-code"
           method="post"

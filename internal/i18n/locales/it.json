@@ -222,6 +222,7 @@
   "settings.change_password.submit": "Cambia password",
   "settings.local_password.title": "Imposta una password locale",
   "settings.local_password.subtitle": "Questo account attualmente accede solo tramite SSO. Imposta una password locale se vuoi codici di recupero e azioni di sicurezza confermate dalla password.",
+  "settings.local_password.subtitle_sso_only": "Questa istanza accede solo tramite SSO. Una password locale qui non serve per accedere e non emette alcun codice di recupero; conferma soltanto le azioni di sicurezza e la configurazione dell'autenticazione a due fattori.",
   "settings.local_password.submit": "Imposta password locale",
   "settings.current_password": "Password corrente",
   "settings.oidc_link.title": "Identità di accesso collegata",
@@ -239,6 +240,7 @@
   "settings.recovery_code.subtitle": "Genera un nuovo codice di recupero. Il codice precedente smetterà di funzionare.",
   "settings.recovery_code.submit": "Rigenera codice di recupero",
   "settings.local_password.recovery_unavailable": "I codici di recupero diventano disponibili dopo aver impostato una password locale per questo account.",
+  "settings.recovery_code.sso_only": "I codici di recupero non sono usati su questa istanza: l'accesso avviene solo tramite SSO. Se perdi l'accesso al tuo provider di identità, recuperalo lì o rivolgiti all'operatore dell'istanza.",
   "settings.symptoms.title": "Sintomi personalizzati",
   "settings.symptoms.subtitle": "Crea etichette private brevi per pattern che vuoi registrare. I sintomi nascosti restano nei record passati e nelle esportazioni.",
   "settings.symptoms.name": "Nome",
@@ -869,6 +871,7 @@
   "settings.2fa.disabled_status": "Autenticazione a due fattori disabilitata.",
   "settings.2fa.disable_button": "Disabilita autenticazione a due fattori",
   "settings.2fa.disable_confirm_password": "Conferma con la tua password corrente",
+  "settings.2fa.local_password_required": "L'autenticazione a due fattori si conferma con la password dell'account, e questo account non ne ha ancora una. Imposta prima una password locale, poi torna qui.",
 
   "error.totp_invalid_code": "Codice di autenticazione non valido. Riprova.",
   "error.totp_session_expired": "La tua sessione di accesso è scaduta. Accedi di nuovo.",

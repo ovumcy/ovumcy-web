@@ -222,6 +222,7 @@
   "settings.change_password.submit": "Passwort ändern",
   "settings.local_password.title": "Lokales Passwort festlegen",
   "settings.local_password.subtitle": "Dieses Konto meldet sich derzeit nur per SSO an. Legen Sie ein lokales Passwort fest, wenn Sie Wiederherstellungscodes und passwortbestätigte Schutzaktionen nutzen möchten.",
+  "settings.local_password.subtitle_sso_only": "Diese Instanz meldet sich ausschließlich über SSO an. Ein lokales Passwort dient hier nicht zur Anmeldung und erzeugt keinen Wiederherstellungscode; es bestätigt nur sicherheitsrelevante Aktionen und die Einrichtung der Zwei-Faktor-Authentifizierung.",
   "settings.local_password.submit": "Lokales Passwort festlegen",
   "settings.current_password": "Aktuelles Passwort",
   "settings.oidc_link.title": "Verbundene Anmeldeidentität",
@@ -239,6 +240,7 @@
   "settings.recovery_code.subtitle": "Erzeugen Sie einen neuen Wiederherstellungscode. Ihr bisheriger Code funktioniert dann nicht mehr.",
   "settings.recovery_code.submit": "Wiederherstellungscode neu generieren",
   "settings.local_password.recovery_unavailable": "Wiederherstellungscodes sind verfügbar, sobald Sie für dieses Konto ein lokales Passwort festgelegt haben.",
+  "settings.recovery_code.sso_only": "Wiederherstellungscodes werden auf dieser Instanz nicht verwendet: Die Anmeldung erfolgt ausschließlich über SSO. Verlieren Sie den Zugang zu Ihrem Identitätsanbieter, stellen Sie ihn dort wieder her oder wenden Sie sich an den Betreiber der Instanz.",
   "settings.symptoms.title": "Eigene Symptome",
   "settings.symptoms.subtitle": "Erstellen Sie kurze private Bezeichnungen für Muster, die Sie protokollieren möchten. Verborgene Symptome bleiben in früheren Einträgen und Exporten erhalten.",
   "settings.symptoms.name": "Name",
@@ -869,6 +871,7 @@
   "settings.2fa.disabled_status": "Zwei-Faktor-Authentifizierung deaktiviert.",
   "settings.2fa.disable_button": "Zwei-Faktor-Authentifizierung deaktivieren",
   "settings.2fa.disable_confirm_password": "Mit aktuellem Passwort bestätigen",
+  "settings.2fa.local_password_required": "Die Zwei-Faktor-Authentifizierung wird mit dem Kontopasswort bestätigt, und dieses Konto hat noch keines. Legen Sie zuerst ein lokales Passwort fest und kehren Sie dann hierher zurück.",
 
   "error.totp_invalid_code": "Ungültiger Authentifizierungscode. Bitte versuchen Sie es erneut.",
   "error.totp_session_expired": "Ihre Anmeldesitzung ist abgelaufen. Bitte melden Sie sich erneut an.",

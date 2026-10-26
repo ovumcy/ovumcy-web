@@ -46,6 +46,12 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 		// when the provider is disabled, so hiding the control when it can only
 		// ever fail is a display decision, not a second copy of that check.
 		"OIDCEnabled":            handler.oidcService != nil && handler.oidcService.Enabled(),
+		// LocalPublicAuthEnabled is the instance mode (false under
+		// OIDC_LOGIN_MODE=oidc_only). Recovery codes are consumed only by the
+		// public recovery flow and local sign-in, both closed in that mode, so
+		// the page neither offers to mint one nor promises them after a local
+		// password is set; the password still confirms safety actions and 2FA.
+		"LocalPublicAuthEnabled": handler.localPublicAuthEnabled(),
 		"ErrorKey":               viewData.ErrorKey,
 		"ChangePasswordErrorKey": viewData.ChangePasswordErrorKey,
 		"SuccessKey":             viewData.SuccessKey,

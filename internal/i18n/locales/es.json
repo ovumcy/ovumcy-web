@@ -222,6 +222,7 @@
   "settings.change_password.submit": "Cambiar contraseña",
   "settings.local_password.title": "Definir una contraseña local",
   "settings.local_password.subtitle": "Esta cuenta inicia sesión solo con SSO por ahora. Define una contraseña local si quieres códigos de recuperación y acciones sensibles confirmadas con contraseña.",
+  "settings.local_password.subtitle_sso_only": "Esta instancia inicia sesión solo mediante SSO. Una contraseña local aquí no sirve para iniciar sesión ni emite un código de recuperación; solo confirma las acciones de seguridad y la configuración de la verificación en dos pasos.",
   "settings.local_password.submit": "Definir contraseña local",
   "settings.current_password": "Contraseña actual",
   "settings.oidc_link.title": "Identidad de inicio de sesión conectada",
@@ -239,6 +240,7 @@
   "settings.recovery_code.subtitle": "Genera un nuevo código de recuperación. El código anterior dejará de funcionar.",
   "settings.recovery_code.submit": "Regenerar código de recuperación",
   "settings.local_password.recovery_unavailable": "Los códigos de recuperación estarán disponibles después de definir una contraseña local para esta cuenta.",
+  "settings.recovery_code.sso_only": "Los códigos de recuperación no se usan en esta instancia: inicia sesión solo mediante SSO. Si pierdes el acceso a tu proveedor de identidad, recupéralo allí o pide ayuda al operador de la instancia.",
   "settings.symptoms.title": "Síntomas personalizados",
   "settings.symptoms.subtitle": "Crea etiquetas privadas cortas para los patrones que quieres registrar. Los síntomas ocultos siguen en tus registros anteriores y exportaciones.",
   "settings.symptoms.name": "Nombre",
@@ -869,6 +871,7 @@
   "settings.2fa.disabled_status": "Autenticación en dos pasos desactivada.",
   "settings.2fa.disable_button": "Desactivar la autenticación en dos pasos",
   "settings.2fa.disable_confirm_password": "Confirmar con tu contraseña actual",
+  "settings.2fa.local_password_required": "La verificación en dos pasos se confirma con la contraseña de tu cuenta, y esta cuenta aún no tiene ninguna. Establece primero una contraseña local y luego vuelve aquí.",
 
   "error.totp_invalid_code": "Código de autenticación no válido. Inténtalo de nuevo.",
   "error.totp_session_expired": "Tu sesión ha caducado. Vuelve a iniciar sesión.",

@@ -240,6 +240,7 @@
   "settings.change_password.submit": "Changer le mot de passe",
   "settings.local_password.title": "Définir un mot de passe local",
   "settings.local_password.subtitle": "Ce compte se connecte actuellement uniquement via SSO. Définissez un mot de passe local si vous voulez des codes de récupération et des actions sensibles confirmées par mot de passe.",
+  "settings.local_password.subtitle_sso_only": "Cette instance se connecte uniquement via SSO. Un mot de passe local ne sert pas ici à vous connecter et n'émet aucun code de récupération ; il confirme seulement les actions sensibles et la configuration de l'authentification à deux facteurs.",
   "settings.local_password.submit": "Définir le mot de passe local",
   "settings.current_password": "Mot de passe actuel",
 
@@ -259,6 +260,7 @@
   "settings.recovery_code.subtitle": "Générez un nouveau code de récupération. Votre code précédent ne fonctionnera plus.",
   "settings.recovery_code.submit": "Régénérer le code de récupération",
   "settings.local_password.recovery_unavailable": "Les codes de récupération seront disponibles une fois qu'un mot de passe local aura été défini pour ce compte.",
+  "settings.recovery_code.sso_only": "Les codes de récupération ne sont pas utilisés sur cette instance : la connexion passe uniquement par SSO. Si vous perdez l'accès à votre fournisseur d'identité, récupérez-le là-bas ou adressez-vous à l'opérateur de l'instance.",
 
   "settings.symptoms.title": "Symptômes personnalisés",
   "settings.symptoms.subtitle": "Créez de courtes étiquettes privées pour les schémas que vous souhaitez enregistrer. Les symptômes masqués restent dans les anciens enregistrements et les exports.",
@@ -917,6 +919,7 @@
   "settings.2fa.disabled_status": "Authentification à deux facteurs désactivée.",
   "settings.2fa.disable_button": "Désactiver l'authentification à deux facteurs",
   "settings.2fa.disable_confirm_password": "Confirmer avec votre mot de passe actuel",
+  "settings.2fa.local_password_required": "L'authentification à deux facteurs se confirme avec le mot de passe du compte, et ce compte n'en a pas encore. Définissez d'abord un mot de passe local, puis revenez ici.",
 
   "error.totp_invalid_code": "Code d'authentification invalide. Veuillez réessayer.",
   "error.totp_session_expired": "Votre session de connexion a expiré. Veuillez vous reconnecter.",

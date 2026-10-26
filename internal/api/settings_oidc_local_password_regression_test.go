@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
@@ -132,4 +133,56 @@ func TestOIDCOnlySettingsChangePasswordRequiresReauth(t *testing.T) {
 	if strings.TrimSpace(persisted.RecoveryCodeHash) != "" {
 		t.Fatal("oidc-only user must not have a recovery code hash stored after rejected ChangePassword")
 	}
+}
+
+// TestSettingsPageOnAnOIDCOnlyInstanceNamesSSORecoveryAndOffersNoRecoveryCode
+// pins WEB-278: under OIDC_LOGIN_MODE=oidc_only both consumers of a recovery
+// code — the public recovery flow and local sign-in — are closed, so the
+// account page neither offers to mint one (for an account with a local
+// password) nor promises one after a local password is set (for an account
+// without), and names SSO as the recovery path instead.
+func TestSettingsPageOnAnOIDCOnlyInstanceNamesSSORecoveryAndOffersNoRecoveryCode(t *testing.T) {
+	t.Parallel()
+
+	oidcOnly := func() onboardingTestAppOptions {
+		return onboardingTestAppOptions{oidcService: &stubOIDCWorkflowService{enabled: true, localPublicAuthEnabled: false}}
+	}
+	settingsPage := func(t *testing.T, app *fiber.App, authCookie string) string {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+		request.Header.Set("Accept-Language", "en")
+		request.Header.Set("Cookie", authCookie)
+		response := mustAppResponse(t, app, request)
+		assertStatusCode(t, response, http.StatusOK)
+		return mustReadBodyString(t, response.Body)
+	}
+
+	t.Run("an account without a local password is not promised recovery codes", func(t *testing.T) {
+		t.Parallel()
+		ctx := newOIDCOnlySettingsSecurityTestContextWithOptions(t, "sso-only-instance-no-password@example.com", oidcOnly())
+		rendered := settingsPage(t, ctx.app, ctx.authCookie)
+		assertBodyContainsAll(t, rendered,
+			bodyStringMatch{fragment: "data-settings-recovery-code-sso-only", message: "expected the SSO recovery notice in place of the recovery-code offer"},
+			bodyStringMatch{fragment: "data-settings-local-password-sso-only", message: "expected the local-password copy that promises no recovery code"},
+		)
+		assertBodyNotContainsAll(t, rendered,
+			bodyStringMatch{fragment: "data-settings-recovery-code-unavailable", message: "did not expect the 'available after you set a local password' promise on an oidc_only instance"},
+			bodyStringMatch{fragment: `action="/api/v1/users/current/recovery-code"`, message: "did not expect a recovery-code form on an oidc_only instance"},
+		)
+	})
+
+	t.Run("an account with a local password is not offered a code nothing can redeem", func(t *testing.T) {
+		t.Parallel()
+		// Local sign-in is closed on this instance, so the session is issued
+		// directly for an account that does hold a local password.
+		app, database := newOnboardingTestAppWithOptions(t, oidcOnly())
+		user := createOnboardingTestUser(t, database, "sso-only-instance-with-password@example.com", "StrongPass1", true)
+		rendered := settingsPage(t, app, issueAuthCookieForUser(t, user))
+		assertBodyContainsAll(t, rendered,
+			bodyStringMatch{fragment: "data-settings-recovery-code-sso-only", message: "expected the SSO recovery notice in place of the regenerate form"},
+		)
+		assertBodyNotContainsAll(t, rendered,
+			bodyStringMatch{fragment: `action="/api/v1/users/current/recovery-code"`, message: "did not expect the regenerate form on an oidc_only instance"},
+		)
+	})
 }
