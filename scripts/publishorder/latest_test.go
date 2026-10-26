@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,15 +26,56 @@ const (
 	promoteWorkflow = ".github/workflows/promote-latest.yml"
 	promoteJob      = "promote"
 
-	promoteRefuseStep     = "Refuse anything but an existing stable release tag"
-	promoteResolveStep    = "Resolve the release index digest on GHCR"
-	promoteVerifyStep     = "Verify the signature and provenance of the release digest"
-	promoteMirrorSeenStep = "Verify the Docker Hub mirror holds the same signed digest"
-	promoteGhcrMoveStep   = "Point latest at the signed digest on GHCR"
-	promoteGhcrCheckStep  = "Check GHCR latest anonymously and against the signed digest"
-	promoteHubMoveStep    = "Point latest at the signed digest on Docker Hub"
-	promoteHubCheckStep   = "Check Docker Hub latest anonymously and against the signed digest"
+	promoteRefuseStep    = "Refuse anything but the highest existing stable release tag"
+	promoteResolveStep   = "Resolve the release index digest on GHCR"
+	promoteVerifyStep    = "Verify the signature and provenance of the release digest"
+	promoteHubCopyStep   = "Copy the release onto Docker Hub when the mirror lacks it"
+	promoteHubVerifyStep = "Verify the Docker Hub copy of the release digest"
+	promoteRecheckStep   = "Check this tag is still the highest stable release"
+	promoteGhcrMoveStep  = "Point latest at the signed digest on GHCR"
+	promoteGhcrCheckStep = "Check GHCR latest anonymously and against the signed digest"
+	promoteHubMoveStep   = "Point latest at the signed digest on Docker Hub"
+	promoteHubCheckStep  = "Check Docker Hub latest anonymously and against the signed digest"
+	promoteReportStep    = "Report where latest points on each registry"
 )
+
+// workflowFiles lists every workflow file under root, `*.yml` and `*.yaml`
+// alike: GitHub runs both, so a sweep that globbed one extension would pass a
+// workflow written in the other without ever reading it.
+func workflowFiles(t *testing.T, root string) []string {
+	t.Helper()
+
+	var files []string
+	for _, pattern := range []string{"*.yml", "*.yaml"} {
+		matches, err := filepath.Glob(filepath.Join(root, pattern))
+		if err != nil {
+			t.Fatalf("list the workflows: %v", err)
+		}
+		files = append(files, matches...)
+	}
+	return files
+}
+
+// TestTheWorkflowSweepsReadBothExtensions is the control for the helper the
+// directory sweeps below rely on: a `.yaml` workflow must be listed beside the
+// `.yml` one, and a file of another kind must not.
+func TestTheWorkflowSweepsReadBothExtensions(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.yml", "b.yaml", "c.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	var got []string
+	for _, file := range workflowFiles(t, dir) {
+		got = append(got, filepath.Base(file))
+	}
+	slices.Sort(got)
+	if want := []string{"a.yml", "b.yaml"}; !slices.Equal(got, want) {
+		t.Errorf("the sweep listed %v, want %v", got, want)
+	}
+}
 
 // runWorkflowStep runs one step's own script under the flags its `shell:`
 // compiles to, with `preamble` (shadowing functions) in front of it, and returns
@@ -82,6 +124,14 @@ func runWorkflowStep(t *testing.T, workflow, jobName, step, preamble string, env
 		command.Env = append(command.Env, key+"="+value)
 	}
 	output, err := command.CombinedOutput()
+
+	// The curl shadows below print this marker when a bearer token reaches
+	// them as an ARGUMENT. Judged here, for every step that runs, so a step
+	// that put its token back on the command line fails whatever else it
+	// was being asked.
+	if strings.Contains(string(output), "ARGV-BEARER") {
+		t.Errorf("%s, step %q passed a bearer token to curl on the command line, where the process table shows it; a header file carries it instead:\n%s", workflow, step, output)
+	}
 
 	written, readErr := os.ReadFile(outputs)
 	if readErr != nil {
@@ -137,11 +187,7 @@ func TestLatestIsNeverEnabledByTheBranchPath(t *testing.T) {
 func TestNoWorkflowWritesLatestExceptTheTwoThatOwnIt(t *testing.T) {
 	owners := []string{publishWorkflow, promoteWorkflow}
 
-	root := filepath.Join("..", "..", ".github", "workflows")
-	matches, err := filepath.Glob(filepath.Join(root, "*.yml"))
-	if err != nil {
-		t.Fatalf("list the workflows: %v", err)
-	}
+	matches := workflowFiles(t, filepath.Join("..", "..", ".github", "workflows"))
 
 	seen := map[string]bool{}
 	for _, match := range matches {
@@ -308,28 +354,33 @@ func TestThePromotionVerifiesEverythingBeforeItWritesAnything(t *testing.T) {
 		return at
 	}
 
-	refuse, resolve, verify, mirrorSeen := index(promoteRefuseStep), index(promoteResolveStep), index(promoteVerifyStep), index(promoteMirrorSeenStep)
-	ghcrMove, ghcrCheck, hubMove, hubCheck := index(promoteGhcrMoveStep), index(promoteGhcrCheckStep), index(promoteHubMoveStep), index(promoteHubCheckStep)
-
-	chain := []struct {
-		at   int
-		name string
-	}{
-		{refuse, promoteRefuseStep}, {resolve, promoteResolveStep}, {verify, promoteVerifyStep}, {mirrorSeen, promoteMirrorSeenStep},
-		{ghcrMove, promoteGhcrMoveStep}, {ghcrCheck, promoteGhcrCheckStep}, {hubMove, promoteHubMoveStep}, {hubCheck, promoteHubCheckStep},
+	chainNames := []string{
+		promoteRefuseStep, promoteResolveStep, promoteVerifyStep, promoteHubCopyStep, promoteHubVerifyStep, promoteRecheckStep,
+		promoteGhcrMoveStep, promoteGhcrCheckStep, promoteHubMoveStep, promoteHubCheckStep, promoteReportStep,
 	}
-	for i := 1; i < len(chain); i++ {
-		if chain[i-1].at >= chain[i].at {
-			t.Errorf("%s: %q runs at or after %q. Every refusal and every signature check comes before the first write, and the Docker Hub write waits for GHCR's to be read back", promoteWorkflow, chain[i-1].name, chain[i].name)
+	for i := 1; i < len(chainNames); i++ {
+		if index(chainNames[i-1]) >= index(chainNames[i]) {
+			t.Errorf("%s: %q runs at or after %q. Every refusal and every signature check — the Docker Hub copy's included — comes before the first write of `latest`, and the Docker Hub write waits for GHCR's to be read back", promoteWorkflow, chainNames[i-1], chainNames[i])
 		}
+	}
+
+	// The re-check of "still the highest stable tag" is the step right before
+	// the first write of `latest`: anything between them is time in which a
+	// higher tag can appear unseen.
+	if index(promoteRecheckStep)+1 != index(promoteGhcrMoveStep) {
+		t.Errorf("%s: %q is not immediately before %q", promoteWorkflow, promoteRecheckStep, promoteGhcrMoveStep)
 	}
 
 	// And nothing else may write: a step added between the verdicts and the
 	// writes, or after them, has to be read for whether it can move a tag.
-	for _, at := range []int{refuse, resolve, verify, mirrorSeen} {
-		if strings.Contains(withoutComments(workflowfile.Step(t, promoteWorkflow, promoteJob, workflowfile.Job(t, promoteWorkflow, promoteJob), steps[at])), "-X PUT") {
-			t.Errorf("%s: %q runs before the first write and writes a tag", promoteWorkflow, steps[at])
+	job := workflowfile.Job(t, promoteWorkflow, promoteJob)
+	for _, name := range steps[:index(promoteGhcrMoveStep)] {
+		if strings.Contains(withoutComments(workflowfile.Step(t, promoteWorkflow, promoteJob, job, name)), "-X PUT") {
+			t.Errorf("%s: %q runs before the first write and writes a tag", promoteWorkflow, name)
 		}
+	}
+	if report := withoutComments(workflowfile.Step(t, promoteWorkflow, promoteJob, job, promoteReportStep)); strings.Contains(report, "-X PUT") || strings.Contains(report, "oras ") {
+		t.Errorf("%s: %q reports and must write nothing", promoteWorkflow, promoteReportStep)
 	}
 }
 
@@ -376,15 +427,29 @@ func TestThePromotionHoldsLeastPrivilege(t *testing.T) {
 // step for real. The `gh` stub answers for the tag lookup; a name that fails the
 // shape never needs it.
 func TestThePromotionRefusesAnythingButAnExistingStableReleaseTag(t *testing.T) {
-	const ghExists = `gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf 'refs/tags/x\n'; }`
+	// The existence lookup answers a ref (or fails with GH_FAIL), the tag
+	// listing answers GH_REFS (or fails with GH_LIST_FAIL).
+	const ghExists = `gh() { printf 'GH %s\n' "$*" >&2
+  case "$*" in
+    *matching-refs*) if [ -n "${GH_LIST_FAIL:-}" ]; then return 1; fi; printf '%s\n' "$GH_REFS" ;;
+    *) if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf 'refs/tags/x\n' ;;
+  esac; }
+sleep() { :; }`
 
 	for _, testCase := range []struct {
 		name        string
 		tag         string
 		ref         string
 		ghFails     bool
+		listFails   bool
+		refs        string
 		wantRefusal string
 	}{
+		{name: "the highest of several", tag: "v1.10.0", ref: "refs/heads/main", refs: refsOf("v1.9.2", "v1.10.0", "v1.2.0")},
+		{name: "a stable tag below a higher one", tag: "v1.9.2", ref: "refs/heads/main", refs: refsOf("v1.9.2", "v1.10.0"), wantRefusal: "is below v1.10.0"},
+		{name: "a stable tag below a major", tag: "v1.9.2", ref: "refs/heads/main", refs: refsOf("v1.9.2", "v2.0.0"), wantRefusal: "latest never moves backwards"},
+		{name: "a higher pre-release does not outrank it", tag: "v1.9.2", ref: "refs/heads/main", refs: refsOf("v1.9.2", "v2.0.0-rc.1")},
+		{name: "a tag listing that cannot be read", tag: "v1.9.2", ref: "refs/heads/main", listFails: true, wantRefusal: "could not be listed"},
 		{name: "an existing stable release from main", tag: "v1.9.2", ref: "refs/heads/main"},
 		{name: "a two-digit minor", tag: "v1.10.0", ref: "refs/heads/main"},
 		{name: "a pre-release", tag: "v1.10.0-rc.1", ref: "refs/heads/main", wantRefusal: "is not a stable release tag"},
@@ -400,13 +465,21 @@ func TestThePromotionRefusesAnythingButAnExistingStableReleaseTag(t *testing.T) 
 		{name: "a dispatch from a tag ref", tag: "v1.9.2", ref: "refs/tags/v1.9.2", wantRefusal: "runs from refs/heads/main only"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			refs := testCase.refs
+			if refs == "" {
+				refs = refsOf(testCase.tag)
+			}
 			env := map[string]string{
 				"TAG":               testCase.tag,
 				"GITHUB_REF":        testCase.ref,
 				"GITHUB_REPOSITORY": "ovumcy/ovumcy-web",
+				"GH_REFS":           refs,
 			}
 			if testCase.ghFails {
 				env["GH_FAIL"] = "1"
+			}
+			if testCase.listFails {
+				env["GH_LIST_FAIL"] = "1"
 			}
 			output, _, err := runWorkflowStep(t, promoteWorkflow, promoteJob, promoteRefuseStep, ghExists, env)
 
@@ -462,7 +535,9 @@ gh() { printf 'GH %s\n' "$*" >&2; }`
 	}
 	for _, want := range []string{
 		"COSIGN verify --certificate-identity-regexp " + wantPattern + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + digestRef,
-		"GH attestation verify oci://" + digestRef + " --repo ovumcy/ovumcy-web",
+		// The attestation is held to the same signer as the signature: the
+		// workflow file, and the release's own tag ref.
+		"GH attestation verify oci://" + digestRef + " --repo ovumcy/ovumcy-web --signer-workflow ovumcy/ovumcy-web/.github/workflows/docker-image.yml --source-ref refs/tags/v1.9.2",
 	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("the step never ran %q:\n%s", want, output)
@@ -510,13 +585,14 @@ gh() { printf 'GH %s\n' "$*" >&2; }`
 // a token request answers 200 with a token, and a manifest HEAD answers
 // STUB_HEAD_STATUS with a docker-content-digest header carrying STUB_DIGEST.
 // The URL read is logged, so the tests can say WHICH tag was asked about.
-const registryCurl = `curl() {
+const registryCurl = bearerArgument + "\n" + `curl() {
   local out="" hdr="" url=""
   while [ $# -gt 0 ]; do
     case "$1" in
       -o) out="$2"; shift ;;
       -D) hdr="$2"; shift ;;
-      -w|-H|--connect-timeout|--max-time|--retry|--retry-delay) shift ;;
+      -H) bearerArgument "$2"; shift ;;
+      -w|--connect-timeout|--max-time|--retry|--retry-delay) shift ;;
       -*) ;;
       *) url="$1" ;;
     esac
@@ -526,13 +602,28 @@ const registryCurl = `curl() {
   case "$url" in
     *token*)
       [ -n "$out" ] && printf '{"token":"t"}' > "$out"
-      printf '200' ;;
+      printf '%s' "${STUB_TOKEN_STATUS:-200}" ;;
     *manifests/*)
-      [ -n "$hdr" ] && printf 'HTTP/2 200\r\nDocker-Content-Digest: %s\r\n' "${STUB_DIGEST-}" > "$hdr"
+      # A reference the run named by its release tag may answer another digest
+      # than the one asked by digest, which is how a mirror's tag disagrees.
+      local answer="${STUB_DIGEST-}"
+      case "$url" in */manifests/v*) answer="${STUB_TAG_DIGEST-$answer}" ;; esac
+      [ -n "$hdr" ] && printf 'HTTP/2 200\r\nDocker-Content-Digest: %s\r\n' "$answer" > "$hdr"
       printf '%s' "${STUB_HEAD_STATUS:-200}" ;;
   esac
 }
-python3() { printf 't'; }`
+python3() { printf 'bearer-secret'; }`
+
+// bearerArgument is the part every curl shadow of this file shares: a header
+// given as an argument is checked for a bearer token, which must come from a
+// header FILE (`-H @file`) and never from the command line. The file's content
+// is logged, so a test can see the token did reach curl by the allowed route.
+const bearerArgument = `bearerArgument() {
+  case "$1" in
+    "Authorization: Bearer"*) printf 'ARGV-BEARER\n' >&2 ;;
+    @*) printf 'HEADER-FILE %s\n' "$(cat "${1#@}")" >&2 ;;
+  esac
+}`
 
 const signedDigest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
@@ -598,7 +689,7 @@ func TestThePromotionReadsAndChecksDigests(t *testing.T) {
 		} {
 			t.Run(check.step+": "+testCase.name, func(t *testing.T) {
 				env := map[string]string{
-					"DIGEST": signedDigest, "IMAGE_PATH": imagePath, "MANIFEST_ACCEPT": "x",
+					"DIGEST": signedDigest, "IMAGE_PATH": imagePath, "MANIFEST_ACCEPT": "x", "TAG": "v1.9.2",
 					"STUB_DIGEST": testCase.stubDigest, "STUB_HEAD_STATUS": testCase.headStatus,
 				}
 				output, _, err := runWorkflowStep(t, promoteWorkflow, promoteJob, check.step, registryCurl, env)
@@ -621,57 +712,137 @@ func TestThePromotionReadsAndChecksDigests(t *testing.T) {
 	}
 }
 
-// TestTheMirrorIsVerifiedBeforeLatestMovesAnywhere runs the mirror's read step:
-// the release tag must already resolve to the signed digest on Docker Hub, and
-// that digest must verify there under the identity the GHCR step produced.
-func TestTheMirrorIsVerifiedBeforeLatestMovesAnywhere(t *testing.T) {
-	const cosignStub = `cosign() { printf 'COSIGN %s\n' "$*" >&2; if [ -n "${COSIGN_FAIL:-}" ]; then return 1; fi; }`
+// hubTagDigest is what the mirror's release tag resolves to in the cases below
+// that give it a digest of its own.
+const hubTagDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+// TestTheMirrorCopyIsVerifiedBeforeLatestMovesAnywhere runs the verification of
+// the Docker Hub copy: the release digest must be there, the release tag must
+// not name anything else, and the digest must verify there under the identity
+// the GHCR step produced — asked again while the registry's referrers listing
+// catches up, and only about that.
+func TestTheMirrorCopyIsVerifiedBeforeLatestMovesAnywhere(t *testing.T) {
+	// Counting in the function body, not a subshell: the step calls cosign in
+	// an `if`, so the counter survives from one attempt to the next.
+	const cosignStub = `n=0
+sleep() { :; }
+cosign() { printf 'COSIGN %s\n' "$*" >&2; n=$(( n + 1 )); if [ "$n" -le "${COSIGN_FAILS:-0}" ]; then printf '%s\n' "${COSIGN_MESSAGE:-no signatures found}" >&2; return 1; fi; }`
 	const identity = `^stub-identity-the-mirror-must-pass-through@`
+	const verifyCall = "COSIGN verify --certificate-identity-regexp " + identity + " --certificate-oidc-issuer https://token.actions.githubusercontent.com docker.io/" + imagePath + "@" + signedDigest
 
 	for _, testCase := range []struct {
 		name        string
 		env         map[string]string
+		wantCalls   int
+		wantTagWord string
 		wantRefusal string
 	}{
-		{name: "the mirror holds the release and it verifies", env: map[string]string{"STUB_DIGEST": signedDigest}},
-		{name: "the mirror's release is another digest", env: map[string]string{"STUB_DIGEST": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, wantRefusal: "not to"},
-		{name: "the mirror never received the release", env: map[string]string{"STUB_DIGEST": signedDigest, "STUB_HEAD_STATUS": "404"}, wantRefusal: "does not hold that release"},
-		{name: "the mirror's signature does not verify", env: map[string]string{"STUB_DIGEST": signedDigest, "COSIGN_FAIL": "1"}, wantRefusal: "COSIGN verify"},
+		{name: "the mirror holds the digest, the tag is absent, and it verifies", env: map[string]string{"STUB_DIGEST": signedDigest, "STUB_TAG_STATUS": "404"}, wantCalls: 1, wantTagWord: "absent"},
+		{name: "the mirror already names the release", env: map[string]string{"STUB_DIGEST": signedDigest}, wantCalls: 1, wantTagWord: "present"},
+		{name: "the mirror's release tag is another digest", env: map[string]string{"STUB_DIGEST": signedDigest, "STUB_TAG_DIGEST": hubTagDigest}, wantRefusal: "A release tag is never rewritten"},
+		{name: "the mirror never received the digest", env: map[string]string{"STUB_DIGEST": signedDigest, "STUB_DIGEST_STATUS": "404"}, wantRefusal: "does not hold"},
+		{name: "the mirror's digest is another one", env: map[string]string{"STUB_DIGEST": hubTagDigest}, wantRefusal: "does not hold"},
+		{name: "the referrers listing catches up before the attempts run out", env: map[string]string{"STUB_DIGEST": signedDigest, "COSIGN_FAILS": "2"}, wantCalls: 3, wantTagWord: "present"},
+		{name: "the signature never appears", env: map[string]string{"STUB_DIGEST": signedDigest, "COSIGN_FAILS": "99"}, wantCalls: 3, wantRefusal: "carries no signature of the release over 3 attempts"},
+		{name: "a signer that is not the release is an answer, asked once", env: map[string]string{"STUB_DIGEST": signedDigest, "COSIGN_FAILS": "99", "COSIGN_MESSAGE": "none of the signatures were verified against the certificate identity"}, wantCalls: 1, wantRefusal: "did not verify against the release's signer identity"},
 		{name: "an empty identity", env: map[string]string{"STUB_DIGEST": signedDigest, "IDENTITY_REGEXP": ""}, wantRefusal: "accepts any signer"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			env := map[string]string{
 				"TAG": "v1.9.2", "DIGEST": signedDigest, "IMAGE_PATH": imagePath,
 				"IDENTITY_REGEXP": identity, "MANIFEST_ACCEPT": "x",
+				// The budget is the fixture's, as the publish job's mirror
+				// fixtures use theirs: what the step owes is to wait out a late
+				// listing and refuse one that never comes.
+				"VERIFY_ATTEMPTS": "3", "VERIFY_DELAY_SECONDS": "0",
 			}
 			for key, value := range testCase.env {
 				env[key] = value
 			}
-			output, _, err := runWorkflowStep(t, promoteWorkflow, promoteJob, promoteMirrorSeenStep, registryCurl+"\n"+cosignStub, env)
+			output, written, err := runWorkflowStep(t, promoteWorkflow, promoteJob, promoteHubVerifyStep, hubCurl+"\n"+cosignStub, env)
 
-			if testCase.wantRefusal == "" {
-				if err != nil {
-					t.Fatalf("the step refused a mirror it owes: %v\n%s", err, output)
+			if testCase.wantCalls > 0 {
+				if got := strings.Count(output, "COSIGN verify "); got != testCase.wantCalls {
+					t.Errorf("the step ran `cosign verify` %d time(s), want %d:\n%s", got, testCase.wantCalls, output)
 				}
-				want := "COSIGN verify --certificate-identity-regexp " + identity + " --certificate-oidc-issuer https://token.actions.githubusercontent.com docker.io/" + imagePath + "@" + signedDigest
-				if !strings.Contains(output, want) {
-					t.Errorf("the mirror was not verified as %q:\n%s", want, output)
+			}
+			if testCase.wantRefusal != "" {
+				if err == nil {
+					t.Fatalf("the step passed it.\n%s", output)
+				}
+				requireRefusalReason(t, output, testCase.wantRefusal)
+				if written != "" {
+					t.Errorf("the step exported %q although it refused, and the Docker Hub write reads it", written)
 				}
 				return
 			}
-			if err == nil {
-				t.Fatalf("the step passed it.\n%s", output)
+			if err != nil {
+				t.Fatalf("the step refused a mirror it owes: %v\n%s", err, output)
 			}
-			requireRefusalReason(t, output, testCase.wantRefusal)
+			if !strings.Contains(output, verifyCall) {
+				t.Errorf("the mirror was not verified as %q:\n%s", verifyCall, output)
+			}
+			if want := "tag_on_hub=" + testCase.wantTagWord + "\n"; written != want {
+				t.Errorf("the step exported %q, want %q", written, want)
+			}
 		})
 	}
 }
+
+// TestTheShippedHubVerifyBudgetActuallyWaits judges the numbers the workflow
+// carries, which every fixture above overrides: `VERIFY_ATTEMPTS` trimmed to one
+// restores the one-shot read-back that lost the race against Docker Hub's
+// referrers listing, and the whole package would stay green.
+func TestTheShippedHubVerifyBudgetActuallyWaits(t *testing.T) {
+	job := workflowfile.Job(t, promoteWorkflow, promoteJob)
+	env := envConstants(workflowfile.Step(t, promoteWorkflow, promoteJob, job, promoteHubVerifyStep), "\n        env:\n", "          ")
+
+	for name, atLeast := range map[string]int{"VERIFY_ATTEMPTS": 2, "VERIFY_DELAY_SECONDS": 1} {
+		got, err := strconv.Atoi(env[name])
+		if err != nil || got < atLeast {
+			t.Errorf("%s, step %q declares %s = %q; it must be a number of at least %d, or the step asks once and does not wait for the listing", promoteWorkflow, promoteHubVerifyStep, name, env[name], atLeast)
+		}
+	}
+}
+
+// hubCurl shadows `curl` and `python3` for the verification of the Docker Hub
+// copy. A manifest HEAD by digest answers STUB_DIGEST with STUB_DIGEST_STATUS
+// (200 by default); one by the release tag answers STUB_TAG_DIGEST, which is
+// STUB_DIGEST unless a case gives the tag a digest of its own, with
+// STUB_TAG_STATUS.
+const hubCurl = bearerArgument + "\n" + `curl() {
+  local hdr="" url="" out=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -o) out="$2"; shift ;;
+      -D) hdr="$2"; shift ;;
+      -H) bearerArgument "$2"; shift ;;
+      -w|--connect-timeout|--max-time|--retry|--retry-delay) shift ;;
+      -*) ;;
+      *) url="$1" ;;
+    esac
+    shift
+  done
+  printf 'CURL %s\n' "$url" >&2
+  case "$url" in
+    *token*)
+      [ -n "$out" ] && printf '{"token":"t"}' > "$out"
+      printf '200' ;;
+    */manifests/sha256:*)
+      [ -n "$hdr" ] && printf 'HTTP/2 200\r\nDocker-Content-Digest: %s\r\n' "${STUB_DIGEST-}" > "$hdr"
+      printf '%s' "${STUB_DIGEST_STATUS:-200}" ;;
+    */manifests/*)
+      [ -n "$hdr" ] && printf 'HTTP/2 200\r\nDocker-Content-Digest: %s\r\n' "${STUB_TAG_DIGEST-${STUB_DIGEST-}}" > "$hdr"
+      printf '%s' "${STUB_TAG_STATUS:-200}" ;;
+  esac
+}
+python3() { printf 'bearer-secret'; }`
 
 // putCurl shadows `curl` and `python3` for the two tag writes. A token request
 // answers 200; a manifest GET by digest answers STUB_BODY with a Content-Type
 // carrying a parameter; a PUT is logged with the media type it declares and the
 // exact bytes it sends, and answers STUB_PUT_STATUS (201 by default).
-const putCurl = `curl() {
+const putCurl = bearerArgument + "\n" + `curl() {
   local out="" hdr="" url="" method="GET" data=""
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -679,7 +850,7 @@ const putCurl = `curl() {
       -D) hdr="$2"; shift ;;
       -X) method="$2"; shift ;;
       --data-binary) data="${2#@}"; shift ;;
-      -H) case "$2" in Content-Type:*) printf 'PUT-TYPE %s\n' "${2#Content-Type: }" >&2 ;; esac; shift ;;
+      -H) bearerArgument "$2"; case "$2" in Content-Type:*) printf 'PUT-TYPE %s\n' "${2#Content-Type: }" >&2 ;; esac; shift ;;
       -w|-K|--connect-timeout|--max-time|--retry|--retry-delay) shift ;;
       -*) ;;
       *) url="$1" ;;
@@ -700,7 +871,7 @@ const putCurl = `curl() {
       printf '%s' "${STUB_PUT_STATUS:-201}" ;;
   esac
 }
-python3() { printf 't'; }`
+python3() { printf 'bearer-secret'; }`
 
 // TestLatestIsWrittenAsTheSignedBytesPutUnderTheTag runs the two writes. Each
 // fetches the manifest by DIGEST, refuses bytes that do not hash to it, and PUTs
@@ -716,7 +887,7 @@ func TestLatestIsWrittenAsTheSignedBytesPutUnderTheTag(t *testing.T) {
 		api  string
 	}{
 		{promoteGhcrMoveStep, map[string]string{"REGISTRY_USER": "actor", "REGISTRY_PASSWORD": "secret"}, "https://ghcr.io/v2/" + imagePath},
-		{promoteHubMoveStep, map[string]string{"REGISTRY_USER": "publisher", "REGISTRY_PASSWORD": "secret"}, "https://registry-1.docker.io/v2/" + imagePath},
+		{promoteHubMoveStep, map[string]string{"REGISTRY_USER": "publisher", "REGISTRY_PASSWORD": "secret", "TAG": "v1.9.2", "TAG_ON_HUB": "present"}, "https://registry-1.docker.io/v2/" + imagePath},
 	} {
 		for _, testCase := range []struct {
 			name        string
@@ -773,9 +944,9 @@ func TestLatestIsWrittenAsTheSignedBytesPutUnderTheTag(t *testing.T) {
 // it is not a promotion. The two promote-latest writes are then found by name
 // and held to the PUT, so the guard cannot pass by there being no writer.
 func TestNoStepRecreatesTheIndexUnderATag(t *testing.T) {
-	matches, err := filepath.Glob(filepath.Join("..", "..", ".github", "workflows", "*.yml"))
-	if err != nil || len(matches) == 0 {
-		t.Fatalf("list the workflows: %v (%d found)", err, len(matches))
+	matches := workflowFiles(t, filepath.Join("..", "..", ".github", "workflows"))
+	if len(matches) == 0 {
+		t.Fatalf("list the workflows: none found")
 	}
 	for _, match := range matches {
 		workflow := ".github/workflows/" + filepath.Base(match)
@@ -785,10 +956,13 @@ func TestNoStepRecreatesTheIndexUnderATag(t *testing.T) {
 	}
 
 	job := workflowfile.Job(t, promoteWorkflow, promoteJob)
-	for _, name := range []string{promoteGhcrMoveStep, promoteHubMoveStep} {
+	for name, wantTarget := range map[string]string{
+		promoteGhcrMoveStep: "/manifests/latest",
+		promoteHubMoveStep:  "/manifests/${name}",
+	} {
 		block := withoutComments(workflowfile.Step(t, promoteWorkflow, promoteJob, job, name))
-		if !strings.Contains(block, "-X PUT") || !strings.Contains(block, "/manifests/latest") {
-			t.Errorf("%s, step %q does not PUT the manifest under `latest`", promoteWorkflow, name)
+		if !strings.Contains(block, "-X PUT") || !strings.Contains(block, wantTarget) {
+			t.Errorf("%s, step %q does not PUT the manifest under %s", promoteWorkflow, name, wantTarget)
 		}
 	}
 }
