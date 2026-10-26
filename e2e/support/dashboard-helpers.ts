@@ -24,7 +24,14 @@ export async function dashboardTodayISO(page: Page): Promise<string> {
 const pinnedClockPages = new WeakSet<Page>();
 
 /**
- * Freezes the page's clock at the moment of the call, once per page.
+ * Freezes the page's clock at local noon of today, once per page.
+ *
+ * Noon, not the moment of the call: the page keys its day at the start of the
+ * navigation (`Date.now()` minus the time elapsed since it began), so a clock
+ * pinned seconds after local midnight would key the page onto the previous day
+ * while the server renders the new one. Noon is twelve hours from either
+ * boundary, so the pinned day is the server's day for any run that does not
+ * straddle a whole half-day.
  *
  * The dashboard reloads itself onto the new day the first time its autosave
  * settles after the browser's local midnight (`reloadDashboardOnNewDay`). That
@@ -43,7 +50,9 @@ export async function pinDashboardClock(page: Page): Promise<void> {
     return;
   }
   pinnedClockPages.add(page);
-  await page.clock.setFixedTime(new Date());
+  const noon = new Date();
+  noon.setHours(12, 0, 0, 0);
+  await page.clock.setFixedTime(noon);
 }
 
 /**
