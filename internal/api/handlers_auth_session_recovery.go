@@ -164,6 +164,7 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 	handler.writeAuthCookie(c, user, delivery.session)
 	handler.writeSealed(c, delivery.reveal)
 	handler.clearOIDCLogoutBridgeCookie(c)
+	handler.rotateCSRFToken(c)
 	handler.clearResetPasswordCookie(c)
 	handler.logSecurityEvent(c, "auth.reset_password", "success")
 

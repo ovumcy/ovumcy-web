@@ -107,7 +107,7 @@
   "auth.continue_to_app": "Accéder à l'application",
   "auth.back_to_login": "Retour à la connexion",
   "auth.back_to_recovery": "Retour à la récupération",
-  "auth.confirm_logout": "Vous déconnecter maintenant ?",
+  "auth.confirm_logout": "Vous déconnecter maintenant ? Vos sessions sur tous les autres appareils seront aussi fermées.",
   "auth.must_change_password": "Une réinitialisation du mot de passe est requise avant de continuer.",
   "auth.error.invalid_input": "Veuillez vérifier vos informations et réessayer.",
   "auth.error.consent_required": "Confirmez que vous avez lu la politique de confidentialité et que vous consentez au traitement de vos données de santé reproductive.",

@@ -434,7 +434,7 @@ func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 		// Fiber v3 removed KeyLookup and ContextKey: the token source is now a
 		// typed extractors.Extractor (see api.CSRFTokenExtractor, form-then-
 		// header) and the token is read back via csrf.TokenFromContext.
-		CookieName:     "ovumcy_csrf",
+		CookieName:     api.CSRFCookieName,
 		CookieSameSite: "Lax",
 		CookieHTTPOnly: true,
 		CookieSecure:   cookieSecure,

@@ -267,3 +267,126 @@ func cookiePair(cookie *http.Cookie) string {
 	}
 	return cookie.Name + "=" + cookie.Value
 }
+
+// TestLogoutBeforeOnboardingEndsTheSession pins WEB-220: a signed-in owner who
+// has not finished onboarding can end the session from the onboarding page.
+// Before the fix the onboarding gate answered POST /logout with a 303 back to
+// /onboarding, the session stayed alive, and the page carried no sign-out
+// control at all — a session on a shared device could not be ended until the
+// first cycle was entered.
+func TestLogoutBeforeOnboardingEndsTheSession(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "logout-mid-onboarding@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+
+	pageRequest := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
+	pageRequest.Header.Set("Accept-Language", "en")
+	pageRequest.Header.Set("Cookie", authCookie)
+	pageResponse := mustAppResponse(t, app, pageRequest)
+	assertStatusCode(t, pageResponse, http.StatusOK)
+	page := mustReadBodyString(t, pageResponse.Body)
+	assertBodyContainsAll(t, page,
+		bodyStringMatch{fragment: "data-onboarding-logout", message: "expected the onboarding page to carry its own sign-out control"},
+		bodyStringMatch{fragment: `action="/logout"`, message: "expected the onboarding sign-out control to post to /logout"},
+	)
+	csrfToken := extractCSRFTokenFromHTML(t, page)
+	csrfCookie := responseCookie(pageResponse.Cookies(), CSRFCookieName)
+	if csrfCookie == nil || csrfCookie.Value == "" {
+		t.Fatal("expected the onboarding page to mint a csrf cookie")
+	}
+
+	form := url.Values{"csrf_token": {csrfToken}}
+	logoutRequest := httptest.NewRequest(http.MethodPost, "/logout", strings.NewReader(form.Encode()))
+	logoutRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	logoutRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	logoutResponse := mustAppResponse(t, app, logoutRequest)
+	_ = logoutResponse.Body.Close()
+	assertStatusCode(t, logoutResponse, http.StatusSeeOther)
+	if location := logoutResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the sign-out to land on /login, got %q", location)
+	}
+
+	afterRequest := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
+	afterRequest.Header.Set("Cookie", authCookie)
+	afterResponse := mustAppResponse(t, app, afterRequest)
+	_ = afterResponse.Body.Close()
+	assertStatusCode(t, afterResponse, http.StatusSeeOther)
+	if location := afterResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the ended session to be refused with a /login redirect, got %q", location)
+	}
+}
+
+// TestCSRFTokenDoesNotSurviveASignOutOrASignIn pins WEB-242 (b): the CSRF token
+// is tied to the authentication state it was minted under. A token the browser
+// held before signing out is refused on the session signed in afterwards, and
+// the token the signed-out sign-in page carried is refused once the sign-in
+// has landed. Before the fix both were accepted for the token's whole idle
+// window: the storage entry outlived the session change and the cookie still
+// paired with it.
+func TestCSRFTokenDoesNotSurviveASignOutOrASignIn(t *testing.T) {
+	assertCSRFCookieRetracted := func(t *testing.T, response *http.Response, when string) {
+		t.Helper()
+		cookie := responseCookie(response.Cookies(), CSRFCookieName)
+		if cookie == nil {
+			t.Fatalf("expected %s to retract the csrf cookie, got no Set-Cookie for it", when)
+		}
+		if cookie.Value != "" || (cookie.MaxAge >= 0 && !cookie.Expires.Before(time.Now())) {
+			t.Fatalf("expected %s to expire the csrf cookie, got value=%q max-age=%d expires=%s", when, cookie.Value, cookie.MaxAge, cookie.Expires)
+		}
+	}
+	deleteSessionWith := func(t *testing.T, app *fiber.App, authCookie string, csrfCookie *http.Cookie, csrfToken string) int {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", nil)
+		request.Header.Set("Accept", "application/json")
+		request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+		request.Header.Set("X-CSRF-Token", csrfToken)
+		response := mustAppResponse(t, app, request)
+		_ = response.Body.Close()
+		return response.StatusCode
+	}
+
+	t.Run("a token held before sign-out is refused on the next session", func(t *testing.T) {
+		app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
+
+		form := url.Values{"csrf_token": {csrfToken}}
+		logoutRequest := httptest.NewRequest(http.MethodPost, "/logout", strings.NewReader(form.Encode()))
+		logoutRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		logoutRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+		logoutResponse := mustAppResponse(t, app, logoutRequest)
+		_ = logoutResponse.Body.Close()
+		assertStatusCode(t, logoutResponse, http.StatusSeeOther)
+		assertCSRFCookieRetracted(t, logoutResponse, "sign-out")
+
+		nextAuthCookie := loginAndExtractAuthCookieWithCSRF(t, app, "logout-csrf@example.com", "StrongPass1")
+		if status := deleteSessionWith(t, app, nextAuthCookie, csrfCookie, csrfToken); status != http.StatusForbidden {
+			t.Fatalf("expected the pre-sign-out csrf token to be refused with 403 on the next session, got %d", status)
+		}
+	})
+
+	t.Run("the sign-in page token is refused once the sign-in has landed", func(t *testing.T) {
+		app, database := newOnboardingTestAppWithCSRF(t)
+		user := createOnboardingTestUser(t, database, "login-csrf-rotation@example.com", "StrongPass1", true)
+
+		pageResponse := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/login", nil))
+		assertStatusCode(t, pageResponse, http.StatusOK)
+		csrfToken := extractCSRFTokenFromAuthPage(t, mustReadBodyString(t, pageResponse.Body))
+		csrfCookie := responseCookie(pageResponse.Cookies(), CSRFCookieName)
+		if csrfCookie == nil || csrfCookie.Value == "" {
+			t.Fatal("expected the sign-in page to mint a csrf cookie")
+		}
+
+		form := url.Values{"email": {user.Email}, "password": {"StrongPass1"}, "csrf_token": {csrfToken}}
+		loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
+		loginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		loginRequest.Header.Set("Cookie", cookiePair(csrfCookie))
+		loginResponse := mustAppResponse(t, app, loginRequest)
+		_ = loginResponse.Body.Close()
+		assertStatusCode(t, loginResponse, http.StatusSeeOther)
+		assertCSRFCookieRetracted(t, loginResponse, "sign-in")
+		authCookie := cookiePair(responseCookie(loginResponse.Cookies(), authCookieName))
+
+		if status := deleteSessionWith(t, app, authCookie, csrfCookie, csrfToken); status != http.StatusForbidden {
+			t.Fatalf("expected the sign-in page's csrf token to be refused with 403 after sign-in, got %d", status)
+		}
+	})
+}

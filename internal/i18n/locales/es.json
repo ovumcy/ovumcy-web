@@ -97,7 +97,7 @@
   "auth.continue_to_app": "Continuar a la aplicación",
   "auth.back_to_login": "Volver al inicio de sesión",
   "auth.back_to_recovery": "Volver a recuperación",
-  "auth.confirm_logout": "¿Cerrar sesión ahora?",
+  "auth.confirm_logout": "¿Cerrar sesión ahora? También se cerrarán tus sesiones en todos los demás dispositivos.",
   "auth.must_change_password": "Debes restablecer la contraseña antes de continuar.",
   "auth.error.invalid_input": "Revisa tus datos e inténtalo de nuevo.",
   "auth.error.consent_required": "Confirma que has leído la política de privacidad y das tu consentimiento al tratamiento de tus datos de salud reproductiva.",

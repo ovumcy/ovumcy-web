@@ -65,6 +65,8 @@ func TestShouldEnforceOnboardingAccess(t *testing.T) {
 		{name: "onboarding page bypasses onboarding gate", path: "/onboarding", want: false},
 		{name: "onboarding step bypasses onboarding gate", path: "/api/v1/onboarding/steps/1", want: false},
 		{name: "logout api bypasses onboarding gate", path: "/api/v1/sessions/current", want: false},
+		{name: "logout page route bypasses onboarding gate", path: "/logout", want: false},
+		{name: "logout lookalike requires onboarding gate", path: "/logoutx", want: true},
 		// The same adversarial set, read as the gate decision it drives: the
 		// two fail-closed rows must still be gated, and the traversal row is
 		// the one that is not.
