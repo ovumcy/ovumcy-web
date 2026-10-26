@@ -361,6 +361,8 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 	// refusal and still read green here.
 	preamble := func(verifyFailures int, failureMessage string) string {
 		return `n=0` + "\n" +
+			`gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf '%s\n' "${GH_REFS-refs/tags/v2.0.0}"; }` + "\n" +
+			`sleep() { :; }` + "\n" +
 			`cosign() { printf 'COSIGN %s\n' "$*" >&2; if [ "$1" = verify ]; then n=$(( n + 1 )); ` +
 			`if [ "$n" -gt ` + strconv.Itoa(verifyFailures) + ` ]; then return 0; fi; ` +
 			`printf '%s\n' ` + shellQuote(failureMessage) + ` >&2; return 1; fi; }`
@@ -504,6 +506,12 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				"IMAGE_NAME="+imageName,
 				"MIRROR_NAME="+mirrorName,
 				"IDENTITY_REGEXP="+identity,
+				// The run's own tag is the only one there is, so `latest` stays
+				// in the list; the cases that change that are in latest_test.go.
+				"GITHUB_OUTPUT=/dev/null",
+				"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
+				"REF_TYPE=tag",
+				"REF_NAME=v2.0.0",
 				// The attempt budget is the fixture's, not the workflow's:
 				// the real one waits minutes on purpose. The DELAY is what a
 				// test cannot afford, and driving it to zero is why these are
@@ -1677,6 +1685,13 @@ func runStep(t *testing.T, bash, job, step string, env map[string]string, reg re
 		"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
 		"GITHUB_SERVER_URL=https://github.com",
 		"STUB_DIR="+dir,
+		// What the runner supplies to a step that writes an output or asks the
+		// API whether its tag is still the highest stable one. The default is a
+		// run whose tag is the only one there is; a case that wants another
+		// answer sets these after, and the last binding wins.
+		"GITHUB_OUTPUT=/dev/null",
+		"REF_TYPE=tag",
+		"REF_NAME=v2.0.0",
 	)
 	// The workflow's own constants first — the job's `env:`, then the step's —
 	// so a constant declared there, the Accept header listing the manifest
@@ -1734,6 +1749,11 @@ func stubRegistry(dir string, reg registry) string {
 		`printf '%s' ` + shellQuote(token) + ` > ` + shellQuote(dir+"/token.json"),
 		`printf '%s' ` + shellQuote(tokenValue) + ` > ` + shellQuote(dir+"/token_value.txt"),
 		`python3() { cat > /dev/null 2>&1 || true; cat "$STUB_DIR/token_value.txt"; printf '\n'; }`,
+		// The tag listing the "still the highest stable tag" question reads:
+		// the run's own tag unless a case supplies GH_REFS, or GH_FAIL to make
+		// the listing unreadable.
+		`gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf '%s\n' "${GH_REFS-refs/tags/v2.0.0}"; }`,
+		`sleep() { :; }`,
 		`curl() {`,
 		`  local out="" dump="" method=GET url="" body="" content_type=""`,
 		`  while [ $# -gt 0 ]; do`,

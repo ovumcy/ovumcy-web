@@ -1066,11 +1066,13 @@ jobs:
         # The tag list that cannot be READ is an error: guessing `true` could
         # move `:latest` backwards and guessing `false` would leave a new release
         # without it, silently. Nothing is pushed yet, so a re-run costs nothing.
-        # The answer is read once, here. `:latest` is then written by the same
-        # promotion, after the same signature, as every other tag of the run, and
-        # mirrored by the same step; a second tag being pushed within the minutes
-        # a release takes to publish is the residual, and promote-latest.yml is
-        # the repair for it.
+        # The answer is read here, before a build and a scan that take minutes,
+        # and tag runs do not queue behind one another, so it can be stale by the
+        # time `:latest` is written. It is asked again immediately before each of
+        # the two writes — the promotion on GHCR and the alias loop of the Docker
+        # Hub mirror — and `latest` is dropped from the list there when a higher
+        # stable tag exists by then. What is left is the instant between that
+        # last read and the write itself; promote-latest.yml is the repair.
         id: latest
         shell: bash
         env:
@@ -1123,6 +1125,12 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ steps.image.outputs.name }}
+          # Without this the action's default (`latest=auto`) adds `latest` to
+          # EVERY tag event on its own, whatever the raw line below says: a
+          # pre-release or a backport tag would move the alias the decision
+          # step above just refused it. Off here, `latest` is in the list only
+          # when that step answered `true`.
+          flavor: latest=false
           tags: |
             type=raw,value=latest,enable=${{ steps.latest.outputs.publish_latest == 'true' }}
             type=ref,event=branch
@@ -1480,6 +1488,12 @@ jobs:
         # `build-push-action` with `tags:` — would reopen the hole from the
         # other side, since a re-created index need not hash to the digest the
         # signature covers.
+        #
+        # `latest_dropped` is the one output: `true` when the list carried
+        # `latest` and a higher stable tag existed by the time of the write, so
+        # the alias was left to that tag's run. The checks that follow read it
+        # to stop asking about an alias this run never meant to write.
+        id: promote
         shell: bash
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -1488,8 +1502,37 @@ jobs:
           IMAGE_PATH: ${{ steps.image.outputs.path }}
           REGISTRY_USER: ${{ github.actor }}
           REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+
+          # Whether this run's tag is the highest stable release tag NOW. The
+          # decision step answered it before a build and a scan, and tag runs do
+          # not serialise (a pending run in a shared group is cancelled, which a
+          # release must never be), so the answer is asked again here, right
+          # before `latest` could be written. The same listing and the same
+          # `sort -V` as that step; a listing that cannot be read ends the step
+          # with nothing written, as it does there.
+          still_highest_stable_tag() {
+            local stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+            local refs="" attempt stable_tags highest
+            for attempt in 1 2 3; do
+              if refs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq '.[].ref')"; then
+                break
+              fi
+              refs=""
+              sleep $(( attempt * 2 ))
+            done
+            if [ -z "$refs" ]; then
+              echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${REF_NAME} is still the highest stable release, and nothing is promoted."
+              exit 1
+            fi
+            stable_tags="$(printf '%s\n' "$refs" | sed 's#^refs/tags/##' | { grep -E "$stable" || true; })"
+            highest="$(printf '%s\n%s\n' "$stable_tags" "$REF_NAME" | { grep -E "$stable" || true; } | sort -V | tail -n 1)"
+            [ "$highest" = "$REF_NAME" ]
+          }
 
           if [ -z "$(printf '%s' "${TAG_REFS}" | tr -d '[:space:]')" ]; then
             echo "::error::the metadata step produced no tag to promote, so this run would publish a digest nothing points at. Check the \`docker/metadata-action\` step's \`tags:\` for the event that started this run."
@@ -1600,6 +1643,19 @@ jobs:
             printf -v tags '%s%s\n' "${tags}" "${tag}"
           done <<< "${TAG_REFS}"
 
+          # The last read before the first write. A higher stable tag that
+          # appeared during the build takes `latest` with its own run; this one
+          # still publishes its version tag and `sha-…`.
+          latest_dropped=false
+          if printf '%s' "${tags}" | grep -qx 'latest'; then
+            if ! still_highest_stable_tag; then
+              tags="$(printf '%s' "${tags}" | { grep -vx 'latest' || true; })"
+              latest_dropped=true
+              echo "a higher stable release tag exists now, so this run leaves \`latest\` to it and writes the rest."
+            fi
+          fi
+          echo "latest_dropped=${latest_dropped}" >> "$GITHUB_OUTPUT"
+
           while IFS= read -r tag; do
             [ -n "$tag" ] || continue
 
@@ -1634,6 +1690,7 @@ jobs:
           TAG_REFS: ${{ steps.meta.outputs.tags }}
           IMAGE_NAME: ${{ steps.image.outputs.name }}
           IMAGE_PATH: ${{ steps.image.outputs.path }}
+          LATEST_DROPPED: ${{ steps.promote.outputs.latest_dropped }}
         run: |
           set -euo pipefail
 
@@ -1687,6 +1744,13 @@ jobs:
                 exit 1
                 ;;
             esac
+
+            # The one alias this run may have declined to write: `latest`, when
+            # the promotion found a higher stable tag by the time it wrote.
+            if [ "${tag}" = "latest" ] && [ "${LATEST_DROPPED:-}" = "true" ]; then
+              echo "${ref} was left to a higher stable release by this run, so it is not asked about here."
+              continue
+            fi
 
             head_status="$(
               curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
@@ -1856,6 +1920,11 @@ jobs:
         # first, after the same step's pushes to Docker Hub had been accepted:
         # the credential reached cosign, and the throttle still answered.
         # `scripts/releasegate` reads these two off the block as well.
+        #
+        # `latest_dropped` is this step's output, for the reason the
+        # promotion's is: `true` when `latest` was left out of the alias loop
+        # because a higher stable tag exists by then.
+        id: mirror
         if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
         shell: bash
         env:
@@ -1864,12 +1933,40 @@ jobs:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
           MIRROR_NAME: docker.io/${{ steps.image.outputs.path }}
           IDENTITY_REGEXP: ${{ steps.verify.outputs.identity_regexp }}
+          PROMOTE_LATEST_DROPPED: ${{ steps.promote.outputs.latest_dropped }}
+          GH_TOKEN: ${{ github.token }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
           VERIFY_ATTEMPTS: 6
           VERIFY_DELAY_SECONDS: 10
           RATE_LIMIT_ATTEMPTS: 4
           RATE_LIMIT_DELAY_SECONDS: 30
         run: |
           set -euo pipefail
+
+          # Whether this run's tag is the highest stable release tag NOW — the
+          # same question, listing and `sort -V` as the promotion's, asked again
+          # here because the sign and the read-back above can wait minutes on a
+          # rate limit. A listing that cannot be read ends the step before any
+          # alias is written.
+          still_highest_stable_tag() {
+            local stable='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+            local refs="" attempt stable_tags highest
+            for attempt in 1 2 3; do
+              if refs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/v" --jq '.[].ref')"; then
+                break
+              fi
+              refs=""
+              sleep $(( attempt * 2 ))
+            done
+            if [ -z "$refs" ]; then
+              echo "::error::the tags of ${GITHUB_REPOSITORY} could not be listed, so there is no way to tell whether ${REF_NAME} is still the highest stable release. No Docker Hub alias is written, so nothing is published there this run."
+              exit 1
+            fi
+            stable_tags="$(printf '%s\n' "$refs" | sed 's#^refs/tags/##' | { grep -E "$stable" || true; })"
+            highest="$(printf '%s\n%s\n' "$stable_tags" "$REF_NAME" | { grep -E "$stable" || true; } | sort -V | tail -n 1)"
+            [ "$highest" = "$REF_NAME" ]
+          }
 
           if [ -z "$(printf '%s' "${TAG_REFS}" | tr -d '[:space:]')" ]; then
             echo "::error::the metadata step produced no tag to mirror, so this run would copy a digest nothing points at."
@@ -2067,6 +2164,25 @@ jobs:
           # mirror to a registry that answers `/v2/<path>/referrers/<digest>`
           # with a 404 means the aliases can no longer be written by `cosign
           # copy` after the signature.
+          #
+          # The last read before the first alias is written: the signing and
+          # the read-back above are where this step spends its minutes. A
+          # `latest` the promotion already dropped stays dropped, without
+          # asking again.
+          latest_dropped=false
+          if printf '%s\n' "${tags[@]}" | grep -qx 'latest'; then
+            if [ "${PROMOTE_LATEST_DROPPED:-}" = "true" ] || ! still_highest_stable_tag; then
+              kept=()
+              for tag in "${tags[@]}"; do
+                [ "${tag}" = "latest" ] || kept+=("${tag}")
+              done
+              tags=("${kept[@]}")
+              latest_dropped=true
+              echo "a higher stable release tag exists now, so this run leaves \`latest\` on Docker Hub to it and writes the rest."
+            fi
+          fi
+          echo "latest_dropped=${latest_dropped}" >> "$GITHUB_OUTPUT"
+
           for tag in "${tags[@]}"; do
             mirror_copy "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}:${tag}"
             echo "${MIRROR_NAME}:${tag} <- ${IMAGE_NAME}@${DIGEST}"
@@ -2098,6 +2214,7 @@ jobs:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
           IMAGE_PATH: ${{ steps.image.outputs.path }}
           MIRROR_NAME: docker.io/${{ steps.image.outputs.path }}
+          LATEST_DROPPED: ${{ steps.mirror.outputs.latest_dropped }}
         run: |
           set -euo pipefail
 
@@ -2146,6 +2263,13 @@ jobs:
                 exit 1
                 ;;
             esac
+
+            # As in the GHCR check: `latest` is not asked about when the mirror
+            # step left it to a higher stable release.
+            if [ "${tag}" = "latest" ] && [ "${LATEST_DROPPED:-}" = "true" ]; then
+              echo "${MIRROR_NAME}:${tag} was left to a higher stable release by this run, so it is not asked about here."
+              continue
+            fi
 
             head_status="$(
               curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \

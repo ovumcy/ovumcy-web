@@ -172,6 +172,9 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 			// waiting on it.
 			preamble := `calls=0` + "\n" +
 				`sleep() { printf 'SLEEP %s\n' "$*" >&2; }` + "\n" +
+				// The run's own tag is the only stable one, so `latest` stays in
+				// the alias list when the step asks whether it still belongs.
+				`gh() { printf 'refs/tags/v2.0.0\n'; }` + "\n" +
 				`cosign() { printf 'COSIGN %s\n' "$*" >&2; ` +
 				`if [ "$1" = ` + shellQuote(testCase.verb) + ` ] && [ "${@: -1}" = ` + shellQuote(testCase.failDest) + ` ]; then calls=$(( calls + 1 )); ` +
 				`if [ "$calls" -le ` + strconv.Itoa(testCase.failures) + ` ]; then printf '%s\n' ` + shellQuote(testCase.message) + ` >&2; return 1; fi; fi; ` +
@@ -183,6 +186,10 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 				"IMAGE_NAME="+mirrorImage,
 				"MIRROR_NAME="+mirrorName,
 				"IDENTITY_REGEXP="+mirrorIdentity,
+				"GITHUB_OUTPUT=/dev/null",
+				"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
+				"REF_TYPE=tag",
+				"REF_NAME=v2.0.0",
 				"VERIFY_ATTEMPTS=1",
 				"VERIFY_DELAY_SECONDS=0",
 				"RATE_LIMIT_ATTEMPTS="+strconv.Itoa(mirrorCopyAttempts),
