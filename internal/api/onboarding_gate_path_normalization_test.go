@@ -19,9 +19,10 @@ import (
 // The gate no longer leans on it. It decides on the path the router dispatches
 // on, and refuses any request whose routed path is not canonical or is not the
 // path the request arrived with. This test drives the real middleware and the
-// real routes, so it holds on a router that takes the segment literally and on
-// one that removes it, and fails if the gate ever goes back to reading the raw
-// prefix.
+// real routes, so its plain-dot rows hold on a router that takes the segment
+// literally and on one that removes it; the escaped row assumes the pinned
+// router, which decodes "%2e" (fiber 3.6+). It fails if the gate ever goes back
+// to reading the raw prefix.
 func TestOnboardingGateRefusesATraversalSegmentWhateverTheRouterMakesOfIt(t *testing.T) {
 	t.Parallel()
 
