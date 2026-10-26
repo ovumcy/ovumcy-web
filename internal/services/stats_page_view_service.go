@@ -256,14 +256,7 @@ func buildStatsChartViewData(cycleLabelPattern string, lengths []int, baselineCy
 		chartData.Baseline = baselineCycleLength
 		chartData.HasBaseline = true
 	}
-	for index, length := range lengths {
-		if index == 0 || length < chartData.RangeMin {
-			chartData.RangeMin = length
-		}
-		if index == 0 || length > chartData.RangeMax {
-			chartData.RangeMax = length
-		}
-	}
+	chartData.RangeMin, chartData.RangeMax = minMaxInts(lengths)
 	return chartData
 }
 
