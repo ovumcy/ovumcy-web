@@ -886,7 +886,7 @@ func (service *DayService) DeleteDayEntry(ctx context.Context, userID uint, day 
 	if err := service.withinTransaction(ctx, func(txLogs DayLogRepository) error {
 		txService, err := service.lockedTxService(ctx, txLogs, userID)
 		if err != nil {
-			return err
+			return ErrDayEntryLoadFailed
 		}
 		if err := txService.DeleteDailyLogByDate(ctx, userID, day, location); err != nil {
 			return err

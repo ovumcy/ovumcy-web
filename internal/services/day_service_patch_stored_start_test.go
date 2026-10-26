@@ -157,6 +157,26 @@ func TestPatchDayEntryRefusesWhenTheStartReadFails(t *testing.T) {
 	}
 }
 
+// The delete takes the stored-start lock first too; a failed read of it refuses
+// the delete and leaves the day's row in place.
+func TestDeleteDayEntryRefusesWhenTheStartReadFails(t *testing.T) {
+	day := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+	logs := newTxStartDayLogs()
+	if err := logs.Create(ctx, &models.DailyLog{UserID: 7, Date: day, Mood: 3}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	logs.startErr = errors.New("driver: bad connection")
+
+	err := NewDayService(logs, &dayUserRepositoryStub{}).DeleteDayEntry(ctx, 7, day, time.UTC)
+	if !errors.Is(err, ErrDeleteDayFailed) {
+		t.Fatalf("expected ErrDeleteDayFailed, got %v", err)
+	}
+	if _, found, findErr := logs.FindByUserAndDayRangeForUpdate(ctx, 7, day, day.AddDate(0, 0, 1)); findErr != nil || !found {
+		t.Fatalf("expected the day's row kept after a refused delete, found=%v err=%v", found, findErr)
+	}
+}
+
 // One lock order for every day write: the owner's stored-start lock first,
 // then any day row. A write that took a day row first and the users row after
 // would deadlock against one taking them the other way round.
