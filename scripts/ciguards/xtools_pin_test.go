@@ -70,14 +70,43 @@ func EnvPin(content, key string) (string, error) {
 	}
 
 	value := strings.TrimSpace(strings.TrimPrefix(trimmed, key+":"))
-	value = strings.TrimSpace(yamlTrailingComment.ReplaceAllString(value, ""))
-	if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') && value[len(value)-1] == value[0] {
-		value = value[1 : len(value)-1]
-	}
+	value = scalar(value)
 	if !modulePin.MatchString(value) {
 		return "", fmt.Errorf("line %d: %s is %q, not a literal module version", i+1, key, value)
 	}
 	return value, nil
+}
+
+// scalar is a one-line YAML value without its trailing comment or quotes.
+func scalar(value string) string {
+	value = strings.TrimSpace(yamlTrailingComment.ReplaceAllString(value, ""))
+	if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') && value[len(value)-1] == value[0] {
+		value = value[1 : len(value)-1]
+	}
+	return value
+}
+
+// pinScope returns the job whose `env:` holds the one key entry EnvPin
+// accepted, or "" when it sits in the workflow-level `env:`. A step-level
+// entry covers one step only and is refused: a step reading the key anywhere
+// else gets an empty value the pin sweep never sees.
+func pinScope(content, key string) (string, error) {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		if !strings.HasPrefix(trimmed, key+":") {
+			continue
+		}
+		switch indent := len(line) - len(trimmed); indent {
+		case 2:
+			return "", nil
+		case 6:
+			return strings.TrimSuffix(parentKey(lines, i, 4), ":"), nil
+		default:
+			return "", fmt.Errorf("line %d: %s is indented %d, neither workflow- nor job-level, so it covers one step at most", i+1, key, indent)
+		}
+	}
+	return "", fmt.Errorf("no %s entry", key)
 }
 
 // parentKey returns the nearest line above lines[i] indented less than indent
@@ -165,20 +194,24 @@ func xtoolsVersionInput(step string) error {
 	default:
 		return fmt.Errorf("passes xtools-version %d times", len(inputs))
 	}
-	value := strings.TrimSpace(yamlTrailingComment.ReplaceAllString(inputs[0][1], ""))
+	value := scalar(inputs[0][1])
 	if workflowfile.WithoutSpaces(value) != xtoolsInputExpression {
 		return fmt.Errorf("passes xtools-version %q; it must be ${{ env.%s }} so the pin the sweep compares is the one the analyzer is built on", value, xtoolsPinKey)
 	}
 	return nil
 }
 
+// xtoolsStep is one step using the action and the job it runs in.
+type xtoolsStep struct{ job, text string }
+
 // xtoolsSteps is every step of every workflow that uses the action, keyed by
 // workflow and then by "job / step name" — the key the failure message and the
-// anti-vacuity check both name — read from the source with no allowlist.
-func xtoolsSteps(t *testing.T) map[string]map[string]string {
+// anti-vacuity check both name — read from the source with no allowlist. Two
+// steps sharing a key fail here: one would hide the other from the guard.
+func xtoolsSteps(t *testing.T) map[string]map[string]xtoolsStep {
 	t.Helper()
 
-	found := map[string]map[string]string{}
+	found := map[string]map[string]xtoolsStep{}
 	for _, workflow := range allWorkflowFiles(t) {
 		content := workflowfile.Read(t, workflow)
 		for _, header := range workflowfile.JobHeaders(t, workflow, content) {
@@ -189,12 +222,16 @@ func xtoolsSteps(t *testing.T) map[string]map[string]string {
 				}
 				name := "(unnamed)"
 				if m := stepNameLine.FindStringSubmatch(step); m != nil {
-					name = m[1]
+					name = scalar(m[1])
 				}
 				if found[workflow] == nil {
-					found[workflow] = map[string]string{}
+					found[workflow] = map[string]xtoolsStep{}
 				}
-				found[workflow][job+" / "+name] = step
+				key := job + " / " + name
+				if _, dup := found[workflow][key]; dup {
+					t.Fatalf("%s: two steps using %s are both %q — name them apart, or the guard judges only one", workflow, xtoolsAction, key)
+				}
+				found[workflow][key] = xtoolsStep{job: job, text: step}
 			}
 		}
 	}
@@ -219,9 +256,16 @@ func TestEveryStepUsingTheXToolsActionPassesTheWorkflowsPin(t *testing.T) {
 		}
 	}
 	for workflow, steps := range found {
+		scope, err := pinScope(workflowfile.Read(t, workflow), xtoolsPinKey)
+		if err != nil {
+			t.Errorf("%s: %v", workflow, err)
+		}
 		for name, step := range steps {
-			if err := xtoolsVersionInput(step); err != nil {
+			if err := xtoolsVersionInput(step.text); err != nil {
 				t.Errorf("%s: step %q %v", workflow, name, err)
+			}
+			if scope != "" && step.job != scope {
+				t.Errorf("%s: step %q reads %s, but the pin is job %q's own, so here it is empty", workflow, name, xtoolsPinKey, scope)
 			}
 		}
 	}
@@ -234,6 +278,7 @@ func TestXToolsVersionInputRefusesEveryInputThatIsNotTheWorkflowsPin(t *testing.
 	accepted := map[string]string{
 		"the pin":           step("          xtools-version: ${{ env.ANALYSIS_XTOOLS_VERSION }}\n"),
 		"the pin, no space": step("          xtools-version: ${{env.ANALYSIS_XTOOLS_VERSION}} # x/tools\n"),
+		"the pin, quoted":   step("          xtools-version: \"${{ env.ANALYSIS_XTOOLS_VERSION }}\"\n"),
 	}
 	for name, src := range accepted {
 		if err := xtoolsVersionInput(src); err != nil {
@@ -334,6 +379,22 @@ func TestEnvPinRefusesEveryShapeThatIsNotOnePin(t *testing.T) {
 		if got, err := EnvPin(c.src, xtoolsPinKey); err == nil {
 			t.Errorf("%s: EnvPin accepted %q", c.name, got)
 		}
+	}
+}
+
+func TestPinScopeNamesTheJobOrRefusesAStepLevelPin(t *testing.T) {
+	cases := []struct{ name, src, want string }{
+		{"workflow-level", "env:\n  ANALYSIS_XTOOLS_VERSION: v0.51.0\njobs:\n  a:\n", ""},
+		{"job-level", "jobs:\n  a:\n    runs-on: x\n    env:\n      X: y\n      ANALYSIS_XTOOLS_VERSION: v0.51.0\n", "a"},
+	}
+	for _, c := range cases {
+		if got, err := pinScope(c.src, xtoolsPinKey); err != nil || got != c.want {
+			t.Errorf("%s: pinScope = %q, %v; want %q", c.name, got, err, c.want)
+		}
+	}
+	stepLevel := "jobs:\n  a:\n    steps:\n      - name: s\n        env:\n          ANALYSIS_XTOOLS_VERSION: v0.51.0\n"
+	if got, err := pinScope(stepLevel, xtoolsPinKey); err == nil {
+		t.Errorf("step-level: pinScope accepted %q", got)
 	}
 }
 
