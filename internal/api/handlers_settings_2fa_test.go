@@ -809,7 +809,7 @@ func TestShowTOTPSetupPageWithoutALocalPasswordOffersTheSetupNotTheForm(t *testi
 	rendered := mustReadBodyString(t, response.Body)
 	assertBodyContainsAll(t, rendered,
 		bodyStringMatch{fragment: "data-settings-2fa-local-password-required", message: "expected the local-password dependency notice"},
-		bodyStringMatch{fragment: `href="/settings#settings-change-password"`, message: "expected a link to the local-password setup"},
+		bodyStringMatch{fragment: `href="/settings#settings-account"`, message: "expected a link to the account section that holds the local-password setup"},
 	)
 	assertBodyNotContainsAll(t, rendered,
 		bodyStringMatch{fragment: "data:image/png;base64,", message: "did not expect a QR code for an account that cannot confirm enrollment"},

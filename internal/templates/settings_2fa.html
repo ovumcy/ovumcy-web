@@ -9,7 +9,7 @@
 
   <div class="card p-5 sm:p-6 space-y-4" data-settings-2fa-local-password-required>
     <p class="journal-muted text-sm">{{t .Messages "settings.2fa.local_password_required"}}</p>
-    <a href="/settings#settings-change-password" class="btn-secondary">{{t .Messages "settings.local_password.title"}}</a>
+    <a href="/settings#settings-account" class="btn-secondary">{{t .Messages "settings.local_password.title"}}</a>
   </div>
 
   {{else if .TOTPEnabled}}
