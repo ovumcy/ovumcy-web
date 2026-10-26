@@ -46,11 +46,17 @@ func TestOversizedRequestHeadIsRejectedVisibly(t *testing.T) {
 	// Positive anchor: a head comfortably inside the buffer still serves the page.
 	// Without it, the rejection below is equally satisfied by a server that
 	// refuses everything.
-	if status, _, _ := requestWithCookieOfSize(t, address, 2000); status != http.StatusOK {
+	status, _, anchorHeaders := requestWithCookieOfSize(t, address, 2000)
+	if status != http.StatusOK {
 		t.Fatalf("anchor failed: a 2000-byte cookie must still be served, got %d", status)
 	}
+	if len(anchorHeaders.Values("Set-Cookie")) == 0 {
+		t.Fatalf("anchor failed: the served login page must set a cookie, or the 431 check below proves nothing")
+	}
 
-	status, body, headers := requestWithCookieOfSize(t, address, 5000)
+	var body string
+	var headers http.Header
+	status, body, headers = requestWithCookieOfSize(t, address, 5000)
 	if status != http.StatusRequestHeaderFieldsTooLarge {
 		t.Fatalf("expected 431 for a head past the read buffer, got %d (body %q)", status, body)
 	}
@@ -66,6 +72,13 @@ func TestOversizedRequestHeadIsRejectedVisibly(t *testing.T) {
 		if got := headers.Get(header); got != want {
 			t.Fatalf("431 response %s = %q, want %q — error responses must keep the standard hardening", header, got, want)
 		}
+	}
+
+	// The head never parsed, yet fiber still runs the app-wide middleware as an
+	// empty "GET /", and the CSRF middleware mints a cookie on it. A cookie on
+	// this answer belongs to a request that does not exist.
+	if cookies := headers.Values("Set-Cookie"); len(cookies) != 0 {
+		t.Fatalf("431 response must set no cookie, got %q", cookies)
 	}
 
 	// The client gets the stable key, not fiber's bare English string.

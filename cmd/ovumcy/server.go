@@ -209,6 +209,10 @@ func newOvumcyErrorHandler(handler *api.Handler) fiber.ErrorHandler {
 		// not-found noise, while the user is looking at a 431. Nothing about the
 		// request is logged; there is nothing parsed to log.
 		if fiberErr.Code == fiber.StatusRequestHeaderFieldsTooLarge {
+			// Fiber runs the app-wide middleware for this request as an empty
+			// "GET /" before handing it here, so the CSRF middleware has minted a
+			// cookie for a request that never parsed. Nothing may be set on it.
+			c.Response().Header.DelAllCookies()
 			log.Printf("request rejected: 431 request header fields too large — the request head did not fit the server read buffer")
 			return handler.RespondRequestHeadersTooLarge(c)
 		}

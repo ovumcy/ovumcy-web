@@ -6,12 +6,14 @@ import "strings"
 // pick a route, so a predicate that is not fiber's own router can still
 // compare what the router compared.
 //
-// c.Path() hands back the untouched path off the wire (DefaultCtx.pathOriginal).
-// Route matching runs against a separate, unexported "detection path"
+// c.Path() is not the path off the wire (that is URI().PathOriginal()): it is
+// already normalized as RFC 3986 Section 6.2.2 describes — unreserved percent
+// escapes decoded, "." and ".." segments removed. Route matching runs against
+// a separate, unexported "detection path" derived from it
 // (DefaultCtx.configDependentPaths): ASCII-lowercased while CaseSensitive is
 // off, with trailing slashes stripped while StrictRouting is off — the app's
-// shipped fiberConfig leaves both off. Nothing else is folded: "%6c", "//" in
-// the middle and "/." stay literal and simply fail to match a route.
+// shipped fiberConfig leaves both off. This function adds exactly those two
+// folds, so applied to c.Path() it yields the detection path.
 //
 // This normalization is a SUPERSET of the router's whenever CaseSensitive or
 // StrictRouting is turned on: it then claims a spelling fiber would answer

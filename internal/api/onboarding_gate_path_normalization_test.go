@@ -68,16 +68,23 @@ func TestOnboardingGateRefusesATraversalSegmentWhateverTheRouterMakesOfIt(t *tes
 		}
 	}
 
-	// An escaped traversal is matched by no route on a router that keeps the
-	// escape, and is decoded onto the days route by one that does not. Either
-	// way it must never reach the days handler: the gate refuses the second,
-	// and only a gate that read the wire path instead of the routed one would
-	// let it through.
+	// An escaped traversal is decoded onto the days route by the router; the
+	// gate must refuse it, and only a gate that read the wire path instead of
+	// the routed one would let it through.
 	const escaped = "/api/v1/onboarding/%2e%2e/days/2026-03-01"
 	status, body, _ = get(escaped)
-	refusedByGate := status == http.StatusForbidden && strings.Contains(body, "onboarding required")
-	if !refusedByGate && status != http.StatusNotFound {
-		t.Fatalf("%q must be refused by the onboarding gate or match no route; got %d %q", escaped, status, body)
+	if status != http.StatusForbidden || !strings.Contains(body, "onboarding required") {
+		t.Fatalf("%q must be refused by the onboarding gate (403 onboarding required); got %d %q", escaped, status, body)
+	}
+
+	// The gate compares the path alone: a query string neither unlocks a gated
+	// route by naming an exempt one nor locks an exempt route out.
+	if status, _, _ := get("/onboarding?step=2"); status != http.StatusOK {
+		t.Fatalf("an exempt path with a query string must still be served, got %d", status)
+	}
+	status, body, _ = get("/api/v1/days/2026-03-01?next=/api/v1/onboarding")
+	if status != http.StatusForbidden || !strings.Contains(body, "onboarding required") {
+		t.Fatalf("a gated path whose query names an exempt route must be refused by the gate; got %d %q", status, body)
 	}
 }
 
