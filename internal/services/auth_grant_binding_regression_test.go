@@ -135,7 +135,7 @@ func TestResetGrantDiesWithTheSessionVersionItWasMintedAt(t *testing.T) {
 	}
 
 	regenUser := &models.User{ID: 9, AuthSessionVersion: repo.user.AuthSessionVersion}
-	if _, err := service.RegenerateRecoveryCode(context.Background(), regenUser, noopRecoveryCodeDelivery); err != nil {
+	if _, err := service.RegenerateRecoveryCode(context.Background(), regenUser, true, noopRecoveryCodeDelivery); err != nil {
 		t.Fatalf("regenerate recovery code: %v", err)
 	}
 	if repo.user.AuthSessionVersion != 2 || repo.user.PasswordHash != string(hash) {

@@ -601,12 +601,20 @@ type RecoveryCodeDelivery func(user *models.User, recoveryCode string) error
 // the code it would mint could never reach anyone.
 var ErrRecoveryCodeDeliveryRequired = errors.New("recovery code delivery is required")
 
+// ErrRecoveryCodeUnredeemable refuses minting a recovery code where local
+// sign-in is off (OIDC_LOGIN_MODE=oidc_only): both of its consumers refuse
+// there, so the code would be a promise nothing honours (WEB-340).
+var ErrRecoveryCodeUnredeemable = errors.New("recovery code cannot be redeemed with local sign-in disabled")
+
 // RegenerateRecoveryCode rotates the account's recovery code and revokes its
 // sessions. On success user carries the rotated row; on any error, including
 // one from deliver, nothing was written and user is unchanged.
-func (service *AuthService) RegenerateRecoveryCode(ctx context.Context, user *models.User, deliver RecoveryCodeDelivery) (string, error) {
+func (service *AuthService) RegenerateRecoveryCode(ctx context.Context, user *models.User, localSignInEnabled bool, deliver RecoveryCodeDelivery) (string, error) {
 	if user == nil {
 		return "", ErrAuthUserRequired
+	}
+	if !localSignInEnabled {
+		return "", ErrRecoveryCodeUnredeemable
 	}
 	if deliver == nil {
 		return "", ErrRecoveryCodeDeliveryRequired

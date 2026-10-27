@@ -158,7 +158,11 @@ func (service *SettingsService) PrepareLocalPasswordHash(user *models.User, newP
 // deliver seals the re-issued session and the code's reveal before the write
 // commits (see RecoveryCodeDelivery); if it fails, nothing is enrolled and user
 // is unchanged.
-func (service *SettingsService) FinalizeLocalPasswordSetup(ctx context.Context, user *models.User, preparedPasswordHash string, deliver RecoveryCodeDelivery) (string, error) {
+//
+// With localSignInEnabled false (OIDC_LOGIN_MODE=oidc_only) nothing can redeem
+// a recovery code, so none is minted: the write stores an empty
+// recovery_code_hash and deliver receives an empty code (WEB-340).
+func (service *SettingsService) FinalizeLocalPasswordSetup(ctx context.Context, user *models.User, preparedPasswordHash string, localSignInEnabled bool, deliver RecoveryCodeDelivery) (string, error) {
 	if user == nil || user.LocalAuthEnabled {
 		return "", ErrSettingsPasswordChangeInvalidInput
 	}
@@ -169,9 +173,13 @@ func (service *SettingsService) FinalizeLocalPasswordSetup(ctx context.Context, 
 		return "", ErrRecoveryCodeDeliveryRequired
 	}
 
-	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
-	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrSettingsRecoveryCodeGenerateFailed, err)
+	recoveryCode, recoveryHash := "", ""
+	if localSignInEnabled {
+		var err error
+		recoveryCode, recoveryHash, err = GenerateRecoveryCodeHash()
+		if err != nil {
+			return "", fmt.Errorf("%w: %v", ErrSettingsRecoveryCodeGenerateFailed, err)
+		}
 	}
 	staged := *user
 	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, NormalizeAuthSessionVersion(user.AuthSessionVersion), preparedPasswordHash, recoveryHash, false, func(sessionVersion int) error {

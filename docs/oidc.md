@@ -157,7 +157,7 @@ To enable a local password, OIDC-only users go through a **step-up re-authentica
 
 1. The user fills the "set local password" form in `Settings`. The browser submits to `POST /api/v1/users/current/password/step-up`, which validates the password, prepares its bcrypt hash without touching the database, and redirects the browser to the provider's authorize endpoint with `prompt=login` and `max_age=0` so the provider is forced to re-authenticate the user interactively.
 2. The provider posts the result back to the existing `/auth/oidc/callback` endpoint. Ovumcy detects the step-up flow (via a sealed cookie issued in step 1), runs the OIDC code exchange, and requires the resulting ID token's `auth_time` claim to lie within the last five minutes (see [Provider requirement for step-up](#provider-requirement-for-step-up-auth_time)) and the returned `(issuer, subject)` pair to already be linked to the current session's user.
-3. Only after both checks succeed does Ovumcy persist the prepared password hash, mint a fresh recovery code, and present it on the dedicated `/recovery-code` page. A stale or mismatched re-auth leaves the account untouched.
+3. Only after both checks succeed does Ovumcy persist the prepared password hash, mint a fresh recovery code, and present it on the dedicated `/recovery-code` page. Under `oidc_only` no code is minted — nothing there could redeem one — so the password is saved and the user returns to `Settings` with no reveal. A stale or mismatched re-auth leaves the account untouched.
 
 The `PUT /api/v1/users/current/password` endpoint still works for accounts that already have local auth enabled (ordinary password rotation). For accounts with `LocalAuthEnabled=false` it returns `403 oidc reauth required` so the step-up flow above is the only path to enrol a local password.
 
@@ -346,7 +346,7 @@ Before enabling OIDC for real users:
 3. Test a first login that creates or links the identity.
 4. Test a second login to confirm the stored `(issuer, subject)` link is used.
 5. If auto-provisioning is enabled, test one allowed-domain account and one denied-domain account.
-6. If auto-provisioned users should be able to recover locally later, test the `Settings -> Set local password` flow and confirm a recovery code is issued.
+6. Test the `Settings -> Set local password` flow: under `hybrid` confirm a recovery code is issued; under `oidc_only` confirm none is.
 7. If provider logout is enabled, test both:
    - a provider that exposes `end_session_endpoint`;
    - a fallback case where Ovumcy still clears the local session cleanly.
@@ -450,8 +450,8 @@ This is expected for auto-provisioned OIDC-only accounts until the user sets a l
 
 After a local password is set:
 
-- local recovery becomes available;
-- recovery-code generation becomes available;
+- local recovery becomes available (not under `oidc_only`);
+- recovery-code generation becomes available (not under `oidc_only`, where `POST /api/v1/users/current/recovery-code` answers `403 recovery code unavailable`);
 - password-confirmed sensitive actions become available.
 
 ### Logout clears Ovumcy but does not sign the user out of the provider

@@ -160,6 +160,28 @@ func (handler *Handler) newRecoveryCodeDelivery(rememberMe bool, continuePath fu
 	return deliver, delivery
 }
 
+// newSessionOnlyDelivery is the delivery for a write that mints no recovery
+// code: it seals only the re-issued session. A code handed to it has no reveal
+// to ride, so it is refused as an unsealable reveal and the write rolls back
+// rather than commit a code nobody is shown.
+func (handler *Handler) newSessionOnlyDelivery(rememberMe bool) (services.RecoveryCodeDelivery, *recoveryCodeRotationDelivery) {
+	delivery := &recoveryCodeRotationDelivery{}
+	deliver := func(user *models.User, recoveryCode string) error {
+		if recoveryCode != "" {
+			delivery.failure = fmt.Errorf("%w: no reveal staged for a minted code", errRecoveryCodeRevealSeal)
+			return delivery.failure
+		}
+		session, err := handler.prepareAuthCookie(user, rememberMe)
+		if err != nil {
+			delivery.failure = err
+			return err
+		}
+		delivery.session = session
+		return nil
+	}
+	return deliver, delivery
+}
+
 func recoveryCodeSurfacePath(surface string) string {
 	if sanitizeRecoveryCodeSurface(surface) == recoveryCodeSurfaceInlineRegister {
 		return "/register"

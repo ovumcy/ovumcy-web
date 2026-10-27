@@ -114,6 +114,7 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	"invalid pregnancy test day":                      "dashboard.error.invalid_pregnancy_test_date",
 	"invalid password":                                "settings.error.invalid_password",
 	"local password required":                         "settings.error.local_password_required",
+	"recovery code unavailable":                       "settings.error.recovery_code_unavailable",
 	"invalid webhook url":                             "settings.error.invalid_webhook_url",
 	"webhook url unreadable":                          "settings.error.webhook_url_unreadable",
 	"failed to update webhook settings":               "settings.error.webhook_update_failed",
@@ -234,6 +235,7 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 
 var settingsStatusTranslationKeys = map[string]string{
 	"password_changed":        "settings.success.password_changed",
+	"local_password_set":      "settings.success.local_password_set",
 	"cycle_updated":           "settings.success.cycle_updated",
 	"reminders_updated":       "settings.success.reminders_updated",
 	"interface_updated":       "settings.success.interface_updated",

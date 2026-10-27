@@ -393,7 +393,7 @@ func TestPrepareAndFinalizeLocalPasswordSetup(t *testing.T) {
 		t.Fatal("Prepare must not flip LocalAuthEnabled")
 	}
 
-	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), user, preparedHash, noopRecoveryCodeDelivery)
+	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), user, preparedHash, true, noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("FinalizeLocalPasswordSetup() unexpected error: %v", err)
 	}
@@ -428,12 +428,41 @@ func TestFinalizeLocalPasswordSetupRejectsWhenAlreadyEnabled(t *testing.T) {
 	service := NewSettingsService(repo)
 	user := &models.User{ID: 88, LocalAuthEnabled: true}
 
-	_, err := service.FinalizeLocalPasswordSetup(context.Background(), user, "some-bcrypt-hash", noopRecoveryCodeDelivery)
+	_, err := service.FinalizeLocalPasswordSetup(context.Background(), user, "some-bcrypt-hash", true, noopRecoveryCodeDelivery)
 	if !errors.Is(err, ErrSettingsPasswordChangeInvalidInput) {
 		t.Fatalf("expected ErrSettingsPasswordChangeInvalidInput, got %v", err)
 	}
 	if repo.updatePasswordCalled {
 		t.Fatal("must not touch DB when local auth already enabled")
+	}
+}
+
+// With local sign-in off (oidc_only) nothing can redeem a recovery code, so the
+// enrollment stores none and hands its delivery none to reveal (WEB-340).
+func TestFinalizeLocalPasswordSetupWithoutLocalSignInMintsNoRecoveryCode(t *testing.T) {
+	repo := &stubSettingsUserRepo{priorSessionVersion: 5}
+	service := NewSettingsService(repo)
+	user := &models.User{ID: 77, AuthSessionVersion: 5, RecoveryCodeHash: "stale-hash"}
+
+	delivered := "unset"
+	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), user, "prepared-bcrypt-hash", false, func(_ *models.User, code string) error {
+		delivered = code
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("FinalizeLocalPasswordSetup() unexpected error: %v", err)
+	}
+	if recoveryCode != "" || delivered != "" {
+		t.Fatalf("expected no recovery code, got returned=%q delivered=%q", recoveryCode, delivered)
+	}
+	if !repo.updatePasswordCalled || repo.updatedUserID != 77 {
+		t.Fatalf("expected the enrollment write for owner 77, called=%v id=%d", repo.updatePasswordCalled, repo.updatedUserID)
+	}
+	if repo.updatedRecoveryHash != "" || user.RecoveryCodeHash != "" {
+		t.Fatalf("expected an empty recovery_code_hash, stored=%q user=%q", repo.updatedRecoveryHash, user.RecoveryCodeHash)
+	}
+	if !user.LocalAuthEnabled || user.AuthSessionVersion != 6 {
+		t.Fatalf("expected the enrollment to commit and bump the session version, local=%v version=%d", user.LocalAuthEnabled, user.AuthSessionVersion)
 	}
 }
 
@@ -459,7 +488,7 @@ func TestLocalPasswordEnrollmentRefusesANilDeliveryBeforeItsWrite(t *testing.T) 
 		t.Fatalf("PrepareLocalPasswordHash() unexpected error: %v", err)
 	}
 	recoveryCode, err := callRotationRecoveringPanic(func() (string, error) {
-		return service.FinalizeLocalPasswordSetup(context.Background(), &acting, preparedHash, nil)
+		return service.FinalizeLocalPasswordSetup(context.Background(), &acting, preparedHash, true, nil)
 	})
 	if !errors.Is(err, ErrRecoveryCodeDeliveryRequired) {
 		t.Errorf("expected ErrRecoveryCodeDeliveryRequired, got %v", err)
@@ -506,7 +535,7 @@ func TestFinalizeLocalPasswordSetupScopesTheWriteToTheActingOwner(t *testing.T) 
 	if err != nil {
 		t.Fatalf("PrepareLocalPasswordHash() unexpected error: %v", err)
 	}
-	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), &acting, preparedHash, noopRecoveryCodeDelivery)
+	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), &acting, preparedHash, true, noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("FinalizeLocalPasswordSetup() unexpected error: %v", err)
 	}

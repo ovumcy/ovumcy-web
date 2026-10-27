@@ -12,6 +12,8 @@ import (
 // generation the regeneration can only have failed on the way to storage.
 func mapRecoveryCodeRegenerationError(err error) APIErrorSpec {
 	switch {
+	case errors.Is(err, services.ErrRecoveryCodeUnredeemable):
+		return settingsFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "recovery code unavailable")
 	case errors.Is(err, services.ErrRecoveryCodeGenerate):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create recovery code")
 	default:

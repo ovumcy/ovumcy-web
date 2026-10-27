@@ -3998,6 +3998,10 @@ paths:
         `auth_session_version`;
         other devices are signed out, the originating device is refreshed
         inline. An htmx request is answered with `HX-Redirect: /recovery-code`.
+
+        Under `OIDC_LOGIN_MODE=oidc_only` nothing can redeem a recovery code,
+        so the route answers `403 recovery code unavailable` (target
+        `settings`) before the password is read, and writes nothing.
       requestBody:
         required: true
         content:

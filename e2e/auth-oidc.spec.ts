@@ -63,24 +63,27 @@ async function signInViaOIDCOnlyAndEnableLocalPassword(
     // /api/v1/users/current/password/step-up, which hands back a same-origin
     // interstitial that bounces to the provider's authorize endpoint with
     // prompt=login + max_age=0. Against the controllable local IdP the round
-    // trip runs to completion — provider re-auth, /auth/oidc/callback, then the
-    // freshly-issued recovery code — so wait for that terminal /recovery-code
-    // page as the end-to-end signal.
-    await expect(page.locator('[data-settings-recovery-code-unavailable]')).toBeVisible();
+    // trip runs to completion — provider re-auth, /auth/oidc/callback, then back
+    // to Settings. oidc_only mints no recovery code (nothing there can redeem
+    // one), so the terminal signal is the enrolled variant of the password
+    // section, on /settings, with no reveal staged.
+    await expect(page.locator('[data-settings-recovery-code-sso-only]')).toBeVisible();
     await expect(page.locator('form[action="/api/v1/users/current/recovery-code"]')).toHaveCount(0);
     await expect(localPasswordForm).toHaveAttribute('action', '/api/v1/users/current/password/step-up');
 
     const localPassword = 'LocalStrongPass2';
     await page.locator('#settings-new-password').fill(localPassword);
     await page.locator('#settings-confirm-password').fill(localPassword);
-    // Wait for the concrete terminal URL, not `(url) => !url.startsWith(page.url())`:
-    // page.url() is re-read on every predicate call and tracks the live location,
-    // so it always equals the URL under test and the predicate never fires.
+    // The page is already on /settings, so a URL wait would resolve at once;
+    // only the enrolled variant asks for the current password.
     await Promise.all([
-      page.waitForURL(/\/recovery-code(?:\?.*)?$/),
+      expect(page.locator('#settings-current-password')).toBeVisible({ timeout: 20_000 }),
       page.locator('[data-settings-local-password-form] button[type="submit"]').click(),
     ]);
-    expect(page.url()).not.toMatch(/\/settings(?:\?.*)?$/);
+    await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
+    expect(
+      (await page.context().cookies()).some((cookie) => cookie.name === 'ovumcy_recovery_code' && cookie.value !== ''),
+    ).toBe(false);
   } else {
     // "Already set" is confirmed positively, not inferred from the setup form's
     // absence: an enrolled account renders the change-password variant, which

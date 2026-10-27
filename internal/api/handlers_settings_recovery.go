@@ -15,6 +15,15 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
 		return handler.respondMappedError(c, spec)
 	}
+	// Refused on the instance's mode before the password is read: the mode is
+	// instance-wide, so the answer names nothing about this account, and the
+	// re-auth budget is not spent on a route that cannot succeed (WEB-340).
+	localSignInEnabled := handler.localPublicAuthEnabled()
+	if !localSignInEnabled {
+		spec := mapRecoveryCodeRegenerationError(services.ErrRecoveryCodeUnredeemable)
+		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
+		return handler.respondMappedError(c, spec)
+	}
 	// WEB-54: no early `!user.LocalAuthEnabled` exit here — that used to answer
 	// an OIDC-only account with a distinct 403 "local password required"
 	// before ever reading the submitted password, which was a faster and
@@ -42,7 +51,7 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 	// be read here too, or this becomes the one screen that quietly un-remembers
 	// a device.
 	deliver, delivery := handler.newRecoveryCodeDelivery(sessionWasRemembered(c), settingsContinuePath, recoveryCodeSurfaceDedicated)
-	_, err := handler.authService.RegenerateRecoveryCode(c.Context(), user, deliver)
+	_, err := handler.authService.RegenerateRecoveryCode(c.Context(), user, localSignInEnabled, deliver)
 	if delivery.failure != nil {
 		spec := mapRecoveryCodeDeliveryError(delivery.failure)
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)

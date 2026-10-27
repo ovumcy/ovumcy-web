@@ -202,9 +202,15 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	// is re-issued one at the version the write stored. That session and the
 	// new code's reveal are sealed before the write commits: if either cannot
 	// be, nothing is enrolled and the owner keeps the session she is using, with
-	// no recovery code minted that nobody was shown (WEB-58).
-	deliver, delivery := handler.newRecoveryCodeDelivery(sessionWasRemembered(c), settingsContinuePath, recoveryCodeSurfaceDedicated)
-	_, err = handler.settingsService.FinalizeLocalPasswordSetup(c.Context(), user, state.PasswordHash, deliver)
+	// no recovery code minted that nobody was shown (WEB-58). With local
+	// sign-in off nothing can redeem a code, so none is minted and only the
+	// session is sealed (WEB-340).
+	localSignInEnabled := handler.localPublicAuthEnabled()
+	deliver, delivery := handler.newSessionOnlyDelivery(sessionWasRemembered(c))
+	if localSignInEnabled {
+		deliver, delivery = handler.newRecoveryCodeDelivery(sessionWasRemembered(c), settingsContinuePath, recoveryCodeSurfaceDedicated)
+	}
+	_, err = handler.settingsService.FinalizeLocalPasswordSetup(c.Context(), user, state.PasswordHash, localSignInEnabled, deliver)
 	if delivery.failure != nil {
 		spec := mapRecoveryCodeDeliveryError(delivery.failure)
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
@@ -245,6 +251,11 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 	handler.installRefreshedSession(c, user, delivery.session, "auth.local_password_setup.callback")
+	if !localSignInEnabled {
+		handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "local_password_set"})
+		handler.logSecurityEvent(c, "auth.local_password_setup.callback", "success")
+		return respondOIDCSameOriginHandoff(c, "/settings")
+	}
 	handler.writeSealed(c, delivery.reveal)
 
 	// The reveal surface spends the account's one-time reveal mark, so it is

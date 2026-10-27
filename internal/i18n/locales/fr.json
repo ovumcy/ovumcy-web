@@ -339,6 +339,7 @@
   "settings.confirm_delete_account": "Supprimer définitivement votre compte et toutes vos données ? Cette action est irréversible.",
 
   "settings.success.password_changed": "Mot de passe modifié avec succès.",
+  "settings.success.local_password_set": "Mot de passe local défini.",
   "settings.success.cycle_updated": "Paramètres du cycle mis à jour avec succès.",
   "settings.success.reminders_updated": "Paramètres de rappel mis à jour.",
   "settings.success.interface_updated": "Les paramètres d'interface ont été mis à jour.",
@@ -364,6 +365,7 @@
   "settings.error.password_unchanged": "Le nouveau mot de passe doit être différent du mot de passe actuel.",
   "settings.error.invalid_password": "Mot de passe invalide.",
   "settings.error.local_password_required": "Définissez d'abord un mot de passe local pour utiliser cette action.",
+  "settings.error.recovery_code_unavailable": "Les codes de récupération ne sont pas utilisés sur cette instance : la connexion passe uniquement par SSO.",
   "settings.error.oidc_reauth_mismatch": "Cette réauthentification ne correspond pas au compte connecté ici. Recommencez l'action.",
   "settings.error.oidc_reauth_stale": "La confirmation auprès de votre fournisseur d'identité est trop ancienne pour autoriser cette action. Réessayez.",
   "settings.error.oidc_reauth_auth_time_missing": "Votre fournisseur d'identité n'a pas indiqué quand cette connexion a eu lieu, il ne peut donc pas autoriser cette action. Réessayer n'y changera rien : le fournisseur doit envoyer auth_time.",

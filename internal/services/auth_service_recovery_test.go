@@ -223,7 +223,7 @@ func TestRecoveryCodeRotationsRefuseANilDeliveryBeforeTheirWrite(t *testing.T) {
 		rotate func(user *models.User) (string, error)
 	}{
 		{"regenerate", func(user *models.User) (string, error) {
-			return service.RegenerateRecoveryCode(context.Background(), user, nil)
+			return service.RegenerateRecoveryCode(context.Background(), user, true, nil)
 		}},
 		{"reset", func(user *models.User) (string, error) {
 			return service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), user, user.PasswordHash, "EvenStronger2", nil)
@@ -253,7 +253,7 @@ func TestRegenerateRecoveryCodeRefusesANilUserBeforeItsDelivery(t *testing.T) {
 	service := NewAuthService(&stubAuthUserRepo{})
 	delivered := 0
 	recoveryCode, err := callRotationRecoveringPanic(func() (string, error) {
-		return service.RegenerateRecoveryCode(context.Background(), nil, func(*models.User, string) error {
+		return service.RegenerateRecoveryCode(context.Background(), nil, true, func(*models.User, string) error {
 			delivered++
 			return nil
 		})
@@ -749,12 +749,29 @@ func TestAuthServiceResolveUserByResetTokenRejectsStateMismatch(t *testing.T) {
 	}
 }
 
+func TestAuthServiceRegenerateRecoveryCodeRefusedWithoutLocalSignIn(t *testing.T) {
+	repo := &stubAuthUserRepo{}
+	service := NewAuthService(repo)
+
+	delivered := false
+	_, err := service.RegenerateRecoveryCode(context.Background(), &models.User{ID: 55}, false, func(*models.User, string) error {
+		delivered = true
+		return nil
+	})
+	if !errors.Is(err, ErrRecoveryCodeUnredeemable) {
+		t.Fatalf("expected ErrRecoveryCodeUnredeemable, got %v", err)
+	}
+	if delivered || repo.updatedUserID != 0 || repo.updatedRecoveryHash != "" {
+		t.Fatalf("expected nothing written or delivered, delivered=%v id=%d hash=%q", delivered, repo.updatedUserID, repo.updatedRecoveryHash)
+	}
+}
+
 func TestAuthServiceRegenerateRecoveryCode(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	service := NewAuthService(repo)
 
 	user := &models.User{ID: 55}
-	recoveryCode, err := service.RegenerateRecoveryCode(context.Background(), user, noopRecoveryCodeDelivery)
+	recoveryCode, err := service.RegenerateRecoveryCode(context.Background(), user, true, noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("RegenerateRecoveryCode() unexpected error: %v", err)
 	}

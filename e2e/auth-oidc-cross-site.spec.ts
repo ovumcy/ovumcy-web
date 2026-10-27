@@ -163,9 +163,13 @@ test.describe('Auth: OIDC cross-site callback', () => {
     const localPassword = 'CrossSiteStrongPass2';
     await page.locator('#settings-new-password').fill(localPassword);
     await page.locator('#settings-confirm-password').fill(localPassword);
+    // oidc_only mints no recovery code, so the step-up lands back on Settings,
+    // where only the enrolled variant asks for the current password (a URL
+    // wait would resolve at once on the page it starts from).
     await Promise.all([
-      page.waitForURL(/\/recovery-code(?:\?.*)?$/, { timeout: 20_000 }),
+      expect(page.locator('#settings-current-password')).toBeVisible({ timeout: 20_000 }),
       localPasswordForm.locator('button[type="submit"]').click(),
     ]);
+    await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
   });
 });
