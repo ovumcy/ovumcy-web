@@ -170,3 +170,73 @@ test("an element in no toast surface renders no status anywhere", async () => {
     dom.window.close();
   }
 });
+
+// The egress card holds TWO islands, one beside the webhook Save and one beside
+// the feed buttons. The island is chosen by the control group the request came
+// from, never by which island comes first in the card.
+const TWO_ISLANDS_PAGE = `<!doctype html><html><head></head><body>
+  <details id="settings-egress" data-settings-section data-status-island-host open>
+    <form hx-post="/api/v1/users/current/webhook" hx-target="#settings-egress" data-settings-webhook-form data-save-feedback>
+      <div data-status-island-group>
+        <button type="submit" data-save-button>Save</button>
+        <div id="settings-egress-status" class="save-status" aria-live="polite"></div>
+      </div>
+    </form>
+    <div data-status-island-group>
+      <form hx-post="/api/v1/users/current/calendar-feed/rotate" hx-target="#settings-egress" data-feed-form>
+        <button type="submit">Rotate</button>
+      </form>
+      <div id="settings-egress-feed-status" class="save-status" aria-live="polite"></div>
+    </div>
+  </details>
+</body></html>`;
+
+test("a feed response error lands in the feed island, not the webhook one", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: TWO_ISLANDS_PAGE });
+  try {
+    const { document } = dom.window;
+    fire(dom.window, "htmx:responseError", {
+      target: document.getElementById("settings-egress"),
+      elt: document.querySelector("[data-feed-form]"),
+      xhr: { status: 500, responseText: '<div class="status-error">Could not update the feed.</div>' },
+    });
+    assert.match(islandText(dom.window, "settings-egress-feed-status"), /Could not update the feed/);
+    assert.equal(islandText(dom.window, "settings-egress-status"), "");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a feed transport failure lands in the feed island", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: TWO_ISLANDS_PAGE });
+  try {
+    const { document } = dom.window;
+    fire(dom.window, "htmx:sendError", {
+      target: document.getElementById("settings-egress"),
+      elt: document.querySelector("[data-feed-form]"),
+    });
+    assert.notEqual(islandText(dom.window, "settings-egress-feed-status"), "");
+    assert.equal(islandText(dom.window, "settings-egress-status"), "");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a webhook response error and transport failure still land in the webhook island", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: TWO_ISLANDS_PAGE });
+  try {
+    const { document } = dom.window;
+    const form = document.querySelector("[data-settings-webhook-form]");
+    fire(dom.window, "htmx:responseError", {
+      target: document.getElementById("settings-egress"),
+      elt: form,
+      xhr: { status: 500, responseText: '<div class="status-error">Could not save.</div>' },
+    });
+    assert.match(islandText(dom.window, "settings-egress-status"), /Could not save/);
+    fire(dom.window, "htmx:sendError", { target: document.getElementById("settings-egress"), elt: form });
+    assert.notEqual(islandText(dom.window, "settings-egress-status"), "");
+    assert.equal(islandText(dom.window, "settings-egress-feed-status"), "");
+  } finally {
+    dom.window.close();
+  }
+});

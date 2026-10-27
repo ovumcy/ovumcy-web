@@ -147,6 +147,9 @@ func TestEgressFeedRevokeResultSitsBesideTheFeedButtonsAndKeepsFocus(t *testing.
 	if marked[0].Data != "button" {
 		t.Fatalf("focus must land on a button, got <%s>", marked[0].Data)
 	}
+	if htmlAttr(marked[0], "aria-describedby") != "settings-egress-feed-status" {
+		t.Fatalf("the focused feed button must point at the feed island so the swap announces it, got %q", htmlAttr(marked[0], "aria-describedby"))
+	}
 	generate := elementWithAttr(document, "data-settings-calendar-feed-generate")
 	if generate == nil || !htmlWithin(generate, marked[0]) {
 		t.Fatal("after a revoke the button that exists is the create button, and it must take focus")
@@ -167,5 +170,8 @@ func TestEgressSuccessfulWebhookSaveDoesNotEchoTheURL(t *testing.T) {
 	save := elementWithAttr(document, "data-settings-webhook-save")
 	if save == nil || !htmlHasAttr(save, "data-focus-after-swap") {
 		t.Fatal("focus must return to the webhook Save after a saved result")
+	}
+	if htmlAttr(save, "aria-describedby") != "settings-egress-status" {
+		t.Fatalf("the focused Save must point at the webhook island so the swap announces it, got %q", htmlAttr(save, "aria-describedby"))
 	}
 }

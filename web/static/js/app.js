@@ -1679,7 +1679,34 @@
   // than testing the target's own class. Before this, a card-level swap silently
   // skipped the toast, the auto-clear AND the error rendering: the request
   // succeeded or failed and the page said nothing either way.
-  function statusContainerFor(target) {
+  //
+  // A host can hold more than one island (the egress card has one beside the
+  // webhook Save and one beside the feed buttons). `source` is the element that
+  // made the request; when it sits inside a [data-status-island-group] whose
+  // own .save-status lies in the resolved host, that island wins, so the order
+  // of the islands in the card does not matter.
+  function requestSourceFromEvent(event) {
+    var detail = event ? event.detail : null;
+    if (detail && detail.elt) {
+      return detail.elt;
+    }
+    return getEventTarget(event);
+  }
+
+  function statusContainerFor(target, source) {
+    var resolved = resolveStatusContainer(target);
+    if (!resolved || !source || !source.closest) {
+      return resolved;
+    }
+    var group = source.closest("[data-status-island-group]");
+    var host = resolved.closest ? resolved.closest("[data-status-island-host]") : null;
+    if (!group || !host || !host.contains(group)) {
+      return resolved;
+    }
+    return group.querySelector(".save-status") || resolved;
+  }
+
+  function resolveStatusContainer(target) {
     if (!target || !target.classList) {
       return null;
     }
@@ -2532,7 +2559,7 @@
         target = null;
       }
     }
-    var island = statusContainerFor(target || form || getEventTarget(event));
+    var island = statusContainerFor(target || form || getEventTarget(event), requestSourceFromEvent(event));
     if (!island) {
       return;
     }
@@ -2613,7 +2640,7 @@
     });
 
     document.body.addEventListener("htmx:beforeRequest", function (event) {
-      var statusTarget = statusContainerFor(event && event.detail ? event.detail.target : null);
+      var statusTarget = statusContainerFor(event && event.detail ? event.detail.target : null, requestSourceFromEvent(event));
       if (statusTarget) {
         forgetToastFor(statusTarget);
       }
@@ -2633,7 +2660,7 @@
       if (!detail || !detail.shouldSwap) {
         return;
       }
-      if (accountChangeHoldRefuses(statusContainerFor(detail.target), detail.xhr ? detail.xhr.responseText : "")) {
+      if (accountChangeHoldRefuses(statusContainerFor(detail.target, requestSourceFromEvent(event)), detail.xhr ? detail.xhr.responseText : "")) {
         detail.shouldSwap = false;
       }
     });
@@ -2652,7 +2679,7 @@
     });
 
     document.body.addEventListener("htmx:afterSwap", function (event) {
-      var target = statusContainerFor(event && event.detail ? event.detail.target : null);
+      var target = statusContainerFor(event && event.detail ? event.detail.target : null, requestSourceFromEvent(event));
       if (!target) {
         return;
       }
@@ -2669,7 +2696,7 @@
     });
 
     document.body.addEventListener("htmx:afterSettle", function (event) {
-      var target = statusContainerFor(event && event.detail ? event.detail.target : null);
+      var target = statusContainerFor(event && event.detail ? event.detail.target : null, requestSourceFromEvent(event));
       if (!target) {
         return;
       }
@@ -2752,7 +2779,7 @@
           return;
         }
       }
-      target = statusContainerFor(target);
+      target = statusContainerFor(target, requestSourceFromEvent(event));
       if (!target) {
         // A control with no status area of its own (the calendar editor's delete
         // and cycle-start controls, whose target is the editor itself) would

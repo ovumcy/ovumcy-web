@@ -124,21 +124,21 @@
           </label>
         </div>
 
-        <div data-focus-scroll-anchor>
+        <div data-focus-scroll-anchor data-status-island-group>
           <div class="settings-form-actions">
             <button
               type="submit"
               class="btn-secondary"
               data-settings-webhook-save
               data-save-button
-              {{if and (eq .Egress.ResultPath "webhook") (not .Egress.DraftWebhookURL)}}data-focus-after-swap{{end}}
+              {{if and (eq .Egress.ResultPath "webhook") (not .Egress.DraftWebhookURL)}}data-focus-after-swap aria-describedby="settings-egress-status"{{end}}
               data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.webhook.save"}}</button>
           </div>
           {{/* The webhook half's result, beside the Save it answers. ONE of the
                card's two live regions is ever populated by an answer, so they
-               never announce over each other. The webhook island comes first in
-               the card on purpose: the status machinery resolves the card's
-               first .save-status for transport failures and toasts. */}}
+               never announce over each other. The status machinery picks the
+               island of the data-status-island-group the request came from, so
+               the order of the two islands in the card does not matter. */}}
           <div id="settings-egress-status" class="save-status text-sm" aria-live="polite">
             {{if ne .Egress.ResultPath "feed"}}{{template "settings_egress_result" .}}{{end}}
           </div>
@@ -204,7 +204,7 @@
         </ul>
       </div>
 
-      <div data-focus-scroll-anchor>
+      <div data-focus-scroll-anchor data-status-island-group>
       {{if .Egress.FeedActionable}}
       <div class="settings-form-actions">
         {{if .Egress.FeedTokenPresent}}
@@ -234,7 +234,7 @@
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
           <input type="hidden" name="_method" value="DELETE">
-          <button type="submit" class="btn-secondary" {{if eq .Egress.ResultPath "feed"}}data-focus-after-swap{{end}}>{{t .Messages "settings.calendar_feed.revoke"}}</button>
+          <button type="submit" class="btn-secondary" {{if eq .Egress.ResultPath "feed"}}data-focus-after-swap aria-describedby="settings-egress-feed-status"{{end}}>{{t .Messages "settings.calendar_feed.revoke"}}</button>
         </form>
         {{else}}
         <form
@@ -246,7 +246,7 @@
           data-settings-calendar-feed-generate>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
-          <button type="submit" class="btn-secondary" {{if eq .Egress.ResultPath "feed"}}data-focus-after-swap{{end}}>{{t .Messages "settings.calendar_feed.generate"}}</button>
+          <button type="submit" class="btn-secondary" {{if eq .Egress.ResultPath "feed"}}data-focus-after-swap aria-describedby="settings-egress-feed-status"{{end}}>{{t .Messages "settings.calendar_feed.generate"}}</button>
         </form>
         {{end}}
       </div>

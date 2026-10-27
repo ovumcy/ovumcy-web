@@ -63,7 +63,7 @@ func TestWebhookDestinationDisplayMasksTheStoredURL(t *testing.T) {
 		},
 		{
 			name:  "non-default port is kept",
-			raw:   "https://hooks.example.com:8443/services/abc123/a1b2c3d4",
+			raw:   "https://hooks.example.com:8443/services/abc123/a1b2e5f6c3d4",
 			want:  "hooks.example.com:8443/services/…/c3d4",
 			leaks: []string{"abc123", "a1b2"},
 		},
@@ -86,6 +86,24 @@ func TestWebhookDestinationDisplayMasksTheStoredURL(t *testing.T) {
 			name: "ipv6 host keeps its brackets",
 			raw:  "https://[2001:db8::1]:8443/a/b",
 			want: "[2001:db8::1]:8443/a/…",
+		},
+		{
+			name:  "a short final segment is hidden, the tail never crosses a slash",
+			raw:   "https://example.com/abcdefghijk/x",
+			want:  "example.com/abcdefghijk/…",
+			leaks: []string{"jk/x", "/x"},
+		},
+		{
+			name:  "a final segment of eight characters shows no tail",
+			raw:   "https://example.com/abc/shorttok",
+			want:  "example.com/abc/…",
+			leaks: []string{"horttok", "ttok"},
+		},
+		{
+			name:  "a final segment of nine characters shows only its last four",
+			raw:   "https://example.com/abc/shorttoke",
+			want:  "example.com/abc/…/toke",
+			leaks: []string{"shortt", "ort"},
 		},
 		{
 			name:  "userinfo is never shown",
