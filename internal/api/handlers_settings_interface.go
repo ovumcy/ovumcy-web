@@ -71,11 +71,11 @@ func (handler *Handler) UpdateInterfaceSettings(c fiber.Ctx) error {
 	// It comes back to the card (the hash), where the flash is rendered in a
 	// live region; the text itself travels in the sealed flash cookie only.
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})
-	if isHTMX(c) && strings.HasSuffix(c.Get("HX-Current-URL"), interfaceCardFragment) {
-		// Redirecting to the URL the browser is already on is a hash-only
-		// navigation: no reload. A refresh keeps the hash and the new language.
+	if isHTMX(c) {
+		// From /settings, or already at the card, the redirect changes only the
+		// fragment, and a hash-only navigation reloads nothing. htmx follows
+		// HX-Redirect with a reload when HX-Refresh is set too.
 		c.Set("HX-Refresh", "true")
-		return c.SendStatus(fiber.StatusOK)
 	}
 	return redirectOrJSON(c, "/settings"+interfaceCardFragment)
 }

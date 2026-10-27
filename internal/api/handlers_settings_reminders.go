@@ -11,8 +11,8 @@ import (
 
 // The reminder lead window is the schedule on which cycle predictions are
 // announced — the dashboard banner and, when a webhook is configured, the
-// notification that leaves the host. It is clamped by the same
-// NormalizeReminderLeadDays the webhook settings path uses, and that neighbour
+// notification that leaves the host. Its 0–14 bound is the one
+// NormalizeReminderLeadDays enforces for the operator CLI, and its neighbour
 // (settings.webhook_update, target webhook_settings) is already in the
 // health-data domain: the destination and the schedule are two halves of one
 // answer, so tagging only the destination would leave the filter answering half
@@ -31,8 +31,8 @@ var reminderSettingsMutation = healthMutationKind{action: "settings.reminders_up
 // out-of-range value (the reminders form's own status island shows why)
 // instead of clamping it. The write is scoped to
 // the session user_id (user.ID from the sealed auth cookie), never an id from
-// the request, and SaveReminderLeadDays skips the DB UPDATE when the clamped
-// value is unchanged. It deliberately does NOT bump auth_session_version — a
+// the request, and SaveReminderLeadDays skips the DB UPDATE when the value is
+// unchanged. It deliberately does NOT bump auth_session_version — a
 // reminder preference is not a change to the account's security posture.
 func (handler *Handler) UpdateReminderSettings(c fiber.Ctx) error {
 	user, ok := currentUser(c)

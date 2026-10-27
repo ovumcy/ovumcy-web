@@ -61,21 +61,13 @@ func TestSettingsInterfaceSaveWithChangedLanguageReloadsAtTheCard(t *testing.T) 
 	if got := response.Header.Get("HX-Redirect"); got != "/settings#settings-interface" {
 		t.Fatalf("expected HX-Redirect to the Interface card, got %q", got)
 	}
+	// From /settings the redirect is hash-only, which reloads nothing; htmx
+	// reloads after HX-Redirect only when HX-Refresh is set as well.
+	if got := response.Header.Get("HX-Refresh"); got != "true" {
+		t.Fatalf("expected HX-Refresh beside the redirect, got %q", got)
+	}
 	if responseCookieValue(response.Cookies(), flashCookieName) == "" {
 		t.Fatal("expected the confirmation to travel in the sealed flash cookie")
-	}
-
-	atCard := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/interface",
-		interfaceSaveForm("fr"), map[string]string{
-			"HX-Request": "true", "Accept-Language": "en",
-			"HX-Current-URL": "http://localhost/settings#settings-interface",
-		})
-	defer func() { _ = atCard.Body.Close() }()
-	if got := atCard.Header.Get("HX-Refresh"); got != "true" {
-		t.Fatalf("expected HX-Refresh when already at the card URL, got %q", got)
-	}
-	if got := atCard.Header.Get("HX-Redirect"); got != "" {
-		t.Fatalf("a hash-only redirect to the current URL would not reload, got %q", got)
 	}
 }
 
