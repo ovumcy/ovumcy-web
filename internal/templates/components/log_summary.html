@@ -11,7 +11,7 @@
   </div>
   <div {{if eq .Log.Notes ""}}hidden{{end}}>
     <p class="journal-muted">{{t .Messages "dashboard.notes"}}</p>
-    <p class="mt-1 whitespace-pre-wrap wrap-break-word">{{.Log.Notes}}</p>
+    <p class="mt-1 whitespace-pre-wrap wrap-anywhere">{{.Log.Notes}}</p>
   </div>
 </div>
 {{end}}
@@ -71,7 +71,7 @@
 
   <div {{if eq .Log.Notes ""}}hidden{{end}}>
     <p class="journal-muted">{{t .Messages "dashboard.notes"}}</p>
-    <p class="mt-2 whitespace-pre-wrap wrap-break-word">{{.Log.Notes}}</p>
+    <p class="mt-2 whitespace-pre-wrap wrap-anywhere">{{.Log.Notes}}</p>
   </div>
 </div>
 {{end}}

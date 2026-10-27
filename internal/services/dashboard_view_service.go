@@ -447,10 +447,14 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 	}
 	isFutureDate := day.After(DateAtLocation(now.In(location), location))
 	visibility := dashboardOwnerVisibilityState(user, day, now, location)
+	dateLabel := LocalizedDateLabel(language, day)
+	if day.Year() != now.In(location).Year() {
+		dateLabel = LocalizedDateLabelWithYear(language, day)
+	}
 	return DayEditorViewData{
 		Date:                       day,
 		DateString:                 day.Format("2006-01-02"),
-		DateLabel:                  LocalizedDateLabel(language, day),
+		DateLabel:                  dateLabel,
 		IsFutureDate:               isFutureDate,
 		Log:                        logEntry,
 		PeriodFromStoredStart:      periodFromStoredStart,

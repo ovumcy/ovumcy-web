@@ -756,10 +756,12 @@ test.describe('Bug regressions', () => {
         // Name the month this iteration must land on: from the second iteration
         // on, the bare /calendar?month= shape is already satisfied by the URL the
         // click starts from, so the wait would not bind to the transition.
+        // The selected day (today, on a bare /calendar) rides along: month
+        // navigation keeps the open day.
         const targetMonth = new URL(href, page.url()).searchParams.get('month');
         expect(targetMonth).toMatch(/^\d{4}-\d{2}$/);
         await previousControl.click();
-        await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${targetMonth}$`));
+        await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${targetMonth}(?:&day=\\d{4}-\\d{2}-\\d{2})?$`));
       }
 
       const lowerBoundMonth = await browserMonthYearsAgo(page, 3);

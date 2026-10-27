@@ -322,7 +322,8 @@ func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 	handler.logMutationSuccess(c, cycleStartMarkMutation, auditFields...)
 
 	if isHTMX(c) {
-		c.Set("HX-Trigger", "calendar-day-updated")
+		// No calendar-day-updated here: htmx fires HX-Trigger before it honours
+		// HX-Refresh, so the grid would be fetched once and then reloaded anyway.
 		c.Set("HX-Refresh", "true")
 		if cycleStartPolicy.PotentialImplantation {
 			setEncodedResponseNotice(c, "dashboard.implantation_warning", translateMessage(currentMessages(c), "dashboard.implantation_warning"))

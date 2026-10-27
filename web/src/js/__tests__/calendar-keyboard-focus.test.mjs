@@ -17,16 +17,21 @@ function dayButton(day, { disabled = false, today = false } = {}) {
 
 // Two weeks: the 1st and the 9th are outside the history bounds, the 10th is
 // today.
-function calendarPage(selectedDate) {
+function calendarPage(selectedDate, autoload = "") {
   const cells = [];
   for (let day = 1; day <= 14; day++) {
     cells.push(dayButton(day, { disabled: day === 1 || day === 9, today: day === 10 }));
   }
   return `<!doctype html><html><head></head><body>
   <header class="paper-header"></header>
+  <div data-calendar-month-nav>
+    <a href="/calendar?month=2026-09" data-calendar-nav-month="2026-09">Prev</a>
+    <a href="/calendar?month=2026-11" data-calendar-nav-month="2026-11">Next</a>
+    <a href="/calendar" data-calendar-today data-calendar-nav-month="2026-10" data-calendar-nav-today="2026-10-10">Today</a>
+  </div>
   <div data-calendar-view data-selected-date="${selectedDate}">
     <section id="calendar-grid-panel">${cells.join("")}</section>
-    <aside id="day-editor"><div data-day-editor-autoload></div></aside>
+    <aside id="day-editor"><div data-day-editor-autoload="${autoload}"></div></aside>
   </div></body></html>`;
 }
 
@@ -35,9 +40,9 @@ const PANEL = `<div role="region" aria-labelledby="day-editor-heading">
   <textarea name="notes"></textarea>
 </div>`;
 
-async function load(selectedDate = "", { scrolls = [], reduce = false } = {}) {
+async function load(selectedDate = "", { scrolls = [], reduce = false, autoload = "" } = {}) {
   return loadDOMWithScript(APP_BUNDLE, {
-    html: calendarPage(selectedDate),
+    html: calendarPage(selectedDate, autoload),
     beforeRun(window) {
       window.matchMedia = (query) => ({
         matches: query === "(prefers-reduced-motion: reduce)" ? reduce : false,
@@ -201,13 +206,62 @@ test("the arrowed-to day keeps the Tab stop across a swap; a click hands it back
   }
 });
 
-test("the panel a ?day= URL loads on its own leaves focus alone", async () => {
-  const dom = await load("2026-10-04");
+test("the panel a ?day= URL loads on its own leaves focus and scroll alone", async () => {
+  const scrolls = [];
+  const dom = await load("2026-10-04", { scrolls });
   try {
     const { window } = dom;
+    layout(window, { gridBottom: 610, panelTop: 630 });
     const autoload = window.document.querySelector("[data-day-editor-autoload]");
     swapPanel(window, autoload);
     assert.equal(window.document.activeElement, window.document.body);
+    assert.deepEqual(scrolls, []);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// A link that asked to edit a day (?day=…&edit=1) lands on a phone with the
+// editor below the month: it is brought up, but focus stays where the page
+// load put it, since nothing on this page had it to hand over (WEB-228).
+test("a ?day= panel loaded in edit mode is brought into view without taking focus", async () => {
+  const scrolls = [];
+  const dom = await load("2026-10-04", { scrolls, autoload: "edit" });
+  try {
+    const { window } = dom;
+    layout(window, { gridBottom: 610, panelTop: 630 });
+    const autoload = window.document.querySelector("[data-day-editor-autoload]");
+    swapPanel(window, autoload);
+    assert.equal(window.document.activeElement, window.document.body);
+    assert.deepEqual(scrolls.map((entry) => ({ ...entry })), [{ top: 630 - 80 - 12, behavior: "smooth" }]);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// Month navigation keeps the chosen day open (WEB-265); a day chosen without
+// a page load is carried too. Today with today (or nothing else) selected is a
+// bare /calendar.
+test("choosing a day carries it through Prev, Next and Today", async () => {
+  const dom = await load("");
+  try {
+    const { window } = dom;
+    const document = window.document;
+    const hrefs = () => [...document.querySelectorAll("[data-calendar-month-nav] a")].map((link) => link.getAttribute("href"));
+
+    cell(document, 4).click();
+    assert.deepEqual(hrefs(), [
+      "/calendar?month=2026-09&day=2026-10-04",
+      "/calendar?month=2026-11&day=2026-10-04",
+      "/calendar?month=2026-10&day=2026-10-04",
+    ]);
+
+    cell(document, 10).click();
+    assert.deepEqual(hrefs(), [
+      "/calendar?month=2026-09&day=2026-10-10",
+      "/calendar?month=2026-11&day=2026-10-10",
+      "/calendar",
+    ]);
   } finally {
     dom.window.close();
   }

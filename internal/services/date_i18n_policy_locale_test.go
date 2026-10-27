@@ -39,11 +39,12 @@ func TestLocalizedDateFormsCoverEveryRequiredLocale(t *testing.T) {
 	value := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
 
 	renderers := map[string]func(string, time.Time) string{
-		"LocalizedMonthYear":     LocalizedMonthYear,
-		"LocalizedDateLabel":     LocalizedDateLabel,
-		"LocalizedDashboardDate": LocalizedDashboardDate,
-		"LocalizedDateDisplay":   LocalizedDateDisplay,
-		"LocalizedDateShort":     LocalizedDateShort,
+		"LocalizedMonthYear":         LocalizedMonthYear,
+		"LocalizedDateLabel":         LocalizedDateLabel,
+		"LocalizedDateLabelWithYear": LocalizedDateLabelWithYear,
+		"LocalizedDashboardDate":     LocalizedDashboardDate,
+		"LocalizedDateDisplay":       LocalizedDateDisplay,
+		"LocalizedDateShort":         LocalizedDateShort,
 	}
 
 	for _, language := range languages {
@@ -87,11 +88,12 @@ func TestLocalizedDateFormsCoverEveryRequiredLocale(t *testing.T) {
 func TestLocalizedDateFormsFallBackToEnglishForAnUnknownLanguage(t *testing.T) {
 	value := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
 	renderers := map[string]func(string, time.Time) string{
-		"LocalizedMonthYear":     LocalizedMonthYear,
-		"LocalizedDateLabel":     LocalizedDateLabel,
-		"LocalizedDashboardDate": LocalizedDashboardDate,
-		"LocalizedDateDisplay":   LocalizedDateDisplay,
-		"LocalizedDateShort":     LocalizedDateShort,
+		"LocalizedMonthYear":         LocalizedMonthYear,
+		"LocalizedDateLabel":         LocalizedDateLabel,
+		"LocalizedDateLabelWithYear": LocalizedDateLabelWithYear,
+		"LocalizedDashboardDate":     LocalizedDashboardDate,
+		"LocalizedDateDisplay":       LocalizedDateDisplay,
+		"LocalizedDateShort":         LocalizedDateShort,
 	}
 
 	// "" is the unset language every request-free surface can carry; "zz" is a

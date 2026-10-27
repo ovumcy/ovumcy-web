@@ -2011,18 +2011,6 @@
     window.showToast(message, "error");
   }
 
-  function maybeRefreshDayEditor(target) {
-    var dayEditor = document.getElementById("day-editor");
-    var form = target.closest("form[data-save-feedback]");
-    if (!dayEditor || !form || !form.closest("#day-editor")) {
-      return;
-    }
-
-    if (window.htmx && typeof window.htmx.trigger === "function") {
-      window.htmx.trigger(document.body, "calendar-day-updated");
-    }
-  }
-
   // Parses a server error response into the message the client may show. The
   // fragment is parsed with DOMParser and only its TEXT is adopted: server
   // templates already escape user-supplied values, so today this is purely
@@ -2627,7 +2615,9 @@
         return;
       }
 
-      maybeRefreshDayEditor(target);
+      // The month grid refresh rides the save's own HX-Trigger header, sent
+      // once per committed write; firing it here as well cost a second
+      // GET /calendar?month= per save.
       maybeShowSuccessToast(target);
       scheduleClearSuccessStatus(target);
     });
@@ -7043,23 +7033,45 @@
   // A day opened from the grid, or re-opened by Edit, Cancel or Delete,
   // replaces the control that had focus. Focus goes to the panel heading so it
   // is announced and never falls to the body. The panel a ?day= URL loads on
-  // its own leaves focus where the page put it.
+  // its own leaves focus where the page put it; one loaded straight into edit
+  // mode (a link that asked to edit that day) is still brought into view.
   function focusOpenedDayPanel(event) {
     var detail = event.detail || {};
     var target = detail.target || event.target;
     if (!target || target.id !== "day-editor") {
       return;
     }
-    var source = (detail.requestConfig && detail.requestConfig.elt) || detail.elt;
-    if (source && source.hasAttribute && source.hasAttribute("data-day-editor-autoload")) {
-      return;
-    }
     var heading = target.querySelector("[data-day-editor-heading]");
     if (!heading) {
       return;
     }
+    var source = (detail.requestConfig && detail.requestConfig.elt) || detail.elt;
+    if (source && source.hasAttribute && source.hasAttribute("data-day-editor-autoload")) {
+      if (source.getAttribute("data-day-editor-autoload") === "edit") {
+        revealDayPanel(target, heading);
+      }
+      return;
+    }
     revealDayPanel(target, heading);
     heading.focus({ preventScroll: true });
+  }
+
+  // The server renders the month links for the day selected at load; a day
+  // chosen since then is carried the same way (calendarMonthHref in the
+  // calendar page helpers). Today without another day selected stays a bare
+  // /calendar, which selects today.
+  function syncCalendarNavLinks(selectedDate) {
+    var links = document.querySelectorAll("[data-calendar-month-nav] a[data-calendar-nav-month]");
+    for (var index = 0; index < links.length; index++) {
+      var link = links[index];
+      var month = String(link.getAttribute("data-calendar-nav-month") || "");
+      var today = link.getAttribute("data-calendar-nav-today");
+      if (today !== null && (!selectedDate || selectedDate === today)) {
+        link.setAttribute("href", "/calendar");
+        continue;
+      }
+      link.setAttribute("href", "/calendar?month=" + month + (selectedDate ? "&day=" + selectedDate : ""));
+    }
   }
 
   function bindCalendarViews() {
@@ -7080,6 +7092,7 @@
           delete this.dataset.calendarFocusDay;
           syncCalendarSelection(this);
           syncCalendarURL(selectedDate);
+          syncCalendarNavLinks(selectedDate);
         });
 
         root.addEventListener("keydown", function (event) {

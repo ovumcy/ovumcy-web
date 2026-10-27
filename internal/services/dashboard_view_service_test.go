@@ -205,6 +205,36 @@ func TestBuildDayEditorViewData(t *testing.T) {
 	if !viewData.ShowFutureCycleStartNotice {
 		t.Fatalf("expected ShowFutureCycleStartNotice=true for tomorrow")
 	}
+	if viewData.DateLabel != "Sun, Feb 22" {
+		t.Fatalf("a day in the current year is labelled without the year, got %q", viewData.DateLabel)
+	}
+}
+
+// The editor heading names the year for a day outside the current one, judged
+// in the owner's zone: at 23:30 on 31 Dec UTC it is already 1 Jan in Tokyo.
+func TestBuildDayEditorViewDataNamesTheYearOutsideTheCurrentOne(t *testing.T) {
+	user := &models.User{ID: 3, Role: models.RoleOwner}
+	tokyo := time.FixedZone("JST", 9*3600)
+	now := time.Date(2026, time.December, 31, 23, 30, 0, 0, time.UTC)
+	service := NewDashboardViewService(&stubDashboardStatsProvider{}, &stubDashboardViewerProvider{}, &stubDashboardDayStateProvider{})
+
+	for _, tc := range []struct {
+		day      time.Time
+		location *time.Location
+		want     string
+	}{
+		{time.Date(2025, time.October, 5, 0, 0, 0, 0, time.UTC), time.UTC, "Sun, Oct 5, 2025"},
+		{time.Date(2026, time.December, 30, 0, 0, 0, 0, time.UTC), time.UTC, "Wed, Dec 30"},
+		{time.Date(2026, time.December, 30, 0, 0, 0, 0, tokyo), tokyo, "Wed, Dec 30, 2026"},
+	} {
+		viewData, err := service.BuildDayEditorViewData(context.Background(), user, "en", tc.day, now, tc.location)
+		if err != nil {
+			t.Fatalf("BuildDayEditorViewData(%s) unexpected error: %v", tc.day.Format("2006-01-02"), err)
+		}
+		if viewData.DateLabel != tc.want {
+			t.Errorf("DateLabel for %s in %s = %q, want %q", tc.day.Format("2006-01-02"), tc.location, viewData.DateLabel, tc.want)
+		}
+	}
 }
 
 func TestBuildDashboardViewDataSuggestsManualCycleStartAfterLongGap(t *testing.T) {

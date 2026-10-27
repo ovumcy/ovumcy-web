@@ -10,7 +10,7 @@ import {
 } from './support/auth-helpers';
 import { applyTheme } from './support/contrast-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
-import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
+import { assertNoHorizontalOverflow, expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import {
   markCycleStart,
@@ -147,6 +147,9 @@ test.describe('Calendar page', () => {
 
     const initialLabel = ((await monthLabel.textContent()) ?? '').trim();
     expect(initialLabel.length).toBeGreaterThan(0);
+    // A bare /calendar selects today, and month navigation keeps the selected
+    // day open, so every month link carries it (WEB-265).
+    const todayISO = await todayISOFromCalendar(page);
 
     // Each wait names the month the control points at. The generic
     // /calendar?month=\d{4}-\d{2} shape is satisfied by the URL the click starts
@@ -154,7 +157,7 @@ test.describe('Calendar page', () => {
     const prevMonth = new URL((await prevLink.getAttribute('href')) ?? '', page.url()).searchParams.get('month');
     expect(prevMonth).toMatch(/^\d{4}-\d{2}$/);
     await prevLink.click();
-    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${prevMonth}$`));
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${prevMonth}&day=${todayISO}$`));
     const prevLabel = ((await monthLabel.textContent()) ?? '').trim();
     expect(prevLabel).not.toBe(initialLabel);
 
@@ -162,7 +165,7 @@ test.describe('Calendar page', () => {
     expect(nextMonth).toMatch(/^\d{4}-\d{2}$/);
     expect(nextMonth).not.toBe(prevMonth);
     await nextLink.click();
-    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${nextMonth}$`));
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${nextMonth}&day=${todayISO}$`));
 
     await todayLink.click();
     await expect(page).toHaveURL(/\/calendar$/);
@@ -350,6 +353,87 @@ test.describe('Calendar page', () => {
     const legend = page.locator('.calendar-legend');
     await legend.scrollIntoViewIfNeeded();
     await expectElementAboveMobileTabbar(page, legend);
+  });
+
+  // WEB-231: an unbroken note and a 40-character symptom name used to set the
+  // min-content width of the day panel's grid track, stretching the whole page
+  // (scrollWidth 2140 at 375px). Both now wrap inside the panel.
+  test('a long unbroken note and a 40-character symptom name wrap inside the day panel at 375px', async ({
+    page,
+  }) => {
+    await registerOwnerOnCalendar(page, 'calendar-long-content');
+    const symptomName = `Symptom${'x'.repeat(33)}`;
+
+    await page.goto('/settings');
+    const createForm = page.locator('#settings-symptoms [data-symptom-create-form]');
+    await createForm.locator('#settings-new-symptom-name').fill(symptomName);
+    await createForm.locator('[data-icon-control] [data-icon-option="✨"]').click();
+    await createForm.locator('button[type="submit"]').click();
+    await expect(page.locator('#settings-symptoms .status-ok')).toBeVisible();
+
+    await page.goto('/calendar');
+    const pastISO = shiftISODate(await todayISOFromCalendar(page), -1);
+    const form = await openCalendarDayEditor(page, pastISO);
+    const moreSymptoms = form.locator('[data-symptom-more-toggle]');
+    if (await moreSymptoms.isVisible().catch(() => false)) {
+      await moreSymptoms.click();
+    }
+    await checkStyledControl(form.locator(`input[name="symptom_ids"][data-symptom-name="${symptomName}"]`));
+    await openCalendarNotes(form);
+    await form.locator('#calendar-notes').fill(`https://example.test/${'x'.repeat(300)}`);
+    await saveDayEditorForm(page, pastISO, form);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`/calendar?month=${pastISO.slice(0, 7)}&day=${pastISO}`);
+    await expect(page.locator('#day-editor .chip-static', { hasText: symptomName })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+  });
+
+  // WEB-265: the save response's HX-Trigger header refreshes the month grid;
+  // the client used to fire the same event again, so every save cost two
+  // GET /calendar?month= requests.
+  test('saving a day refreshes the month grid exactly once', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-single-refresh');
+    const pastISO = shiftISODate(await todayISOFromCalendar(page), -1);
+    const form = await openCalendarDayEditor(page, pastISO);
+
+    const refreshes: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'GET' && request.headers()['hx-trigger'] === 'calendar-grid-refresh') {
+        refreshes.push(request.url());
+      }
+    });
+    await openCalendarNotes(form);
+    await form.locator('#calendar-notes').fill(`single-refresh-${Date.now()}`);
+    await saveDayEditorForm(page, pastISO, form);
+
+    expect(refreshes).toHaveLength(1);
+  });
+
+  test('a phone still marks today, and a day in another year names its year', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-today-year');
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.reload();
+    await expect(page.locator('button[data-day][aria-current="date"] .calendar-today-pill')).toBeVisible();
+
+    const lastYear = Number((await todayISOFromCalendar(page)).slice(0, 4)) - 1;
+    await page.goto(`/calendar?month=${lastYear}-10&day=${lastYear}-10-05`);
+    await expect(page.locator('#day-editor [data-day-editor-heading]')).toContainText(String(lastYear));
+  });
+
+  // WEB-228: a link that asks to edit a day (the dashboard's yesterday and
+  // missed-day links) lands on a phone with the editor below the month; it is
+  // brought into view, and focus is left where the page load put it.
+  test('a ?day= edit link brings the stacked day panel into view on a phone', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-edit-link-reveal');
+    const pastISO = shiftISODate(await todayISOFromCalendar(page), -1);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`/calendar?month=${pastISO.slice(0, 7)}&day=${pastISO}&edit=1`);
+
+    const heading = page.locator('#day-editor [data-day-editor-heading]');
+    await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${pastISO}"]`)).toBeVisible();
+    await expect(heading).toBeInViewport();
+    await expect(heading).not.toBeFocused();
   });
 
   test('past day entry can be edited from calendar and persists after reload', async ({ page }) => {

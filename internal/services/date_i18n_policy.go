@@ -84,22 +84,40 @@ func LocalizedMonthYear(language string, value time.Time) string {
 }
 
 func LocalizedDateLabel(language string, value time.Time) string {
+	return localizedDateLabel(language, value, false)
+}
+
+// LocalizedDateLabelWithYear is LocalizedDateLabel with the year appended, for
+// a day outside the current year, where the weekday-day-month form alone
+// reads as this year's date.
+func LocalizedDateLabelWithYear(language string, value time.Time) string {
+	return localizedDateLabel(language, value, true)
+}
+
+func localizedDateLabel(language string, value time.Time, withYear bool) string {
 	lang, names := dateNamesFor(language)
 	weekday := names.weekdaysShort[int(value.Weekday())]
 	month := names.monthsShort[monthIndex(value)]
 
+	var label string
+	separator := " "
 	switch lang {
 	case "ru":
-		return fmt.Sprintf("%s, %d %s", weekday, value.Day(), names.monthsLong[monthIndex(value)])
+		label = fmt.Sprintf("%s, %d %s", weekday, value.Day(), names.monthsLong[monthIndex(value)])
 	case "es":
-		return fmt.Sprintf("%s, %d %s", weekday, value.Day(), month)
+		label = fmt.Sprintf("%s, %d %s", weekday, value.Day(), month)
 	case "de":
-		return fmt.Sprintf("%s, %d. %s", weekday, value.Day(), month)
+		label = fmt.Sprintf("%s, %d. %s", weekday, value.Day(), month)
 	case "fr", "it":
-		return fmt.Sprintf("%s %d %s", weekday, value.Day(), month)
+		label = fmt.Sprintf("%s %d %s", weekday, value.Day(), month)
 	default:
-		return fmt.Sprintf("%s, %s %d", weekday, month, value.Day())
+		label = fmt.Sprintf("%s, %s %d", weekday, month, value.Day())
+		separator = ", "
 	}
+	if withYear {
+		return fmt.Sprintf("%s%s%d", label, separator, value.Year())
+	}
+	return label
 }
 
 func LocalizedDashboardDate(language string, value time.Time) string {

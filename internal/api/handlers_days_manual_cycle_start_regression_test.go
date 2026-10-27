@@ -95,8 +95,10 @@ func TestMarkCycleStartHTMXWithCSRFRefreshesAndPersists(t *testing.T) {
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
 	}
-	if got := response.Header.Get("HX-Trigger"); got != "calendar-day-updated" {
-		t.Fatalf("expected HX-Trigger calendar-day-updated, got %q", got)
+	// The reload repaints the grid; a grid-refresh trigger beside it would be a
+	// second GET /calendar the reload discards (WEB-265).
+	if got := response.Header.Get("HX-Trigger"); got != "" {
+		t.Fatalf("expected no HX-Trigger beside HX-Refresh, got %q", got)
 	}
 	if got := response.Header.Get("HX-Refresh"); got != "true" {
 		t.Fatalf("expected HX-Refresh=true, got %q", got)

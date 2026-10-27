@@ -111,6 +111,23 @@ func TestLocalizedDateLabel(t *testing.T) {
 	}
 }
 
+func TestLocalizedDateLabelWithYear(t *testing.T) {
+	value := time.Date(2025, time.October, 5, 0, 0, 0, 0, time.UTC)
+	want := map[string]string{
+		"de": "So., 5. Okt. 2025",
+		"en": "Sun, Oct 5, 2025",
+		"es": "dom, 5 oct 2025",
+		"fr": "dim 5 oct 2025",
+		"it": "dom 5 ott 2025",
+		"ru": "Вс, 5 октября 2025",
+	}
+	for lang, label := range want {
+		if got := LocalizedDateLabelWithYear(lang, value); got != label {
+			t.Errorf("LocalizedDateLabelWithYear(%q) = %q, want %q", lang, got, label)
+		}
+	}
+}
+
 func TestLocalizedDateDisplay(t *testing.T) {
 	value := time.Date(2026, time.January, 29, 0, 0, 0, 0, time.UTC)
 
