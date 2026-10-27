@@ -34,7 +34,7 @@ for (const selected of ["", "2026-10-04"]) {
   test(`a day opened from the grid is carried by Prev and Next, not by Today (loaded with day=${selected || "none"})`, async () => {
     const dom = await loadDOMWithScript(APP_BUNDLE, {
       html: calendarPage(selected),
-      url: `https://ovumcy.test/calendar?month=2026-10${selected ? `&day=${selected}` : ""}`,
+      url: `https://ovumcy.test/calendar?month=2026-10${selected ? `&day=${selected}&edit=1` : ""}`,
     });
     try {
       const { document } = dom.window;
@@ -44,6 +44,8 @@ for (const selected of ["", "2026-10-04"]) {
         "/calendar?month=2026-11&day=2026-10-12",
         "/calendar",
       ]);
+      // The edit=1 a dashboard link brought belonged to the day it named.
+      assert.equal(dom.window.location.pathname + dom.window.location.search, "/calendar?month=2026-10&day=2026-10-12");
     } finally {
       dom.window.close();
     }

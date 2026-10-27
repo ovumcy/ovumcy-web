@@ -6925,20 +6925,27 @@
     }
   }
 
+  // A day opened from the grid opens as the grid opens it, so the edit=1 a
+  // dashboard link arrived with is dropped: kept, it would reopen whatever day
+  // is current for editing (and bring its panel up) on every reload.
+  function calendarDayHref(href, selectedDate) {
+    var target = new URL(href, window.location.href);
+    if (selectedDate) {
+      target.searchParams.set("day", selectedDate);
+    } else {
+      target.searchParams.delete("day");
+    }
+    target.searchParams.delete("edit");
+    return target.pathname + target.search + target.hash;
+  }
+
   function syncCalendarURL(selectedDate) {
     if (!window.history || typeof window.history.replaceState !== "function") {
       return;
     }
 
     try {
-      var currentURL = new URL(window.location.href);
-      if (selectedDate) {
-        currentURL.searchParams.set("day", selectedDate);
-      } else {
-        currentURL.searchParams.delete("day");
-      }
-      var nextPath = currentURL.pathname + currentURL.search + currentURL.hash;
-      window.history.replaceState({}, "", nextPath);
+      window.history.replaceState({}, "", calendarDayHref(window.location.href, selectedDate));
     } catch {
       // Ignore malformed URLs and keep current location unchanged.
     }
@@ -6950,9 +6957,7 @@
     var links = document.querySelectorAll("[data-calendar-month-nav] a[href]:not([data-calendar-today])");
     for (var index = 0; index < links.length; index++) {
       try {
-        var linkURL = new URL(links[index].getAttribute("href"), window.location.href);
-        linkURL.searchParams.set("day", selectedDate);
-        links[index].setAttribute("href", linkURL.pathname + linkURL.search + linkURL.hash);
+        links[index].setAttribute("href", calendarDayHref(links[index].getAttribute("href"), selectedDate));
       } catch {
         // Leave a link with a malformed href as it was rendered.
       }

@@ -56,7 +56,6 @@ async function saveDay(form) {
 
 const FORMS = [
   { label: "the shipped hx-put on the v1 path", method: "hx-put", path: `/api/v1/days/${DAY}` },
-  { label: "an hx-post on the retired path", method: "hx-post", path: `/api/days/${DAY}` },
   { label: "an hx-post on the v1 path", method: "hx-post", path: `/api/v1/days/${DAY}` },
 ];
 

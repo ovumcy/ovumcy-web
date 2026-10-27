@@ -8,6 +8,12 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 )
 
+// dayHeadingInAnotherYear renders the heading's with-year arm, the one a
+// same-year sweep would never reach.
+func dayHeadingInAnotherYear(language string, value time.Time) string {
+	return LocalizedDayHeading(language, value, time.Date(value.Year()+1, time.June, 1, 0, 0, 0, 0, time.UTC))
+}
+
 // TestLocalizedDateFormsCoverEveryRequiredLocale is the sweep mechanism for the
 // dateNames table, the same shape as
 // TestLocalizedSymptomFrequencySummaryCoversEveryRequiredLocale one file over.
@@ -44,6 +50,7 @@ func TestLocalizedDateFormsCoverEveryRequiredLocale(t *testing.T) {
 		"LocalizedDashboardDate": LocalizedDashboardDate,
 		"LocalizedDateDisplay":   LocalizedDateDisplay,
 		"LocalizedDateShort":     LocalizedDateShort,
+		"LocalizedDayHeading":    dayHeadingInAnotherYear,
 	}
 
 	for _, language := range languages {
@@ -92,6 +99,7 @@ func TestLocalizedDateFormsFallBackToEnglishForAnUnknownLanguage(t *testing.T) {
 		"LocalizedDashboardDate": LocalizedDashboardDate,
 		"LocalizedDateDisplay":   LocalizedDateDisplay,
 		"LocalizedDateShort":     LocalizedDateShort,
+		"LocalizedDayHeading":    dayHeadingInAnotherYear,
 	}
 
 	// "" is the unset language every request-free surface can carry; "zz" is a
