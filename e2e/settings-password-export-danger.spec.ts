@@ -134,6 +134,11 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('#settings-change-password-status .status-ok').first()).toBeVisible();
+    // The success is answered in the card alone (no toast) and the typed
+    // passwords do not outlive the change in the page.
+    await expect(page.locator('#settings-current-password')).toHaveValue('');
+    await expect(page.locator('#settings-new-password')).toHaveValue('');
+    await expect(page.locator('#settings-confirm-password')).toHaveValue('');
 
     await logoutViaAPI(page);
     await loginViaUI(page, creds);

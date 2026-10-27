@@ -59,9 +59,13 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.locator('input[name="code"]').fill(code);
     await page.locator('#settings-2fa-enroll-password').fill(creds.password);
     await page.locator('form[action="/api/v1/users/current/2fa"] button[type="submit"]').click();
-    // Form submit is HTMX-intercepted; wait for the inline success status, then
-    // reload to render the management view (DB now has TOTPEnabled=true).
-    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    // Form submit is HTMX-intercepted; the panel re-renders in place as the
+    // enabled state with its success message in its live region. Reload to prove
+    // the server holds TOTPEnabled=true.
+    await expect(page.locator('#settings-2fa-panel [data-settings-2fa-enabled]')).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(page.locator('#settings-2fa-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
 
     // After successful enrollment the management view shows the disable button.
@@ -85,8 +89,13 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.locator('input[name="code"]').fill(code);
     await page.locator('#settings-2fa-enroll-password').fill(creds.password);
     await page.locator('form[action="/api/v1/users/current/2fa"] button[type="submit"]').click();
-    // Form submit is HTMX-intercepted; wait for inline success then reload.
-    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    // Form submit is HTMX-intercepted; the panel re-renders in place as the
+    // enabled state with its success message in its live region. Reload to prove
+    // the server holds TOTPEnabled=true.
+    await expect(page.locator('#settings-2fa-panel [data-settings-2fa-enabled]')).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(page.locator('#settings-2fa-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
     await expect(page.locator(DISABLE_2FA_SUBMIT)).toBeVisible({ timeout: 5_000 });
 
@@ -141,9 +150,13 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.locator('input[name="code"]').fill(enrollCode);
     await page.locator('#settings-2fa-enroll-password').fill(creds.password);
     await page.locator('form[action="/api/v1/users/current/2fa"] button[type="submit"]').click();
-    // Form submit is HTMX-intercepted; wait for the inline success status, then
-    // reload to render the management view (DB now has TOTPEnabled=true).
-    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    // Form submit is HTMX-intercepted; the panel re-renders in place as the
+    // enabled state with its success message in its live region. Reload to prove
+    // the server holds TOTPEnabled=true.
+    await expect(page.locator('#settings-2fa-panel [data-settings-2fa-enabled]')).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(page.locator('#settings-2fa-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
     await expect(page.locator(DISABLE_2FA_SUBMIT)).toBeVisible({ timeout: 5_000 });
 
@@ -186,9 +199,13 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.locator('input[name="code"]').fill(enrollCode);
     await page.locator('#settings-2fa-enroll-password').fill(creds.password);
     await page.locator('form[action="/api/v1/users/current/2fa"] button[type="submit"]').click();
-    // Form submit is HTMX-intercepted; wait for the inline success status, then
-    // reload to render the management view (DB now has TOTPEnabled=true).
-    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    // Form submit is HTMX-intercepted; the panel re-renders in place as the
+    // enabled state with its success message in its live region. Reload to prove
+    // the server holds TOTPEnabled=true.
+    await expect(page.locator('#settings-2fa-panel [data-settings-2fa-enabled]')).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(page.locator('#settings-2fa-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
     await expect(page.locator(DISABLE_2FA_SUBMIT)).toBeVisible({ timeout: 5_000 });
 
@@ -234,9 +251,13 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.locator('input[name="code"]').fill(enrollCode);
     await page.locator('#settings-2fa-enroll-password').fill(creds.password);
     await page.locator('form[action="/api/v1/users/current/2fa"] button[type="submit"]').click();
-    // Form submit is HTMX-intercepted; wait for the inline success status, then
-    // reload to render the management view (DB now has TOTPEnabled=true).
-    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    // Form submit is HTMX-intercepted; the panel re-renders in place as the
+    // enabled state with its success message in its live region. Reload to prove
+    // the server holds TOTPEnabled=true.
+    await expect(page.locator('#settings-2fa-panel [data-settings-2fa-enabled]')).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(page.locator('#settings-2fa-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
     await expect(page.locator(DISABLE_2FA_SUBMIT)).toBeVisible({ timeout: 5_000 });
 

@@ -4120,6 +4120,18 @@ paths:
               example:
                 error: "invalid password"
                 error_detail: { key: "invalid password", category: "validation", target: "settings_form" }
+        '409':
+          description: |
+            The account's second factor is already on and the request carries no setup cookie
+            (`totp already enabled`, category `conflict`): the first submit consumed the cookie
+            and a stale tab sent the form again. It is said only to the authenticated owner, about
+            her own account, after her password verified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "totp already enabled"
+                error_detail: { key: "totp already enabled", category: "conflict", target: "auth_form" }
         '429':
           description: |
             Rate limit exceeded, from one of three sources. (1) The enrollment-code budget

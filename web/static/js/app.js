@@ -2022,12 +2022,23 @@
       return;
     }
     form.reset();
+    // A form's own input handlers empty its status island (an edit makes the
+    // last message stale), and these events are not an edit: the success
+    // message is held out of the island while they run and put back after.
+    var parent = successNode.parentNode;
+    var next = successNode.nextSibling;
+    if (parent) {
+      parent.removeChild(successNode);
+    }
     var fields = form.querySelectorAll("input[type=password], input[type=text]");
     for (var index = 0; index < fields.length; index++) {
       if (fields[index].closest(".sr-only")) {
         continue;
       }
       fields[index].dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    if (parent) {
+      parent.insertBefore(successNode, next && next.parentNode === parent ? next : null);
     }
   }
 

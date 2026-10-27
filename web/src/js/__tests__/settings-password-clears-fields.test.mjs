@@ -67,6 +67,25 @@ test("a success that clears-fields empties the form's password inputs and fires 
   }
 });
 
+test("clearing the fields keeps the success message the form's input handler would empty", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: PAGE });
+  try {
+    typePasswords(dom.window);
+    const island = dom.window.document.getElementById("settings-change-password-status");
+    // The real form empties its status island on every input event.
+    dom.window.document.getElementById("settings-change-password-form").addEventListener("input", () => {
+      island.textContent = "";
+    });
+
+    swapSuccess(dom.window, "settings-change-password-status", "clears-fields");
+
+    assert.ok(island.querySelector(".status-ok"), "the success message must survive the field clearing");
+    assert.equal(dom.window.document.getElementById("cp-new").value, "");
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("a success without the kind leaves the typed fields alone", async () => {
   const dom = await loadDOMWithScript(APP_BUNDLE, { html: PAGE });
   try {
