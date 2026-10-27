@@ -78,4 +78,18 @@ func TestAuthRequiredLetsEveryRoutableSpellingOfSignOutPastTheOnboardingGate(t *
 			t.Errorf("DELETE %s by an owner mid-onboarding answered %d %q, want the sign-out to go through like the lowercase spelling", path, response.StatusCode, body)
 		}
 	}
+
+	// The page route is the second sign-out the gate exempts (WEB-220); the
+	// same spellings route to it. A no-CSRF app, so the form carries no token.
+	for index, path := range []string{"/logout", "/LOGOUT", "/logout/"} {
+		user := createOnboardingTestUser(t, database, fmt.Sprintf("sign-out-page-onboarding-%d@example.com", index), "StrongPass1", false)
+		request := httptest.NewRequest(http.MethodPost, path, nil)
+		request.Header.Set("Cookie", issueAuthCookieForUser(t, user))
+
+		response := mustAppResponse(t, app, request)
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/login" {
+			t.Errorf("POST %s by an owner mid-onboarding answered %d → %q, want 303 /login like the lowercase spelling", path, response.StatusCode, response.Header.Get("Location"))
+		}
+	}
 }

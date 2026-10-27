@@ -267,3 +267,51 @@ func cookiePair(cookie *http.Cookie) string {
 	}
 	return cookie.Name + "=" + cookie.Value
 }
+
+// TestLogoutBeforeOnboardingEndsTheSession pins WEB-220: a signed-in owner who
+// has not finished onboarding can end the session from the onboarding page.
+// Before the fix the onboarding gate answered POST /logout with a 303 back to
+// /onboarding, the session stayed alive, and the page carried no sign-out
+// control at all — a session on a shared device could not be ended until the
+// first cycle was entered.
+func TestLogoutBeforeOnboardingEndsTheSession(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "logout-mid-onboarding@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+
+	pageRequest := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
+	pageRequest.Header.Set("Accept-Language", "en")
+	pageRequest.Header.Set("Cookie", authCookie)
+	pageResponse := mustAppResponse(t, app, pageRequest)
+	assertStatusCode(t, pageResponse, http.StatusOK)
+	page := mustReadBodyString(t, pageResponse.Body)
+	assertBodyContainsAll(t, page,
+		bodyStringMatch{fragment: "data-onboarding-logout", message: "expected the onboarding page to carry its own sign-out control"},
+		bodyStringMatch{fragment: `action="/logout"`, message: "expected the onboarding sign-out control to post to /logout"},
+	)
+	csrfToken := extractCSRFTokenFromHTML(t, page)
+	csrfCookie := responseCookie(pageResponse.Cookies(), "ovumcy_csrf")
+	if csrfCookie == nil || csrfCookie.Value == "" {
+		t.Fatal("expected the onboarding page to mint a csrf cookie")
+	}
+
+	form := url.Values{"csrf_token": {csrfToken}}
+	logoutRequest := httptest.NewRequest(http.MethodPost, "/logout", strings.NewReader(form.Encode()))
+	logoutRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	logoutRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	logoutResponse := mustAppResponse(t, app, logoutRequest)
+	_ = logoutResponse.Body.Close()
+	assertStatusCode(t, logoutResponse, http.StatusSeeOther)
+	if location := logoutResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the sign-out to land on /login, got %q", location)
+	}
+
+	afterRequest := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
+	afterRequest.Header.Set("Cookie", authCookie)
+	afterResponse := mustAppResponse(t, app, afterRequest)
+	_ = afterResponse.Body.Close()
+	assertStatusCode(t, afterResponse, http.StatusSeeOther)
+	if location := afterResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the ended session to be refused with a /login redirect, got %q", location)
+	}
+}

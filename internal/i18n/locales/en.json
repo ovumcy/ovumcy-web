@@ -97,7 +97,7 @@
   "auth.continue_to_app": "Continue to app",
   "auth.back_to_login": "Back to login",
   "auth.back_to_recovery": "Back to recovery",
-  "auth.confirm_logout": "Log out of your account now?",
+  "auth.confirm_logout": "Log out now? This also ends your sessions on every other device.",
   "auth.must_change_password": "Password reset is required before continuing.",
   "auth.error.invalid_input": "Please review your details and try again.",
   "auth.error.consent_required": "Confirm you have read the privacy policy and consent to processing your reproductive-health data.",

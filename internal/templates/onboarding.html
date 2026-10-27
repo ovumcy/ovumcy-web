@@ -207,6 +207,14 @@
         <div id="onboarding-step2-status" class="save-status text-sm" aria-live="polite"></div>
       </form>
     </div>
+
+    {{/* The navigation, and the sign-out control it carries, is hidden until
+         onboarding completes, so the page carries its own: a session on a
+         shared device must be endable before the first cycle is entered. */}}
+    <form action="/logout" method="post" class="mt-8 text-sm" data-onboarding-logout data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="inline-link">{{t .Messages "nav.logout"}}</button>
+    </form>
   </div>
 </section>
 

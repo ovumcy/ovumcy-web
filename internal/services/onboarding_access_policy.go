@@ -29,12 +29,16 @@ func IsOnboardingPath(path string) bool {
 // decision independent of how much normalization a given router release
 // performs. A relative or empty path is never exempt either: neither carries
 // an exempt prefix.
+//
+// Both sign-out routes stay reachable: an owner must be able to end a session
+// on a shared device before the first cycle is entered, and a sign-out
+// redirected to /onboarding left the session alive with no control to end it.
 func ShouldEnforceOnboardingAccess(wirePath string, routedPath string) bool {
 	routed := strings.TrimSpace(routedPath)
 	if strings.TrimSpace(wirePath) != routed || path.Clean(routed) != routed {
 		return true
 	}
-	if routed == "/api/v1/sessions/current" {
+	if routed == "/api/v1/sessions/current" || routed == "/logout" {
 		return false
 	}
 	return !IsOnboardingPath(routed)

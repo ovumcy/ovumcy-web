@@ -97,7 +97,7 @@
   "auth.continue_to_app": "Zur App",
   "auth.back_to_login": "Zurück zur Anmeldung",
   "auth.back_to_recovery": "Zurück zur Wiederherstellung",
-  "auth.confirm_logout": "Jetzt von Ihrem Konto abmelden?",
+  "auth.confirm_logout": "Jetzt abmelden? Damit werden auch Ihre Sitzungen auf allen anderen Geräten beendet.",
   "auth.must_change_password": "Bevor Sie fortfahren können, ist eine Passwortzurücksetzung erforderlich.",
   "auth.error.invalid_input": "Bitte prüfen Sie Ihre Angaben und versuchen Sie es erneut.",
   "auth.error.consent_required": "Bestätigen Sie, dass Sie die Datenschutzerklärung gelesen haben, und willigen Sie in die Verarbeitung Ihrer reproduktiven Gesundheitsdaten ein.",

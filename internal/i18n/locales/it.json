@@ -97,7 +97,7 @@
   "auth.continue_to_app": "Continua all'app",
   "auth.back_to_login": "Torna al login",
   "auth.back_to_recovery": "Torna al recupero",
-  "auth.confirm_logout": "Disconnettersi ora dal tuo account?",
+  "auth.confirm_logout": "Disconnettersi ora? Verranno chiuse anche le sessioni su tutti gli altri dispositivi.",
   "auth.must_change_password": "È necessario reimpostare la password prima di continuare.",
   "auth.error.invalid_input": "Controlla i dati e riprova.",
   "auth.error.consent_required": "Conferma di aver letto l'informativa sulla privacy e di acconsentire al trattamento dei tuoi dati sulla salute riproduttiva.",
