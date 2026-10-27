@@ -24,4 +24,6 @@ var partialTemplateFiles = []string{
 	"current_user_identity_oob.html",
 	"settings_symptoms_section.html",
 	"settings_egress_section.html",
+	"settings_recovery_code_section.html",
+	"settings_2fa_panel_section.html",
 }

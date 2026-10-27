@@ -874,6 +874,9 @@
   "settings.2fa.disable_button": "Disable two-factor authentication",
   "settings.2fa.disable_confirm_password": "Confirm with your current password",
   "settings.2fa.local_password_required": "Two-factor authentication is confirmed with your account password, and this account has none yet. Set a local password first, then come back here.",
+  "settings.2fa.confirm_disable": "Turn off two-factor authentication? Signing in will only need your password.",
+  "settings.2fa.recovery_pointer": "Next, check your recovery code in the account settings:",
+  "error.totp_already_enabled": "Two-factor authentication is already on for this account.",
 
   "error.totp_invalid_code": "Invalid authentication code. Please try again.",
   "error.totp_session_expired": "Your login session expired. Please sign in again.",

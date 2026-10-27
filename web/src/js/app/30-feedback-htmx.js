@@ -332,6 +332,30 @@
     window.showToast(message, "ok");
   }
 
+  // A success status that declares data-status-kind="clears-fields" says the
+  // form it sits in is finished with: a credential form must not leave the
+  // password the owner typed in the page after it was used. The fields are
+  // emptied here and an input event follows each, so a strength checklist or a
+  // mismatch hint bound to them reads the empty value too. Only the form that
+  // owns the island is touched.
+  function clearFieldsOfCompletedForm(island, successNode) {
+    if (!island || !successNode || successNode.getAttribute("data-status-kind") !== "clears-fields") {
+      return;
+    }
+    var form = island.closest ? island.closest("form") : null;
+    if (!form || typeof form.reset !== "function") {
+      return;
+    }
+    form.reset();
+    var fields = form.querySelectorAll("input[type=password], input[type=text]");
+    for (var index = 0; index < fields.length; index++) {
+      if (fields[index].closest(".sr-only")) {
+        continue;
+      }
+      fields[index].dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }
+
   function showResponseNotice(xhr) {
     var message;
     if (!xhr || typeof xhr.getResponseHeader !== "function" || typeof window.showToast !== "function") {
@@ -990,6 +1014,7 @@
       // The month grid refresh is the save response's HX-Trigger header; a
       // client trigger here as well fetched the grid twice per save.
       maybeShowSuccessToast(target);
+      clearFieldsOfCompletedForm(target, successNode);
       scheduleClearSuccessStatus(target);
     });
 

@@ -223,7 +223,7 @@ func TestNoJSTwoFactorDisableRefusalsSplitByTheirTarget(t *testing.T) {
 		subject := c.build(t, "refusal-2fa-disable-wrong@example.com")
 		form := renderNoJSForm(t, subject.app, c.page, subject.cookies, c.match)
 		response := form.submit(t, subject.app, url.Values{"password": {"NotThePassword9"}})
-		assertRefusalPageCarrying(t, response, http.StatusUnauthorized, englishCopy(t, services.AuthErrorTranslationKey("invalid credentials")), "/settings/2fa")
+		assertRefusalPageCarrying(t, response, http.StatusUnauthorized, englishCopy(t, services.AuthErrorTranslationKey("invalid password")), "/settings/2fa")
 	})
 	t.Run("blank password", func(t *testing.T) {
 		t.Parallel()

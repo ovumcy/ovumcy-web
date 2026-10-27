@@ -27,6 +27,13 @@ func totpSessionExpiredErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "totp session expired")
 }
 
+// totpAlreadyEnabledErrorSpec answers an enrollment submit that finds no setup
+// cookie on an account whose second factor is already on: the first submit
+// consumed the cookie, and a stale tab sent the form again.
+func totpAlreadyEnabledErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "totp already enabled")
+}
+
 func totpInternalErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "totp internal error")
 }

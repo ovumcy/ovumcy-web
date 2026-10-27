@@ -1,0 +1,147 @@
+{{define "settings_2fa_panel_block"}}
+  {{/* The panel replaces ITSELF after a committed enable or disable: the
+       response is retargeted here and rebuilt from a read taken after the
+       write, so a success message never stands beside the state it just
+       falsified. Each state holds exactly one status island, the single place
+       its form answers in. A refusal still lands in that island alone. A
+       committed write moves focus to the new state through
+       data-focus-after-swap. */}}
+  <div id="settings-2fa-panel" class="space-y-6" data-status-island-host data-focus-scroll-anchor>
+  {{if .LocalPasswordRequired}}
+
+  <div class="card p-5 sm:p-6 space-y-4" data-settings-2fa-local-password-required>
+    <p class="journal-muted text-sm">{{t .Messages "settings.2fa.local_password_required"}}</p>
+    <a href="/settings#settings-account" class="btn-secondary">{{t .Messages "settings.local_password.title"}}</a>
+  </div>
+
+  {{else if .TOTPEnabled}}
+
+  <div class="card p-5 sm:p-6 space-y-4" data-settings-2fa-enabled>
+    <div>
+      <h2 class="journal-subtitle" {{if .PanelOutcome}}data-focus-after-swap{{end}}>{{t .Messages "settings.2fa.status_enabled_label"}}</h2>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.status_enabled_hint"}}</p>
+      {{if and .PanelOutcome (eq .PanelOutcome "enabled")}}
+      <p class="journal-muted mt-1 text-sm">
+        {{t .Messages "settings.2fa.recovery_pointer"}}
+        <a href="/settings#settings-recovery-code" class="inline-link">{{t .Messages "settings.recovery_code.title"}}</a>
+      </p>
+      {{end}}
+    </div>
+
+    <form
+      action="/api/v1/users/current/2fa"
+      method="post"
+      hx-delete="/api/v1/users/current/2fa"
+      hx-target="#settings-2fa-status"
+      hx-swap="innerHTML"
+      hx-confirm="{{t .Messages "settings.2fa.confirm_disable"}}"
+      data-confirm-accept="{{t .Messages "settings.2fa.disable_button"}}"
+      class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="_method" value="DELETE">
+
+      <div class="space-y-2">
+        <label class="field-label" for="settings-2fa-disable-password">
+          {{t .Messages "settings.2fa.disable_confirm_password"}}
+        </label>
+        <input
+          id="settings-2fa-disable-password"
+          type="password"
+          name="password"
+          autocomplete="current-password"
+          required
+          class="input-field" />
+      </div>
+
+      <div class="settings-form-actions">
+        <button type="submit" class="btn-danger">
+          {{t .Messages "settings.2fa.disable_button"}}
+        </button>
+        <div id="settings-2fa-status" class="save-status text-sm" aria-live="polite">{{if .PanelStatus}}{{.PanelStatus}}{{end}}</div>
+      </div>
+    </form>
+  </div>
+
+  {{else if .PanelOutcome}}
+
+  <div class="card p-5 sm:p-6 space-y-4" data-settings-2fa-disabled>
+    <div>
+      <h2 class="journal-subtitle">{{t .Messages "settings.2fa.status_disabled_label"}}</h2>
+    </div>
+    <div id="settings-2fa-status" class="save-status text-sm" aria-live="polite">{{if .PanelStatus}}{{.PanelStatus}}{{end}}</div>
+    <a href="/settings/2fa" class="btn-secondary" data-focus-after-swap>{{t .Messages "settings.2fa.setup_title"}}</a>
+  </div>
+
+  {{else}}
+
+  <div class="card p-5 sm:p-6 space-y-6">
+    <div>
+      <h2 class="journal-subtitle">{{t .Messages "settings.2fa.setup_title"}}</h2>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.setup_instructions"}}</p>
+    </div>
+
+    {{if .QRDataURL}}
+    <div class="flex flex-col items-start gap-4 sm:flex-row">
+      <img
+        src="{{.QRDataURL}}"
+        alt="{{t .Messages "settings.2fa.qr_alt"}}"
+        width="200"
+        height="200"
+        class="rounded-sm border border-gray-200 dark:border-gray-700" />
+
+      <div class="space-y-2">
+        <p class="field-label">{{t .Messages "settings.2fa.secret_label"}}</p>
+        <p data-totp-manual-secret class="font-mono text-sm break-all journal-muted">{{.TOTPSecret}}</p>
+        <p class="journal-muted text-xs">{{t .Messages "settings.2fa.secret_hint"}}</p>
+      </div>
+    </div>
+
+    <form
+      action="/api/v1/users/current/2fa"
+      method="post"
+      hx-put="/api/v1/users/current/2fa"
+      hx-target="#settings-2fa-verify-status"
+      hx-swap="innerHTML"
+      class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="_method" value="PUT">
+      {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
+
+      <div class="space-y-2">
+        <label class="field-label" for="settings-2fa-code">
+          {{t .Messages "settings.2fa.code_placeholder"}}
+        </label>
+        <input
+          id="settings-2fa-code"
+          type="text"
+          name="code"
+          inputmode="numeric"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          autocomplete="one-time-code"
+          required
+          class="input-field input-field-code tracking-widest text-center text-xl"
+          placeholder="000000" />
+      </div>
+
+      {{template "password_toggle_field" (dict
+        "Messages" .Messages
+        "LabelKey" "settings.delete_account.password"
+        "FieldID" "settings-2fa-enroll-password"
+        "FieldName" "password"
+        "Autocomplete" "current-password"
+        "Required" true)}}
+
+      <div class="settings-form-actions">
+        <button type="submit" class="btn-primary">
+          {{t .Messages "settings.2fa.verify_button"}}
+        </button>
+        <div id="settings-2fa-verify-status" class="save-status text-sm" aria-live="polite"></div>
+      </div>
+    </form>
+    {{end}}
+  </div>
+
+  {{end}}
+  </div>
+{{end}}

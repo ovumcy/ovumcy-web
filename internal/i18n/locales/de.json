@@ -874,6 +874,9 @@
   "settings.2fa.disable_button": "Zwei-Faktor-Authentifizierung deaktivieren",
   "settings.2fa.disable_confirm_password": "Mit aktuellem Passwort bestätigen",
   "settings.2fa.local_password_required": "Die Zwei-Faktor-Authentifizierung wird mit dem Kontopasswort bestätigt, und dieses Konto hat noch keines. Legen Sie zuerst ein lokales Passwort fest und kehren Sie dann hierher zurück.",
+  "settings.2fa.confirm_disable": "Zwei-Faktor-Authentifizierung ausschalten? Die Anmeldung braucht dann nur noch Ihr Passwort.",
+  "settings.2fa.recovery_pointer": "Prüfen Sie als Nächstes Ihren Wiederherstellungscode in den Kontoeinstellungen:",
+  "error.totp_already_enabled": "Die Zwei-Faktor-Authentifizierung ist für dieses Konto bereits aktiviert.",
 
   "error.totp_invalid_code": "Ungültiger Authentifizierungscode. Bitte versuchen Sie es erneut.",
   "error.totp_session_expired": "Ihre Anmeldesitzung ist abgelaufen. Bitte melden Sie sich erneut an.",

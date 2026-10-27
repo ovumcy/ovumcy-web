@@ -922,6 +922,9 @@
   "settings.2fa.disable_button": "Désactiver l'authentification à deux facteurs",
   "settings.2fa.disable_confirm_password": "Confirmer avec votre mot de passe actuel",
   "settings.2fa.local_password_required": "L'authentification à deux facteurs se confirme avec le mot de passe du compte, et ce compte n'en a pas encore. Définissez d'abord un mot de passe local, puis revenez ici.",
+  "settings.2fa.confirm_disable": "Désactiver l'authentification à deux facteurs ? La connexion ne demandera plus que votre mot de passe.",
+  "settings.2fa.recovery_pointer": "Vérifiez ensuite votre code de récupération dans les paramètres du compte :",
+  "error.totp_already_enabled": "L'authentification à deux facteurs est déjà activée pour ce compte.",
 
   "error.totp_invalid_code": "Code d'authentification invalide. Veuillez réessayer.",
   "error.totp_session_expired": "Votre session de connexion a expiré. Veuillez vous reconnecter.",

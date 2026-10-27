@@ -109,7 +109,7 @@
 
           <div class="settings-form-actions">
             <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.change_password.submit"}}</button>
-            <div id="settings-change-password-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
+            <div id="settings-change-password-status" class="save-status text-sm" aria-live="polite"></div>
           </div>
         </form>
         {{else}}
@@ -273,7 +273,20 @@
       {{/* The advanced-security block holds exactly one control, so its own
            heading and hint were a wrapper around the recovery-code heading
            below them. The recovery code names itself. */}}
-      <section class="card-quiet settings-account-block space-y-3">
+      {{template "settings_recovery_code_block" .}}
+    </div>
+  </details>
+{{end}}
+
+{{define "settings_recovery_code_block"}}
+      {{/* The block replaces ITSELF through htmx (hx-swap="outerHTML"), and it
+           is rebuilt from the user row for a refusal too: the settings error
+           transport answers an htmx caller with a bare status fragment, which
+           would replace the whole block. A refusal renders in the island
+           beside the form, the password field is emptied, marked invalid and
+           takes focus. A success is not swapped in: the new code is revealed
+           on its own page, which the response redirects to. */}}
+      <section id="settings-recovery-code" class="card-quiet settings-account-block space-y-3" data-status-island-host data-focus-scroll-anchor>
         <div>
           <h3 class="field-label field-label-lg">{{t .Messages "settings.recovery_code.title"}}</h3>
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.recovery_code.subtitle"}}</p>
@@ -289,8 +302,11 @@
         <form
           action="/api/v1/users/current/recovery-code"
           method="post"
+          hx-post="/api/v1/users/current/recovery-code"
+          hx-target="#settings-recovery-code"
+          hx-swap="outerHTML"
+          hx-confirm="{{t .Messages "settings.confirm_regenerate_recovery_code"}}"
           class="space-y-4"
-          data-confirm="{{t .Messages "settings.confirm_regenerate_recovery_code"}}"
           data-confirm-accept="{{t .Messages "settings.recovery_code.submit"}}">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
@@ -300,13 +316,21 @@
             "FieldID" "settings-recovery-code-password"
             "FieldName" "password"
             "Autocomplete" "current-password"
-            "Required" true)}}
-          <button type="submit" class="btn-secondary">{{t .Messages "settings.recovery_code.submit"}}</button>
+            "Required" true
+            "Invalid" .RecoveryErrorKey
+            "FocusAfterSwap" .RecoveryErrorKey
+            "DescribedBy" "settings-recovery-code-status")}}
+          <div class="settings-form-actions">
+            <button type="submit" class="btn-secondary">{{t .Messages "settings.recovery_code.submit"}}</button>
+            <div id="settings-recovery-code-status" class="save-status text-sm" aria-live="polite">
+              {{if .RecoveryErrorKey}}
+              <div class="status-error" data-flash-key="{{.RecoveryErrorKey}}" data-flash-status="error">{{t .Messages .RecoveryErrorKey}}</div>
+              {{end}}
+            </div>
+          </div>
         </form>
         {{else}}
         <p class="journal-muted text-sm" data-settings-recovery-code-unavailable>{{t .Messages "settings.local_password.recovery_unavailable"}}</p>
         {{end}}
       </section>
-    </div>
-  </details>
 {{end}}

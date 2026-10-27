@@ -23,7 +23,7 @@ import (
 
 const (
 	disableTOTPPath           = "/api/v1/users/current/2fa"
-	disableTOTPInvalidKey     = "invalid credentials"
+	disableTOTPInvalidKey     = "invalid password"
 	disableTOTPRateLimitedKey = "totp too many attempts"
 )
 

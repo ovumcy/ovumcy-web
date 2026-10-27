@@ -27,7 +27,7 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 	reauth, spec, cause, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec, cause)
-		return handler.respondMappedError(c, spec)
+		return handler.respondRecoveryRefusal(c, user, spec)
 	}
 
 	// The rotation revokes every session, this one included, so the device is
@@ -46,7 +46,7 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 	if delivery.failure != nil {
 		spec := mapRecoveryCodeDeliveryError(delivery.failure)
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
-		return handler.respondMappedError(c, spec)
+		return handler.respondRecoveryRefusal(c, user, spec)
 	}
 	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
 		return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, "auth.recovery_code_regenerate", "recovery_code_regenerate"))
@@ -54,7 +54,7 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 	if err != nil {
 		spec := mapRecoveryCodeRegenerationError(err)
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
-		return handler.respondMappedError(c, spec)
+		return handler.respondRecoveryRefusal(c, user, spec)
 	}
 	// The rotation committed and its delivery was sealed: only now does the
 	// correct password clear settings.reauth. A rotation that rolled back, for
@@ -65,6 +65,33 @@ func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 	handler.writeSealed(c, delivery.reveal)
 	handler.logSecurityEvent(c, "auth.recovery_code_regenerate", "success")
 	return respondRecoveryCodeNextStep(c, fiber.StatusOK, delivery.nextPath)
+}
+
+// respondRecoveryRefusal answers a refused regeneration. An htmx caller gets the
+// recovery block rebuilt from a read, with the refusal in the island beside the
+// form and the password field emptied, invalid and focused: the shared settings
+// error transport would answer 200 with a bare status fragment, and the form
+// targets the whole block. A refusal that carries no settings copy (an
+// internal fault) keeps the shared transport, as do JSON and plain-form
+// callers; the plain form is flashed and sent back to this block's anchor.
+func (handler *Handler) respondRecoveryRefusal(c fiber.Ctx, user *models.User, spec APIErrorSpec) error {
+	if !isHTMX(c) || spec.Target != APIErrorTargetSettingsForm {
+		return handler.respondMappedError(c, spec)
+	}
+	fresh, err := handler.authService.FindByID(c.Context(), user.ID)
+	if err != nil {
+		return handler.respondMappedError(c, settingsLoadErrorSpec())
+	}
+	errorKey := spec.Key
+	if key := services.AuthErrorTranslationKey(spec.Key); key != "" {
+		errorKey = key
+	}
+	c.Status(fiber.StatusOK)
+	return handler.renderPartial(c, "settings_recovery_code_section", fiber.Map{
+		"CurrentUser":            &fresh,
+		"LocalPublicAuthEnabled": handler.localPublicAuthEnabled(),
+		"RecoveryErrorKey":       errorKey,
+	})
 }
 
 // settingsContinuePath is where a reveal minted from the settings page sends

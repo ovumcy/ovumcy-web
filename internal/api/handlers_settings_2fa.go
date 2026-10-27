@@ -96,6 +96,15 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 	// attacker whether the enrollment expired or was minted for someone else.
 	rawSecret, err := handler.parseTOTPSetupCookie(c, user.ID)
 	if err != nil {
+		// A second Enable from a stale tab arrives after the first one consumed
+		// the setup cookie. "Your login session expired" would be false there:
+		// the owner's session is fine and the account already has the factor.
+		// This says it only to the authenticated owner about her own account,
+		// after her password verified, and verifies nothing that was not
+		// verified before.
+		if user.TOTPEnabled {
+			return handler.respondMappedError(c, totpAlreadyEnabledErrorSpec())
+		}
 		return handler.respondMappedError(c, totpSessionExpiredErrorSpec())
 	}
 
@@ -189,10 +198,7 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 	handler.clearTOTPSetupCookie(c)
 
 	if isHTMX(c) {
-		messages := currentMessages(c)
-		return sendHTMLFragment(c.Status(fiber.StatusOK),
-			htmxDismissibleSuccessStatusMarkup(messages, translateMessage(messages, "settings.2fa.enabled_status")),
-		)
+		return handler.respondTOTPPanel(c, user, totpPanelEnabled)
 	}
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
@@ -245,7 +251,12 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 			handler.logSecurityError(c, "settings.2fa.disable", spec)
 			return handler.respondMappedError(c, spec)
 		}
-		spec := authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
+		// The settings password refusal, like every other password-gated settings
+		// action: the login page's "Invalid email or password." names an email
+		// field this form does not have.
+		// Kept on the auth-form channel so the plain-form refusal page keeps
+		// its back link to this page; only the copy changes.
+		spec := authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, settingsInvalidPasswordErrorSpec().Key)
 		handler.logSecurityError(c, "settings.2fa.disable", spec, settingsReauthCauseField(err))
 		return handler.respondMappedError(c, spec)
 	}
@@ -284,10 +295,7 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 	}
 
 	if isHTMX(c) {
-		messages := currentMessages(c)
-		return sendHTMLFragment(c.Status(fiber.StatusOK),
-			htmxDismissibleSuccessStatusMarkup(messages, translateMessage(messages, "settings.2fa.disabled_status")),
-		)
+		return handler.respondTOTPPanel(c, user, totpPanelDisabled)
 	}
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})

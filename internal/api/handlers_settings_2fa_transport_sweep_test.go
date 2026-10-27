@@ -191,7 +191,7 @@ func TestTOTPDisableOverCapCompressedBodyDrawsNothingFromTheBudget(t *testing.T)
 
 		for attempt := range services.DefaultSettingsReauthAttemptsLimit {
 			assert2FARefusal(t, sendGzipDelete(t, ctx, "WrongPass9", limit),
-				http.StatusUnauthorized, "invalid credentials",
+				http.StatusUnauthorized, "invalid password",
 				"wrong password inside the cap, attempt "+strconv.Itoa(attempt+1))
 		}
 
@@ -292,7 +292,7 @@ func TestTOTPSettingsJSONRefusalsHoldOverBothEncodings(t *testing.T) {
 			valid := map[string]string{"password": twoFASweepPassword}
 
 			assert2FARefusal(t, send2FARequest(t, ctx, del(map[string]string{"password": "WrongPass9"}, true, true)),
-				http.StatusUnauthorized, "invalid credentials", "wrong password")
+				http.StatusUnauthorized, "invalid password", "wrong password")
 			assert2FARefusal(t, send2FARequest(t, ctx, del(valid, false, true)), http.StatusUnauthorized, "unauthorized", "missing session")
 			assert2FACSRFRefusal(t, ctx, del(valid, true, false))
 			if !totpEnabledInDatabase(t, ctx) {

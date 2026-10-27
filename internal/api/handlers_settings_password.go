@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/httpx"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -290,7 +291,15 @@ func (handler *Handler) respondPasswordChanged(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
 	}
 	if isHTMX(c) {
-		return sendHTMLFragment(c, htmxSettingsSuccessMarkup(c, "password_changed", "Password changed successfully."))
+		// The status declares that it clears its form: the client empties the
+		// current, new and confirmation fields on this answer, so no password the
+		// owner typed outlives the change in the page. Nothing typed is echoed.
+		messages := currentMessages(c)
+		message, translated := lookupMessage(messages, services.SettingsStatusTranslationKey("password_changed"))
+		if !translated {
+			message = "Password changed successfully."
+		}
+		return sendHTMLFragment(c, httpx.DismissibleStatusOKMarkupOfKind(message, localizedStatusDismissLabel(messages), httpx.StatusKindClearsFields))
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "password_changed"})
 	return redirectOrJSON(c, "/settings")

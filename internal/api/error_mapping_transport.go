@@ -448,7 +448,13 @@ func (handler *Handler) respondSettingsErrorChannel(c fiber.Ctx, spec APIErrorSp
 	}
 	if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/v1/users/current") && !acceptsJSON(c) {
 		writeFlash(c, FlashPayload{SettingsError: spec.Key})
-		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		destination := "/settings"
+		if httpx.RoutingNormalizedPath(c.Path()) == "/api/v1/users/current/recovery-code" {
+			// Without script the refusal reloads the page; the anchor puts the
+			// reader back at the form it is about instead of at the top.
+			destination += "#settings-recovery-code"
+		}
+		return c.Redirect().Status(fiber.StatusSeeOther).To(destination)
 	}
 	return handler.apiError(c, spec)
 }

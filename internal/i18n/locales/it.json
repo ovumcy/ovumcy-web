@@ -874,6 +874,9 @@
   "settings.2fa.disable_button": "Disabilita autenticazione a due fattori",
   "settings.2fa.disable_confirm_password": "Conferma con la tua password corrente",
   "settings.2fa.local_password_required": "L'autenticazione a due fattori si conferma con la password dell'account, e questo account non ne ha ancora una. Imposta prima una password locale, poi torna qui.",
+  "settings.2fa.confirm_disable": "Disattivare l'autenticazione a due fattori? L'accesso richiederà solo la tua password.",
+  "settings.2fa.recovery_pointer": "Poi controlla il tuo codice di recupero nelle impostazioni dell'account:",
+  "error.totp_already_enabled": "L'autenticazione a due fattori è già attiva per questo account.",
 
   "error.totp_invalid_code": "Codice di autenticazione non valido. Riprova.",
   "error.totp_session_expired": "La tua sessione di accesso è scaduta. Accedi di nuovo.",

@@ -874,6 +874,9 @@
   "settings.2fa.disable_button": "Desactivar la autenticación en dos pasos",
   "settings.2fa.disable_confirm_password": "Confirmar con tu contraseña actual",
   "settings.2fa.local_password_required": "La verificación en dos pasos se confirma con la contraseña de tu cuenta, y esta cuenta aún no tiene ninguna. Establece primero una contraseña local y luego vuelve aquí.",
+  "settings.2fa.confirm_disable": "¿Desactivar la autenticación de dos factores? Iniciar sesión solo requerirá tu contraseña.",
+  "settings.2fa.recovery_pointer": "A continuación, revisa tu código de recuperación en los ajustes de la cuenta:",
+  "error.totp_already_enabled": "La autenticación de dos factores ya está activada en esta cuenta.",
 
   "error.totp_invalid_code": "Código de autenticación no válido. Inténtalo de nuevo.",
   "error.totp_session_expired": "Tu sesión ha caducado. Vuelve a iniciar sesión.",

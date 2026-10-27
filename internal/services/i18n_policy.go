@@ -70,6 +70,7 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	// code rendered the raw English "totp invalid code" in every language.
 	"totp invalid code":      "error.totp_invalid_code",
 	"totp session expired":   "error.totp_session_expired",
+	"totp already enabled":   "error.totp_already_enabled",
 	"totp internal error":    "error.totp_internal_error",
 	"totp too many attempts": "error.totp_too_many_attempts",
 

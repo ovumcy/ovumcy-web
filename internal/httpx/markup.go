@@ -23,10 +23,13 @@ func StatusErrorMarkup(message string, errorKey string) string {
 // Kinds a success status may declare in its data-status-kind attribute. The
 // client reads the kind, never the localized copy: a neutral status is a bare
 // save confirmation a surface with its own save indicator does not repeat, and
-// a persistent one is never cleared on a timer — it stays until dismissed.
+// a persistent one is never cleared on a timer — it stays until dismissed. A
+// form-clearing one tells the client the form it sits in is done: its fields
+// are emptied, which a credential form must not leave to the browser.
 const (
-	StatusKindNeutral    = "neutral"
-	StatusKindPersistent = "persistent"
+	StatusKindNeutral      = "neutral"
+	StatusKindPersistent   = "persistent"
+	StatusKindClearsFields = "clears-fields"
 )
 
 // DismissibleStatusOKMarkup renders the shared HTMX dismissible status-ok wrapper.
