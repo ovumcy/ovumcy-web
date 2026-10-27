@@ -222,7 +222,7 @@
   "settings.change_password.submit": "Passwort ändern",
   "settings.local_password.title": "Lokales Passwort festlegen",
   "settings.local_password.subtitle": "Dieses Konto meldet sich derzeit nur per SSO an. Legen Sie ein lokales Passwort fest, wenn Sie Wiederherstellungscodes und passwortbestätigte Schutzaktionen nutzen möchten.",
-  "settings.local_password.subtitle_sso_only": "Diese Instanz meldet sich ausschließlich über SSO an. Ein lokales Passwort dient hier nicht zur Anmeldung und erzeugt keinen Wiederherstellungscode; es bestätigt nur sicherheitsrelevante Aktionen und die Einrichtung der Zwei-Faktor-Authentifizierung.",
+  "settings.local_password.subtitle_sso_only": "Diese Instanz meldet sich ausschließlich über SSO an. Ein lokales Passwort dient hier nicht zur Anmeldung; es bestätigt nur sicherheitsrelevante Aktionen und die Einrichtung der Zwei-Faktor-Authentifizierung. Wiederherstellungscodes können auf dieser Instanz nicht verwendet werden.",
   "settings.local_password.submit": "Lokales Passwort festlegen",
   "settings.current_password": "Aktuelles Passwort",
   "settings.oidc_link.title": "Verbundene Anmeldeidentität",

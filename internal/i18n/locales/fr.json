@@ -240,7 +240,7 @@
   "settings.change_password.submit": "Changer le mot de passe",
   "settings.local_password.title": "Définir un mot de passe local",
   "settings.local_password.subtitle": "Ce compte se connecte actuellement uniquement via SSO. Définissez un mot de passe local si vous voulez des codes de récupération et des actions sensibles confirmées par mot de passe.",
-  "settings.local_password.subtitle_sso_only": "Cette instance se connecte uniquement via SSO. Un mot de passe local ne sert pas ici à vous connecter et n'émet aucun code de récupération ; il confirme seulement les actions sensibles et la configuration de l'authentification à deux facteurs.",
+  "settings.local_password.subtitle_sso_only": "Cette instance se connecte uniquement via SSO. Un mot de passe local ne sert pas ici à vous connecter ; il confirme seulement les actions sensibles et la configuration de l'authentification à deux facteurs. Les codes de récupération ne peuvent pas être utilisés sur cette instance.",
   "settings.local_password.submit": "Définir le mot de passe local",
   "settings.current_password": "Mot de passe actuel",
 

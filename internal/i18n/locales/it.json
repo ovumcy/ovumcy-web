@@ -222,7 +222,7 @@
   "settings.change_password.submit": "Cambia password",
   "settings.local_password.title": "Imposta una password locale",
   "settings.local_password.subtitle": "Questo account attualmente accede solo tramite SSO. Imposta una password locale se vuoi codici di recupero e azioni di sicurezza confermate dalla password.",
-  "settings.local_password.subtitle_sso_only": "Questa istanza accede solo tramite SSO. Una password locale qui non serve per accedere e non emette alcun codice di recupero; conferma soltanto le azioni di sicurezza e la configurazione dell'autenticazione a due fattori.",
+  "settings.local_password.subtitle_sso_only": "Questa istanza accede solo tramite SSO. Una password locale qui non serve per accedere; conferma soltanto le azioni di sicurezza e la configurazione dell'autenticazione a due fattori. I codici di recupero non possono essere usati su questa istanza.",
   "settings.local_password.submit": "Imposta password locale",
   "settings.current_password": "Password corrente",
   "settings.oidc_link.title": "Identità di accesso collegata",

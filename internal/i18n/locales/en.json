@@ -222,7 +222,7 @@
   "settings.change_password.submit": "Change password",
   "settings.local_password.title": "Set a local password",
   "settings.local_password.subtitle": "This account currently signs in through SSO only. Set a local password if you want recovery codes and password-confirmed safety actions.",
-  "settings.local_password.subtitle_sso_only": "This instance signs in through SSO only. A local password here does not sign you in and issues no recovery code; it only confirms safety actions and two-factor setup.",
+  "settings.local_password.subtitle_sso_only": "This instance signs in through SSO only. A local password here does not sign you in; it only confirms safety actions and two-factor setup. Recovery codes cannot be used on this instance.",
   "settings.local_password.submit": "Set local password",
   "settings.current_password": "Current password",
   "settings.oidc_link.title": "Connected sign-in identity",

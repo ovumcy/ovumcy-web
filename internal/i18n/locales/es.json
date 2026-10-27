@@ -222,7 +222,7 @@
   "settings.change_password.submit": "Cambiar contraseña",
   "settings.local_password.title": "Definir una contraseña local",
   "settings.local_password.subtitle": "Esta cuenta inicia sesión solo con SSO por ahora. Define una contraseña local si quieres códigos de recuperación y acciones sensibles confirmadas con contraseña.",
-  "settings.local_password.subtitle_sso_only": "Esta instancia inicia sesión solo mediante SSO. Una contraseña local aquí no sirve para iniciar sesión ni emite un código de recuperación; solo confirma las acciones de seguridad y la configuración de la verificación en dos pasos.",
+  "settings.local_password.subtitle_sso_only": "Esta instancia inicia sesión solo mediante SSO. Una contraseña local aquí no sirve para iniciar sesión; solo confirma las acciones de seguridad y la configuración de la verificación en dos pasos. Los códigos de recuperación no se pueden usar en esta instancia.",
   "settings.local_password.submit": "Definir contraseña local",
   "settings.current_password": "Contraseña actual",
   "settings.oidc_link.title": "Identidad de inicio de sesión conectada",
