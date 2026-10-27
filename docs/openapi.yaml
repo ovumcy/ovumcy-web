@@ -4038,14 +4038,24 @@ paths:
             cookie, flash included, is set. A refusal the handler raises for a settings form (a
             wrong password, say) still flashes onto `/settings`; any other refusal it raises
             answers this same page with its own status and key.
+
+            Under `OIDC_LOGIN_MODE=oidc_only` the handler refuses with the
+            `recovery code unavailable` key (target `settings_form`) before the
+            password is read.
           content:
             text/html:
               schema: { type: string }
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
-              example:
-                error: "csrf_refused"
-                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
+              examples:
+                csrf:
+                  value:
+                    error: "csrf_refused"
+                    error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
+                oidcOnly:
+                  value:
+                    error: "recovery code unavailable"
+                    error_detail: { key: "recovery code unavailable", category: "forbidden", target: "settings_form" }
         '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
 

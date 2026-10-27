@@ -206,9 +206,12 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	// sign-in off nothing can redeem a code, so none is minted and only the
 	// session is sealed (WEB-340).
 	localSignInEnabled := handler.localPublicAuthEnabled()
-	deliver, delivery := handler.newSessionOnlyDelivery(sessionWasRemembered(c))
+	var deliver services.RecoveryCodeDelivery
+	var delivery *recoveryCodeRotationDelivery
 	if localSignInEnabled {
 		deliver, delivery = handler.newRecoveryCodeDelivery(sessionWasRemembered(c), settingsContinuePath, recoveryCodeSurfaceDedicated)
+	} else {
+		deliver, delivery = handler.newSessionOnlyDelivery(sessionWasRemembered(c))
 	}
 	_, err = handler.settingsService.FinalizeLocalPasswordSetup(c.Context(), user, state.PasswordHash, localSignInEnabled, deliver)
 	if delivery.failure != nil {
