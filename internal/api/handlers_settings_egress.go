@@ -36,11 +36,11 @@ func (handler *Handler) RemoveWebhookDestination(c fiber.Ctx) error {
 	}
 
 	if err := handler.webhookSettingsSvc.RemoveWebhookDestination(c.Context(), user.ID); err != nil {
-		return handler.failEgressMutation(c, webhookRemoveMutation, user, settingsWebhookUpdateErrorSpec())
+		return handler.failEgressMutation(c, webhookRemoveMutation, user, settingsWebhookUpdateErrorSpec(), egressResultWebhook, "")
 	}
 
 	handler.logMutationSuccess(c, webhookRemoveMutation)
-	return handler.respondEgressMutation(c, user, services.SettingsWebhookRemovedStatus)
+	return handler.respondEgressMutation(c, user, egressResultWebhook, services.SettingsWebhookRemovedStatus)
 }
 
 // respondEgressMutation answers a completed egress mutation. For an HTMX caller
@@ -52,19 +52,19 @@ func (handler *Handler) RemoveWebhookDestination(c fiber.Ctx) error {
 // falsified, and it does so precisely when the write succeeded, which is when
 // nobody looks. Regression:
 // TestEveryEgressMutationRebuildsItsBlockFromAReadAfterTheWrite.
-func (handler *Handler) respondEgressMutation(c fiber.Ctx, user *models.User, status string) error {
+func (handler *Handler) respondEgressMutation(c fiber.Ctx, user *models.User, resultPath string, status string) error {
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true, "status": status})
 	}
-	return handler.respondEgressMutationHTML(c, user, status)
+	return handler.respondEgressMutationHTML(c, user, resultPath, status)
 }
 
 // respondEgressMutationHTML is the browser half on its own, for the one caller
 // that answers JSON with more than {ok, status} and would otherwise carry a
 // second, unreachable JSON branch below its own.
-func (handler *Handler) respondEgressMutationHTML(c fiber.Ctx, user *models.User, status string) error {
+func (handler *Handler) respondEgressMutationHTML(c fiber.Ctx, user *models.User, resultPath string, status string) error {
 	if isHTMX(c) {
-		data, err := handler.buildSettingsEgressBlockData(c, user, status)
+		data, err := handler.buildSettingsEgressBlockData(c, user, resultPath, status)
 		if err != nil {
 			return handler.respondMappedError(c, settingsLoadErrorSpec())
 		}
@@ -91,7 +91,7 @@ func (handler *Handler) respondEgressMutationHTML(c fiber.Ctx, user *models.User
 // Non-HTMX callers keep the transport they had: JSON gets the typed error, a
 // plain form post gets the flash and the redirect. Regression:
 // TestEveryEgressMutationAnswersARefusalWithTheRebuiltCard.
-func (handler *Handler) failEgressMutation(c fiber.Ctx, kind healthMutationKind, user *models.User, spec APIErrorSpec) error {
+func (handler *Handler) failEgressMutation(c fiber.Ctx, kind healthMutationKind, user *models.User, spec APIErrorSpec, resultPath string, draftWebhookURL string) error {
 	handler.logMutationError(c, kind, spec)
 	// Only an OWNER-FAULT refusal is answered with the card. A spec targeting the
 	// settings form carries a key with copy behind it and a 200-with-fragment
@@ -104,11 +104,18 @@ func (handler *Handler) failEgressMutation(c fiber.Ctx, kind healthMutationKind,
 		return handler.respondMappedError(c, spec)
 	}
 
-	data, err := handler.buildSettingsEgressBlockData(c, user, "")
+	data, err := handler.buildSettingsEgressBlockData(c, user, resultPath, "")
 	if err != nil {
 		return handler.respondMappedError(c, settingsLoadErrorSpec())
 	}
 	data["EgressErrorKey"] = egressErrorMessageKey(spec.Key)
+	if draftWebhookURL != "" {
+		// The refusal path only: the typed value rides the view model built for
+		// this answer and nowhere else, and is never logged.
+		view := data["Egress"].(settingsEgressView)
+		view.DraftWebhookURL = draftWebhookURL
+		data["Egress"] = view
+	}
 	c.Status(fiber.StatusOK)
 	return handler.renderPartial(c, "settings_egress_section", data)
 }
@@ -127,13 +134,15 @@ func egressErrorMessageKey(specKey string) string {
 // buildSettingsEgressBlockData assembles the swap payload: the rebuilt ledger
 // plus the one status key the single island announces. The status rides the same
 // swap as the state it is about, so the two cannot be delivered out of step.
-func (handler *Handler) buildSettingsEgressBlockData(c fiber.Ctx, user *models.User, status string) (fiber.Map, error) {
+func (handler *Handler) buildSettingsEgressBlockData(c fiber.Ctx, user *models.User, resultPath string, status string) (fiber.Map, error) {
 	ledger, err := handler.settingsViewService.BuildSettingsEgressViewData(c.Context(), user)
 	if err != nil {
 		return nil, err
 	}
+	view := buildSettingsEgressView(c, ledger, handler.requestLocation(c))
+	view.ResultPath = resultPath
 	return fiber.Map{
-		"Egress":          buildSettingsEgressView(c, ledger, handler.requestLocation(c)),
+		"Egress":          view,
 		"EgressStatusKey": services.SettingsStatusTranslationKey(status),
 	}, nil
 }

@@ -264,7 +264,7 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     await submitAndAwait(page, 'DELETE', '/api/v1/users/current/calendar-feed', () =>
       acceptConfirmDialog(page)
     );
-    await expect(page.locator('#settings-egress-status .status-ok')).toBeVisible();
+    await expect(page.locator('#settings-egress-feed-status .status-ok')).toBeVisible();
 
     // The response to the revoke IS the rebuilt card, so the new state must be
     // readable before any reload. Asserting only after a reload would stay green
@@ -346,7 +346,7 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     await submitAndAwait(page, 'DELETE', '/api/v1/users/current/calendar-feed', () =>
       acceptConfirmDialog(page)
     );
-    await expect(page.locator('#settings-egress-status .status-ok')).toBeVisible();
+    await expect(page.locator('#settings-egress-feed-status .status-ok')).toBeVisible();
 
     const afterAccept = await page.request.get(armed.url, { headers: apiOriginHeader(page) });
     expect(afterAccept.status(), 'an accepted revoke must kill the URL').toBe(404);

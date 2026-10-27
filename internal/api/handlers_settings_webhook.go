@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -32,7 +34,7 @@ func (handler *Handler) UpdateWebhookSettings(c fiber.Ctx) error {
 
 	input, err := parseWebhookSettingsInput(c)
 	if err != nil {
-		return handler.failEgressMutation(c, webhookSettingsMutation, user, settingsInvalidInputErrorSpec())
+		return handler.failEgressMutation(c, webhookSettingsMutation, user, settingsInvalidInputErrorSpec(), egressResultWebhook, "")
 	}
 
 	form := services.WebhookSettingsFormUpdate{
@@ -44,7 +46,14 @@ func (handler *Handler) UpdateWebhookSettings(c fiber.Ctx) error {
 		RemoveURL:       input.RemoveURL,
 	}
 	if err := handler.webhookSettingsSvc.SaveWebhookSettingsFromForm(c.Context(), user.ID, form); err != nil {
-		return handler.failEgressMutation(c, webhookSettingsMutation, user, mapSettingsWebhookSaveError(err))
+		// The typed URL is handed back only when the service refused it as a URL,
+		// so the owner can correct it in place; any other refusal says nothing
+		// about the field and echoes nothing.
+		draft := ""
+		if errors.Is(err, services.ErrWebhookURLInvalid) {
+			draft = input.URL
+		}
+		return handler.failEgressMutation(c, webhookSettingsMutation, user, mapSettingsWebhookSaveError(err), egressResultWebhook, draft)
 	}
 
 	status := services.SettingsWebhookUpdatedStatus
@@ -77,7 +86,7 @@ func (handler *Handler) UpdateWebhookSettings(c fiber.Ctx) error {
 	// alone would swap the whole section -- states, controls and payload lists --
 	// out of the page. Rebuilding from a read after the write is also what stops
 	// the freshly saved endpoint being described by the state it had before.
-	return handler.respondEgressMutationHTML(c, user, status)
+	return handler.respondEgressMutationHTML(c, user, egressResultWebhook, status)
 }
 
 func parseWebhookSettingsInput(c fiber.Ctx) (webhookSettingsInput, error) {

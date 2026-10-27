@@ -411,9 +411,14 @@ const (
 // output: Readability says what the instance knows about the stored value, and
 // Host carries at most the hostname (u.Hostname() -- never scheme, path, query,
 // or userinfo).
+//
+// Destination is the one wider line, for the owner's settings page only:
+// host[:port] plus a masked path (see webhookDestinationDisplay). Host remains
+// the value every other surface and every state decision uses.
 type WebhookURLDisplay struct {
 	Readability WebhookURLReadability
 	Host        string
+	Destination string
 }
 
 // BuildWebhookURLDisplay derives the render-safe projection for a stored
@@ -439,7 +444,7 @@ func (service *WebhookSettingsService) BuildWebhookURLDisplay(userID uint, encry
 	// the notify pass and the CLI print through. Keeping one implementation is
 	// what makes a hardening of "what is safe to show" reach every surface at
 	// once; this display used to carry its own byte-identical copy.
-	return WebhookURLDisplay{Readability: WebhookURLReadable, Host: hostOnly(plaintext)}
+	return WebhookURLDisplay{Readability: WebhookURLReadable, Host: hostOnly(plaintext), Destination: webhookDestinationDisplay(plaintext)}
 }
 
 // RemoveWebhookDestination withdraws the owner's endpoint and leaves the

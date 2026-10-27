@@ -30,6 +30,7 @@ type settingsEgressPathView struct {
 	State        string
 	StateKey     string
 	Host         string
+	Destination  string
 	EvidenceKey  string
 	EvidenceISO  string
 	EvidenceText string
@@ -60,7 +61,23 @@ type settingsEgressView struct {
 	FeedActionable bool
 	// FeedTokenPresent chooses rotate+withdraw over create.
 	FeedTokenPresent bool
+
+	// ResultPath names the control group the answer's result belongs beside:
+	// egressResultWebhook or egressResultFeed. Empty for a plain page load, where
+	// no result exists and no focus is moved.
+	ResultPath string
+	// DraftWebhookURL is what the owner typed into a webhook save the service
+	// REFUSED as an invalid URL, handed back so a typo can be fixed rather than
+	// retyped. It is set on that refusal path only and never from the stored
+	// endpoint: a successful save, a reload and every other refusal leave it
+	// empty, so the stored URL still never leaves the server.
+	DraftWebhookURL string
 }
+
+const (
+	egressResultWebhook = "webhook"
+	egressResultFeed    = "feed"
+)
 
 // buildSettingsEgressView projects the domain ledger onto the template's view.
 func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location *time.Location) settingsEgressView {
@@ -97,6 +114,7 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location
 			State:        string(ledger.Webhook.State),
 			StateKey:     egressWebhookStateMessageKey(ledger.Webhook.State),
 			Host:         ledger.Webhook.Host,
+			Destination:  ledger.Webhook.Destination,
 			EvidenceKey:  webhookEvidenceKey,
 			EvidenceISO:  webhookISO,
 			EvidenceText: webhookText,

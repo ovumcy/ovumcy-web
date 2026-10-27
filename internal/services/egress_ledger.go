@@ -196,6 +196,9 @@ type EgressWebhookLedger struct {
 	NotifyOvulation bool
 	// Host is at most a hostname, and only in a state that opened the ciphertext.
 	Host string
+	// Destination is host[:port] plus a masked path, for the owner's own page
+	// (see webhookDestinationDisplay). Present exactly when Host is.
+	Destination string
 	// LastDeliveredAt is the ONLY delivery evidence, and it comes only from
 	// webhook_last_delivered_at, written after a 2xx. It is suppressed in every
 	// state that cannot vouch for the endpoint it would describe.
@@ -304,6 +307,7 @@ func (service *EgressLedgerService) BuildEgressLedger(ctx context.Context, row E
 			NotifyPeriod:    row.NotifyPeriod,
 			NotifyOvulation: row.NotifyOvulation,
 			Host:            webhookHostForState(webhookState, display),
+			Destination:     webhookDestinationForState(webhookState, display),
 			LastDeliveredAt: deliveryEvidenceForState(webhookState, row.LastDeliveredAt),
 			PayloadFields:   WebhookPayloadFields(),
 		},
@@ -420,6 +424,15 @@ func webhookHostForState(state EgressWebhookState, display WebhookURLDisplay) st
 		return ""
 	}
 	return display.Host
+}
+
+// webhookDestinationForState follows webhookHostForState: the masked destination
+// is shown exactly where the host is, and nowhere a host was not derived.
+func webhookDestinationForState(state EgressWebhookState, display WebhookURLDisplay) string {
+	if state == EgressWebhookNotConfigured || state == EgressWebhookUnreadable {
+		return ""
+	}
+	return display.Destination
 }
 
 // deliveryEvidenceForState suppresses the delivery mark in every state that

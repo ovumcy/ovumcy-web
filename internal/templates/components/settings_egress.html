@@ -37,8 +37,8 @@
       <p class="journal-muted text-sm">{{t .Messages "settings.webhook.subtitle"}}</p>
 
       <p class="field-label" data-egress-webhook-status data-egress-state-key="{{.Egress.Webhook.StateKey}}">{{t .Messages .Egress.Webhook.StateKey}}</p>
-      {{if .Egress.Webhook.Host}}
-      <p class="journal-muted text-sm">{{t .Messages "settings.egress.host_label"}} <span data-egress-webhook-host>{{.Egress.Webhook.Host}}</span></p>
+      {{if .Egress.Webhook.Destination}}
+      <p class="journal-muted text-sm">{{t .Messages "settings.egress.host_label"}} <span data-egress-webhook-host>{{.Egress.Webhook.Destination}}</span></p>
       {{end}}
       {{/* The one timestamp this path can prove, and it comes only from
            webhook_last_delivered_at — written after a 2xx. The value lives in the
@@ -65,20 +65,27 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
 
-        <div class="space-y-2">
+        <div class="space-y-2" data-focus-scroll-anchor>
           <label class="field-label" for="settings-webhook-url">{{t .Messages "settings.webhook.url_label"}}</label>
+          {{/* pattern is an early hint only: type=url lets ftp:// and similar
+               through, and the server stays the authority on what is a valid
+               endpoint. The value is filled ONLY on a refusal of the typed URL
+               (DraftWebhookURL is empty everywhere else, the stored endpoint
+               included), and that refusal also moves focus back to this field. */}}
           <input
             type="url"
             id="settings-webhook-url"
             name="webhook_url"
             class="input-field"
             inputmode="url"
+            pattern="https?://.+"
             autocomplete="off"
             autocapitalize="off"
             spellcheck="false"
             data-settings-webhook-url
+            {{if .Egress.DraftWebhookURL}}value="{{.Egress.DraftWebhookURL}}" aria-invalid="true" aria-describedby="settings-webhook-url-hint settings-egress-status" data-focus-after-swap{{else}}aria-describedby="settings-webhook-url-hint"{{end}}
             placeholder="{{t .Messages "settings.webhook.url_placeholder"}}">
-          <p class="journal-muted text-sm">{{t .Messages "settings.webhook.url_hint"}}</p>
+          <p class="journal-muted text-sm" id="settings-webhook-url-hint">{{t .Messages "settings.webhook.url_hint"}}</p>
         </div>
 
         <div class="settings-toggle-list">
@@ -117,13 +124,24 @@
           </label>
         </div>
 
-        <div class="settings-form-actions">
-          <button
-            type="submit"
-            class="btn-secondary"
-            data-settings-webhook-save
-            data-save-button
-            data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.webhook.save"}}</button>
+        <div data-focus-scroll-anchor>
+          <div class="settings-form-actions">
+            <button
+              type="submit"
+              class="btn-secondary"
+              data-settings-webhook-save
+              data-save-button
+              {{if and (eq .Egress.ResultPath "webhook") (not .Egress.DraftWebhookURL)}}data-focus-after-swap{{end}}
+              data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.webhook.save"}}</button>
+          </div>
+          {{/* The webhook half's result, beside the Save it answers. ONE of the
+               card's two live regions is ever populated by an answer, so they
+               never announce over each other. The webhook island comes first in
+               the card on purpose: the status machinery resolves the card's
+               first .save-status for transport failures and toasts. */}}
+          <div id="settings-egress-status" class="save-status text-sm" aria-live="polite">
+            {{if ne .Egress.ResultPath "feed"}}{{template "settings_egress_result" .}}{{end}}
+          </div>
         </div>
       </form>
 
@@ -186,6 +204,7 @@
         </ul>
       </div>
 
+      <div data-focus-scroll-anchor>
       {{if .Egress.FeedActionable}}
       <div class="settings-form-actions">
         {{if .Egress.FeedTokenPresent}}
@@ -215,7 +234,7 @@
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
           <input type="hidden" name="_method" value="DELETE">
-          <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.revoke"}}</button>
+          <button type="submit" class="btn-secondary" {{if eq .Egress.ResultPath "feed"}}data-focus-after-swap{{end}}>{{t .Messages "settings.calendar_feed.revoke"}}</button>
         </form>
         {{else}}
         <form
@@ -227,40 +246,40 @@
           data-settings-calendar-feed-generate>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
-          <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.generate"}}</button>
+          <button type="submit" class="btn-secondary" {{if eq .Egress.ResultPath "feed"}}data-focus-after-swap{{end}}>{{t .Messages "settings.calendar_feed.generate"}}</button>
         </form>
         {{end}}
       </div>
       {{end}}
-    </div>
-
-    {{/* ONE status island for the whole section. Two of them — one per path —
-         would give the card two aria-live regions announcing over each other,
-         and the toast module reads .status-ok from inside the swap target, which
-         only one of the two could be.
-
-         A REFUSAL lands here too, in the same island and through the same swap.
-         The settings error transport answers an HTMX caller with 200 and a bare
-         status fragment, which htmx swaps into hx-target: on a card that
-         replaces itself that fragment REPLACED THE WHOLE SECTION, leaving the
-         refusal standing alone where the card had been. That is the success
-         path's own bug wearing the other outcome, and it is fixed the same way
-         — by answering with the card. */}}
-    <div id="settings-egress-status" class="save-status text-sm" aria-live="polite">
-      {{/* The same shape httpx.StatusErrorMarkup writes, so a refusal reads
-           identically wherever it is rendered from — and with no glyph of its
-           own: an interface glyph comes from the first-party icon set, never
-           from an emoji literal. */}}
-      {{if .EgressErrorKey}}
-      <div class="status-error" data-flash-key="{{.EgressErrorKey}}" data-flash-status="error">{{t .Messages .EgressErrorKey}}</div>
-      {{else if .EgressStatusKey}}
-      <div class="status-ok" data-flash-key="{{.EgressStatusKey}}" data-flash-status="success">
-        <span class="toast-message-wrap">
-          <span class="toast-icon" aria-hidden="true">✓</span>
-          <span class="toast-message">{{t .Messages .EgressStatusKey}}</span>
-        </span>
+      {{/* The feed half's result, beside revoke / rotate / create. A revoke
+           replaces the button that was focused, so the button that exists after
+           it carries data-focus-after-swap and the owner is not left on BODY. */}}
+      <div id="settings-egress-feed-status" class="save-status text-sm" aria-live="polite">
+        {{if eq .Egress.ResultPath "feed"}}{{template "settings_egress_result" .}}{{end}}
       </div>
-      {{end}}
+      </div>
     </div>
+
   </details>
+{{end}}
+
+{{/* The result of one mutation, rendered inside whichever of the card's two
+     live regions sits beside the control that triggered it (the webhook Save, or
+     the calendar-feed buttons). A REFUSAL is rendered here too, through the same
+     swap: the settings error transport answers an HTMX caller with 200 and a bare
+     status fragment, which on a card that replaces itself REPLACED THE WHOLE
+     SECTION. That is fixed by answering with the card. The shape is the one
+     httpx.StatusErrorMarkup writes, with no glyph of its own: an interface glyph
+     comes from the first-party icon set, never from an emoji literal. */}}
+{{define "settings_egress_result"}}
+  {{if .EgressErrorKey}}
+  <div class="status-error" data-flash-key="{{.EgressErrorKey}}" data-flash-status="error">{{t .Messages .EgressErrorKey}}</div>
+  {{else if .EgressStatusKey}}
+  <div class="status-ok" data-flash-key="{{.EgressStatusKey}}" data-flash-status="success">
+    <span class="toast-message-wrap">
+      <span class="toast-icon" aria-hidden="true">✓</span>
+      <span class="toast-message">{{t .Messages .EgressStatusKey}}</span>
+    </span>
+  </div>
+  {{end}}
 {{end}}
