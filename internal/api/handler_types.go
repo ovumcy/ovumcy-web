@@ -110,6 +110,10 @@ type FlashPayload struct {
 	AuthError       string `json:"auth_error,omitempty"`
 	SettingsError   string `json:"settings_error,omitempty"`
 	SettingsSuccess string `json:"settings_success,omitempty"`
+	// SettingsErrorTarget names the settings block a SettingsError belongs to
+	// when that block shows its refusal in its own island instead of the
+	// page-top banner. normalizeFlashPayload keeps only the known values.
+	SettingsErrorTarget string `json:"settings_error_target,omitempty"`
 	// ForgotEmail carries the entered address across the two-step password
 	// recovery flow (email -> recovery code). It is the only email kept in the
 	// flash cookie: the cookie is AEAD-encrypted and the redirect-safe

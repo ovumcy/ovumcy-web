@@ -82,16 +82,26 @@ func (handler *Handler) respondRecoveryRefusal(c fiber.Ctx, user *models.User, s
 	if err != nil {
 		return handler.respondMappedError(c, settingsLoadErrorSpec())
 	}
-	errorKey := spec.Key
-	if key := services.AuthErrorTranslationKey(spec.Key); key != "" {
-		errorKey = key
-	}
 	c.Status(fiber.StatusOK)
 	return handler.renderPartial(c, "settings_recovery_code_section", fiber.Map{
 		"CurrentUser":            &fresh,
 		"LocalPublicAuthEnabled": handler.localPublicAuthEnabled(),
-		"RecoveryErrorKey":       errorKey,
+		"RecoveryErrorKey":       recoveryErrorMessageKey(spec.Key),
 	})
+}
+
+// flashTargetRecoveryCode marks a settings flash error as the recovery block's
+// own: the page load renders it in that block's island, not the page banner.
+const flashTargetRecoveryCode = "recovery_code"
+
+// recoveryErrorMessageKey resolves a refusal's spec key to the translation key
+// the recovery island renders. A spec key with no mapping would otherwise reach
+// the page as a raw English phrase; it gets the generic localized error instead.
+func recoveryErrorMessageKey(specKey string) string {
+	if key := services.AuthErrorTranslationKey(specKey); key != "" {
+		return key
+	}
+	return "common.error.internal_error"
 }
 
 // settingsContinuePath is where a reveal minted from the settings page sends

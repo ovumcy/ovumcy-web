@@ -308,3 +308,75 @@ func TestTOTPEnableOnAnEnabledAccountWithoutASetupCookieSaysSo(t *testing.T) {
 		t.Error("the refusal must leave the factor on")
 	}
 }
+
+func hasAncestorWithID(node *html.Node, id string) bool {
+	for parent := node.Parent; parent != nil; parent = parent.Parent {
+		if parent.Type == html.ElementNode && htmlAttr(parent, "id") == id {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRecoveryCodePlainFormRefusalRendersInTheBlockIslandNotTheBanner(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "recovery-no-js-island@example.com")
+
+	refusal := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/recovery-code",
+		url.Values{"password": {"WrongPass9"}}, nil)
+	flash := responseCookieValue(refusal.Cookies(), flashCookieName)
+	if flash == "" {
+		t.Fatal("the refusal must ride the sealed flash cookie")
+	}
+	if strings.Contains(refusal.Header.Get("Location"), "Invalid") || strings.Contains(refusal.Header.Get("Location"), "?") {
+		t.Fatalf("Location %q must carry no message", refusal.Header.Get("Location"))
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(ctx.authCookie, ctx.csrfCookie), flashCookieName+"="+flash))
+	request.Header.Set("Accept-Language", "en")
+	page, err := ctx.app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("GET /settings failed: %v", err)
+	}
+	t.Cleanup(func() { _ = page.Body.Close() })
+	root := mustParseHTMLDocument(t, mustReadBodyString(t, page.Body))
+
+	errors := htmlFindElements(root, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-flash-status") == "error"
+	})
+	if len(errors) != 1 {
+		t.Fatalf("rendered error messages = %d, want exactly the recovery island's", len(errors))
+	}
+	refusalNode := errors[0]
+	if !hasAncestorWithID(refusalNode, "settings-recovery-code-status") || !hasAncestorWithID(refusalNode, "settings-recovery-code") {
+		t.Error("the refusal must render inside the recovery block's island, not the page-top banner")
+	}
+	if htmlAttr(refusalNode, "role") != "alert" {
+		t.Error("the island's refusal must be announced with role=alert")
+	}
+	if got := htmlNodeText(refusalNode); !strings.Contains(got, englishCopy(t, "settings.error.invalid_password")) {
+		t.Errorf("island text = %q, want the localized wrong-password copy", got)
+	}
+	field := firstNodeWithID(t, root, "settings-recovery-code-password")
+	if htmlAttr(field, "aria-invalid") != "true" {
+		t.Error("the password field must be marked invalid")
+	}
+}
+
+func TestRecoveryErrorMessageKeyFallsBackToTheGenericLocalizedError(t *testing.T) {
+	if got := recoveryErrorMessageKey("a spec key with no mapping"); got != "common.error.internal_error" {
+		t.Fatalf("unmapped key resolved to %q, want the generic localized error key", got)
+	}
+	if got := recoveryErrorMessageKey("invalid password"); got != "settings.error.invalid_password" {
+		t.Fatalf("mapped key resolved to %q", got)
+	}
+}
+
+func TestFlashSettingsErrorTargetKeepsOnlyTheKnownValue(t *testing.T) {
+	if got := normalizeFlashPayload(FlashPayload{SettingsErrorTarget: " " + flashTargetRecoveryCode + " "}).SettingsErrorTarget; got != flashTargetRecoveryCode {
+		t.Errorf("known target = %q", got)
+	}
+	if got := normalizeFlashPayload(FlashPayload{SettingsErrorTarget: "<script>"}).SettingsErrorTarget; got != "" {
+		t.Errorf("unknown target survived as %q", got)
+	}
+}

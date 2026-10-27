@@ -201,6 +201,11 @@ func normalizeFlashPayload(payload FlashPayload) FlashPayload {
 	payload.AuthError = strings.TrimSpace(payload.AuthError)
 	payload.SettingsError = strings.TrimSpace(payload.SettingsError)
 	payload.SettingsSuccess = strings.TrimSpace(payload.SettingsSuccess)
+	if strings.TrimSpace(payload.SettingsErrorTarget) == flashTargetRecoveryCode {
+		payload.SettingsErrorTarget = flashTargetRecoveryCode
+	} else {
+		payload.SettingsErrorTarget = ""
+	}
 	payload.ForgotEmail = services.NormalizeAuthEmail(payload.ForgotEmail)
 	return payload
 }

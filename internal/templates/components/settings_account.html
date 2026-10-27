@@ -324,7 +324,7 @@
             <button type="submit" class="btn-secondary">{{t .Messages "settings.recovery_code.submit"}}</button>
             <div id="settings-recovery-code-status" class="save-status text-sm" aria-live="polite">
               {{if .RecoveryErrorKey}}
-              <div class="status-error" data-flash-key="{{.RecoveryErrorKey}}" data-flash-status="error">{{t .Messages .RecoveryErrorKey}}</div>
+              <div class="status-error" role="alert" data-flash-key="{{.RecoveryErrorKey}}" data-flash-status="error">{{t .Messages .RecoveryErrorKey}}</div>
               {{end}}
             </div>
           </div>

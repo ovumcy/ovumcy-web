@@ -13,13 +13,22 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 	language := currentLanguage(c)
 	location := handler.requestLocation(c)
 
+	// A refusal flashed for the recovery block renders in that block's island,
+	// so the banner's input is emptied for it.
+	flashError := flash.SettingsError
+	recoveryErrorKey := ""
+	if flash.SettingsErrorTarget == flashTargetRecoveryCode && flash.SettingsError != "" && flash.SettingsSuccess == "" {
+		recoveryErrorKey = recoveryErrorMessageKey(flash.SettingsError)
+		flashError = ""
+	}
+
 	viewData, err := handler.settingsViewService.BuildSettingsPageViewData(
 		c.Context(),
 		user,
 		language,
 		services.SettingsViewInput{
 			FlashSuccess: flash.SettingsSuccess,
-			FlashError:   flash.SettingsError,
+			FlashError:   flashError,
 		},
 		handler.clockNow().In(location),
 		location,
@@ -45,7 +54,7 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 		// step-up it starts (StartOIDCIdentityLinkStepup) refuses immediately
 		// when the provider is disabled, so hiding the control when it can only
 		// ever fail is a display decision, not a second copy of that check.
-		"OIDCEnabled":            handler.oidcService != nil && handler.oidcService.Enabled(),
+		"OIDCEnabled": handler.oidcService != nil && handler.oidcService.Enabled(),
 		// LocalPublicAuthEnabled is the instance mode (false under
 		// OIDC_LOGIN_MODE=oidc_only). Recovery codes are consumed only by the
 		// public recovery flow and local sign-in, both closed in that mode, so
@@ -54,6 +63,7 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 		"LocalPublicAuthEnabled": handler.localPublicAuthEnabled(),
 		"ErrorKey":               viewData.ErrorKey,
 		"ChangePasswordErrorKey": viewData.ChangePasswordErrorKey,
+		"RecoveryErrorKey":       recoveryErrorKey,
 		"SuccessKey":             viewData.SuccessKey,
 		"CycleLength":            viewData.CycleLength,
 		"PeriodLength":           viewData.PeriodLength,
