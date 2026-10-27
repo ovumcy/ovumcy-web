@@ -33,7 +33,8 @@ import {
 
 const EGRESS_CARD = '#settings-egress';
 const WEBHOOK_ENDPOINT = 'https://hooks.example.com/ovumcy/e2e-endpoint';
-const WEBHOOK_HOST = 'hooks.example.com';
+// The ledger shows host[:port] and a masked path, never the whole endpoint.
+const WEBHOOK_HOST = 'hooks.example.com/ovumcy/…/oint';
 
 async function registerOwnerAndOpenSettings(page: Page, prefix: string): Promise<void> {
   const credentials = createCredentials(prefix);
@@ -236,14 +237,20 @@ test.describe('Settings: webhook reminders (egress ledger)', () => {
     await registerOwnerAndOpenSettings(page, 'settings-webhook-invalid-url');
 
     const section = webhookPath(page);
-    // `novalidate` is not set on this form, so the browser would block a submit
-    // of a type="url" field that fails its own parse. Use a value the browser
-    // accepts as a URL but the service refuses: only http/https reach delivery.
-    await webhookURLField(page).fill('ftp://hooks.example.com/ovumcy');
+    // The field's pattern stops ftp:// in the browser; this test is about the
+    // server's own refusal, so client validation is switched off for the submit.
+    const urlField = webhookURLField(page);
+    await urlField.fill('ftp://hooks.example.com/ovumcy');
+    expect(await urlField.evaluate((field: HTMLInputElement) => field.validity.patternMismatch)).toBe(true);
+    await urlField.evaluate((field: HTMLInputElement) => {
+      field.form?.setAttribute('novalidate', '');
+    });
     await section.locator('input[name="webhook_enabled"]').check();
     await section.locator('[data-settings-webhook-save]').click();
 
     await expect(page.locator('#settings-egress-status .status-error')).toBeVisible();
+    // The refused value comes back in its field, so a typo is fixed, not retyped.
+    await expect(webhookURLField(page)).toHaveValue('ftp://hooks.example.com/ovumcy');
 
     await reopenSettings(page);
     await expectWebhookState(page, 'not_configured');
