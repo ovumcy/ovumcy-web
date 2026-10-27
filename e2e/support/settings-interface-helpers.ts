@@ -47,10 +47,8 @@ export async function saveInterfaceSettingsForm(
   ).toBe(true);
 
   if (options.expectSuccessFlash) {
-    await expect(
-      page.locator(
-        '[data-flash-key="settings.success.interface_updated"][data-flash-status="success"]',
-      ),
-    ).toBeVisible();
+    // Both answers land in the card's own island: the in-place fragment of a
+    // same-language save, and the flash a language change reloads into.
+    await expect(page.locator('#settings-interface-status .status-ok')).toBeVisible();
   }
 }

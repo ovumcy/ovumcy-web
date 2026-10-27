@@ -119,7 +119,8 @@ test.describe('Navigation and language switch', () => {
 
     for (const locale of SUPPORTED_LOCALES) {
       await saveSettingsLanguage(page, locale);
-      await expect(page).toHaveURL(/\/settings$/);
+      // A language change reloads to the Interface card.
+      await expect(page).toHaveURL(/\/settings(#settings-interface)?$/);
       await expect(page.locator('html')).toHaveAttribute('lang', locale);
       await expectPageTitle(page, locale, 'settings.title');
       await expectNavLink(page, locale, 'today', 'nav.today');

@@ -336,7 +336,7 @@ func TestNoJSPatchFormsPerformTheActionTheyName(t *testing.T) {
 		},
 		"interface": func(t *testing.T) noJSFormCase {
 			return patchCase(t, "nojs-interface@example.com", "/settings",
-				formWithAttr("hx-patch", "/api/v1/users/current/interface"), "/settings",
+				formWithAttr("hx-patch", "/api/v1/users/current/interface"), "/settings#settings-interface",
 				url.Values{"language": {"ru"}, "theme": {"dark"}},
 				func(t *testing.T, ctx settingsSecurityTestContext) bool {
 					return reloadUserForNoJSForm(t, ctx).InterfaceLanguage == "ru"
