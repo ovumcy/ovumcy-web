@@ -1119,3 +1119,27 @@ func TestTOTPChallengePageLinksTheRecoveryFlowAndAnnouncesARejectedCode(t *testi
 	assertAuthErrorAnnouncedForFields(t, mustReadBodyString(t, followResp.Body),
 		services.AuthErrorTranslationKey(totpInvalidCodeErrorSpec().Key), []string{"totp-code"}, nil)
 }
+
+// TestTOTPChallengePageOffersNoRecoveryLinkWhereTheFlowIsClosed: under
+// OIDC_LOGIN_MODE=oidc_only /forgot-password redirects to /login, so the
+// challenge reached from an SSO sign-in offers no link to it.
+func TestTOTPChallengePageOffersNoRecoveryLinkWhereTheFlowIsClosed(t *testing.T) {
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		oidcService: &stubOIDCWorkflowService{enabled: true, localPublicAuthEnabled: false},
+	})
+	user := createOnboardingTestUser(t, database, "totp-page-oidc-only@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+
+	request := httptest.NewRequest(http.MethodGet, "/auth/2fa", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", sealTOTPPendingCookieForTest(t, secretKey, user.ID, false))
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	page := mustReadBodyString(t, response.Body)
+	assertBodyContainsAll(t, page, bodyStringMatch{fragment: `id="totp-code"`, message: "expected the challenge form"})
+	assertBodyNotContainsAll(t, page,
+		bodyStringMatch{fragment: "data-auth-lost-authenticator", message: "did not expect a recovery link where the flow is closed"},
+		bodyStringMatch{fragment: `href="/forgot-password"`, message: "did not expect a link to a route that redirects to /login"},
+	)
+}
