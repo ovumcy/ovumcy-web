@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -74,6 +75,24 @@ func TestLocalPasswordSetupOnAnOIDCOnlyInstanceMintsNoRecoveryCode(t *testing.T)
 	probeResponse := mustAppResponse(t, fixture.app, probe)
 	defer func() { _ = probeResponse.Body.Close() }()
 	assertStatusCode(t, probeResponse, http.StatusOK)
+}
+
+// A code handed to the session-only delivery has no reveal to ride, so the
+// delivery refuses it and the write it runs inside rolls back.
+func TestLocalPasswordSetupSessionOnlyDeliveryRefusesARecoveryCode(t *testing.T) {
+	t.Parallel()
+
+	deliver, delivery := (&Handler{}).newSessionOnlyDelivery(false)
+	err := deliver(&models.User{ID: 1, AuthSessionVersion: 2}, "OVUM-ABCD-EFGH-JKLM")
+	if !errors.Is(err, errRecoveryCodeRevealSeal) {
+		t.Fatalf("expected errRecoveryCodeRevealSeal, got %v", err)
+	}
+	if !errors.Is(delivery.failure, errRecoveryCodeRevealSeal) {
+		t.Fatalf("expected the failure recorded for the handler, got %v", delivery.failure)
+	}
+	if delivery.session != (preparedSession{}) {
+		t.Fatal("expected no session sealed for a refused delivery")
+	}
 }
 
 // The regenerate route is refused on the instance's mode alone, before the
