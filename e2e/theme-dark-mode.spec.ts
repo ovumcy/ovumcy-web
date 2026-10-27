@@ -466,9 +466,8 @@ test.describe('Theme mode', () => {
     const systemOption = interfaceForm.locator('[data-settings-interface-theme-option="system"]');
     const lightOption = interfaceForm.locator('[data-settings-interface-theme-option="light"]');
     const saveButton = interfaceForm.locator('[data-settings-interface-save]');
-    const successFlash = page.locator(
-      '[data-flash-key="settings.success.interface_updated"][data-flash-status="success"]'
-    );
+    // A same-language save answers in place, in the Interface card's own island.
+    const successFlash = page.locator('#settings-interface-status .status-ok');
     await expect(systemOption).toBeVisible();
 
     await systemOption.locator('.chip-stack').click();
