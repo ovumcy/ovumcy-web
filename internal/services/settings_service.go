@@ -204,23 +204,29 @@ func (service *SettingsService) PersistTimezone(ctx context.Context, userID uint
 // reminder-lead-days save (always the same outcome).
 const SettingsReminderUpdatedStatus = "reminders_updated"
 
+// ErrReminderLeadDaysOutOfRange is returned by SaveReminderLeadDays for a value
+// outside the shared lead-window bound.
+var ErrReminderLeadDaysOutOfRange = errors.New("reminder lead days out of range")
+
 // SaveReminderLeadDays persists the owner's shared reminder lead window
-// (users.reminder_lead_days, issue #123) scoped to userID. The raw value is
-// clamped into [MinReminderLeadDays, MaxReminderLeadDays] via the SAME
-// NormalizeReminderLeadDays helper the webhook-settings save path uses, so both
-// the standalone control and the webhook bundle share one 0–14 bound and an
-// out-of-range value is clamped, never rejected. currentLeadDays is the value
-// already persisted on the authenticated user; when the clamped value matches
-// it, no DB UPDATE is issued so a resubmit of the same value is a read-only
-// no-op (mirroring PersistTimezone). Returns true when a write occurred. It
-// deliberately does not bump auth_session_version — a reminder preference is
-// not a change to the account's security posture.
+// (users.reminder_lead_days, issue #123) scoped to userID. A raw value outside
+// [MinReminderLeadDays, MaxReminderLeadDays] is REFUSED with
+// ErrReminderLeadDaysOutOfRange and nothing is written, so an owner who typed
+// 40 is not told "saved" while 14 was stored. The webhook-settings bundle keeps
+// clamping through NormalizeReminderLeadDays because its other callers depend
+// on that. currentLeadDays is the value already persisted on the authenticated
+// user; when the new value matches it, no DB UPDATE is issued so a resubmit of
+// the same value is a read-only no-op (mirroring PersistTimezone). Returns true
+// when a write occurred. It deliberately does not bump auth_session_version — a
+// reminder preference is not a change to the account's security posture.
 func (service *SettingsService) SaveReminderLeadDays(ctx context.Context, userID uint, currentLeadDays int, rawLeadDays int) (bool, error) {
-	clamped := NormalizeReminderLeadDays(rawLeadDays)
-	if clamped == NormalizeReminderLeadDays(currentLeadDays) {
+	if rawLeadDays < MinReminderLeadDays || rawLeadDays > MaxReminderLeadDays {
+		return false, ErrReminderLeadDaysOutOfRange
+	}
+	if rawLeadDays == NormalizeReminderLeadDays(currentLeadDays) {
 		return false, nil
 	}
-	if err := service.users.UpdateReminderLeadDays(ctx, userID, clamped); err != nil {
+	if err := service.users.UpdateReminderLeadDays(ctx, userID, rawLeadDays); err != nil {
 		return false, err
 	}
 	return true, nil

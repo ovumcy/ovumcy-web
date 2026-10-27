@@ -46,6 +46,9 @@ func (handler *Handler) UpdateInterfaceSettings(c fiber.Ctx) error {
 	if err := handler.settingsService.SaveInterfaceLanguage(c.Context(), user.ID, language); err != nil {
 		return handler.respondMappedError(c, settingsInterfaceUpdateErrorSpec())
 	}
+	// Read BEFORE the cookie below is rewritten: the language this very page was
+	// rendered in decides whether the save can be answered in place.
+	languageChanged := language != currentLanguage(c)
 	handler.setLanguageCookie(c, language)
 	status := services.SettingsInterfaceUpdatedStatus
 
@@ -58,6 +61,24 @@ func (handler *Handler) UpdateInterfaceSettings(c fiber.Ctx) error {
 		})
 	}
 
+	// Same language: nothing on the page changes, so the confirmation lands in
+	// the Interface card's own status island and the page stays where it is.
+	if isHTMX(c) && !languageChanged {
+		return sendHTMLFragment(c, htmxSettingsSuccessMarkup(c, status, "Interface settings updated."))
+	}
+
+	// A new language re-renders the whole page, so a reload is genuinely needed.
+	// It comes back to the card (the hash), where the flash is rendered in a
+	// live region; the text itself travels in the sealed flash cookie only.
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})
-	return redirectOrJSON(c, "/settings")
+	if isHTMX(c) && strings.HasSuffix(c.Get("HX-Current-URL"), interfaceCardFragment) {
+		// Redirecting to the URL the browser is already on is a hash-only
+		// navigation: no reload. A refresh keeps the hash and the new language.
+		c.Set("HX-Refresh", "true")
+		return c.SendStatus(fiber.StatusOK)
+	}
+	return redirectOrJSON(c, "/settings"+interfaceCardFragment)
 }
+
+// interfaceCardFragment is the fragment of the Interface settings card.
+const interfaceCardFragment = "#settings-interface"

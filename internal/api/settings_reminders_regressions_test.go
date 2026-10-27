@@ -57,16 +57,15 @@ func TestSettingsRemindersUpdatePersistsWithHTMXAndCSRF(t *testing.T) {
 	}
 }
 
-// TestSettingsRemindersUpdateClampsOutOfRange proves the endpoint clamps into
-// the shared 0–14 bound rather than rejecting, for both the low and high edges.
-func TestSettingsRemindersUpdateClampsOutOfRange(t *testing.T) {
+// TestSettingsRemindersUpdateAcceptsTheBoundaryValues proves both edges of the
+// shared 0–14 bound are stored as sent; values outside it are refused (see
+// TestSettingsRemindersRefuseInvalidLeadDaysWithTheirOwnCopy).
+func TestSettingsRemindersUpdateAcceptsTheBoundaryValues(t *testing.T) {
 	cases := []struct {
 		name string
 		sent string
 		want int
 	}{
-		{name: "above max clamps to 14", sent: "40", want: 14},
-		{name: "negative clamps to 0", sent: "-3", want: 0},
 		{name: "min boundary", sent: "0", want: 0},
 		{name: "max boundary", sent: "14", want: 14},
 	}

@@ -105,6 +105,7 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	"invalid current password":                        "settings.error.invalid_current_password",
 	"new password must differ":                        "settings.error.password_unchanged",
 	"invalid settings input":                          "settings.error.invalid_input",
+	"invalid reminder lead days":                      "settings.error.invalid_reminder_lead_days",
 	"invalid profile input":                           "settings.error.invalid_profile_input",
 	"display name too long":                           "settings.error.display_name_too_long",
 	"display name contains invalid characters":        "settings.error.display_name_invalid_characters",

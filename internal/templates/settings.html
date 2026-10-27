@@ -23,8 +23,10 @@
   </nav>
   {{end}}
 
-  {{if .SuccessKey}}
-  <div class="status-ok" data-flash-key="{{.SuccessKey}}" data-flash-status="success">
+  {{/* The interface save's confirmation is rendered inside the Interface card,
+       in a live region next to what was saved, not up here. */}}
+  {{if and .SuccessKey (ne .SuccessKey "settings.success.interface_updated")}}
+  <div class="status-ok" role="status" aria-live="polite" data-flash-key="{{.SuccessKey}}" data-flash-status="success">
     <span class="toast-message-wrap">
       <span class="toast-icon" aria-hidden="true">✓</span>
       <span class="toast-message">{{t .Messages .SuccessKey}}</span>
@@ -33,7 +35,7 @@
   {{end}}
 
   {{if or .ErrorKey .ChangePasswordErrorKey}}
-  <div class="status-error flex items-center gap-2" data-flash-key="{{if .ErrorKey}}{{.ErrorKey}}{{else}}{{.ChangePasswordErrorKey}}{{end}}" data-flash-status="error"{{if .ChangePasswordErrorKey}} data-flash-target="change_password"{{end}}>
+  <div class="status-error flex items-center gap-2" role="alert" data-flash-key="{{if .ErrorKey}}{{.ErrorKey}}{{else}}{{.ChangePasswordErrorKey}}{{end}}" data-flash-status="error"{{if .ChangePasswordErrorKey}} data-flash-target="change_password"{{end}}>
     <span aria-hidden="true">{{template "icon" "alert"}}</span>
     <span>{{if .ErrorKey}}{{t .Messages .ErrorKey}}{{else}}{{t .Messages .ChangePasswordErrorKey}}{{end}}</span>
   </div>

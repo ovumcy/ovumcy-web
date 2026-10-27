@@ -324,6 +324,7 @@
   "settings.symptoms.success.hidden": "Eigenes Symptom aus neuen Einträgen ausgeblendet.",
   "settings.symptoms.success.restored": "Eigenes Symptom wieder in die Auswahl aufgenommen.",
   "settings.error.invalid_input": "Bitte geben Sie aktuelles, neues und bestätigtes Passwort an.",
+  "settings.error.invalid_reminder_lead_days": "Geben Sie eine ganze Zahl von 0 bis 14 Tagen ein.",
   "settings.error.invalid_profile_input": "Profildaten konnten nicht verarbeitet werden.",
   "settings.error.display_name_too_long": "Der Profilname darf höchstens 64 Zeichen lang sein.",
   "settings.error.display_name_invalid_characters": "Verwenden Sie nur Klartext. Tags und spitze Klammern sind nicht erlaubt.",

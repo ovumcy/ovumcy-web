@@ -20,8 +20,13 @@ func assertSettingsFlashSuccessScenario(t *testing.T, method string, path string
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
 	}
-	if location := response.Header.Get("Location"); location != "/settings" {
-		t.Fatalf("expected redirect %q, got %q", "/settings", location)
+	wantLocation := "/settings"
+	if successKey == "settings.success.interface_updated" {
+		// A language change reloads the page and lands on the Interface card.
+		wantLocation = "/settings#settings-interface"
+	}
+	if location := response.Header.Get("Location"); location != wantLocation {
+		t.Fatalf("expected redirect %q, got %q", wantLocation, location)
 	}
 
 	flashValue := responseCookieValue(response.Cookies(), flashCookieName)

@@ -324,6 +324,7 @@
   "settings.symptoms.success.hidden": "Custom symptom hidden from new entries.",
   "settings.symptoms.success.restored": "Custom symptom restored to the picker.",
   "settings.error.invalid_input": "Please provide current, new, and confirmation passwords.",
+  "settings.error.invalid_reminder_lead_days": "Enter a whole number of days from 0 to 14.",
   "settings.error.invalid_profile_input": "Unable to process profile data.",
   "settings.error.display_name_too_long": "Profile name must be 64 characters or fewer.",
   "settings.error.display_name_invalid_characters": "Use plain text only. Tags and angle brackets are not allowed.",

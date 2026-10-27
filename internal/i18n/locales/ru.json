@@ -324,6 +324,7 @@
   "settings.symptoms.success.hidden": "Пользовательский симптом скрыт из новых записей.",
   "settings.symptoms.success.restored": "Пользовательский симптом снова доступен в списке.",
   "settings.error.invalid_input": "Укажите текущий, новый пароль и подтверждение.",
+  "settings.error.invalid_reminder_lead_days": "Укажите целое число дней от 0 до 14.",
   "settings.error.invalid_profile_input": "Не удалось обработать данные профиля.",
   "settings.error.display_name_too_long": "Имя профиля должно быть не длиннее 64 символов.",
   "settings.error.display_name_invalid_characters": "Допустим только обычный текст без тегов и угловых скобок.",

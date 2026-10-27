@@ -355,6 +355,7 @@
   "settings.symptoms.success.restored": "Symptôme personnalisé restauré dans le sélecteur.",
 
   "settings.error.invalid_input": "Veuillez renseigner le mot de passe actuel, le nouveau mot de passe et sa confirmation.",
+  "settings.error.invalid_reminder_lead_days": "Saisissez un nombre entier de jours compris entre 0 et 14.",
   "settings.error.invalid_profile_input": "Impossible de traiter les données du profil.",
   "settings.error.display_name_too_long": "Le nom de profil doit comporter 64 caractères ou moins.",
   "settings.error.display_name_invalid_characters": "Utilisez uniquement du texte brut. Les balises et les chevrons ne sont pas autorisés.",

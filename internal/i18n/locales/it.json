@@ -324,6 +324,7 @@
   "settings.symptoms.success.hidden": "Sintomo personalizzato nascosto dalle nuove voci.",
   "settings.symptoms.success.restored": "Sintomo personalizzato ripristinato nel selettore.",
   "settings.error.invalid_input": "Fornisci password corrente, nuova e conferma.",
+  "settings.error.invalid_reminder_lead_days": "Inserisci un numero intero di giorni da 0 a 14.",
   "settings.error.invalid_profile_input": "Impossibile elaborare i dati del profilo.",
   "settings.error.display_name_too_long": "Il nome profilo deve contenere al massimo 64 caratteri.",
   "settings.error.display_name_invalid_characters": "Usa solo testo semplice. Tag e parentesi angolari non sono consentiti.",

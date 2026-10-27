@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -26,9 +27,9 @@ var reminderSettingsMutation = healthMutationKind{action: "settings.reminders_up
 // This is a dedicated state-mutating /api/v1 endpoint — chained behind
 // handler.AuthRequired + handler.OwnerOnly and CSRF-protected by the global
 // middleware (it is NOT in the CSRF exemption list). The submitted value is
-// clamped into the shared 0–14 bound in the service via the SAME
-// services.NormalizeReminderLeadDays helper the webhook-settings path uses, so
-// an out-of-range value is clamped rather than rejected. The write is scoped to
+// checked against the shared 0–14 bound in the service, which REFUSES an
+// out-of-range value (the reminders form's own status island shows why)
+// instead of clamping it. The write is scoped to
 // the session user_id (user.ID from the sealed auth cookie), never an id from
 // the request, and SaveReminderLeadDays skips the DB UPDATE when the clamped
 // value is unchanged. It deliberately does NOT bump auth_session_version — a
@@ -41,15 +42,18 @@ func (handler *Handler) UpdateReminderSettings(c fiber.Ctx) error {
 
 	input, err := parseReminderSettingsInput(c)
 	if err != nil {
-		return handler.failMutation(c, reminderSettingsMutation, settingsInvalidInputErrorSpec())
+		return handler.failMutation(c, reminderSettingsMutation, settingsReminderLeadDaysInvalidErrorSpec())
 	}
 
 	changed, err := handler.settingsService.SaveReminderLeadDays(c.Context(), user.ID, user.ReminderLeadDays, input.ReminderLeadDays)
 	if err != nil {
+		if errors.Is(err, services.ErrReminderLeadDaysOutOfRange) {
+			return handler.failMutation(c, reminderSettingsMutation, settingsReminderLeadDaysInvalidErrorSpec())
+		}
 		return handler.failMutation(c, reminderSettingsMutation, settingsRemindersUpdateErrorSpec())
 	}
 	if changed {
-		user.ReminderLeadDays = services.NormalizeReminderLeadDays(input.ReminderLeadDays)
+		user.ReminderLeadDays = input.ReminderLeadDays
 	}
 	handler.logMutationSuccess(c, reminderSettingsMutation)
 

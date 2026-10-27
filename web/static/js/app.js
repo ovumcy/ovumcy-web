@@ -6806,11 +6806,26 @@
     syncSettingsInterfaceForm(root);
   }
 
+  // The confirmation of a language change arrives with the reloaded page, in the
+  // card's live region. Focus it once so focus does not fall to BODY; a page
+  // without that confirmation has no such node and nothing is focused.
+  function focusSettingsInterfaceFlash() {
+    var flash = document.querySelector("[data-settings-flash-focus]");
+    if (!flash || flash.dataset.settingsFlashFocused === "1") {
+      return;
+    }
+    flash.dataset.settingsFlashFocused = "1";
+    if (typeof flash.focus === "function") {
+      flash.focus({ preventScroll: true });
+    }
+  }
+
   function bindSettingsInterfaceForms() {
     var roots = document.querySelectorAll("[data-settings-interface-form]");
     if (!roots.length) {
       return;
     }
+    focusSettingsInterfaceFlash();
 
     bindSettingsDraftLeaveGuard();
 
@@ -6865,6 +6880,22 @@
 
           writeStoredTheme(selection.theme);
           setSettingsDraftTransition(this, true);
+        });
+
+        // An in-place save (same language) leaves the page as it is, so the
+        // saved selection becomes the new baseline: the form is clean again and
+        // the leave guard does not prompt for what was just saved.
+        root.addEventListener("htmx:afterRequest", function (event) {
+          var source = event && event.detail && event.detail.elt ? event.detail.elt : event.target;
+          if (!source || source !== this) {
+            return;
+          }
+          if (event.detail && event.detail.successful) {
+            this.__ovumcySettingsInterfaceState.initial = currentSettingsInterfaceSelection(this);
+            syncSettingsInterfaceForm(this);
+          } else {
+            setSettingsDraftTransition(this, false);
+          }
         });
 
         if (root.__ovumcySettingsInterfaceState.discardButton) {

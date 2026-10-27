@@ -15,6 +15,13 @@ func settingsInvalidInputErrorSpec() APIErrorSpec {
 	return settingsValidationErrorSpec("invalid settings input")
 }
 
+// settingsReminderLeadDaysInvalidErrorSpec refuses a reminder lead-days value
+// that is empty, not a number or outside the shared 0–14 bound. It has its own
+// key: the generic invalid-input copy is the password-change sentence.
+func settingsReminderLeadDaysInvalidErrorSpec() APIErrorSpec {
+	return settingsValidationErrorSpec("invalid reminder lead days")
+}
+
 func settingsMissingPasswordErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid password")
 }
