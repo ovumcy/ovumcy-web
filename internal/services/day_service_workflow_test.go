@@ -189,6 +189,17 @@ func (stub *dayLogRepositoryStub) Save(ctx context.Context, entry *models.DailyL
 	return nil
 }
 
+func (stub *dayLogRepositoryStub) EarliestDateByUser(ctx context.Context, userID uint) (time.Time, bool, error) {
+	var earliest time.Time
+	found := false
+	for _, entry := range stub.entries {
+		if entry.UserID == userID && (!found || entry.Date.Before(earliest)) {
+			earliest, found = entry.Date, true
+		}
+	}
+	return earliest, found, nil
+}
+
 func (stub *dayLogRepositoryStub) DeleteByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) error {
 	for key, entry := range stub.entries {
 		if entry.UserID != userID {

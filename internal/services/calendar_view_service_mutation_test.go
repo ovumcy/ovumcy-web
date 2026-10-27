@@ -38,7 +38,7 @@ func TestBuildCalendarPageViewDataStatsRangeUsesNegativeTwoYearOffset(t *testing
 	now := mustParseCalendarViewDay(t, "2026-06-07")
 	monthStart := mustParseCalendarViewDay(t, "2026-06-01")
 
-	if _, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", time.UTC); err != nil {
+	if _, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", CalendarMonthBounds{}, time.UTC); err != nil {
 		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
 	}
 
@@ -81,7 +81,7 @@ func TestBuildCalendarPageViewDataSecondaryExplanationAbsentWhenHintKeysEmpty(t 
 	now := mustParseCalendarViewDay(t, "2026-06-01")
 	monthStart := mustParseCalendarViewDay(t, "2026-06-01")
 
-	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", time.UTC)
+	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", CalendarMonthBounds{}, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
 	}

@@ -11,8 +11,11 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func TestCalendarInvalidMonthHTMLRedirectsToCurrentMonth(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
+// WEB-230: an unreadable ?month= renders the current month with a notice that
+// says so, where it used to redirect to /calendar without a word.
+func TestCalendarInvalidMonthHTMLExplainsAndRendersCurrentMonth(t *testing.T) {
+	now := time.Now().UTC()
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return now }})
 	user := createOnboardingTestUser(t, database, "calendar-invalid-month@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
@@ -25,15 +28,22 @@ func TestCalendarInvalidMonthHTMLRedirectsToCurrentMonth(t *testing.T) {
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	if response.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected status 303, got %d", response.StatusCode)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
-	if location := response.Header.Get("Location"); location != "/calendar" {
-		t.Fatalf("expected redirect to /calendar, got %q", location)
+	if location := response.Header.Get("Location"); location != "" {
+		t.Fatalf("expected no redirect, got Location %q", location)
+	}
+	html := mustReadBodyString(t, response.Body)
+	if !strings.Contains(html, `data-calendar-month-invalid`) {
+		t.Fatalf("expected the invalid-month notice, got:\n%s", html)
+	}
+	if !strings.Contains(html, `hx-get="/calendar?month=`+now.Format("2006-01")+`"`) {
+		t.Fatalf("expected the current month's grid, got:\n%s", html)
 	}
 }
 
-func TestCalendarInvalidMonthHTMXRedirectsToCurrentMonth(t *testing.T) {
+func TestCalendarInvalidMonthHTMXExplainsAndRendersCurrentMonth(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "calendar-invalid-month-htmx@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
@@ -54,8 +64,11 @@ func TestCalendarInvalidMonthHTMXRedirectsToCurrentMonth(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
-	if redirect := response.Header.Get("HX-Redirect"); redirect != "/calendar" {
-		t.Fatalf("expected HX-Redirect /calendar, got %q", redirect)
+	if redirect := response.Header.Get("HX-Redirect"); redirect != "" {
+		t.Fatalf("expected no HX-Redirect, got %q", redirect)
+	}
+	if html := mustReadBodyString(t, response.Body); !strings.Contains(html, `data-calendar-month-invalid`) {
+		t.Fatalf("expected the invalid-month notice, got:\n%s", html)
 	}
 }
 

@@ -6,20 +6,29 @@
       <p class="journal-muted mt-1" data-calendar-month-label>{{.MonthLabel}}</p>
     </div>
 
-    <div class="flex flex-wrap items-center gap-2" data-calendar-month-nav>
-      {{if .PrevMonth}}
-      <a href="/calendar?month={{.PrevMonth}}{{if .SelectedDate}}&day={{.SelectedDate}}{{end}}" class="btn-secondary">{{t .Messages "calendar.prev"}}</a>
-      {{else}}
-      <span class="btn-secondary btn-disabled" aria-disabled="true">{{t .Messages "calendar.prev"}}</span>
+    <div class="flex flex-col gap-1 sm:items-end">
+      <div class="flex flex-wrap items-center gap-2" data-calendar-month-nav>
+        {{if .PrevMonth}}
+        <a href="/calendar?month={{.PrevMonth}}{{if .SelectedDate}}&day={{.SelectedDate}}{{end}}" class="btn-secondary">{{t .Messages "calendar.prev"}}</a>
+        {{else}}
+        <span class="btn-secondary btn-disabled" aria-disabled="true" aria-describedby="calendar-history-limit">{{t .Messages "calendar.prev"}}</span>
+        {{end}}
+        {{if .NextMonth}}
+        <a href="/calendar?month={{.NextMonth}}{{if .SelectedDate}}&day={{.SelectedDate}}{{end}}" class="btn-secondary">{{t .Messages "calendar.next"}}</a>
+        {{else}}
+        <span class="btn-secondary btn-disabled" aria-disabled="true">{{t .Messages "calendar.next"}}</span>
+        {{end}}
+        <a href="/calendar" class="btn-secondary btn-compact" data-calendar-today data-action-weight="secondary">{{t .Messages "calendar.today"}}</a>
+      </div>
+      {{if not .PrevMonth}}
+      <p id="calendar-history-limit" class="journal-muted text-xs" data-calendar-history-limit>{{t .Messages "calendar.history_limit"}}</p>
       {{end}}
-      {{if .NextMonth}}
-      <a href="/calendar?month={{.NextMonth}}{{if .SelectedDate}}&day={{.SelectedDate}}{{end}}" class="btn-secondary">{{t .Messages "calendar.next"}}</a>
-      {{else}}
-      <span class="btn-secondary btn-disabled" aria-disabled="true">{{t .Messages "calendar.next"}}</span>
-      {{end}}
-      <a href="/calendar" class="btn-secondary btn-compact" data-calendar-today data-action-weight="secondary">{{t .Messages "calendar.today"}}</a>
     </div>
   </div>
+
+  {{if .CalendarMonthInvalid}}
+  <p class="status-notice" role="status" data-calendar-month-invalid>{{t .Messages "calendar.month_invalid"}}</p>
+  {{end}}
 
   {{/* The day editor is fetched from /calendar/day/:date, so no day write is
        rendered here. This header puts the account this page was rendered for on

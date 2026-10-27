@@ -230,9 +230,26 @@ func TestCalendarMinimumNavigableMonth(t *testing.T) {
 		CreatedAt: time.Date(2026, time.March, 13, 14, 30, 0, 0, time.UTC),
 	}
 
-	minMonth := CalendarMinimumNavigableMonth(user, time.UTC)
-	if minMonth.Format("2006-01-02") != "2023-03-01" {
-		t.Fatalf("expected minimum month 2023-03-01, got %s", minMonth.Format("2006-01-02"))
+	// WEB-230: the bound reaches the earliest stored entry when that is older
+	// than creation − 3 years, never narrows below that window, and never
+	// passes DayDateMin.
+	for _, tc := range []struct {
+		name     string
+		earliest time.Time
+		want     string
+	}{
+		{name: "no entries", want: "2023-03-01"},
+		{name: "entry older than the window", earliest: time.Date(2015, time.June, 10, 0, 0, 0, 0, time.UTC), want: "2015-06-01"},
+		{name: "entry inside the window", earliest: time.Date(2024, time.January, 5, 0, 0, 0, 0, time.UTC), want: "2023-03-01"},
+		{name: "entry on the window's own month", earliest: time.Date(2023, time.March, 20, 0, 0, 0, 0, time.UTC), want: "2023-03-01"},
+		{name: "entry before DayDateMin", earliest: time.Date(1850, time.May, 1, 0, 0, 0, 0, time.UTC), want: "1900-01-01"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			minMonth := CalendarMinimumNavigableMonth(user, tc.earliest, time.UTC)
+			if got := minMonth.Format("2006-01-02"); got != tc.want {
+				t.Fatalf("minimum month = %s, want %s", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -377,7 +394,7 @@ func TestCalendarMonthAnchorsSurviveASkippedFirstOfMonthMidnight(t *testing.T) {
 				user := &models.User{
 					CreatedAt: time.Date(requested.Year()+3, requested.Month(), 14, 12, 0, 0, 0, time.UTC),
 				}
-				minMonth := CalendarMinimumNavigableMonth(user, testCase.location)
+				minMonth := CalendarMinimumNavigableMonth(user, time.Time{}, testCase.location)
 				if got := minMonth.Format("2006-01"); got != testCase.month {
 					t.Fatalf("minimum navigable month = %s, want %s", got, testCase.month)
 				}

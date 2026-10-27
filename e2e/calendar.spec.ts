@@ -175,17 +175,39 @@ test.describe('Calendar page', () => {
     await expect(page.locator('button[data-day]:has(.calendar-today-pill)')).toHaveCount(1);
   });
 
-  test('invalid month query redirects to the current calendar page', async ({ page }) => {
+  test('invalid month query renders the calendar with a notice instead of redirecting', async ({ page }) => {
+    // WEB-230: the old silent 303 to /calendar left the owner guessing why
+    // the link they followed opened somewhere else.
     await registerOwnerOnCalendar(page, 'calendar-invalid-month');
 
     await page.goto('/calendar?month=9999-99');
-    await expect(page).toHaveURL(/\/calendar$/);
+    await expect(page).toHaveURL(/\/calendar\?month=9999-99$/);
     // Address the page title by the key it declares. The regex this replaces
     // listed three of six languages and, being an alternation, matched any of
     // them regardless of which language the page was actually rendering.
     const title = page.locator('h1[data-title-key="calendar.title"]');
     await expect(title).toBeVisible();
     await expect(title).toHaveText(localeText('en', 'calendar.title'));
+    await expect(page.locator('[data-calendar-month-invalid]')).toHaveText(localeText('en', 'calendar.month_invalid'));
+  });
+
+  test('the calendar reaches an entry older than the three-year window and explains its start', async ({ page }) => {
+    // WEB-230: a day the API accepts and the day panel serves must be
+    // reachable on the calendar too, with ?day= kept, and the disabled Prev at
+    // the earliest month says why it is disabled.
+    await registerOwnerOnCalendar(page, 'calendar-history-bound');
+    await markCycleStartViaAPI(page, '2015-06-10');
+
+    await page.goto('/calendar?month=2015-06&day=2015-06-10');
+    await expect(page.locator('#calendar-grid-refresh')).toHaveAttribute('hx-get', '/calendar?month=2015-06');
+    await expect(page.locator('[data-calendar-view]')).toHaveAttribute('data-selected-date', '2015-06-10');
+    const hint = page.locator('[data-calendar-history-limit]');
+    await expect(hint).toHaveText(localeText('en', 'calendar.history_limit'));
+    await expect(page.locator('[data-calendar-month-nav] [aria-describedby="calendar-history-limit"]')).toHaveCount(1);
+
+    await page.goto('/calendar?month=2015-07');
+    await expect(page.locator('[data-calendar-month-nav] a[href^="/calendar?month=2015-06"]')).toHaveCount(1);
+    await expect(hint).toHaveCount(0);
   });
 
   test('far-future month query renders the clamped month with the next link disabled', async ({ page }) => {

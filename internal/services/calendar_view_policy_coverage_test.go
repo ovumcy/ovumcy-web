@@ -64,8 +64,8 @@ func TestCalendarViewPolicyMinMonthNilLocation(t *testing.T) {
 		CreatedAt: time.Date(2025, time.June, 20, 8, 0, 0, 0, time.UTC),
 	}
 
-	gotNil := CalendarMinimumNavigableMonth(user, nil)
-	gotUTC := CalendarMinimumNavigableMonth(user, time.UTC)
+	gotNil := CalendarMinimumNavigableMonth(user, time.Time{}, nil)
+	gotUTC := CalendarMinimumNavigableMonth(user, time.Time{}, time.UTC)
 
 	if !gotNil.Equal(gotUTC) {
 		t.Errorf("nil location minMonth = %v, want %v", gotNil, gotUTC)
@@ -88,7 +88,7 @@ func TestCalendarViewPolicyMinMonthNonUTC(t *testing.T) {
 		CreatedAt: time.Date(2025, time.June, 20, 23, 30, 0, 0, time.UTC),
 	}
 
-	got := CalendarMinimumNavigableMonth(user, berlin)
+	got := CalendarMinimumNavigableMonth(user, time.Time{}, berlin)
 	// DateAtLocation(2025-06-20 23:30 UTC, CET+2) = 2025-06-21 in Berlin.
 	// Subtract 3 years → 2022-06-21 → first of month = 2022-06-01.
 	wantStr := "2022-06-01"

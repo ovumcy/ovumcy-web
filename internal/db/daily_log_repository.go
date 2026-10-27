@@ -57,6 +57,28 @@ func (repo *DailyLogRepository) ListByUser(ctx context.Context, userID uint) ([]
 	return logs, repo.markSpottingSymptom(ctx, userID, logs)
 }
 
+// EarliestDateByUser returns the owner's oldest stored day; found is false when
+// the owner has no entries. A zero userID is refused like a zero-owner write:
+// it bounds the owner's calendar, and an unscoped answer must not stand in for it.
+func (repo *DailyLogRepository) EarliestDateByUser(ctx context.Context, userID uint) (time.Time, bool, error) {
+	if userID == 0 {
+		return time.Time{}, false, ErrDailyLogOwnerRequired
+	}
+	logs := make([]models.DailyLog, 0, 1)
+	if err := repo.database.WithContext(ctx).
+		Select("date").
+		Where("user_id = ?", userID).
+		Order("date ASC").
+		Limit(1).
+		Find(&logs).Error; err != nil {
+		return time.Time{}, false, err
+	}
+	if len(logs) == 0 {
+		return time.Time{}, false, nil
+	}
+	return logs[0].Date, true, nil
+}
+
 // markSpottingSymptom resolves, once per read, which of the owner's loaded days
 // carry the built-in Spotting symptom, and sets the read-time flag the cycle
 // boundary rule consumes. A symptom is a per-owner catalog row (and an archived

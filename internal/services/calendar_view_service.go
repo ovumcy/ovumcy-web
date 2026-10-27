@@ -16,6 +16,14 @@ var (
 
 type CalendarViewDayReader interface {
 	FetchLogsForUser(ctx context.Context, userID uint, from time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error)
+	EarliestLogDayForUser(ctx context.Context, userID uint) (time.Time, bool, error)
+}
+
+// CalendarMonthBounds is the navigable month range of one owner's calendar; a
+// zero side is unbounded.
+type CalendarMonthBounds struct {
+	Min time.Time
+	Max time.Time
 }
 
 type CalendarViewStatsProvider interface {
@@ -54,7 +62,20 @@ func NewCalendarViewService(days CalendarViewDayReader, stats CalendarViewStatsP
 	}
 }
 
-func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Context, user *models.User, language string, now time.Time, monthStart time.Time, selectedDate string, location *time.Location) (CalendarPageViewData, error) {
+// NavigableMonthBounds reads the owner's earliest stored day once per request,
+// so the handler's clamp and the page's prev/next links share one lower bound.
+func (service *CalendarViewService) NavigableMonthBounds(ctx context.Context, user *models.User, now time.Time, location *time.Location) (CalendarMonthBounds, error) {
+	earliest, _, err := service.days.EarliestLogDayForUser(ctx, user.ID)
+	if err != nil {
+		return CalendarMonthBounds{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadLogs, err)
+	}
+	return CalendarMonthBounds{
+		Min: CalendarMinimumNavigableMonth(user, earliest, location),
+		Max: CalendarMaximumNavigableMonth(now, location),
+	}, nil
+}
+
+func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Context, user *models.User, language string, now time.Time, monthStart time.Time, selectedDate string, bounds CalendarMonthBounds, location *time.Location) (CalendarPageViewData, error) {
 	logRangeStart, logRangeEnd := CalendarLogRange(monthStart)
 	logs, err := service.days.FetchLogsForUser(ctx, user.ID, logRangeStart, logRangeEnd, location)
 	if err != nil {
@@ -67,9 +88,7 @@ func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Contex
 		return CalendarPageViewData{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadStats, err)
 	}
 
-	minMonth := CalendarMinimumNavigableMonth(user, location)
-	maxMonth := CalendarMaximumNavigableMonth(now, location)
-	prevMonth, nextMonth := CalendarAdjacentMonthValuesWithinBounds(monthStart, minMonth, maxMonth)
+	prevMonth, nextMonth := CalendarAdjacentMonthValuesWithinBounds(monthStart, bounds.Min, bounds.Max)
 	dayStates := BuildCalendarDayStates(user, monthStart, logs, stats, now, location)
 	// statsLogs, not the grid's set: `logs` is the window around the MONTH being
 	// viewed (CalendarLogRange), so a past month excludes the current cycle

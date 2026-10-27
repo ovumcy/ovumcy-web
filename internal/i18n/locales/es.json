@@ -544,6 +544,8 @@
   "calendar.prev": "Anterior",
   "calendar.next": "Siguiente",
   "calendar.today": "Hoy",
+  "calendar.history_limit": "El calendario empieza aquí: no hay registros anteriores a este mes.",
+  "calendar.month_invalid": "No se pudo leer el mes de este enlace, así que el calendario se abrió sin él.",
   "calendar.loading_day": "Cargando detalles del día...",
   "calendar.tag.today": "Hoy",
   "calendar.tag.today_short": "•",

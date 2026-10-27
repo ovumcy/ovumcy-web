@@ -107,7 +107,13 @@ func CalendarMaximumNavigableMonth(now time.Time, location *time.Location) time.
 	return calendarMonthAnchor(horizon, location)
 }
 
-func CalendarMinimumNavigableMonth(user *models.User, location *time.Location) time.Time {
+// CalendarMinimumNavigableMonth bounds how far back the calendar page may be
+// navigated: the month of account creation minus three years, or the month of
+// earliestEntry (the owner's oldest stored day, zero when there is none) when
+// that is older — the export, the API and the day panel all serve that day, so
+// the calendar must reach it too (WEB-230). It never passes below DayDateMin,
+// the oldest day a write accepts.
+func CalendarMinimumNavigableMonth(user *models.User, earliestEntry time.Time, location *time.Location) time.Time {
 	if user == nil || user.CreatedAt.IsZero() {
 		return time.Time{}
 	}
@@ -120,7 +126,16 @@ func CalendarMinimumNavigableMonth(user *models.User, location *time.Location) t
 	// whose local midnight a DST jump skipped and slide the bound a month
 	// earlier than the account's own history justifies.
 	createdDay := CalendarDay(DateAtLocation(user.CreatedAt, location), time.UTC)
-	return calendarMonthAnchor(createdDay.AddDate(-3, 0, 0), location)
+	bound := createdDay.AddDate(-3, 0, 0)
+	if !earliestEntry.IsZero() {
+		if entryDay := CalendarDay(earliestEntry, time.UTC); entryDay.Before(bound) {
+			bound = entryDay
+		}
+	}
+	if bound.Before(dayDateMinDay) {
+		bound = dayDateMinDay
+	}
+	return calendarMonthAnchor(bound, location)
 }
 
 func parseCalendarMonthQuery(raw string, now time.Time, location *time.Location) (time.Time, error) {

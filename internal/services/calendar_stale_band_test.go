@@ -209,7 +209,7 @@ func TestCalendarPageViewDoesNotPublishTheOutOfDateVerdictToTheGrid(t *testing.T
 		}
 
 		service := NewCalendarViewService(&stubCalendarViewDayReader{logs: logs}, &stubCalendarViewStatsProvider{stats: stats, logs: logs})
-		view, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, time.Date(2026, time.April, 1, 0, 0, 0, 0, location), "", location)
+		view, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, time.Date(2026, time.April, 1, 0, 0, 0, 0, location), "", CalendarMonthBounds{}, location)
 		if err != nil {
 			t.Fatalf("BuildCalendarPageViewData: %v", err)
 		}

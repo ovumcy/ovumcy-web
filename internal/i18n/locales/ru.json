@@ -552,6 +552,8 @@
   "calendar.prev": "Назад",
   "calendar.next": "Вперёд",
   "calendar.today": "Сегодня",
+  "calendar.history_limit": "Календарь начинается здесь: записей раньше этого месяца нет.",
+  "calendar.month_invalid": "Не удалось прочитать месяц из ссылки, поэтому календарь открыт без него.",
   "calendar.loading_day": "Загружаем запись дня...",
   "calendar.tag.today": "Сегодня",
   "calendar.tag.today_short": "•",

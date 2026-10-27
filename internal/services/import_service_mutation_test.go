@@ -140,6 +140,9 @@ func (importmutDataLogs) Save(context.Context, *models.DailyLog) error { return 
 func (importmutDataLogs) DeleteByUserAndDayRange(context.Context, uint, time.Time, time.Time) error {
 	return nil
 }
+func (importmutDataLogs) EarliestDateByUser(context.Context, uint) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
 
 // ---------------------------------------------------------------------------
 // SEC-M14 (WEB-15) — refreshDerivedCycleSettings must bound the persisted
@@ -181,6 +184,9 @@ func (s importmutTZLogs) ListByUserDayRange(context.Context, uint, time.Time, ti
 func (s importmutTZLogs) Save(context.Context, *models.DailyLog) error { return nil }
 func (s importmutTZLogs) DeleteByUserAndDayRange(context.Context, uint, time.Time, time.Time) error {
 	return nil
+}
+func (s importmutTZLogs) EarliestDateByUser(context.Context, uint) (time.Time, bool, error) {
+	return time.Time{}, false, nil
 }
 
 // importmutTZUsers records the persisted luteal_phase and serves a fixed

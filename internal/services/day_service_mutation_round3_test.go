@@ -136,6 +136,10 @@ func (s *mr3dayLogStub) Save(ctx context.Context, entry *models.DailyLog) error 
 	return nil
 }
 
+func (s *mr3dayLogStub) EarliestDateByUser(context.Context, uint) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 func (s *mr3dayLogStub) DeleteByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) error {
 	for key, entry := range s.entries {
 		if entry.UserID != userID {

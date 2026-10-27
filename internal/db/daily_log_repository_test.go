@@ -107,7 +107,6 @@ func TestDailyLogRepositoryRangeQueriesAndWhitelist(t *testing.T) {
 		t.Fatalf("expected 2 logs from d5 onward, got %d", len(ranged))
 	}
 
-
 	// Save persists a mutation on an existing row.
 	entry.Notes = "updated note"
 	requireNoErr(t, repo.Save(context.Background(), &entry), "save")
@@ -252,5 +251,41 @@ func TestDailyLogWriteRefusesZeroOwner(t *testing.T) {
 	}
 	if len(logs) != 0 {
 		t.Fatalf("expected the whole batch refused (none written), got %d rows", len(logs))
+	}
+}
+
+// EarliestDateByUser bounds the owner's calendar (WEB-230): it answers for the
+// named owner only, reports "none" for an owner with no rows, and refuses a
+// zero owner instead of answering for the whole table.
+func TestDailyLogEarliestDateByUserIsOwnerScoped(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "daily-earliest.db"))
+	owner := createDailyLogTestUser(t, database, "daily-earliest-owner@example.com")
+	other := createDailyLogTestUser(t, database, "daily-earliest-other@example.com")
+	empty := createDailyLogTestUser(t, database, "daily-earliest-empty@example.com")
+	repo := NewDailyLogRepository(database)
+	ctx := context.Background()
+
+	for _, entry := range []models.DailyLog{
+		{UserID: owner, Date: time.Date(2024, time.May, 9, 0, 0, 0, 0, time.UTC)},
+		{UserID: owner, Date: time.Date(2019, time.February, 3, 0, 0, 0, 0, time.UTC)},
+		{UserID: owner, Date: time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)},
+		{UserID: other, Date: time.Date(2011, time.July, 7, 0, 0, 0, 0, time.UTC)},
+	} {
+		entry.Flow, entry.SexActivity, entry.CervicalMucus = models.FlowNone, models.SexActivityNone, models.CervicalMucusNone
+		requireNoErr(t, repo.Create(ctx, &entry), "seed day")
+	}
+
+	earliest, found, err := repo.EarliestDateByUser(ctx, owner)
+	requireNoErr(t, err, "earliest for owner")
+	if !found || earliest.Format("2006-01-02") != "2019-02-03" {
+		t.Fatalf("owner earliest = %s (found %v), want 2019-02-03", earliest.Format("2006-01-02"), found)
+	}
+
+	if _, found, err := repo.EarliestDateByUser(ctx, empty); err != nil || found {
+		t.Fatalf("owner with no rows: found %v, err %v; want none", found, err)
+	}
+
+	if _, _, err := repo.EarliestDateByUser(ctx, 0); !errors.Is(err, ErrDailyLogOwnerRequired) {
+		t.Fatalf("zero owner: got %v, want ErrDailyLogOwnerRequired", err)
 	}
 }

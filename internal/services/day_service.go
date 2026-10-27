@@ -66,6 +66,7 @@ type DayLogRepository interface {
 	ListByUserRange(ctx context.Context, userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error)
 	ListByUserDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) ([]models.DailyLog, error)
 	FindByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error)
+	EarliestDateByUser(ctx context.Context, userID uint) (time.Time, bool, error)
 	// FindByUserAndDayRangeForUpdate is the read a write merges onto: inside a
 	// transaction it holds the row until commit, where the database has row
 	// locks.
@@ -139,6 +140,16 @@ func (service *DayService) FetchLogsForOptionalRange(ctx context.Context, userID
 
 func (service *DayService) FetchAllLogsForUser(ctx context.Context, userID uint) ([]models.DailyLog, error) {
 	return service.logs.ListByUser(ctx, userID)
+}
+
+// EarliestLogDayForUser returns the owner's oldest stored day as a UTC-midnight
+// calendar day; found is false when the owner has no entries.
+func (service *DayService) EarliestLogDayForUser(ctx context.Context, userID uint) (time.Time, bool, error) {
+	day, found, err := service.logs.EarliestDateByUser(ctx, userID)
+	if err != nil || !found {
+		return time.Time{}, false, err
+	}
+	return CalendarDay(day, time.UTC), true, nil
 }
 
 func (service *DayService) FetchLogByDate(ctx context.Context, userID uint, day time.Time, location *time.Location) (models.DailyLog, error) {

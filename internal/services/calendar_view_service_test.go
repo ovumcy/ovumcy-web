@@ -15,6 +15,18 @@ type stubCalendarViewDayReader struct {
 
 	// Captured userID argument — used to prove the day read is owner-scoped.
 	logsUserID uint
+
+	earliest       time.Time
+	earliestErr    error
+	earliestUserID uint
+}
+
+func (stub *stubCalendarViewDayReader) EarliestLogDayForUser(_ context.Context, userID uint) (time.Time, bool, error) {
+	stub.earliestUserID = userID
+	if stub.earliestErr != nil {
+		return time.Time{}, false, stub.earliestErr
+	}
+	return stub.earliest, !stub.earliest.IsZero(), nil
 }
 
 func (stub *stubCalendarViewDayReader) FetchLogsForUser(ctx context.Context, userID uint, _ time.Time, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
@@ -48,6 +60,34 @@ func (stub *stubCalendarViewStatsProvider) BuildCycleStatsForRange(ctx context.C
 	return stub.stats, logs, nil
 }
 
+// WEB-230: the bounds read the session owner's earliest entry, reach past the
+// creation − 3y window to it, and a failed read is the page's log-load error.
+func TestCalendarNavigableMonthBounds(t *testing.T) {
+	user := &models.User{ID: 4242, Role: models.RoleOwner, CreatedAt: time.Date(2026, time.February, 1, 9, 0, 0, 0, time.UTC)}
+	now := mustParseCalendarViewDay(t, "2026-02-21")
+
+	dayReader := &stubCalendarViewDayReader{earliest: time.Date(2014, time.September, 2, 0, 0, 0, 0, time.UTC)}
+	service := NewCalendarViewService(dayReader, &stubCalendarViewStatsProvider{})
+	bounds, err := service.NavigableMonthBounds(context.Background(), user, now, time.UTC)
+	if err != nil {
+		t.Fatalf("NavigableMonthBounds() unexpected error: %v", err)
+	}
+	if dayReader.earliestUserID != user.ID {
+		t.Fatalf("earliest-entry read scoped to %d, want owner %d", dayReader.earliestUserID, user.ID)
+	}
+	if got := bounds.Min.Format("2006-01"); got != "2014-09" {
+		t.Fatalf("lower bound = %s, want 2014-09", got)
+	}
+	if got := bounds.Max.Format("2006-01"); got != "2029-02" {
+		t.Fatalf("upper bound = %s, want 2029-02", got)
+	}
+
+	failing := NewCalendarViewService(&stubCalendarViewDayReader{earliestErr: errors.New("db down")}, &stubCalendarViewStatsProvider{})
+	if _, err := failing.NavigableMonthBounds(context.Background(), user, now, time.UTC); !errors.Is(err, ErrCalendarViewLoadLogs) {
+		t.Fatalf("failed earliest-entry read = %v, want ErrCalendarViewLoadLogs", err)
+	}
+}
+
 func TestBuildCalendarPageViewData(t *testing.T) {
 	dayReader := &stubCalendarViewDayReader{}
 	statsProvider := &stubCalendarViewStatsProvider{stats: CycleStats{MedianCycleLength: 28}}
@@ -59,7 +99,7 @@ func TestBuildCalendarPageViewData(t *testing.T) {
 	now := mustParseCalendarViewDay(t, "2026-02-21")
 	monthStart := mustParseCalendarViewDay(t, "2026-02-01")
 
-	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "2026-02-17", time.UTC)
+	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "2026-02-17", CalendarMonthBounds{}, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
 	}
@@ -112,7 +152,7 @@ func TestBuildCalendarPageViewDataReturnsTypedErrors(t *testing.T) {
 		&stubCalendarViewDayReader{err: errors.New("logs fail")},
 		&stubCalendarViewStatsProvider{},
 	)
-	if _, err := logErrService.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", time.UTC); !errors.Is(err, ErrCalendarViewLoadLogs) {
+	if _, err := logErrService.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", CalendarMonthBounds{}, time.UTC); !errors.Is(err, ErrCalendarViewLoadLogs) {
 		t.Fatalf("expected ErrCalendarViewLoadLogs, got %v", err)
 	}
 
@@ -120,7 +160,7 @@ func TestBuildCalendarPageViewDataReturnsTypedErrors(t *testing.T) {
 		&stubCalendarViewDayReader{},
 		&stubCalendarViewStatsProvider{err: errors.New("stats fail")},
 	)
-	if _, err := statsErrService.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", time.UTC); !errors.Is(err, ErrCalendarViewLoadStats) {
+	if _, err := statsErrService.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", CalendarMonthBounds{}, time.UTC); !errors.Is(err, ErrCalendarViewLoadStats) {
 		t.Fatalf("expected ErrCalendarViewLoadStats, got %v", err)
 	}
 }
@@ -139,7 +179,11 @@ func TestBuildCalendarPageViewDataHidesPreviousMonthAtLowerBound(t *testing.T) {
 	now := mustParseCalendarViewDay(t, "2026-03-13")
 	monthStart := time.Date(2023, time.March, 1, 0, 0, 0, 0, time.UTC)
 
-	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", time.UTC)
+	bounds, err := service.NavigableMonthBounds(context.Background(), user, now, time.UTC)
+	if err != nil {
+		t.Fatalf("NavigableMonthBounds() unexpected error: %v", err)
+	}
+	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", bounds, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
 	}
@@ -180,7 +224,7 @@ func TestBuildCalendarPageViewDataBuildsSharedPredictionExplanation(t *testing.T
 	now := mustParseCalendarViewDay(t, "2026-04-25")
 	monthStart := mustParseCalendarViewDay(t, "2026-04-01")
 
-	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "2026-04-25", time.UTC)
+	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "2026-04-25", CalendarMonthBounds{}, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
 	}

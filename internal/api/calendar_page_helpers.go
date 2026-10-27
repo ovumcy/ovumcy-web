@@ -6,10 +6,11 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) buildCalendarViewData(ctx context.Context, user *models.User, language string, messages map[string]string, now time.Time, monthStart time.Time, selectedDate string, location *time.Location) (fiber.Map, error) {
-	viewData, err := handler.calendarViewService.BuildCalendarPageViewData(ctx, user, language, now, monthStart, selectedDate, location)
+func (handler *Handler) buildCalendarViewData(ctx context.Context, user *models.User, language string, messages map[string]string, now time.Time, monthStart time.Time, selectedDate string, bounds services.CalendarMonthBounds, location *time.Location) (fiber.Map, error) {
+	viewData, err := handler.calendarViewService.BuildCalendarPageViewData(ctx, user, language, now, monthStart, selectedDate, bounds, location)
 	if err != nil {
 		return nil, err
 	}

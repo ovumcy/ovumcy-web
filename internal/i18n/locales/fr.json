@@ -685,6 +685,8 @@
   "calendar.prev": "Précédent",
   "calendar.next": "Suivant",
   "calendar.today": "Aujourd'hui",
+  "calendar.history_limit": "Le calendrier commence ici : aucune entrée n'est enregistrée avant ce mois.",
+  "calendar.month_invalid": "Le mois de ce lien n'a pas pu être lu ; le calendrier s'est donc ouvert sans lui.",
   "calendar.loading_day": "Chargement des détails du jour…",
   "calendar.tag.today": "Aujourd'hui",
   "calendar.tag.today_short": "•",

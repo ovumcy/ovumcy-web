@@ -89,6 +89,9 @@ func (s *importStubLogs) Save(context.Context, *models.DailyLog) error { return 
 func (s *importStubLogs) DeleteByUserAndDayRange(context.Context, uint, time.Time, time.Time) error {
 	return nil
 }
+func (s *importStubLogs) EarliestDateByUser(context.Context, uint) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
 
 type importStubUsers struct{}
 
