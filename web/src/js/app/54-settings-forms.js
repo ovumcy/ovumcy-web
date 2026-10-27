@@ -418,10 +418,21 @@
         return;
       }
       if (targetForm.matches("form[data-settings-draft-form]")) {
-        return;
+        // A draft form saving itself keeps its own draft; what it must not do
+        // is silently discard a DIFFERENT draft form's unsaved edits (the
+        // save may end in a full reload). Ask only about the other forms.
+        dirtyForms = dirtyForms.filter(function (candidate) {
+          return candidate !== targetForm;
+        });
+        if (!dirtyForms.length) {
+          return;
+        }
+        dirtyForm = dirtyForms[0];
       }
 
       event.preventDefault();
+      // The request must not start while the prompt is open.
+      event.stopImmediatePropagation();
       confirmSettingsDraftDiscard(dirtyForm, function () {
         resetDirtySettingsDraftForms(dirtyForms);
         if (typeof targetForm.requestSubmit === "function") {

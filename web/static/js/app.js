@@ -2515,6 +2515,41 @@
     setSaveButtonState(form, false);
   }
 
+  // A settings request that never got an answer (offline, aborted, timed out)
+  // fires no responseError, so without this the status island kept whatever the
+  // previous save said — a stale "Saved" beside a save that did not happen.
+  // Every settings htmx request resolves its island the same way the answered
+  // paths do, and the island is only touched inside a settings card.
+  function handleSettingsTransportFailure(event) {
+    var detail = event ? event.detail : null;
+    var form = getSaveFeedbackFormFromEvent(event);
+    var target = detail ? detail.target : null;
+    if (!target && form && form.getAttribute) {
+      var selector = form.getAttribute("hx-target");
+      try {
+        target = selector ? document.querySelector(selector) : null;
+      } catch (error) {
+        target = null;
+      }
+    }
+    var island = statusContainerFor(target || form || getEventTarget(event));
+    if (!island || !island.closest || !island.closest("[data-settings-section]")) {
+      return;
+    }
+    var fallback = document.body.getAttribute("data-request-failed") || "Request failed. Please try again.";
+    renderErrorStatus(island, fallback);
+    delete island.dataset.toastShown;
+    setSaveButtonState(form, false);
+  }
+
+  function handleHtmxTransportFailure(event) {
+    if (dayEditorFormFromEvent(event)) {
+      handleDaySaveTransportFailure(event);
+      return;
+    }
+    handleSettingsTransportFailure(event);
+  }
+
   function retryDaySave(form) {
     // A retry pressed while the token refresh after a 403 is still in flight
     // waits for it, so the resubmit carries the fresh token.
@@ -2656,9 +2691,9 @@
       clearStatusTargetIfEmpty(parent);
     });
 
-    document.body.addEventListener("htmx:sendError", handleDaySaveTransportFailure);
-    document.body.addEventListener("htmx:sendAbort", handleDaySaveTransportFailure);
-    document.body.addEventListener("htmx:timeout", handleDaySaveTransportFailure);
+    document.body.addEventListener("htmx:sendError", handleHtmxTransportFailure);
+    document.body.addEventListener("htmx:sendAbort", handleHtmxTransportFailure);
+    document.body.addEventListener("htmx:timeout", handleHtmxTransportFailure);
 
     document.body.addEventListener("click", function (event) {
       var retryButton = closestFromEvent(event, "[data-day-save-retry]");
@@ -6385,10 +6420,21 @@
         return;
       }
       if (targetForm.matches("form[data-settings-draft-form]")) {
-        return;
+        // A draft form saving itself keeps its own draft; what it must not do
+        // is silently discard a DIFFERENT draft form's unsaved edits (the
+        // save may end in a full reload). Ask only about the other forms.
+        dirtyForms = dirtyForms.filter(function (candidate) {
+          return candidate !== targetForm;
+        });
+        if (!dirtyForms.length) {
+          return;
+        }
+        dirtyForm = dirtyForms[0];
       }
 
       event.preventDefault();
+      // The request must not start while the prompt is open.
+      event.stopImmediatePropagation();
       confirmSettingsDraftDiscard(dirtyForm, function () {
         resetDirtySettingsDraftForms(dirtyForms);
         if (typeof targetForm.requestSubmit === "function") {
@@ -6692,6 +6738,78 @@
     } else if (typeof query.addListener === "function") {
       query.addListener(onChange);
     }
+  }
+
+  // A card that replaces itself (hx-swap="outerHTML" onto its own id) takes the
+  // focused control down with it: focus drops to BODY, and a swap that
+  // re-sorts the card's rows can leave the row the owner just saved far out of
+  // view, with its confirmation. The answer names where the owner should be
+  // put back — an element carrying data-focus-after-swap — and this moves
+  // focus there and scrolls its row clear of the sticky chrome. The marker is
+  // the whole contract, so the egress and account cards can opt in by markup.
+  //
+  // Only a swap that took the owner's focus is repaired: when focus sat in the
+  // swapped region and is gone afterwards, it lands on the marker, else on the
+  // card's own summary, so a swap whose target vanished still leaves the
+  // owner at the card rather than at the top of the document.
+  var FOCUS_AFTER_SWAP_MARKER = "[data-focus-after-swap]";
+
+  function focusAfterSwapRoot(event) {
+    var node = event && event.target && event.target.nodeType === 1 ? event.target : null;
+    if (node && node.isConnected) {
+      return node;
+    }
+    var swapped = event && event.detail ? event.detail.target : null;
+    return swapped && swapped.id ? document.getElementById(swapped.id) : null;
+  }
+
+  function scrollIntoViewBelowStickyChrome(node) {
+    var anchor = node.closest("[data-focus-scroll-anchor]") || node;
+    // The same clearance the cards' scroll-margin-top uses, read from the
+    // figures publishSettingsStickyChrome keeps current.
+    anchor.style.scrollMarginTop =
+      "calc(var(--sticky-header-clearance, 4.5rem) + var(--settings-section-nav-height, 0px) + 0.75rem)";
+    if (typeof anchor.scrollIntoView === "function") {
+      anchor.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function bindFocusAfterSwap() {
+    if (document.body.dataset.focusAfterSwapBound === "true") {
+      return;
+    }
+    document.body.dataset.focusAfterSwapBound = "true";
+
+    var focusWasInside = "";
+
+    document.body.addEventListener("htmx:beforeSwap", function (event) {
+      var swapped = event && event.detail ? event.detail.target : null;
+      var active = document.activeElement;
+      focusWasInside =
+        swapped && swapped.id && active && active !== document.body && swapped.contains(active) ? swapped.id : "";
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (event) {
+      var inside = focusWasInside;
+      focusWasInside = "";
+      var root = focusAfterSwapRoot(event);
+      if (!root || !root.querySelector) {
+        return;
+      }
+      var marked = root.matches && root.matches(FOCUS_AFTER_SWAP_MARKER) ? root : root.querySelector(FOCUS_AFTER_SWAP_MARKER);
+      var focusLost = !document.activeElement || document.activeElement === document.body;
+      if (!marked && !(inside && focusLost && root.id === inside)) {
+        return;
+      }
+      var destination = marked || root.querySelector("summary") || root;
+      if (!destination.hasAttribute("tabindex") && !destination.matches("a[href], button, input, select, textarea, summary")) {
+        destination.setAttribute("tabindex", "-1");
+      }
+      // preventScroll: the scroll below knows about the sticky chrome, the
+      // browser's own focus scroll does not.
+      destination.focus({ preventScroll: true });
+      scrollIntoViewBelowStickyChrome(destination);
+    });
   }
 
   function readCheckedRadioValue(root, name) {
@@ -7916,6 +8034,7 @@
     bindSettingsTrackingForms();
     bindSettingsInterfaceForms();
     bindSettingsSectionDisclosures();
+    bindFocusAfterSwap();
     bindIconControls();
     bindDashboardEditors();
     bindDayEditorForms();

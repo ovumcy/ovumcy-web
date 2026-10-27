@@ -28,6 +28,7 @@
     bindSettingsTrackingForms();
     bindSettingsInterfaceForms();
     bindSettingsSectionDisclosures();
+    bindFocusAfterSwap();
     bindIconControls();
     bindDashboardEditors();
     bindDayEditorForms();

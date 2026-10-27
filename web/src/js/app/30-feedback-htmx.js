@@ -840,6 +840,41 @@
     setSaveButtonState(form, false);
   }
 
+  // A settings request that never got an answer (offline, aborted, timed out)
+  // fires no responseError, so without this the status island kept whatever the
+  // previous save said — a stale "Saved" beside a save that did not happen.
+  // Every settings htmx request resolves its island the same way the answered
+  // paths do, and the island is only touched inside a settings card.
+  function handleSettingsTransportFailure(event) {
+    var detail = event ? event.detail : null;
+    var form = getSaveFeedbackFormFromEvent(event);
+    var target = detail ? detail.target : null;
+    if (!target && form && form.getAttribute) {
+      var selector = form.getAttribute("hx-target");
+      try {
+        target = selector ? document.querySelector(selector) : null;
+      } catch (error) {
+        target = null;
+      }
+    }
+    var island = statusContainerFor(target || form || getEventTarget(event));
+    if (!island || !island.closest || !island.closest("[data-settings-section]")) {
+      return;
+    }
+    var fallback = document.body.getAttribute("data-request-failed") || "Request failed. Please try again.";
+    renderErrorStatus(island, fallback);
+    delete island.dataset.toastShown;
+    setSaveButtonState(form, false);
+  }
+
+  function handleHtmxTransportFailure(event) {
+    if (dayEditorFormFromEvent(event)) {
+      handleDaySaveTransportFailure(event);
+      return;
+    }
+    handleSettingsTransportFailure(event);
+  }
+
   function retryDaySave(form) {
     // A retry pressed while the token refresh after a 403 is still in flight
     // waits for it, so the resubmit carries the fresh token.
@@ -981,9 +1016,9 @@
       clearStatusTargetIfEmpty(parent);
     });
 
-    document.body.addEventListener("htmx:sendError", handleDaySaveTransportFailure);
-    document.body.addEventListener("htmx:sendAbort", handleDaySaveTransportFailure);
-    document.body.addEventListener("htmx:timeout", handleDaySaveTransportFailure);
+    document.body.addEventListener("htmx:sendError", handleHtmxTransportFailure);
+    document.body.addEventListener("htmx:sendAbort", handleHtmxTransportFailure);
+    document.body.addEventListener("htmx:timeout", handleHtmxTransportFailure);
 
     document.body.addEventListener("click", function (event) {
       var retryButton = closestFromEvent(event, "[data-day-save-retry]");

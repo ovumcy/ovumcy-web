@@ -180,3 +180,75 @@
       query.addListener(onChange);
     }
   }
+
+  // A card that replaces itself (hx-swap="outerHTML" onto its own id) takes the
+  // focused control down with it: focus drops to BODY, and a swap that
+  // re-sorts the card's rows can leave the row the owner just saved far out of
+  // view, with its confirmation. The answer names where the owner should be
+  // put back — an element carrying data-focus-after-swap — and this moves
+  // focus there and scrolls its row clear of the sticky chrome. The marker is
+  // the whole contract, so the egress and account cards can opt in by markup.
+  //
+  // Only a swap that took the owner's focus is repaired: when focus sat in the
+  // swapped region and is gone afterwards, it lands on the marker, else on the
+  // card's own summary, so a swap whose target vanished still leaves the
+  // owner at the card rather than at the top of the document.
+  var FOCUS_AFTER_SWAP_MARKER = "[data-focus-after-swap]";
+
+  function focusAfterSwapRoot(event) {
+    var node = event && event.target && event.target.nodeType === 1 ? event.target : null;
+    if (node && node.isConnected) {
+      return node;
+    }
+    var swapped = event && event.detail ? event.detail.target : null;
+    return swapped && swapped.id ? document.getElementById(swapped.id) : null;
+  }
+
+  function scrollIntoViewBelowStickyChrome(node) {
+    var anchor = node.closest("[data-focus-scroll-anchor]") || node;
+    // The same clearance the cards' scroll-margin-top uses, read from the
+    // figures publishSettingsStickyChrome keeps current.
+    anchor.style.scrollMarginTop =
+      "calc(var(--sticky-header-clearance, 4.5rem) + var(--settings-section-nav-height, 0px) + 0.75rem)";
+    if (typeof anchor.scrollIntoView === "function") {
+      anchor.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function bindFocusAfterSwap() {
+    if (document.body.dataset.focusAfterSwapBound === "true") {
+      return;
+    }
+    document.body.dataset.focusAfterSwapBound = "true";
+
+    var focusWasInside = "";
+
+    document.body.addEventListener("htmx:beforeSwap", function (event) {
+      var swapped = event && event.detail ? event.detail.target : null;
+      var active = document.activeElement;
+      focusWasInside =
+        swapped && swapped.id && active && active !== document.body && swapped.contains(active) ? swapped.id : "";
+    });
+
+    document.body.addEventListener("htmx:afterSwap", function (event) {
+      var inside = focusWasInside;
+      focusWasInside = "";
+      var root = focusAfterSwapRoot(event);
+      if (!root || !root.querySelector) {
+        return;
+      }
+      var marked = root.matches && root.matches(FOCUS_AFTER_SWAP_MARKER) ? root : root.querySelector(FOCUS_AFTER_SWAP_MARKER);
+      var focusLost = !document.activeElement || document.activeElement === document.body;
+      if (!marked && !(inside && focusLost && root.id === inside)) {
+        return;
+      }
+      var destination = marked || root.querySelector("summary") || root;
+      if (!destination.hasAttribute("tabindex") && !destination.matches("a[href], button, input, select, textarea, summary")) {
+        destination.setAttribute("tabindex", "-1");
+      }
+      // preventScroll: the scroll below knows about the sticky chrome, the
+      // browser's own focus scroll does not.
+      destination.focus({ preventScroll: true });
+      scrollIntoViewBelowStickyChrome(destination);
+    });
+  }

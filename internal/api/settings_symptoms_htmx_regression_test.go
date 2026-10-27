@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"golang.org/x/net/html"
 	"gorm.io/gorm"
 )
 
@@ -326,6 +327,59 @@ func TestSettingsSymptomsHTMXUpdateWithoutColorPreservesStoredValue(t *testing.T
 	}
 	if stored.Color != "#38BDF8" {
 		t.Fatalf("expected existing color to be preserved, got %q", stored.Color)
+	}
+}
+
+// A rename re-sorts the list (custom rows are ordered by name), and the card
+// replaces itself, so the saved row can land far from where the owner pressed
+// Save. The answer must name that row's control as the focus target — by the
+// symptom's id, never its name — and only that one.
+func TestSettingsSymptomsHTMXRenameMarksTheRenamedRowForFocusAfterTheSwap(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "settings-symptoms-focus-marker@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
+
+	first := models.SymptomType{UserID: user.ID, Name: "Alpha", Icon: "💧", Color: "#38BDF8"}
+	second := models.SymptomType{UserID: user.ID, Name: "Beta", Icon: "💧", Color: "#38BDF8"}
+	for _, symptom := range []*models.SymptomType{&first, &second} {
+		if err := database.Create(symptom).Error; err != nil {
+			t.Fatalf("create custom symptom: %v", err)
+		}
+	}
+
+	form := url.Values{"csrf_token": {csrfToken}, "name": {"Zulu"}, "icon": {"💧"}}
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/symptoms/"+strconv.FormatUint(uint64(first.ID), 10), strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	bindDayWriteForTest(t, request, user.ID)
+
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("rename symptom htmx request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read rename response: %v", err)
+	}
+
+	document := mustParseHTMLDocument(t, string(body))
+	marked := htmlFindElements(document, func(node *html.Node) bool {
+		return htmlHasAttr(node, "data-focus-after-swap")
+	})
+	id := strconv.FormatUint(uint64(first.ID), 10)
+	wantID := "settings-symptom-name-" + id
+	if len(marked) != 1 || htmlAttr(marked[0], "id") != wantID {
+		t.Fatalf("expected exactly the renamed row's name input %q to be the focus target, got %d marked elements", wantID, len(marked))
+	}
+	if htmlElementByAttr(document, "id", "settings-symptom-row-"+id) == nil {
+		t.Fatalf("expected the renamed row to carry the stable id for symptom %s", id)
+	}
+	describedBy := htmlAttr(marked[0], "aria-describedby")
+	if describedBy != "settings-symptom-status-"+id || htmlElementByAttr(document, "id", describedBy) == nil {
+		t.Fatalf("expected the focus target to be described by the row's status region, got %q", describedBy)
 	}
 }
 
