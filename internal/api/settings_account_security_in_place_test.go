@@ -309,6 +309,25 @@ func TestTOTPEnableOnAnEnabledAccountWithoutASetupCookieSaysSo(t *testing.T) {
 	}
 }
 
+// The already-enabled answer names the account's state, so it sits behind the
+// password: a wrong password on the same stale submit is refused as a wrong
+// password and says nothing about the factor.
+func TestTOTPEnableOnAnEnabledAccountWithAWrongPasswordIsNotToldItIsEnabled(t *testing.T) {
+	ctx := newTOTPSettingsContext(t, "totp-enable-twice-wrong-pass@example.com")
+	enableTOTPForTest(t, &ctx)
+
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPut, "/api/v1/users/current/2fa",
+		url.Values{"code": {"123456"}, "password": {"NotMyPass99"}},
+		map[string]string{"Accept-Language": "en", "Accept": "application/json"})
+
+	if response.StatusCode == http.StatusConflict {
+		t.Fatal("a wrong password must not reach the already-enabled answer")
+	}
+	if got := readAPIError(t, response.Body); got == "totp already enabled" {
+		t.Fatalf("error key = %q: the factor state leaked past a wrong password", got)
+	}
+}
+
 func hasAncestorWithID(node *html.Node, id string) bool {
 	for parent := node.Parent; parent != nil; parent = parent.Parent {
 		if parent.Type == html.ElementNode && htmlAttr(parent, "id") == id {
