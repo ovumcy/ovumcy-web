@@ -151,10 +151,16 @@ test.describe('Calendar page', () => {
     // Each wait names the month the control points at. The generic
     // /calendar?month=\d{4}-\d{2} shape is satisfied by the URL the click starts
     // from once a month is selected, so it would pass without the transition.
-    const prevMonth = new URL((await prevLink.getAttribute('href')) ?? '', page.url()).searchParams.get('month');
+    // The bare /calendar opens today, and stepping a month keeps that open day
+    // (WEB-265); Today below drops it again.
+    const prevHref = new URL((await prevLink.getAttribute('href')) ?? '', page.url());
+    const prevMonth = prevHref.searchParams.get('month');
+    const openDay = prevHref.searchParams.get('day');
     expect(prevMonth).toMatch(/^\d{4}-\d{2}$/);
+    expect(openDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     await prevLink.click();
-    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${prevMonth}$`));
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${prevMonth}&day=${openDay}$`));
+    await expect(page.locator('[data-calendar-view]')).toHaveAttribute('data-selected-date', openDay ?? '');
     const prevLabel = ((await monthLabel.textContent()) ?? '').trim();
     expect(prevLabel).not.toBe(initialLabel);
 
@@ -162,7 +168,7 @@ test.describe('Calendar page', () => {
     expect(nextMonth).toMatch(/^\d{4}-\d{2}$/);
     expect(nextMonth).not.toBe(prevMonth);
     await nextLink.click();
-    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${nextMonth}$`));
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${nextMonth}&day=${openDay}$`));
 
     await todayLink.click();
     await expect(page).toHaveURL(/\/calendar$/);
@@ -350,6 +356,33 @@ test.describe('Calendar page', () => {
     const legend = page.locator('.calendar-legend');
     await legend.scrollIntoViewIfNeeded();
     await expectElementAboveMobileTabbar(page, legend);
+  });
+
+  // WEB-231 / WEB-265: an unbroken note used to stretch the 375px page to one
+  // weekday per screen, and the today pill was hidden on every phone.
+  test('a phone calendar stays viewport-wide with a long unbroken note and keeps a today marker', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-mobile-long-note');
+    await page.setViewportSize({ width: 375, height: 812 });
+
+    const todayISO = await todayISOFromCalendar(page);
+    const note = `https://example.test/${'x'.repeat(300)}`;
+    const dayEditorForm = await openCalendarDayEditor(page, todayISO);
+    await openCalendarNotes(dayEditorForm);
+    await dayEditorForm.locator('#calendar-notes').fill(note);
+    await saveDayEditorForm(page, todayISO, dayEditorForm);
+
+    await page.goto(`/calendar?month=${todayISO.slice(0, 7)}&day=${todayISO}`);
+    await expect(page.locator('#day-editor')).toContainText(note);
+    const widths = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+    }));
+    expect(widths.scroll).toBeLessThanOrEqual(widths.viewport);
+
+    const todayPill = page.locator(`button[data-day="${todayISO}"] .calendar-today-pill`);
+    await expect(todayPill).toBeVisible();
+    await expect(todayPill.locator('.calendar-tag-label-short')).toBeVisible();
+    await expect(todayPill.locator('.calendar-tag-label-full')).toBeHidden();
   });
 
   test('past day entry can be edited from calendar and persists after reload', async ({ page }) => {

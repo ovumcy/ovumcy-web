@@ -1,7 +1,11 @@
-// A saved calendar day refreshes the month grid and leaves the open editor
-// alone: the editor already shows what the owner saved, and a reload would
-// discard anything typed while the save ran. The editor is never re-fetched
-// after a save, whatever method or path the day form submits with.
+// A saved calendar day leaves the open editor alone: the editor already shows
+// what the owner saved, and a reload would discard anything typed while the
+// save ran. The editor is never re-fetched after a save, whatever method or
+// path the day form submits with.
+//
+// The month grid refresh is the save response's own HX-Trigger header, which
+// htmx fires on the form and which bubbles to the body. A client-side trigger
+// beside it made every save fetch the grid twice.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -57,14 +61,15 @@ const FORMS = [
 ];
 
 for (const shape of FORMS) {
-  test(`a saved day refreshes the grid and does not re-fetch the editor (${shape.label})`, async () => {
+  test(`a saved day leaves the grid refresh to the response and does not re-fetch the editor (${shape.label})`, async () => {
     const calls = [];
     const { dom, window } = await saveDay({ ...shape, calls });
     try {
-      const grid = calls.filter((call) => call.kind === "trigger");
-      assert.equal(grid.length, 1, "the grid refresh fires exactly once");
-      assert.equal(grid[0].name, "calendar-day-updated");
-      assert.equal(grid[0].element, window.document.body, "the grid listens on the body");
+      assert.deepEqual(
+        calls.filter((call) => call.kind === "trigger"),
+        [],
+        "the client fires no grid refresh of its own",
+      );
 
       assert.deepEqual(
         calls.filter((call) => call.kind === "ajax"),

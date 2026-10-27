@@ -84,20 +84,46 @@ func LocalizedMonthYear(language string, value time.Time) string {
 }
 
 func LocalizedDateLabel(language string, value time.Time) string {
+	return localizedWeekdayDate(language, value, false)
+}
+
+// LocalizedDayHeading is the day panel's heading: the weekday label, with the
+// year added only when day is not in today's year. Both are midnights in the
+// request zone, so their years compare directly.
+func LocalizedDayHeading(language string, day time.Time, today time.Time) string {
+	return localizedWeekdayDate(language, day, day.Year() != today.Year())
+}
+
+func localizedWeekdayDate(language string, value time.Time, withYear bool) string {
 	lang, names := dateNamesFor(language)
 	weekday := names.weekdaysShort[int(value.Weekday())]
 	month := names.monthsShort[monthIndex(value)]
 
 	switch lang {
 	case "ru":
+		if withYear {
+			return fmt.Sprintf("%s, %d %s %d", weekday, value.Day(), names.monthsLong[monthIndex(value)], value.Year())
+		}
 		return fmt.Sprintf("%s, %d %s", weekday, value.Day(), names.monthsLong[monthIndex(value)])
 	case "es":
+		if withYear {
+			return fmt.Sprintf("%s, %d %s %d", weekday, value.Day(), month, value.Year())
+		}
 		return fmt.Sprintf("%s, %d %s", weekday, value.Day(), month)
 	case "de":
+		if withYear {
+			return fmt.Sprintf("%s, %d. %s %d", weekday, value.Day(), month, value.Year())
+		}
 		return fmt.Sprintf("%s, %d. %s", weekday, value.Day(), month)
 	case "fr", "it":
+		if withYear {
+			return fmt.Sprintf("%s %d %s %d", weekday, value.Day(), month, value.Year())
+		}
 		return fmt.Sprintf("%s %d %s", weekday, value.Day(), month)
 	default:
+		if withYear {
+			return fmt.Sprintf("%s, %s %d, %d", weekday, month, value.Day(), value.Year())
+		}
 		return fmt.Sprintf("%s, %s %d", weekday, month, value.Day())
 	}
 }

@@ -8,12 +8,12 @@
 
     <div class="flex flex-wrap items-center gap-2" data-calendar-month-nav>
       {{if .PrevMonth}}
-      <a href="/calendar?month={{.PrevMonth}}" class="btn-secondary">{{t .Messages "calendar.prev"}}</a>
+      <a href="/calendar?month={{.PrevMonth}}{{if .SelectedDate}}&day={{.SelectedDate}}{{end}}" class="btn-secondary">{{t .Messages "calendar.prev"}}</a>
       {{else}}
       <span class="btn-secondary btn-disabled" aria-disabled="true">{{t .Messages "calendar.prev"}}</span>
       {{end}}
       {{if .NextMonth}}
-      <a href="/calendar?month={{.NextMonth}}" class="btn-secondary">{{t .Messages "calendar.next"}}</a>
+      <a href="/calendar?month={{.NextMonth}}{{if .SelectedDate}}&day={{.SelectedDate}}{{end}}" class="btn-secondary">{{t .Messages "calendar.next"}}</a>
       {{else}}
       <span class="btn-secondary btn-disabled" aria-disabled="true">{{t .Messages "calendar.next"}}</span>
       {{end}}
@@ -49,9 +49,12 @@
       hx-swap="outerHTML"
       class="hidden"></div>
 
+    {{/* min-w-0 on both columns: a grid item's automatic minimum is its
+         content's min-content width, so one unbroken note or symptom name in
+         the panel would otherwise widen the page, month grid included. */}}
     <section
       id="calendar-grid-panel"
-      class="card p-2 sm:p-5">
+      class="card min-w-0 p-2 sm:p-5">
       {{/* The legend leads the grid: it explains an encoding the reader is
            about to use, so it has to be on screen while the month is. The
            entries are concepts, not CSS states — each swatch paints exactly
@@ -163,10 +166,10 @@
 
     </section>
 
-    <aside id="day-editor" class="card p-4 sm:p-5">
+    <aside id="day-editor" class="card min-w-0 p-4 sm:p-5">
       {{if .SelectedDate}}
       <div
-        data-day-editor-autoload
+        data-day-editor-autoload="{{if .SelectedDateEditMode}}edit{{end}}"
         hx-get="/calendar/day/{{.SelectedDate}}{{if .SelectedDateEditMode}}?mode=edit{{end}}"
         hx-trigger="load"
         hx-target="#day-editor"

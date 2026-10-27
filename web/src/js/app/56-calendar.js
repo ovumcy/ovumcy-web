@@ -17,6 +17,21 @@
     }
   }
 
+  // Prev and Next keep the open day; Today, which names no month, still opens
+  // today.
+  function syncCalendarMonthNav(selectedDate) {
+    var links = document.querySelectorAll("[data-calendar-month-nav] a[href]:not([data-calendar-today])");
+    for (var index = 0; index < links.length; index++) {
+      try {
+        var linkURL = new URL(links[index].getAttribute("href"), window.location.href);
+        linkURL.searchParams.set("day", selectedDate);
+        links[index].setAttribute("href", linkURL.pathname + linkURL.search + linkURL.hash);
+      } catch {
+        // Leave a link with a malformed href as it was rendered.
+      }
+    }
+  }
+
   function calendarDayButton(root, date) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return null;
@@ -105,19 +120,23 @@
   // A day opened from the grid, or re-opened by Edit, Cancel or Delete,
   // replaces the control that had focus. Focus goes to the panel heading so it
   // is announced and never falls to the body. The panel a ?day= URL loads on
-  // its own leaves focus where the page put it.
+  // its own leaves focus where the page put it; one loaded for editing is
+  // still brought into view, since the owner came to type into it.
   function focusOpenedDayPanel(event) {
     var detail = event.detail || {};
     var target = detail.target || event.target;
     if (!target || target.id !== "day-editor") {
       return;
     }
-    var source = (detail.requestConfig && detail.requestConfig.elt) || detail.elt;
-    if (source && source.hasAttribute && source.hasAttribute("data-day-editor-autoload")) {
-      return;
-    }
     var heading = target.querySelector("[data-day-editor-heading]");
     if (!heading) {
+      return;
+    }
+    var source = (detail.requestConfig && detail.requestConfig.elt) || detail.elt;
+    if (source && source.hasAttribute && source.hasAttribute("data-day-editor-autoload")) {
+      if (source.getAttribute("data-day-editor-autoload") === "edit") {
+        revealDayPanel(target, heading);
+      }
       return;
     }
     revealDayPanel(target, heading);
@@ -142,6 +161,7 @@
           delete this.dataset.calendarFocusDay;
           syncCalendarSelection(this);
           syncCalendarURL(selectedDate);
+          syncCalendarMonthNav(selectedDate);
         });
 
         root.addEventListener("keydown", function (event) {

@@ -11,7 +11,7 @@
   </div>
   <div {{if eq .Log.Notes ""}}hidden{{end}}>
     <p class="journal-muted">{{t .Messages "dashboard.notes"}}</p>
-    <p class="mt-1 whitespace-pre-wrap wrap-break-word">{{.Log.Notes}}</p>
+    <p class="mt-1 whitespace-pre-wrap wrap-anywhere">{{.Log.Notes}}</p>
   </div>
 </div>
 {{end}}
@@ -32,7 +32,7 @@
       {{if hasSymptom $.SelectedSymptomID .ID}}
       <li class="chip chip-lead chip-static" title="{{symptomLabel $.Messages .Name}}">
         <span class="symptom-icon">{{.Icon}}</span>
-        <span class="symptom-label">{{symptomLabel $.Messages .Name}}</span>
+        <span class="symptom-label wrap-anywhere">{{symptomLabel $.Messages .Name}}</span>
       </li>
       {{end}}
       {{end}}
@@ -46,7 +46,7 @@
       {{range .Log.CycleFactorKeys}}
       <li class="chip chip-lead chip-static">
         <span class="symptom-icon">{{cycleFactorIcon .}}</span>
-        <span class="symptom-label">{{cycleFactorLabel $.Messages .}}</span>
+        <span class="symptom-label wrap-anywhere">{{cycleFactorLabel $.Messages .}}</span>
       </li>
       {{end}}
     </ul>
@@ -71,7 +71,7 @@
 
   <div {{if eq .Log.Notes ""}}hidden{{end}}>
     <p class="journal-muted">{{t .Messages "dashboard.notes"}}</p>
-    <p class="mt-2 whitespace-pre-wrap wrap-break-word">{{.Log.Notes}}</p>
+    <p class="mt-2 whitespace-pre-wrap wrap-anywhere">{{.Log.Notes}}</p>
   </div>
 </div>
 {{end}}

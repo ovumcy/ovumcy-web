@@ -759,7 +759,9 @@ test.describe('Bug regressions', () => {
         const targetMonth = new URL(href, page.url()).searchParams.get('month');
         expect(targetMonth).toMatch(/^\d{4}-\d{2}$/);
         await previousControl.click();
-        await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${targetMonth}$`));
+        // The control also carries the open day (WEB-265), so the month is
+        // followed by &day= or ends the URL.
+        await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${targetMonth}(?:&|$)`));
       }
 
       const lowerBoundMonth = await browserMonthYearsAgo(page, 3);

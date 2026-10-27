@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	staticassets "github.com/ovumcy/ovumcy-web/web"
 	"golang.org/x/net/html"
 	"gorm.io/gorm"
 )
@@ -793,5 +795,174 @@ func TestDeleteDayInUTCMinusTimezoneRemovesCanonicalRow(t *testing.T) {
 	}
 	if rowCount != 0 {
 		t.Fatalf("expected TZ-minus DELETE to remove the row, %d still present", rowCount)
+	}
+}
+
+func calendarUTCPage(t *testing.T, app *fiber.App, authCookie string, path string) *html.Node {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"=UTC"))
+	request.Header.Set(timezoneHeaderName, "UTC")
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+}
+
+// "Sun, Oct 5" is ambiguous once the owner reaches a day in another year, and
+// a year on every day of this one is noise.
+func TestDayPanelHeadingNamesTheYearOnlyForADayOutsideTheCurrentYear(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-heading-year@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	lastYear := time.Date(today.Year()-1, time.January, 15, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		day      time.Time
+		wantYear bool
+	}{
+		{day: lastYear, wantYear: true},
+		{day: today, wantYear: false},
+	} {
+		for _, mode := range []string{"", "?mode=edit"} {
+			path := "/calendar/day/" + tc.day.Format("2006-01-02") + mode
+			heading := htmlFindElement(calendarUTCPage(t, app, authCookie, path), htmlNodeHasAttr("data-day-editor-heading"))
+			if heading == nil {
+				t.Fatalf("%s: no day panel heading", path)
+			}
+			year := strconv.Itoa(tc.day.Year())
+			if got := strings.Contains(htmlNodeText(heading), year); got != tc.wantYear {
+				t.Fatalf("%s: heading %q names the year %s = %v, want %v", path, htmlNodeText(heading), year, got, tc.wantYear)
+			}
+		}
+	}
+}
+
+func calendarMonthNavLinks(t *testing.T, document *html.Node) (prev *url.URL, next *url.URL, today *url.URL) {
+	t.Helper()
+
+	nav := htmlFindElement(document, htmlNodeHasAttr("data-calendar-month-nav"))
+	if nav == nil {
+		t.Fatal("no month navigation on the calendar page")
+	}
+	links := htmlFindElements(nav, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "a"
+	})
+	if len(links) != 3 || !htmlHasAttr(links[2], "data-calendar-today") {
+		t.Fatalf("expected Prev, Next and then Today links, got %d links", len(links))
+	}
+	parse := func(node *html.Node) *url.URL {
+		parsed, err := url.Parse(htmlAttr(node, "href"))
+		if err != nil {
+			t.Fatalf("month link href %q: %v", htmlAttr(node, "href"), err)
+		}
+		return parsed
+	}
+	return parse(links[0]), parse(links[1]), parse(links[2])
+}
+
+// Stepping a month keeps the open day; Today still means today.
+func TestCalendarMonthNavigationCarriesTheSelectedDay(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-nav-day@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	month := today.Format("2006-01")
+	selected := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+
+	prev, next, todayLink := calendarMonthNavLinks(t, calendarUTCPage(t, app, authCookie, "/calendar?month="+month+"&day="+selected))
+	for name, link := range map[string]*url.URL{"prev": prev, "next": next} {
+		stepped := link.Query().Get("month")
+		if link.Path != "/calendar" || stepped == "" || stepped == month {
+			t.Fatalf("%s link %q does not step the month", name, link)
+		}
+		if got := link.Query().Get("day"); got != selected {
+			t.Fatalf("%s link %q carries day=%q, want %q", name, link, got, selected)
+		}
+	}
+	if todayLink.String() != "/calendar" {
+		t.Fatalf("Today link %q, want /calendar", todayLink)
+	}
+
+	prev, next, _ = calendarMonthNavLinks(t, calendarUTCPage(t, app, authCookie, "/calendar?month="+month))
+	for name, link := range map[string]*url.URL{"prev": prev, "next": next} {
+		if link.Query().Has("day") {
+			t.Fatalf("%s link %q carries a day although none is selected", name, link)
+		}
+	}
+}
+
+// A 300-character unbroken note or a 40-character symptom name wraps inside
+// the panel. The two calendar columns are grid items, whose automatic minimum
+// is their content's min-content width, so without min-w-0 one long token
+// widens the whole page, month grid included.
+func TestCalendarLongContentCannotWidenThePage(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-long-content@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	symptomName := strings.Repeat("S", 40)
+	symptom := models.SymptomType{UserID: user.ID, Name: symptomName, Icon: "A", Color: "#FF7755"}
+	if err := database.Create(&symptom).Error; err != nil {
+		t.Fatalf("create symptom: %v", err)
+	}
+	note := "https://example.test/" + strings.Repeat("x", 300)
+	day := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	if err := database.Create(&models.DailyLog{
+		UserID:     user.ID,
+		Date:       day,
+		Flow:       models.FlowNone,
+		SymptomIDs: []uint{symptom.ID},
+		Notes:      note,
+	}).Error; err != nil {
+		t.Fatalf("create daily log: %v", err)
+	}
+
+	page := calendarUTCPage(t, app, authCookie, "/calendar?day="+day.Format("2006-01-02"))
+	for _, id := range []string{"calendar-grid-panel", "day-editor"} {
+		if column := htmlElementByID(page, id); column == nil || !htmlHasClass(column, "min-w-0") {
+			t.Fatalf("#%s is a grid item without min-w-0", id)
+		}
+	}
+
+	panel := calendarUTCPage(t, app, authCookie, "/calendar/day/"+day.Format("2006-01-02"))
+	for subject, text := range map[string]string{"note": note, "symptom name": symptomName} {
+		holder := htmlFindElement(panel, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.FirstChild != nil && node.FirstChild == node.LastChild &&
+				node.FirstChild.Type == html.TextNode && strings.TrimSpace(node.FirstChild.Data) == text
+		})
+		if holder == nil {
+			t.Fatalf("the day summary does not render the %s", subject)
+		}
+		if !htmlHasClass(holder, "wrap-anywhere") {
+			t.Fatalf("the %s renders in <%s class=%q> without wrap-anywhere", subject, holder.Data, htmlAttr(holder, "class"))
+		}
+	}
+}
+
+// The template classes above draw nothing unless the build emitted them, and
+// the ≤640px today marker is the pill's short label, which a today-cell-scoped
+// display:none used to hide on every phone.
+func TestCalendarOverflowAndTodayMarkerRulesReachTheServedStylesheet(t *testing.T) {
+	t.Parallel()
+
+	stylesheet, err := staticassets.Files.ReadFile("static/css/tailwind.css")
+	if err != nil {
+		t.Fatalf("read the embedded stylesheet: %v", err)
+	}
+	rules := string(stylesheet)
+	// The minifier merges selectors that share a declaration block, so the
+	// utility may lead, follow or sit inside a selector list.
+	for utility, declaration := range map[string]string{"min-w-0": "min-width:0", "wrap-anywhere": "overflow-wrap:anywhere"} {
+		rule := regexp.MustCompile(`(^|[,}])\.` + utility + `(,[^{}]*)?\{` + declaration + `[;}]`)
+		if !rule.MatchString(rules) {
+			t.Fatalf("the served stylesheet carries no .%s{%s} rule", utility, declaration)
+		}
+	}
+	if strings.Contains(rules, ".calendar-cell-today .calendar-today-pill{display:none") {
+		t.Fatal("the served stylesheet hides the today pill inside the today cell, so a phone shows no today marker")
 	}
 }

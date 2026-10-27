@@ -201,13 +201,36 @@ test("the arrowed-to day keeps the Tab stop across a swap; a click hands it back
   }
 });
 
-test("the panel a ?day= URL loads on its own leaves focus alone", async () => {
-  const dom = await load("2026-10-04");
+test("the panel a ?day= URL loads on its own leaves focus and scroll alone", async () => {
+  const scrolls = [];
+  const dom = await load("2026-10-04", { scrolls });
   try {
     const { window } = dom;
+    layout(window, { gridBottom: 610, panelTop: 630 });
     const autoload = window.document.querySelector("[data-day-editor-autoload]");
     swapPanel(window, autoload);
     assert.equal(window.document.activeElement, window.document.body);
+    assert.deepEqual(scrolls, []);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The dashboard's "log yesterday" link lands on /calendar?day=D&edit=1: the
+// owner came to type into that day, so a panel stacked under the month is
+// brought up. Focus still stays where the page put it.
+test("a ?day= URL that opens the panel for editing brings a stacked panel up without moving focus", async () => {
+  const scrolls = [];
+  const dom = await load("2026-10-04", { scrolls });
+  try {
+    const { window } = dom;
+    layout(window, { gridBottom: 610, panelTop: 630 });
+    const autoload = window.document.querySelector("[data-day-editor-autoload]");
+    autoload.setAttribute("data-day-editor-autoload", "edit");
+    swapPanel(window, autoload);
+    assert.equal(window.document.activeElement, window.document.body);
+    assert.equal(scrolls.length, 1);
+    assert.equal(scrolls[0].top, 630 - 80 - 12);
   } finally {
     dom.window.close();
   }

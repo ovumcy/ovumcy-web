@@ -336,18 +336,6 @@
     window.showToast(message, "error");
   }
 
-  function maybeRefreshDayEditor(target) {
-    var dayEditor = document.getElementById("day-editor");
-    var form = target.closest("form[data-save-feedback]");
-    if (!dayEditor || !form || !form.closest("#day-editor")) {
-      return;
-    }
-
-    if (window.htmx && typeof window.htmx.trigger === "function") {
-      window.htmx.trigger(document.body, "calendar-day-updated");
-    }
-  }
-
   // Parses a server error response into the message the client may show. The
   // fragment is parsed with DOMParser and only its TEXT is adopted: server
   // templates already escape user-supplied values, so today this is purely
@@ -952,7 +940,8 @@
         return;
       }
 
-      maybeRefreshDayEditor(target);
+      // The month grid refresh is the save response's HX-Trigger header; a
+      // client trigger here as well fetched the grid twice per save.
       maybeShowSuccessToast(target);
       scheduleClearSuccessStatus(target);
     });

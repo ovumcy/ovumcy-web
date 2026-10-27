@@ -111,6 +111,28 @@ func TestLocalizedDateLabel(t *testing.T) {
 	}
 }
 
+func TestLocalizedDayHeadingNamesTheYearOnlyOutsideTheCurrentYear(t *testing.T) {
+	day := time.Date(2025, time.October, 5, 0, 0, 0, 0, time.UTC)
+	sameYear := time.Date(2025, time.December, 31, 0, 0, 0, 0, time.UTC)
+	nextYear := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+
+	for lang, want := range map[string]string{
+		"en": "Sun, Oct 5, 2025",
+		"ru": "Вс, 5 октября 2025",
+		"es": "dom, 5 oct 2025",
+		"de": "So., 5. Okt. 2025",
+		"fr": "dim 5 oct 2025",
+		"it": "dom 5 ott 2025",
+	} {
+		if got := LocalizedDayHeading(lang, day, nextYear); got != want {
+			t.Errorf("%s: heading for a day in another year = %q, want %q", lang, got, want)
+		}
+		if got, label := LocalizedDayHeading(lang, day, sameYear), LocalizedDateLabel(lang, day); got != label {
+			t.Errorf("%s: heading for a day in the current year = %q, want the year-less label %q", lang, got, label)
+		}
+	}
+}
+
 func TestLocalizedDateDisplay(t *testing.T) {
 	value := time.Date(2026, time.January, 29, 0, 0, 0, 0, time.UTC)
 
