@@ -177,12 +177,12 @@ test("an element in no toast surface renders no status anywhere", async () => {
 const TWO_ISLANDS_PAGE = `<!doctype html><html><head></head><body>
   <details id="settings-egress" data-settings-section data-status-island-host open>
     <form hx-post="/api/v1/users/current/webhook" hx-target="#settings-egress" data-settings-webhook-form data-save-feedback>
-      <div data-status-island-group>
+      <div data-status-island-group="webhook">
         <button type="submit" data-save-button>Save</button>
         <div id="settings-egress-status" class="save-status" aria-live="polite"></div>
       </div>
     </form>
-    <div data-status-island-group>
+    <div data-status-island-group="feed">
       <form hx-post="/api/v1/users/current/calendar-feed/rotate" hx-target="#settings-egress" data-feed-form>
         <button type="submit">Rotate</button>
       </form>
@@ -198,6 +198,29 @@ test("a feed response error lands in the feed island, not the webhook one", asyn
     fire(dom.window, "htmx:responseError", {
       target: document.getElementById("settings-egress"),
       elt: document.querySelector("[data-feed-form]"),
+      xhr: { status: 500, responseText: '<div class="status-error">Could not update the feed.</div>' },
+    });
+    assert.match(islandText(dom.window, "settings-egress-feed-status"), /Could not update the feed/);
+    assert.equal(islandText(dom.window, "settings-egress-status"), "");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("after the card replaced itself, a feed answer still resolves the new feed island", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: TWO_ISLANDS_PAGE });
+  try {
+    const { document } = dom.window;
+    // The requesting form is detached by the outerHTML swap; a fresh card
+    // with the same groups is what afterSwap sees.
+    const detachedForm = document.querySelector("[data-feed-form]");
+    const card = document.getElementById("settings-egress");
+    const fresh = card.cloneNode(true);
+    card.replaceWith(fresh);
+    fresh.querySelector("#settings-egress-feed-status").innerHTML = '<div class="status-ok">Feed turned off.</div>';
+    fire(dom.window, "htmx:responseError", {
+      target: fresh,
+      elt: detachedForm,
       xhr: { status: 500, responseText: '<div class="status-error">Could not update the feed.</div>' },
     });
     assert.match(islandText(dom.window, "settings-egress-feed-status"), /Could not update the feed/);

@@ -1700,10 +1700,32 @@
     }
     var group = source.closest("[data-status-island-group]");
     var host = resolved.closest ? resolved.closest("[data-status-island-host]") : null;
-    if (!group || !host || !host.contains(group)) {
+    if (!group || !host) {
       return resolved;
     }
+    if (!host.contains(group)) {
+      // A card that replaced itself took the requesting element with it, so
+      // after the swap the source's group is the OLD one; find the new group of
+      // the same name in the card that arrived.
+      group = sameNamedIslandGroup(host, group.getAttribute("data-status-island-group"));
+      if (!group) {
+        return resolved;
+      }
+    }
     return group.querySelector(".save-status") || resolved;
+  }
+
+  function sameNamedIslandGroup(host, name) {
+    if (!name) {
+      return null;
+    }
+    var groups = host.querySelectorAll("[data-status-island-group]");
+    for (var index = 0; index < groups.length; index += 1) {
+      if (groups[index].getAttribute("data-status-island-group") === name) {
+        return groups[index];
+      }
+    }
+    return null;
   }
 
   function resolveStatusContainer(target) {
