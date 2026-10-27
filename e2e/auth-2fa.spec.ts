@@ -264,8 +264,15 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // Disable
     await page.locator('input[name="password"]').fill(creds.password);
     await page.locator(DISABLE_2FA_SUBMIT).click();
-    // HTMX-intercepted; wait for inline success status, then reload to render
-    // the setup view (DB now has TOTPEnabled=false).
+    // The form asks through the app's confirm modal before it submits.
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await page.locator('#confirm-modal-accept').click();
+    // HTMX-intercepted; the panel re-renders in place as the disabled state with
+    // its success status. Reload to render the setup view (DB now has
+    // TOTPEnabled=false).
+    await expect(page.locator('#settings-2fa-panel [data-settings-2fa-disabled]')).toBeVisible({
+      timeout: 5_000,
+    });
     await expect(page.locator('#settings-2fa-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
 
