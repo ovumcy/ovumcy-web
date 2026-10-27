@@ -84,8 +84,8 @@ func CalendarAdjacentMonthValuesWithinBounds(monthStart time.Time, minMonth time
 }
 
 // CalendarMaximumNavigableMonth bounds how far into the future the calendar
-// page may be navigated: three years from now, the forward mirror of
-// CalendarMinimumNavigableMonth's three-year look-back from account creation.
+// page may be navigated: three years from now, the forward mirror of the
+// three-year look-back from account creation in CalendarMinimumNavigableMonth.
 // It is not a medical-relevance bound — the app's own forward projection
 // horizon (calendarFeedProjectionCycles, ~90 days) is far shorter than this —
 // it is a COST bound: appendPredictedCycles chains forward from "now" to the
