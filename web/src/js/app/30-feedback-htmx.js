@@ -292,6 +292,17 @@
     island.dataset.toastShown = identity;
   }
 
+  // The inverse of rememberToastFor, for BOTH keys: a request that starts, or
+  // fails without an answer, ends the run of repeats, so the next success must
+  // be allowed its toast. Clearing only the per-node key left an island with an
+  // id suppressing the retry's toast as a repeat of the one before the failure.
+  function forgetToastFor(island) {
+    if (island.id) {
+      delete lastToastRegistry()[island.id];
+    }
+    delete island.dataset.toastShown;
+  }
+
   // What the repeat is judged by. The flash key names the message the server
   // chose and survives everything done to the rendered node afterwards — the
   // dismiss button appended below is already enough to change the node's text,
@@ -840,11 +851,12 @@
     setSaveButtonState(form, false);
   }
 
-  // A settings request that never got an answer (offline, aborted, timed out)
+  // An htmx request that never got an answer (offline, aborted, timed out)
   // fires no responseError, so without this the status island kept whatever the
   // previous save said — a stale "Saved" beside a save that did not happen.
-  // Every settings htmx request resolves its island the same way the answered
-  // paths do, and the island is only touched inside a settings card.
+  // Every htmx request resolves its island the same way the answered paths
+  // do; one whose target resolves to no island has nowhere to say it and is
+  // left alone. The day editor and dashboard save are handled before this.
   function handleSettingsTransportFailure(event) {
     var detail = event ? event.detail : null;
     var form = getSaveFeedbackFormFromEvent(event);
@@ -858,12 +870,12 @@
       }
     }
     var island = statusContainerFor(target || form || getEventTarget(event));
-    if (!island || !island.closest || !island.closest("[data-settings-section]")) {
+    if (!island) {
       return;
     }
     var fallback = document.body.getAttribute("data-request-failed") || "Request failed. Please try again.";
     renderErrorStatus(island, fallback);
-    delete island.dataset.toastShown;
+    forgetToastFor(island);
     setSaveButtonState(form, false);
   }
 
@@ -940,7 +952,7 @@
     document.body.addEventListener("htmx:beforeRequest", function (event) {
       var statusTarget = statusContainerFor(event && event.detail ? event.detail.target : null);
       if (statusTarget) {
-        delete statusTarget.dataset.toastShown;
+        forgetToastFor(statusTarget);
       }
       // A day save sent through htmx (the calendar's Save and its retry) is the
       // start the dashboard runner marks by clearing its notice.

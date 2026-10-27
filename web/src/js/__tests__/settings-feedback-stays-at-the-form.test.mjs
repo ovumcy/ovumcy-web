@@ -197,14 +197,14 @@ test("a self-replacing card puts focus on the marked control and scrolls its row
   try {
     const scrolled = [];
     dom.window.HTMLElement.prototype.scrollIntoView = function (options) {
-      scrolled.push({ id: this.id, margin: this.style.scrollMarginTop, options });
+      scrolled.push({ id: this.id, inlineStyle: this.getAttribute("style"), options });
     };
     swapCard(dom.window, SYMPTOMS_AFTER);
 
     assert.equal(dom.window.document.activeElement.id, "settings-symptom-name-2", "focus follows the renamed row, not BODY");
     assert.equal(scrolled.length, 1);
     assert.equal(scrolled[0].id, "settings-symptom-row-2", "the row is scrolled, not the field alone");
-    assert.match(scrolled[0].margin, /--sticky-header-clearance/);
+    assert.equal(scrolled[0].inlineStyle, null, "the clearance is the settings-section class's, not a copy in an inline style");
   } finally {
     dom.window.close();
   }
@@ -217,6 +217,178 @@ test("a swap that loses focus and names no marker lands on the card's summary", 
     swapCard(dom.window, SYMPTOMS_AFTER.replace(" data-focus-after-swap", ""));
 
     assert.equal(dom.window.document.activeElement.tagName, "SUMMARY");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// ---- review round: announcement, focus theft, swap pairing, toast key, coverage ----
+
+const ROUND_BEFORE = `<input id="elsewhere" type="text">
+${SYMPTOMS_BEFORE}`;
+
+const ROUND_AFTER = SYMPTOMS_AFTER.replace(
+  "data-focus-after-swap>",
+  'data-focus-after-swap aria-describedby="settings-symptom-status-2">'
+).replace(
+  "</details>",
+  '<div id="settings-symptom-status-2" role="status"><div class="status-ok">Symptom saved</div></div></details>'
+);
+
+function stubScroll(window) {
+  const scrolled = [];
+  window.HTMLElement.prototype.scrollIntoView = function () {
+    scrolled.push(this.id);
+  };
+  return scrolled;
+}
+
+function beforeSwap(window, target, shouldSwap = true) {
+  target.dispatchEvent(new window.CustomEvent("htmx:beforeSwap", { bubbles: true, detail: { target, shouldSwap } }));
+}
+
+function afterSwap(window, root, target) {
+  root.dispatchEvent(new window.CustomEvent("htmx:afterSwap", { bubbles: true, detail: { target } }));
+}
+
+test("a swap that carries the marker announces the described message through one page-level live region", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: `<!doctype html><html><body>${ROUND_BEFORE}</body></html>` });
+  try {
+    const doc = dom.window.document;
+    stubScroll(dom.window);
+    swapCard(dom.window, ROUND_AFTER);
+    const region = doc.querySelector("[data-swap-announcer]");
+    assert.ok(region, "the announcer exists");
+    assert.equal(region.getAttribute("aria-live"), "polite");
+    assert.equal(region.textContent, "", "cleared first, so a repeat is announced again");
+    await settle();
+    assert.equal(region.textContent, "Symptom saved");
+
+    swapCard(dom.window, ROUND_AFTER);
+    await settle();
+    assert.equal(doc.querySelectorAll("[data-swap-announcer]").length, 1, "one persistent region, not one per swap");
+    assert.equal(doc.querySelector("[data-swap-announcer]").textContent, "Symptom saved");
+    const stack = doc.querySelector(".toast-stack");
+    assert.equal(stack ? stack.children.length : 0, 0, "no second feedback channel");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a swap does not steal focus the owner moved elsewhere, but still announces", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: `<!doctype html><html><body>${ROUND_BEFORE}</body></html>` });
+  try {
+    const doc = dom.window.document;
+    const scrolled = stubScroll(dom.window);
+    const old = doc.getElementById("settings-symptoms");
+    // Pressed Save, then moved on while the request was in flight.
+    doc.getElementById("elsewhere").focus();
+    beforeSwap(dom.window, old);
+    old.outerHTML = ROUND_AFTER;
+    afterSwap(dom.window, doc.getElementById("settings-symptoms"), old);
+    await settle();
+
+    assert.equal(doc.activeElement.id, "elsewhere", "focus stays where the owner put it");
+    assert.deepEqual(scrolled, [], "no scroll without a focus move");
+    assert.equal(doc.querySelector("[data-swap-announcer]").textContent, "Symptom saved");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("focus that was never inside the region and is lost afterwards is still repaired", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: `<!doctype html><html><body>${ROUND_BEFORE}</body></html>` });
+  try {
+    const doc = dom.window.document;
+    stubScroll(dom.window);
+    const old = doc.getElementById("settings-symptoms");
+    beforeSwap(dom.window, old);
+    old.outerHTML = ROUND_AFTER;
+    afterSwap(dom.window, doc.getElementById("settings-symptoms"), old);
+    assert.equal(doc.activeElement.id, "settings-symptom-name-2");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("overlapping swaps each keep their own focus memory", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: `<!doctype html><html><body>${SYMPTOMS_BEFORE}<div id="other-region"><p>x</p></div></body></html>`,
+  });
+  try {
+    const doc = dom.window.document;
+    dom.window.HTMLElement.prototype.scrollIntoView = function () {};
+    const old = doc.getElementById("settings-symptoms");
+    doc.getElementById("save-1").focus();
+    beforeSwap(dom.window, old);
+    beforeSwap(dom.window, doc.getElementById("other-region"));
+    old.outerHTML = SYMPTOMS_AFTER.replace(" data-focus-after-swap", "");
+    afterSwap(dom.window, doc.getElementById("settings-symptoms"), old);
+    assert.equal(doc.activeElement.tagName, "SUMMARY", "the second beforeSwap did not overwrite the first target's state");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a beforeSwap that never swapped leaves no memory behind", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: `<!doctype html><html><body>${SYMPTOMS_BEFORE}</body></html>` });
+  try {
+    const doc = dom.window.document;
+    dom.window.HTMLElement.prototype.scrollIntoView = function () {};
+    const card = doc.getElementById("settings-symptoms");
+    doc.getElementById("save-1").focus();
+    beforeSwap(dom.window, card, false);
+    card.dispatchEvent(new dom.window.CustomEvent("htmx:afterRequest", { bubbles: true, detail: { target: card } }));
+    doc.activeElement.blur();
+    afterSwap(dom.window, card, card);
+    assert.equal(doc.activeElement.tagName, "BODY", "a later swap is not repaired on the strength of a swap that never happened");
+  } finally {
+    dom.window.close();
+  }
+});
+
+for (const [label, trigger] of [
+  ["a transport failure", "htmx:sendError"],
+  ["the start of the next request", "htmx:beforeRequest"],
+]) {
+  test(`${label} forgets the repeat key an island with an id keeps on the page`, async () => {
+    const dom = await loadDOMWithScript(APP_BUNDLE, { html: REMINDERS_PAGE });
+    try {
+      dom.window.__ovumcyLastToastByIsland = { "settings-reminders-status": "saved-key", "other-island": "keep" };
+      const doc = dom.window.document;
+      const island = doc.getElementById("settings-reminders-status");
+      const form = doc.getElementById("reminders");
+      form.dispatchEvent(new dom.window.CustomEvent(trigger, { bubbles: true, detail: { target: island, elt: form } }));
+      assert.equal(dom.window.__ovumcyLastToastByIsland["settings-reminders-status"], undefined);
+      assert.equal(dom.window.__ovumcyLastToastByIsland["other-island"], "keep", "only this island's key is forgotten");
+    } finally {
+      dom.window.close();
+    }
+  });
+}
+
+const NON_SETTINGS_PAGE = `<!doctype html><html lang="en"><head></head>
+<body data-request-failed="Request failed. Please try again.">
+  <form id="usage-goal" hx-patch="/api/v1/users/current/cycle" hx-target="#usage-goal-status" data-save-feedback>
+    <button type="submit" data-save-button>Save</button>
+    <div id="usage-goal-status" class="save-status" aria-live="polite"><div class="status-ok">Saved</div></div>
+  </form>
+  <form id="no-island" hx-post="/x" hx-target="#nowhere"><button type="submit">Go</button></form>
+</body></html>`;
+
+test("a transport failure outside the settings page says so in the form's own island", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: NON_SETTINGS_PAGE });
+  try {
+    const doc = dom.window.document;
+    const island = doc.getElementById("usage-goal-status");
+    doc.getElementById("usage-goal").dispatchEvent(
+      new dom.window.CustomEvent("htmx:timeout", { bubbles: true, detail: { target: island, elt: doc.getElementById("usage-goal") } })
+    );
+    assert.equal(island.textContent.trim(), "Request failed. Please try again.");
+
+    const lonely = doc.getElementById("no-island");
+    lonely.dispatchEvent(new dom.window.CustomEvent("htmx:timeout", { bubbles: true, detail: { elt: lonely } }));
+    assert.equal(doc.querySelectorAll(".status-error").length, 1, "a form with no resolvable island is left alone");
   } finally {
     dom.window.close();
   }

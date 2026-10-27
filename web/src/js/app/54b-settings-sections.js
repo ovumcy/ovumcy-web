@@ -205,14 +205,52 @@
   }
 
   function scrollIntoViewBelowStickyChrome(node) {
+    // The anchor carries the settings-section class, which is where the
+    // clearance below the sticky chrome lives; nothing is computed here.
     var anchor = node.closest("[data-focus-scroll-anchor]") || node;
-    // The same clearance the cards' scroll-margin-top uses, read from the
-    // figures publishSettingsStickyChrome keeps current.
-    anchor.style.scrollMarginTop =
-      "calc(var(--sticky-header-clearance, 4.5rem) + var(--settings-section-nav-height, 0px) + 0.75rem)";
     if (typeof anchor.scrollIntoView === "function") {
       anchor.scrollIntoView({ block: "nearest" });
     }
+  }
+
+  // The new message arrives inside the swapped region already holding its
+  // text, and a live region that arrives with its content is not announced. So
+  // the text of whatever the marker is described by is spoken through ONE
+  // page-level polite region that outlives every swap; the region is cleared
+  // first and filled on the next tick so an identical message is announced
+  // again. This is not the toast stack: a message has one feedback channel.
+  function swapAnnouncer() {
+    var existing = document.querySelector("[data-swap-announcer]");
+    if (existing) {
+      return existing;
+    }
+    var region = document.createElement("div");
+    region.className = "sr-only";
+    region.setAttribute("role", "status");
+    region.setAttribute("aria-live", "polite");
+    region.setAttribute("data-swap-announcer", "");
+    document.body.appendChild(region);
+    return region;
+  }
+
+  function announceDescription(marked) {
+    var ids = String(marked.getAttribute("aria-describedby") || "").split(/\s+/);
+    var parts = [];
+    ids.forEach(function (id) {
+      var node = id ? document.getElementById(id) : null;
+      var text = node ? String(node.textContent || "").replace(/\s+/g, " ").trim() : "";
+      if (text) {
+        parts.push(text);
+      }
+    });
+    if (!parts.length) {
+      return;
+    }
+    var region = swapAnnouncer();
+    region.textContent = "";
+    window.setTimeout(function () {
+      region.textContent = parts.join(" ");
+    }, 0);
   }
 
   function bindFocusAfterSwap() {
@@ -221,25 +259,52 @@
     }
     document.body.dataset.focusAfterSwapBound = "true";
 
-    var focusWasInside = "";
+    // Whether focus sat inside a swap target when its swap began, keyed by that
+    // target. Overlapping swaps each keep their own entry; an entry is consumed
+    // by its afterSwap, and dropped by afterRequest when no swap followed (a
+    // beforeSwap with shouldSwap=false has no afterSwap to consume it).
+    var focusInsideByTarget = new WeakMap();
 
     document.body.addEventListener("htmx:beforeSwap", function (event) {
       var swapped = event && event.detail ? event.detail.target : null;
+      if (!swapped || typeof swapped !== "object") {
+        return;
+      }
       var active = document.activeElement;
-      focusWasInside =
-        swapped && swapped.id && active && active !== document.body && swapped.contains(active) ? swapped.id : "";
+      focusInsideByTarget.set(
+        swapped,
+        Boolean(event.detail.shouldSwap !== false && active && active !== document.body && swapped.contains(active))
+      );
+    });
+
+    document.body.addEventListener("htmx:afterRequest", function (event) {
+      var requested = event && event.detail ? event.detail.target : null;
+      if (requested && typeof requested === "object") {
+        focusInsideByTarget.delete(requested);
+      }
     });
 
     document.body.addEventListener("htmx:afterSwap", function (event) {
-      var inside = focusWasInside;
-      focusWasInside = "";
+      var swapped = event && event.detail ? event.detail.target : null;
+      var inside = false;
+      if (swapped && typeof swapped === "object") {
+        inside = focusInsideByTarget.get(swapped) === true;
+        focusInsideByTarget.delete(swapped);
+      }
       var root = focusAfterSwapRoot(event);
       if (!root || !root.querySelector) {
         return;
       }
       var marked = root.matches && root.matches(FOCUS_AFTER_SWAP_MARKER) ? root : root.querySelector(FOCUS_AFTER_SWAP_MARKER);
-      var focusLost = !document.activeElement || document.activeElement === document.body;
-      if (!marked && !(inside && focusLost && root.id === inside)) {
+      if (marked) {
+        announceDescription(marked);
+      }
+      var active = document.activeElement;
+      var focusLost = !active || active === document.body || !active.isConnected;
+      // Focus the owner moved elsewhere while the request was in flight is
+      // theirs: it moves only when it was in the swapped region or is gone.
+      var moveFocus = marked ? inside || focusLost : inside && focusLost;
+      if (!moveFocus) {
         return;
       }
       var destination = marked || root.querySelector("summary") || root;

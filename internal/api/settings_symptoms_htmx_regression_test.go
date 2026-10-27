@@ -381,6 +381,58 @@ func TestSettingsSymptomsHTMXRenameMarksTheRenamedRowForFocusAfterTheSwap(t *tes
 	if describedBy != "settings-symptom-status-"+id || htmlElementByAttr(document, "id", describedBy) == nil {
 		t.Fatalf("expected the focus target to be described by the row's status region, got %q", describedBy)
 	}
+	// A success is not an invalid field, and the row's scroll clearance is the
+	// settings-section class, not an inline copy of its calculation.
+	if htmlAttr(marked[0], "aria-invalid") != "" {
+		t.Fatalf("a successful rename must not mark the input invalid")
+	}
+	row := htmlElementByAttr(document, "id", "settings-symptom-row-"+id)
+	if !htmlHasClass(row, "settings-section") || htmlAttr(row, "style") != "" {
+		t.Fatalf("expected the row to take its scroll clearance from the settings-section class, got class=%q style=%q", htmlAttr(row, "class"), htmlAttr(row, "style"))
+	}
+}
+
+// A refused rename marks the input it refused as invalid, so a screen reader
+// reads the refusal with the field it belongs to.
+func TestSettingsSymptomsHTMXRefusedRenameMarksTheNameInputInvalid(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "settings-symptoms-invalid-marker@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
+
+	symptom := models.SymptomType{UserID: user.ID, Name: "Alpha", Icon: "💧", Color: "#38BDF8"}
+	if err := database.Create(&symptom).Error; err != nil {
+		t.Fatalf("create custom symptom: %v", err)
+	}
+
+	form := url.Values{"csrf_token": {csrfToken}, "name": {strings.Repeat("x", 80)}, "icon": {"💧"}}
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/symptoms/"+strconv.FormatUint(uint64(symptom.ID), 10), strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+	bindDayWriteForTest(t, request, user.ID)
+
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("refused rename htmx request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read refused rename response: %v", err)
+	}
+
+	document := mustParseHTMLDocument(t, string(body))
+	refusals := htmlFindElements(document, func(node *html.Node) bool {
+		return htmlHasAttr(node, "data-symptom-row-error")
+	})
+	if len(refusals) != 1 {
+		t.Fatalf("expected the refusal to be rendered in the row, got %d refusal elements in %s", len(refusals), string(body))
+	}
+	input := htmlElementByAttr(document, "id", "settings-symptom-name-"+strconv.FormatUint(uint64(symptom.ID), 10))
+	if input == nil || htmlAttr(input, "aria-invalid") != "true" {
+		t.Fatalf("expected the refused name input to carry aria-invalid=true")
+	}
 }
 
 type settingsSymptomsHTMXTestContext struct {

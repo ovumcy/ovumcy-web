@@ -22,7 +22,7 @@
 {{define "settings_custom_symptom_card"}}
 <div
   id="settings-symptom-row-{{.Symptom.ID}}"
-  class="card-quiet card-fit space-y-4"
+  class="card-quiet card-fit settings-section space-y-4"
   data-focus-scroll-anchor
   data-custom-symptom-row
   data-symptom-id="{{.Symptom.ID}}"
@@ -64,6 +64,7 @@
           maxlength="40"
           data-symptom-name-input
           {{if or .ErrorMessage .SuccessMessage}}data-focus-after-swap aria-describedby="settings-symptom-status-{{.Symptom.ID}}"{{end}}
+          {{if .ErrorMessage}}aria-invalid="true"{{end}}
           class="input-field"
           autocomplete="off">
         <p class="journal-muted text-xs" data-symptom-name-count></p>
