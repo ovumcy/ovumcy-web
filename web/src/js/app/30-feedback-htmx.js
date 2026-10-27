@@ -865,7 +865,7 @@
       var selector = form.getAttribute("hx-target");
       try {
         target = selector ? document.querySelector(selector) : null;
-      } catch (error) {
+      } catch {
         target = null;
       }
     }
