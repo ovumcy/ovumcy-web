@@ -796,24 +796,45 @@ func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
 func TestShowTOTPSetupPageWithoutALocalPasswordOffersTheSetupNotTheForm(t *testing.T) {
 	t.Parallel()
 
-	ctx := newOIDCOnlySettingsSecurityTestContext(t, "totp-no-local-password@example.com")
-
-	request := httptest.NewRequest(http.MethodGet, "/settings/2fa", nil)
-	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", ctx.authCookie)
-	response := mustAppResponse(t, ctx.app, request)
-	assertStatusCode(t, response, http.StatusOK)
-	if cookie := responseCookie(response.Cookies(), totpSetupCookieName); cookie != nil {
-		t.Fatalf("expected no enrollment seed to be minted for an account that cannot confirm it, got Set-Cookie %#v", cookie)
+	assertDependencyNoticeInsteadOfForms := func(t *testing.T, ctx settingsSecurityTestContext) {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, "/settings/2fa", nil)
+		request.Header.Set("Accept-Language", "en")
+		request.Header.Set("Cookie", ctx.authCookie)
+		response := mustAppResponse(t, ctx.app, request)
+		assertStatusCode(t, response, http.StatusOK)
+		if cookie := responseCookie(response.Cookies(), totpSetupCookieName); cookie != nil {
+			t.Fatalf("expected no enrollment seed to be minted for an account that cannot confirm it, got Set-Cookie %#v", cookie)
+		}
+		rendered := mustReadBodyString(t, response.Body)
+		assertBodyContainsAll(t, rendered,
+			bodyStringMatch{fragment: "data-settings-2fa-local-password-required", message: "expected the local-password dependency notice"},
+			bodyStringMatch{fragment: `href="/settings#settings-account"`, message: "expected a link to the account section that holds the local-password setup"},
+		)
+		assertBodyNotContainsAll(t, rendered,
+			bodyStringMatch{fragment: "data:image/png;base64,", message: "did not expect a QR code for an account that cannot confirm enrollment"},
+			bodyStringMatch{fragment: "data-totp-manual-secret", message: "did not expect the manual seed for an account that cannot confirm enrollment"},
+			bodyStringMatch{fragment: `action="/api/v1/users/current/2fa"`, message: "did not expect an enrol or disable form the re-auth would refuse"},
+		)
 	}
-	rendered := mustReadBodyString(t, response.Body)
-	assertBodyContainsAll(t, rendered,
-		bodyStringMatch{fragment: "data-settings-2fa-local-password-required", message: "expected the local-password dependency notice"},
-		bodyStringMatch{fragment: `href="/settings#settings-account"`, message: "expected a link to the account section that holds the local-password setup"},
-	)
-	assertBodyNotContainsAll(t, rendered,
-		bodyStringMatch{fragment: "data:image/png;base64,", message: "did not expect a QR code for an account that cannot confirm enrollment"},
-		bodyStringMatch{fragment: "data-totp-manual-secret", message: "did not expect the manual seed for an account that cannot confirm enrollment"},
-		bodyStringMatch{fragment: `action="/api/v1/users/current/2fa"`, message: "did not expect an enrol or disable form the re-auth would refuse"},
-	)
+
+	t.Run("not yet enrolled: the enrol form gives way to the notice", func(t *testing.T) {
+		t.Parallel()
+		assertDependencyNoticeInsteadOfForms(t, newOIDCOnlySettingsSecurityTestContext(t, "totp-no-local-password@example.com"))
+	})
+
+	// The disable form re-authenticates against the same password, so an
+	// account that enabled 2FA while it had one and has since none (operator
+	// re-home, or a password it never set) sees the same notice, not a form
+	// every submit of which is refused.
+	t.Run("already enrolled: the disable form gives way to the notice", func(t *testing.T) {
+		t.Parallel()
+		ctx := newOIDCOnlySettingsSecurityTestContext(t, "totp-enabled-no-local-password@example.com")
+		svc := getTOTPServiceForTest(ctx.database)
+		if err := svc.EnableTOTP(context.Background(), ctx.user.ID, ctx.user.AuthSessionVersion, "JBSWY3DPEHPK3PXP", verifiedEnrollmentStepForTest(t, "JBSWY3DPEHPK3PXP")); err != nil {
+			t.Fatalf("EnableTOTP: %v", err)
+		}
+		ctx.refreshAuthCookie(t)
+		assertDependencyNoticeInsteadOfForms(t, ctx)
+	})
 }
