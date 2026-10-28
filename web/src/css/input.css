@@ -3448,12 +3448,12 @@
       0 0 0 2px rgba(255, 255, 255, 0.8);
   }
 
+  /* A solid outline outside the box: the amber inset ring above is also the
+     today cell's resting ring, so reusing it left a focused today cell looking
+     unfocused. */
   &:focus-visible {
-    outline: none;
-    border-color: rgba(212, 165, 116, 0.95);
-    box-shadow:
-      inset 0 0 0 2px rgba(212, 165, 116, 0.78),
-      0 0 0 2px rgba(255, 255, 255, 0.8);
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
   }
 
   /* The selection ring is the accent ink, which reads deeper than the amber
@@ -3739,8 +3739,10 @@
   }
 }
 
+/* No opacity: it multiplied the day number's 6.12:1 down to 2.37:1. The number
+   keeps --text-muted (calendar-day-out); the box fades by desaturating. */
 @utility calendar-cell-out {
-  opacity: 0.55;
+  filter: saturate(0.55);
 }
 
 @utility calendar-cell-today {
@@ -4149,6 +4151,10 @@
 @utility warning-amber {
   color: #8b5a1c;
   font-weight: 600;
+
+  :root[data-theme='dark'] & {
+    color: #e8b87a;
+  }
 }
 
 @utility status-transient {
@@ -4616,7 +4622,7 @@
     --cal-fertile-edge: 217 235 198;
     --cal-fertile-peak: 142 203 134;
     --cal-ovulation: 244 213 141;
-    --cal-today: 212 165 116;
+    --cal-today: 168 116 58;
     /* A day tag paints white text on a solid fill, so ovulation and fertile
        need the deeper reading of the same two concepts; the washes above are
        mixed for dark text on a card. Theme-independent on purpose — the tag is
@@ -4719,18 +4725,20 @@
         rgb(255 255 255 / 0) 10px
       ),
       color-mix(in srgb, var(--fertile-positive-edge) 78%, white 22%);
-    --cal-line-period: rgb(var(--cal-period) / 0.7);
-    --cal-line-predicted: rgb(var(--cal-predicted) / 0.85);
-    --cal-line-fertile: rgb(var(--cal-fertile-ink) / 0.7);
+    /* Solid, each >=3:1 on white (WCAG 1.4.11): the old translucent borders
+       measured 1.95-2.58 and the legend swatch is only its border. */
+    --cal-line-period: #c25f55;
+    --cal-line-predicted: #a8743a;
+    --cal-line-fertile: #5f8f69;
     /* The tier borders were inline on rules that only the two goal selectors
        ever reached; named here so the newly reachable default goal does not
        paint a light-theme border in the dark theme. */
-    --cal-line-fertile-edge: rgb(154 184 132 / 0.78);
-    --cal-line-fertile-peak: rgb(93 147 95 / 0.82);
+    --cal-line-fertile-edge: #6f9156;
+    --cal-line-fertile-peak: #55885a;
     /* Dashed like the projected band it is half of, but drawn in the fertile
        ink: no other state on the grid carries that pair, so the border alone
        already separates the overlap cell from both of its parents. */
-    --cal-line-overlap-period-fertile: rgb(var(--cal-fertile-ink) / 0.85);
+    --cal-line-overlap-period-fertile: #5f8f69;
     /* ---- cycle-phase colours — one source for every phase surface ------ */
     /* Phase and fertility are two orthogonal axes (#416), and this family is
        the phase one: menstrual / follicular / ovulation / luteal, never
@@ -4869,7 +4877,11 @@
       0 0 0 3px rgba(186, 131, 80, 0.24), var(--elevation-2);
     /* The radio itself is transparent, so the focus ring is painted on the
        chip beside it. */
-    --chip-focus-ring: rgba(186, 131, 80, 0.58);
+    --chip-focus-ring: var(--focus-ring);
+    /* Solid, 5.77:1 on white and 5.32:1 on --bg-soft: a focus indicator is a
+       non-text UI component and needs 3:1 (WCAG 1.4.11); the old 0.58-alpha
+       amber measured 1.84:1. */
+    --focus-ring: #9a5324;
 
     /* Card — the grouping surface, its quiet nested level, the auth hero and
        the empty-state illustration frame. Same reason as the chip: one token
@@ -5133,7 +5145,8 @@
     --chip-selected-shadow: 0 0 0 2px var(--accent-soft), var(--elevation-2);
     --chip-selected-lift-shadow:
       0 0 0 3px rgba(222, 176, 117, 0.22), var(--elevation-2);
-    --chip-focus-ring: rgba(222, 176, 117, 0.7);
+    --chip-focus-ring: var(--focus-ring);
+    --focus-ring: #f0b57f;
 
     /* Card, dark side. --card-illustration-border/-surface below; the hero
        reads the same two-stop recipe over the dark card. */
@@ -5206,7 +5219,7 @@
   textarea:focus-visible,
   select:focus-visible,
   summary:focus-visible {
-    outline: 2px solid rgba(186, 131, 80, 0.58);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 }
