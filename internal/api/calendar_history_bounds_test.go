@@ -129,6 +129,29 @@ func TestCalendarFailsWhenTheHistoryBoundCannotBeRead(t *testing.T) {
 	}
 }
 
+// WEB-345: the disabled Next stand-in keeps the role its Prev twin carries, so
+// a screen reader announces a disabled link rather than bare text at the upper
+// bound too.
+func TestCalendarDisabledNextIsADisabledLink(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-disabled-next@example.com", "StrongPass1", true)
+	cookie := issueAuthCookieForUser(t, user)
+
+	html := mustGetCalendarHTML(t, app, cookie, "/calendar?month=9999-12")
+	end := strings.Index(html, ">Next</span>")
+	if end < 0 {
+		t.Fatalf("expected the Next control as a disabled span at the upper bound, got:\n%s", html)
+	}
+	tag := html[strings.LastIndex(html[:end], "<span"):end]
+	for _, want := range []string{`role="link"`, `aria-disabled="true"`} {
+		if !strings.Contains(tag, want) {
+			t.Fatalf("the disabled Next span lacks %s: %s>", want, tag)
+		}
+	}
+}
+
 func mustGetCalendarHTML(t *testing.T, app *fiber.App, cookie string, target string) string {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodGet, target, nil)
