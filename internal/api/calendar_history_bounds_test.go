@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
@@ -139,12 +140,25 @@ func TestCalendarDisabledNextIsADisabledLink(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "calendar-disabled-next@example.com", "StrongPass1", true)
 	cookie := issueAuthCookieForUser(t, user)
 
+	manager, err := i18n.NewManager("en")
+	if err != nil {
+		t.Fatalf("load locales: %v", err)
+	}
+	label := manager.Messages("en")["calendar.next"]
+	if strings.TrimSpace(label) == "" {
+		t.Fatal("the en locale has no calendar.next label")
+	}
+
 	html := mustGetCalendarHTML(t, app, cookie, "/calendar?month=9999-12")
-	end := strings.Index(html, ">Next</span>")
+	end := strings.Index(html, ">"+label+"</span>")
 	if end < 0 {
 		t.Fatalf("expected the Next control as a disabled span at the upper bound, got:\n%s", html)
 	}
-	tag := html[strings.LastIndex(html[:end], "<span"):end]
+	start := strings.LastIndex(html[:end], "<span")
+	if start < 0 {
+		t.Fatalf("the Next label closes a span with no opening tag before it:\n%s", html)
+	}
+	tag := html[start:end]
 	for _, want := range []string{`role="link"`, `aria-disabled="true"`} {
 		if !strings.Contains(tag, want) {
 			t.Fatalf("the disabled Next span lacks %s: %s>", want, tag)
