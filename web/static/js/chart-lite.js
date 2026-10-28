@@ -472,7 +472,7 @@
     if (indexes[indexes.length - 1] !== lastIndex) {
       var previous = indexes[indexes.length - 1];
       var reach = (context.measureText(labels[previous]).width + context.measureText(labels[lastIndex]).width) / 2 + LABEL_GAP;
-      if (xForIndex(lastIndex) - xForIndex(previous) < reach) {
+      if (previous !== 0 && xForIndex(lastIndex) - xForIndex(previous) < reach) {
         indexes.pop();
       }
       indexes.push(lastIndex);
@@ -841,11 +841,21 @@
 
   // The canvas takes its ink from CSS variables read at draw time, so a system
   // light/dark flip needs a repaint to reach it.
+  // An in-app theme change moves data-theme on <html>; the system flip moves it
+  // through the app's own listener, and the media query covers the gap before.
   if (typeof window.matchMedia === "function") {
     var colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
     if (colorScheme && typeof colorScheme.addEventListener === "function") {
       colorScheme.addEventListener("change", scheduleRender);
+    } else if (colorScheme && typeof colorScheme.addListener === "function") {
+      colorScheme.addListener(scheduleRender);
     }
+  }
+  if (typeof MutationObserver === "function") {
+    new MutationObserver(scheduleRender).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"]
+    });
   }
 
   // A touch readout has no pointerleave to end it, so it is dismissed the two

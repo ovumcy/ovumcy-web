@@ -126,6 +126,18 @@ test("a colour-scheme change repaints the chart", async () => {
   assert.ok(context.calls.filter((call) => call.op === "clearRect").length > before, "the canvas was redrawn");
 });
 
+test("an in-app theme change repaints the chart", async () => {
+  const { dom, context } = await render(
+    { kind: "line", labels: labels(5), values: [36.4, 36.5, 36.6, 36.5, 36.4] },
+    { attributes: { "data-value-suffix": "°C" } },
+  );
+  const before = context.calls.filter((call) => call.op === "clearRect").length;
+  dom.window.document.documentElement.setAttribute("data-theme", "dark");
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  dom.window.close();
+  assert.ok(context.calls.filter((call) => call.op === "clearRect").length > before, "the canvas was redrawn");
+});
+
 test("the cannot-draw fallback is the template's text", async () => {
   const { dom } = await render(
     { kind: "line", labels: labels(5), values: [36.4, 36.5, 36.6, 36.5, 36.4] },
