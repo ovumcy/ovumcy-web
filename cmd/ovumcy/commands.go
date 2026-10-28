@@ -87,22 +87,25 @@ func handleUsersCommand(args []string, handlers cliCommandHandlers) (bool, error
 	return true, handlers.runUsers(databaseConfig, resolveLocalSignInEnabled, args[1:])
 }
 
-// resolveLocalSignInEnabled reads OIDC_LOGIN_MODE through the boot's own
-// resolver, so a config the server would refuse is refused here too.
+// resolveLocalSignInEnabled reads only the two variables the mode depends on,
+// parsed as the boot parses them: provisioning must not start failing on an
+// OIDC secret or CA file it never uses.
 func resolveLocalSignInEnabled() (bool, error) {
-	cookieSecure, err := getEnvBoolStrict("COOKIE_SECURE", false)
+	enabled, err := getEnvBoolStrict("OIDC_ENABLED", false)
 	if err != nil {
 		return false, err
 	}
-	registrationMode, err := resolveRegistrationMode()
-	if err != nil {
-		return false, err
+	if !enabled {
+		return true, nil
 	}
-	oidcConfig, err := resolveOIDCConfig(cookieSecure, registrationMode)
-	if err != nil {
-		return false, err
+	switch security.OIDCLoginMode(strings.ToLower(strings.TrimSpace(os.Getenv("OIDC_LOGIN_MODE")))) {
+	case "", security.OIDCLoginModeHybrid:
+		return true, nil
+	case security.OIDCLoginModeOIDCOnly:
+		return false, nil
+	default:
+		return false, fmt.Errorf("OIDC_LOGIN_MODE must be hybrid or oidc_only")
 	}
-	return oidcConfig.LocalPublicAuthEnabled(), nil
 }
 
 func handleHealthcheckCommand(args []string, handlers cliCommandHandlers) (bool, error) {

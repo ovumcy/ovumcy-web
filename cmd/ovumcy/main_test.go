@@ -1936,6 +1936,8 @@ func TestTryRunCLICommandWithHandlersDispatchesUsersCommand(t *testing.T) {
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("DB_PATH", filepath.Join(t.TempDir(), "cli-users.db"))
 	t.Setenv("DATABASE_URL", "")
+	t.Setenv("OIDC_ENABLED", "true")
+	t.Setenv("OIDC_LOGIN_MODE", "oidc_only")
 
 	called := false
 	handled, err := tryRunCLICommandWithHandlers([]string{"users", "list"}, cliCommandHandlers{
@@ -1947,6 +1949,9 @@ func TestTryRunCLICommandWithHandlersDispatchesUsersCommand(t *testing.T) {
 			called = true
 			if localSignInEnabled == nil {
 				t.Fatal("expected a local sign-in mode resolver")
+			}
+			if enabled, err := localSignInEnabled(); err != nil || enabled {
+				t.Fatalf("expected the env-backed resolver to read oidc_only, got %v, %v", enabled, err)
 			}
 			if databaseConfig.Driver != db.DriverSQLite {
 				t.Fatalf("expected sqlite driver, got %q", databaseConfig.Driver)

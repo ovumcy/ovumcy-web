@@ -19,8 +19,7 @@ import (
 )
 
 // RunUsersCommand runs `ovumcy users`. localSignInEnabled reports whether the
-// instance's OIDC_LOGIN_MODE leaves local sign-in on; only `create` resolves it,
-// so a config the server would refuse blocks provisioning and nothing else.
+// instance's OIDC_LOGIN_MODE leaves local sign-in on; only `create` resolves it.
 func RunUsersCommand(databaseConfig db.Config, localSignInEnabled func() (bool, error), args []string) error {
 	return runUsersCommandIn(databaseConfig, localSignInEnabled, args, calendarFeedFencePath(), os.Stdin, os.Stdout)
 }
