@@ -42,7 +42,10 @@ type StatsCycleRibbon struct {
 	// AxisTruncated reports that at least one cycle is longer than the axis the
 	// DOM bound allows, so the stack is no longer a complete comparison.
 	AxisTruncated bool
-	Rows          []StatsCycleRibbonRow
+	// TotalCycles is every completed cycle the account has, so a caption can say
+	// the drawn rows are the latest of that many rather than all of them.
+	TotalCycles int
+	Rows        []StatsCycleRibbonRow
 }
 
 type StatsCycleRibbonRow struct {
@@ -54,7 +57,13 @@ type StatsCycleRibbonRow struct {
 	// off the drawing — only off CycleLength beside it. Two such rows are the
 	// same width whatever their lengths, and without this flag nothing said so.
 	Truncated bool
-	Days      []StatsCycleRibbonDay
+	// LoggedDays, FertileStartDay and FertileEndDay restate the bands as numbers
+	// for a reader who cannot see them. The fertile window is zero unless the row
+	// drew an estimated one, under the same gates as the bar itself.
+	LoggedDays      int
+	FertileStartDay int
+	FertileEndDay   int
+	Days            []StatsCycleRibbonDay
 }
 
 type StatsCycleRibbonDay struct {
@@ -118,6 +127,7 @@ func buildStatsCycleRibbon(user *models.User, stats CycleStats, logs []models.Da
 		AxisDays:      axisDays,
 		ShowPhases:    showPhases,
 		AxisTruncated: axisTruncated,
+		TotalCycles:   len(completedCycles),
 		Rows:          rows,
 	}
 }
@@ -214,13 +224,25 @@ func statsCycleRibbonRow(cycle completedCycleSpan, axisDays int, luteal int, sho
 		days = append(days, cell)
 	}
 
-	return StatsCycleRibbonRow{
+	row := StatsCycleRibbonRow{
 		Start:        cycle.Start,
 		CycleLength:  cycle.CycleLength,
 		PeriodLength: cycle.PeriodLength,
 		Truncated:    cycle.CycleLength > axisDays,
 		Days:         days,
 	}
+	for _, cell := range days {
+		if cell.IsLogged {
+			row.LoggedDays++
+		}
+		if cell.IsFertile {
+			if row.FertileStartDay == 0 {
+				row.FertileStartDay = cell.Day
+			}
+			row.FertileEndDay = cell.Day
+		}
+	}
+	return row
 }
 
 // statsCycleRibbonPhase resolves one day of a COMPLETED cycle. Menstrual is the

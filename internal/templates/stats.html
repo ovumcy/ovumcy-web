@@ -361,10 +361,16 @@
     <section class="card p-4 sm:p-5" data-stats-cycle-stack>
       <h2 class="journal-subtitle">{{t .Messages "stats.cycle_stack_title"}}</h2>
       <p class="journal-muted mt-1 text-sm">{{t .Messages "stats.cycle_stack_subtitle"}}</p>
+      <p class="journal-muted mt-1 text-xs" data-cycle-stack-count>{{printf (t .Messages "stats.cycle_stack_count") (len .CycleRibbon.Rows) .CycleRibbon.TotalCycles}}</p>
+      {{if gt .CycleRibbon.TotalCycles (len .CycleRibbon.Rows)}}<p class="journal-muted mt-1 text-xs" data-cycle-stack-hidden-note>{{t .Messages "stats.cycle_stack_hidden_note"}}</p>{{end}}
       <ol class="stats-cycle-stack mt-4" data-cycle-stack-rows>
         {{range .CycleRibbon.Rows}}
         <li class="stats-cycle-stack-row" data-cycle-stack-row>
-          <span class="stats-cycle-stack-label">{{formatLocalizedDate $.Lang .Start "display"}}</span>
+          {{/* The bands are decoration for the eye; this is the same row in words.
+               The visible date and length beside the band are hidden from
+               assistive tech so the row is not read twice. */}}
+          <span class="sr-only" data-cycle-stack-row-summary>{{printf (t $.Messages "stats.cycle_stack_row_summary") (formatLocalizedDate $.Lang .Start "display") .CycleLength (t $.Messages "common.days_short") .PeriodLength (t $.Messages "common.days_short") .LoggedDays}}{{if .FertileStartDay}} {{printf (t $.Messages "stats.cycle_stack_row_fertile") .FertileStartDay .FertileEndDay}}{{end}}</span>
+          <span class="stats-cycle-stack-label" aria-hidden="true">{{formatLocalizedDate $.Lang .Start "display"}}</span>
           <span class="stats-cycle-stack-band" aria-hidden="true" {{if .Truncated}}data-truncated="true"{{end}}>
             {{range .Days}}
             <span
@@ -378,10 +384,25 @@
               {{if .IsLogged}}data-logged="true"{{end}}></span>
             {{end}}
           </span>
-          <span class="stats-cycle-stack-length">{{.CycleLength}}{{t $.Messages "common.days_short"}}</span>
+          <span class="stats-cycle-stack-length" aria-hidden="true">{{.CycleLength}}{{t $.Messages "common.days_short"}}</span>
         </li>
         {{end}}
       </ol>
+      {{/* The swatches are the stack's own day cells, so a colour in the legend
+           is the colour in the rows by construction. */}}
+      <ul class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs journal-muted" data-cycle-stack-legend>
+        <li class="inline-flex items-center gap-2" data-cycle-stack-legend-item><span class="stats-cycle-stack-day inline-block h-3 w-4 shrink-0" data-in-cycle="true" data-phase="menstrual" aria-hidden="true"></span>{{t .Messages "stats.cycle_stack_legend_period"}}</li>
+        {{if .CycleRibbon.ShowPhases}}
+        <li class="inline-flex items-center gap-2" data-cycle-stack-legend-item><span class="stats-cycle-stack-day inline-block h-3 w-4 shrink-0" data-in-cycle="true" data-phase="follicular" aria-hidden="true"></span>{{phaseLabel .Messages "follicular"}}</li>
+        <li class="inline-flex items-center gap-2" data-cycle-stack-legend-item><span class="stats-cycle-stack-day inline-block h-3 w-4 shrink-0" data-in-cycle="true" data-phase="ovulation" aria-hidden="true"></span>{{phaseLabel .Messages "ovulation"}}</li>
+        <li class="inline-flex items-center gap-2" data-cycle-stack-legend-item><span class="stats-cycle-stack-day inline-block h-3 w-4 shrink-0" data-in-cycle="true" data-phase="luteal" aria-hidden="true"></span>{{phaseLabel .Messages "luteal"}}</li>
+        <li class="inline-flex items-center gap-2" data-cycle-stack-legend-item><span class="stats-cycle-stack-day inline-block h-3 w-4 shrink-0" data-in-cycle="true" data-phase="follicular" data-fertile="true" aria-hidden="true"></span>{{t .Messages "stats.cycle_stack_legend_fertile"}}</li>
+        {{else}}
+        <li class="inline-flex items-center gap-2" data-cycle-stack-legend-item><span class="stats-cycle-stack-day inline-block h-3 w-4 shrink-0" data-in-cycle="true" aria-hidden="true"></span>{{t .Messages "stats.cycle_stack_legend_other"}}</li>
+        {{end}}
+        <li class="inline-flex items-center gap-2" data-cycle-stack-legend-item><span class="stats-cycle-stack-day inline-block h-3 w-4 shrink-0" data-in-cycle="true" data-logged="true" aria-hidden="true"></span>{{t .Messages "stats.cycle_stack_legend_logged"}}</li>
+      </ul>
+      {{if .CycleRibbon.ShowPhases}}<p class="journal-muted mt-2 text-xs">{{t .Messages "stats.cycle_stack_legend_estimate"}} {{t .Messages "medical.disclaimer"}}</p>{{end}}
       {{/* The axis is capped, so a cycle longer than it has its band stop at
            the cap rather than at its own end — and two such rows are drawn the
            same width whatever their lengths. The bands are aria-hidden
