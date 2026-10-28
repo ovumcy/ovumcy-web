@@ -226,6 +226,7 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"HasLastCycleSymptoms":                viewData.HasLastCycleSymptoms,
 		"HasSymptomPatterns":                  viewData.HasSymptomPatterns,
 		"HasCurrentCycleBBTChart":             viewData.HasCurrentCycleBBTChart,
+		"BBTHasBaseline":                      viewData.CurrentCycleBBTChart.HasBaseline,
 		"BBTReadingCount":                     viewData.CurrentCycleBBTChart.ReadingCount,
 		"BBTReadingsRequired":                 viewData.CurrentCycleBBTChart.ReadingsRequired,
 		"HasPhaseMoodInsights":                viewData.HasPhaseMoodInsights,

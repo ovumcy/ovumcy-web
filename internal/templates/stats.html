@@ -312,7 +312,7 @@
           class="chart-shell">
         </div>
         <p id="stats-bbt-summary" class="journal-muted mt-3 text-xs">{{.BBTChartSummary}}</p>
-        {{if .BBTChartData.baseline}}<p class="journal-muted mt-2 text-xs" data-bbt-coverline-hint>{{t .Messages "stats.bbt_coverline_hint"}}</p>{{end}}
+        {{if .BBTHasBaseline}}<p class="journal-muted mt-2 text-xs" data-bbt-coverline-hint>{{t .Messages "stats.bbt_coverline_hint"}}</p>{{end}}
         <p id="stats-bbt-caption" class="journal-muted mt-2 text-sm">{{t .Messages "stats.bbt_caption"}}</p>
         {{$bbtUnit := .BBTUnitLabel}}
         {{$bbtNoReading := t .Messages "stats.bbt_table_no_reading"}}

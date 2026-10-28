@@ -36,7 +36,10 @@ func statsBBTPanelPage(t *testing.T, bbtOffsets []int) string {
 		{UserID: user.ID, Date: cycleStart.AddDate(0, 0, -28), IsPeriod: true, CycleStart: true},
 		{UserID: user.ID, Date: cycleStart, IsPeriod: true, CycleStart: true, BBT: &values[0]},
 	}
-	for _, offset := range bbtOffsets[1:] {
+	for _, offset := range bbtOffsets {
+		if offset == 0 {
+			continue
+		}
 		logs = append(logs, models.DailyLog{UserID: user.ID, Date: cycleStart.AddDate(0, 0, offset), BBT: &values[offset]})
 	}
 	if err := database.Create(&logs).Error; err != nil {
@@ -91,6 +94,9 @@ func TestStatsPageDatesTheMarkerAndFlagsItsTableRow(t *testing.T) {
 	}
 	if !strings.Contains(summary, "Probable ovulation, ") {
 		t.Fatalf("expected the marker to carry its date, got %q", summary)
+	}
+	if !strings.Contains(rendered, "data-bbt-coverline-hint") {
+		t.Fatal("expected the coverline explanation beside a drawn coverline")
 	}
 	if !strings.Contains(rendered, `aria-describedby="stats-bbt-summary stats-bbt-caption stats-bbt-table-toggle"`) {
 		t.Fatal("expected the chart to point at its table toggle")
