@@ -1071,11 +1071,14 @@ func (service *DayService) LoadAutoFillSettings(ctx context.Context, userID uint
 	if err != nil {
 		return models.DefaultPeriodLength, false, err
 	}
-	periodLength := persisted.PeriodLength
+	return normalizedAutoFillPeriodLength(persisted.PeriodLength), persisted.AutoPeriodFill, nil
+}
+
+func normalizedAutoFillPeriodLength(periodLength int) int {
 	if periodLength < 1 || periodLength > 14 {
-		periodLength = models.DefaultPeriodLength
+		return models.DefaultPeriodLength
 	}
-	return periodLength, persisted.AutoPeriodFill, nil
+	return periodLength
 }
 
 func (service *DayService) ShouldAutoFillPeriodDays(ctx context.Context, userID uint, dayStart time.Time, wasPeriod bool, autoPeriodFillEnabled bool, periodLength int, location *time.Location) (bool, error) {

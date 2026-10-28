@@ -7,6 +7,8 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
+import { untickPeriodThroughConfirm } from './support/confirm-dialog-helpers';
+import { localeTextWithCount } from './support/locale-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { openCalendarDayEditor, saveDayEditorForm } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
@@ -78,7 +80,10 @@ test.describe('calendar auto-fill clear-on-toggle-off', () => {
 
     const offForm = await openCalendarDayEditor(page, anchorISO);
     await expect(offForm.locator('input[name="is_period"]')).toBeChecked();
-    await offForm.locator('input[name="is_period"]').uncheck();
+    // The un-tick names what it reaches: the cycle start moves, four days clear.
+    expect(await untickPeriodThroughConfirm(page, offForm.locator('input[name="is_period"]'))).toBe(
+      localeTextWithCount('en', 'dashboard.period_off_confirm.moves_start_and_clears', 4),
+    );
     await saveDayEditorForm(page, anchorISO, offForm);
 
     for (const neighborISO of neighborISOs) {
@@ -113,7 +118,10 @@ test.describe('calendar auto-fill clear-on-toggle-off', () => {
     await saveDayEditorForm(page, manualISO, manualForm);
 
     const offForm = await openCalendarDayEditor(page, anchorISO);
-    await offForm.locator('input[name="is_period"]').uncheck();
+    // The walk stops at the annotated day, so the question counts one day.
+    expect(await untickPeriodThroughConfirm(page, offForm.locator('input[name="is_period"]'))).toBe(
+      localeTextWithCount('en', 'dashboard.period_off_confirm.moves_start_and_clears', 1),
+    );
     await saveDayEditorForm(page, anchorISO, offForm);
 
     const earlyButton = page.locator(`button[data-day="${earlyNeighborISO}"]`);

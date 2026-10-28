@@ -1,0 +1,13 @@
+{{define "period_off_confirm"}}
+{{- /* The question both day forms ask before un-ticking a period day whose
+     un-tick reaches past that day (services.PeriodOffEffect): written into the
+     period toggle's data-period-off-confirm, read by 40-period-off-confirm.js.
+     Called with (dict "Messages" "Lang" "Effect"). */ -}}
+{{- if and .Effect.MovesCycleStart .Effect.ClearedDays -}}
+{{printf (tn .Messages .Lang "dashboard.period_off_confirm.moves_start_and_clears" .Effect.ClearedDays) .Effect.ClearedDays}}
+{{- else if .Effect.ClearedDays -}}
+{{printf (tn .Messages .Lang "dashboard.period_off_confirm.clears" .Effect.ClearedDays) .Effect.ClearedDays}}
+{{- else -}}
+{{t .Messages "dashboard.period_off_confirm.moves_start"}}
+{{- end -}}
+{{end}}

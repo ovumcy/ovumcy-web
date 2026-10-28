@@ -830,6 +830,12 @@
   "confirm.delete_entry": "Voulez-vous vraiment supprimer cette entrée ?",
   "confirm.yes": "Oui, supprimer",
   "confirm.no": "Annuler",
+  "dashboard.period_off_confirm.moves_start": "Si vous décochez ce jour, le début de votre cycle sera déplacé. Vos statistiques seront recalculées.",
+  "dashboard.period_off_confirm.clears.one": "Si vous décochez ce jour, les règles seront aussi retirées sur %d jour suivant. Vos statistiques seront recalculées.",
+  "dashboard.period_off_confirm.clears.other": "Si vous décochez ce jour, les règles seront aussi retirées sur les %d jours suivants. Vos statistiques seront recalculées.",
+  "dashboard.period_off_confirm.moves_start_and_clears.one": "Si vous décochez ce jour, le début de votre cycle sera déplacé et les règles seront retirées sur %d jour suivant. Vos statistiques seront recalculées.",
+  "dashboard.period_off_confirm.moves_start_and_clears.other": "Si vous décochez ce jour, le début de votre cycle sera déplacé et les règles seront retirées sur les %d jours suivants. Vos statistiques seront recalculées.",
+  "dashboard.period_off_confirm.accept": "Oui, décocher",
 
   "common.yes": "Oui",
   "common.no": "Non",

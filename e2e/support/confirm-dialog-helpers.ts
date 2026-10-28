@@ -63,6 +63,22 @@ export async function acceptConfirmDialog(page: Page): Promise<void> {
 }
 
 /**
+ * Un-ticks a day form's period toggle that asks first (`data-period-off-confirm`:
+ * the un-tick moves the cycle start or clears auto-filled days). The box keeps
+ * its tick until the question is answered, so a bare `uncheck()` — which
+ * asserts the click changed the box — fails there. Returns the question shown.
+ */
+export async function untickPeriodThroughConfirm(page: Page, toggle: Locator): Promise<string> {
+  await toggle.click();
+  await expect(page.locator('#confirm-modal')).toBeVisible();
+  await expect(toggle).toBeChecked();
+  const question = (await page.locator('#confirm-modal-message').textContent()) ?? '';
+  await acceptConfirmDialog(page);
+  await expect(toggle).not.toBeChecked();
+  return question;
+}
+
+/**
  * Records every non-GET request the page issues to a matching path while
  * `action` runs. Method is part of the filter because the day endpoints serve
  * saves and deletes under the same pathname, and reads (reloads, htmx partial

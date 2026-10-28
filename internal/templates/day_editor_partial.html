@@ -39,7 +39,7 @@
     <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
     <label class="period-toggle" data-binary-toggle data-active="{{if .Log.IsPeriod}}true{{else}}false{{end}}">
-      <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input {{if .Log.IsPeriod}}checked{{end}}>
+      <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input {{if .Log.IsPeriod}}checked{{end}}{{if .PeriodOff.Any}} data-period-off-confirm="{{template "period_off_confirm" (dict "Messages" .Messages "Lang" .Lang "Effect" .PeriodOff)}}" data-period-off-confirm-accept="{{t .Messages "dashboard.period_off_confirm.accept"}}"{{end}}>
       <span class="period-toggle-copy">
         <span
           class="period-toggle-main"

@@ -971,6 +971,11 @@
         if (!periodToggle) {
           return;
         }
+        // An un-tick with a question goes through the click the question holds.
+        if (periodToggle.checked && periodToggle.hasAttribute("data-period-off-confirm")) {
+          periodToggle.click();
+          break;
+        }
         periodToggle.checked = !periodToggle.checked;
         periodToggle.dispatchEvent(new Event("change", { bubbles: true }));
         if (periodToggle.checked) {

@@ -100,6 +100,7 @@ type DashboardViewData struct {
 	MissedDay                         time.Time
 	ShowCycleStartSuggestion          bool
 	ShowCycleStartQuestion            bool
+	TodayPeriodOff                    PeriodOffEffect
 	ShowSpottingCycleWarning          bool
 	PredictionExplanationPrimaryKey   string
 	PredictionExplanationPrimaryCount int
@@ -138,6 +139,7 @@ type DayEditorViewData struct {
 	ShowFutureCycleStartNotice bool
 	ShowCycleStartSuggestion   bool
 	ShowCycleStartQuestion     bool
+	PeriodOff                  PeriodOffEffect
 	ShowSpottingCycleWarning   bool
 	IsOwner                    bool
 }
@@ -257,6 +259,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		MissedDay:                         missedDay,
 		ShowCycleStartSuggestion:          cycleStart.ShowSuggestion,
 		ShowCycleStartQuestion:            cycleStart.AskQuestion,
+		TodayPeriodOff:                    cycleStart.PeriodOff,
 		ShowSpottingCycleWarning:          showSpottingCycleWarning,
 		PredictionExplanationPrimaryKey:   predictionExplanation.PrimaryKey,
 		PredictionExplanationPrimaryCount: predictionExplanation.PrimaryCount,
@@ -471,6 +474,7 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 		ShowFutureCycleStartNotice: isFutureDate && visibility.AllowManualCycleStart,
 		ShowCycleStartSuggestion:   cycleStart.ShowSuggestion,
 		ShowCycleStartQuestion:     cycleStart.AskQuestion,
+		PeriodOff:                  cycleStart.PeriodOff,
 		ShowSpottingCycleWarning:   shouldShowSpottingCycleWarning(logs, logEntry, day, location),
 		IsOwner:                    IsOwnerUser(user),
 	}, nil
@@ -551,14 +555,21 @@ type dayFormCycleStartState struct {
 	Policy         ManualCycleStartPolicy
 	ShowSuggestion bool
 	AskQuestion    bool
+	PeriodOff      PeriodOffEffect
 }
 
 func (service *DashboardViewService) buildPickerViewState(user *models.User, day time.Time, now time.Time, logEntry models.DailyLog, symptoms []models.SymptomType, logs []models.DailyLog, location *time.Location) (map[uint]bool, []models.SymptomType, []models.SymptomType, []models.SymptomType, dayFormCycleStartState, error) {
 	selectedSymptomID := SymptomIDSet(logEntry.SymptomIDs)
 	rankedSymptoms := symptoms
+	// A row-less stored start with no logs at all still has an effect to
+	// confirm: un-ticking it withdraws the only boundary.
+	periodOff := PeriodOffEffect{}
+	if IsOwnerUser(user) {
+		periodOff = periodOffEffectFor(user, logs, day, now, location)
+	}
 	if len(logs) == 0 {
 		primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
-		return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, dayFormCycleStartState{}, nil
+		return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, dayFormCycleStartState{PeriodOff: periodOff}, nil
 	}
 	if len(symptoms) >= 2 && completedCycleCountFromLogs(logs, BoundaryContextFor(user, DateAtLocation(now, location))) >= 2 {
 		rankedSymptoms = RankSymptomsForEntryPicker(symptoms, logs)
@@ -567,6 +578,7 @@ func (service *DashboardViewService) buildPickerViewState(user *models.User, day
 	primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
 	cycleStart := dayFormCycleStartState{
 		ShowSuggestion: ShouldSuggestManualCycleStart(user, logs, logEntry, day, now, location),
+		PeriodOff:      periodOff,
 	}
 	if IsOwnerUser(user) {
 		cycleStart.Policy = ResolveManualCycleStartPolicy(user, logs, day, now, location)
