@@ -472,7 +472,7 @@
     if (indexes[indexes.length - 1] !== lastIndex) {
       var previous = indexes[indexes.length - 1];
       var reach = (context.measureText(labels[previous]).width + context.measureText(labels[lastIndex]).width) / 2 + LABEL_GAP;
-      if (previous !== 0 && xForIndex(lastIndex) - xForIndex(previous) < reach) {
+      if (xForIndex(lastIndex) - xForIndex(previous) < reach) {
         indexes.pop();
       }
       indexes.push(lastIndex);
@@ -839,10 +839,9 @@
 
   window.addEventListener("resize", scheduleRender);
 
-  // The canvas takes its ink from CSS variables read at draw time, so a system
-  // light/dark flip needs a repaint to reach it.
-  // An in-app theme change moves data-theme on <html>; the system flip moves it
-  // through the app's own listener, and the media query covers the gap before.
+  // The canvas takes its ink from CSS variables read at draw time, so a theme
+  // change needs a repaint to reach it: the system scheme through the media
+  // query, an in-app choice through data-theme on <html>.
   if (typeof window.matchMedia === "function") {
     var colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
     if (colorScheme && typeof colorScheme.addEventListener === "function") {
