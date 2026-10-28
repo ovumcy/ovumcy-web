@@ -50,6 +50,10 @@ type DayFeedbackState struct {
 	ShowSpottingCycleWarning bool
 	ShowLongPeriodWarning    bool
 	LongPeriodCycleStart     time.Time
+	// PeriodOff is what un-ticking the saved day would reach from now on: a day
+	// form stays open after its save, and nothing re-renders the question its
+	// period toggle asks. A saved day without its period has nothing to un-tick.
+	PeriodOff PeriodOffEffect
 }
 
 func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.User, day time.Time, now time.Time, location *time.Location) (DayFeedbackState, error) {
@@ -98,6 +102,10 @@ func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.
 	if ok && streakLength > 8 && (user.LongPeriodWarningCycleStart == nil || !sameCalendarDay(CalendarDay(*user.LongPeriodWarningCycleStart, location), cycleStart)) {
 		state.ShowLongPeriodWarning = true
 		state.LongPeriodCycleStart = cycleStart
+	}
+
+	if entry.IsPeriod && IsOwnerUser(user) {
+		state.PeriodOff = periodOffEffectFor(user, logs, day, now, location)
 	}
 
 	return state, nil

@@ -1,8 +1,6 @@
 package services
 
 import (
-	"context"
-	"fmt"
 	"slices"
 	"time"
 
@@ -91,21 +89,6 @@ func periodOffEffectFor(user *models.User, logs []models.DailyLog, day time.Time
 	}
 	effect.MovesCycleStart = !slices.EqualFunc(CycleBoundaries(before, BoundaryContextFor(user, today)), CycleBoundaries(after, afterCtx), time.Time.Equal)
 	return effect
-}
-
-// PeriodOffEffectAfterSave is the effect a day form that stays open after its
-// save carries from then on: the save changed what un-ticking that day would
-// reach, and nothing re-renders the form. A saved day without its period has
-// nothing to un-tick.
-func (service *DashboardViewService) PeriodOffEffectAfterSave(ctx context.Context, user *models.User, saved models.DailyLog, day time.Time, now time.Time, location *time.Location) (PeriodOffEffect, error) {
-	if !saved.IsPeriod || !IsOwnerUser(user) {
-		return PeriodOffEffect{}, nil
-	}
-	logs, err := service.days.FetchAllLogsForUser(ctx, user.ID)
-	if err != nil {
-		return PeriodOffEffect{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadLogs, err)
-	}
-	return periodOffEffectFor(user, logs, day, now, location), nil
 }
 
 func periodOffPreviousDayIsPeriod(logs []models.DailyLog, byDay map[string]int, day time.Time, location *time.Location) bool {

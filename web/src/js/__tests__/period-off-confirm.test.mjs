@@ -182,6 +182,37 @@ test("a saved tick hands the toggle the question its next un-tick asks", async (
   }
 });
 
+test("the calendar editor's save answer hands its toggle the question too", async () => {
+  const { window } = await load();
+  try {
+    const { document } = window;
+    document.body.insertAdjacentHTML("beforeend", `<form data-save-feedback data-day-editor-form>
+      <input type="checkbox" name="is_period" value="true" data-period-toggle checked>
+    </form>`);
+    const editor = document.querySelector("[data-day-editor-form]");
+    const editorToggle = editor.querySelector("[data-period-toggle]");
+    const answer = (successful, header) => editor.dispatchEvent(new window.CustomEvent("htmx:afterRequest", {
+      bubbles: true,
+      detail: {
+        elt: editor,
+        successful,
+        xhr: { responseText: "", getResponseHeader: (name) => (name === "X-Ovumcy-Period-Off-Confirm" ? header : null) },
+      },
+    }));
+
+    answer(false, encodeURIComponent(QUESTION));
+    assert.equal(editorToggle.hasAttribute("data-period-off-confirm"), false, "a refused save changes nothing");
+
+    answer(true, encodeURIComponent(QUESTION));
+    assert.equal(editorToggle.getAttribute("data-period-off-confirm"), QUESTION);
+
+    answer(true, "");
+    assert.equal(editorToggle.hasAttribute("data-period-off-confirm"), false);
+  } finally {
+    window.close();
+  }
+});
+
 test("a saved un-tick takes the question away, and an answer without the header keeps it", async () => {
   const cleared = await load({ answer: "" });
   try {

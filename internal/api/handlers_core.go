@@ -86,3 +86,16 @@ func (handler *Handler) renderPartialString(c fiber.Ctx, name string, data fiber
 	}
 	return output.String(), nil
 }
+
+// renderComponentString executes one components/*.html definition on its own.
+// Every partial tree parses all of components/*.html, so any of them holds it.
+func (handler *Handler) renderComponentString(name string, data any) (string, error) {
+	for _, tmpl := range handler.partials {
+		var output bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&output, name, data); err != nil {
+			return "", fmt.Errorf("execute component template %q: %w", name, err)
+		}
+		return output.String(), nil
+	}
+	return "", fmt.Errorf("component template %q: no partial templates parsed", name)
+}

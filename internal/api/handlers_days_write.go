@@ -141,9 +141,6 @@ func (handler *Handler) completeDayWrite(c fiber.Ctx, request upsertDayRequest, 
 	if request.payload.ConfirmCycleStart && entry.CycleStart {
 		handler.logMutationSuccess(c, cycleStartMarkMutation)
 	}
-	if isHTMX(c) && !dayFormNavigation(c) {
-		handler.setPeriodOffConfirmHeader(c, request, entry)
-	}
 	return handler.respondUpsertDaySuccess(c, request.day, entry, feedback, feedbackErr)
 }
 
@@ -265,6 +262,7 @@ func (handler *Handler) respondUpsertDaySuccess(c fiber.Ctx, day time.Time, entr
 	if isHTMX(c) {
 		c.Set("HX-Trigger", "calendar-day-updated")
 		if feedbackErr == nil {
+			handler.setPeriodOffConfirmHeader(c, feedback.PeriodOff)
 			if feedback.ShowSpottingCycleWarning {
 				setEncodedResponseNotice(c, "dashboard.spotting_cycle_warning", translateMessage(currentMessages(c), "dashboard.spotting_cycle_warning"))
 			} else if feedback.ShowLongPeriodWarning {

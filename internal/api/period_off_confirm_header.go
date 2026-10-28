@@ -1,12 +1,11 @@
 package api
 
 import (
-	"bytes"
 	"net/url"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // periodOffConfirmHeader carries, on every answered HTMX day save, the question
@@ -16,29 +15,16 @@ import (
 // in the open form would un-tick later without the question its render lacked.
 const periodOffConfirmHeader = "X-Ovumcy-Period-Off-Confirm"
 
-// setPeriodOffConfirmHeader sends no header when the effect cannot be read, so
-// the form keeps the question it was rendered with.
-func (handler *Handler) setPeriodOffConfirmHeader(c fiber.Ctx, request upsertDayRequest, saved models.DailyLog) {
-	if handler.dashboardViewService == nil {
-		return
-	}
-	effect, err := handler.dashboardViewService.PeriodOffEffectAfterSave(c.Context(), request.user, saved, request.day, handler.clockNow().In(request.location), request.location)
-	if err != nil {
-		return
-	}
+// setPeriodOffConfirmHeader sends no header when the question cannot be
+// rendered, so the form keeps the one it was rendered with.
+func (handler *Handler) setPeriodOffConfirmHeader(c fiber.Ctx, effect services.PeriodOffEffect) {
 	question := ""
 	if effect.Any() {
-		// Every partial tree parses components/*.html, so the editor's holds the
-		// question both forms render.
-		tmpl, ok := handler.partials["day_editor_partial"]
-		if !ok {
-			return
+		rendered, err := handler.renderComponentString("period_off_confirm", fiber.Map{"Messages": currentMessages(c), "Lang": currentLanguage(c), "Effect": effect})
+		if err != nil {
+			return // codecov:ignore -- every partial tree parses components/*.html; TestDaySaveAnswersWithTheQuestionTheSavedToggleAsks renders it
 		}
-		var output bytes.Buffer
-		if err := tmpl.ExecuteTemplate(&output, "period_off_confirm", fiber.Map{"Messages": currentMessages(c), "Lang": currentLanguage(c), "Effect": effect}); err != nil {
-			return
-		}
-		question = url.QueryEscape(strings.TrimSpace(output.String()))
+		question = url.QueryEscape(strings.TrimSpace(rendered))
 	}
 	c.Set(periodOffConfirmHeader, question)
 }
