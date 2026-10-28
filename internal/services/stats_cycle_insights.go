@@ -292,7 +292,7 @@ func buildCurrentCycleBBTChart(language string, stats CycleStats, logs []models.
 // chart under every one of them.
 func buildOwnerCurrentCycleBBTChart(user *models.User, language string, stats CycleStats, logs []models.DailyLog, now time.Time, location *time.Location) StatsBBTChartViewData {
 	chart := buildCurrentCycleBBTChart(language, stats, logs, now, location)
-	if !user.TrackBBT {
+	if !TrackingVisibilityForUser(user).ShowBBTField {
 		chart.ReadingCount, chart.ReadingsRequired = 0, 0
 	}
 	if _, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location); !confirmed {
