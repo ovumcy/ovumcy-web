@@ -76,6 +76,15 @@ func buildSettingsSymptomRows(symptoms []models.SymptomType, rowState settingsSy
 	return rows
 }
 
+func settingsSymptomRowsInclude(rows []settingsSymptomRowView, symptomID uint) bool {
+	for _, row := range rows {
+		if row.Symptom.ID == symptomID {
+			return true
+		}
+	}
+	return false
+}
+
 func buildSettingsSymptomIconOptions(current string) []settingsSymptomIconOption {
 	selected := defaultSymptomDraftIcon(current)
 	options := make([]settingsSymptomIconOption, 0, len(settingsSymptomIconCatalog)+1)

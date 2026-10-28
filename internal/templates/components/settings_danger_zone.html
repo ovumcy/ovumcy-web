@@ -23,7 +23,8 @@
         data-clear-data-confirm-message="{{t .Messages "settings.confirm_clear_data"}}"
         data-clear-data-confirm-accept="{{t .Messages "settings.clear_data.confirm_accept"}}"
         data-clear-data-invalid-password="{{t .Messages "settings.error.invalid_password"}}"
-        data-clear-data-request-failed="{{t .Messages "common.error.request_failed"}}">
+        data-clear-data-request-failed="{{t .Messages "common.error.request_failed"}}"
+        data-clear-data-too-many="{{t .Messages "common.error.too_many_requests"}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
         {{/* Re-authentication is one field and one button, so they sit on one

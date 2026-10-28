@@ -130,6 +130,11 @@
     <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "list"}}</span> {{t .Messages "settings.symptoms.title"}}</h2>
   </summary>
   <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.symptoms.subtitle"}}</p>
+  {{if .SymptomRefusalMessage}}
+  <div id="settings-symptoms-refusal" role="status">
+    <div class="status-error flex items-center gap-2" data-symptom-refusal data-focus-after-swap aria-describedby="settings-symptoms-refusal-text"><span aria-hidden="true">{{template "icon" "alert"}}</span><span id="settings-symptoms-refusal-text">{{.SymptomRefusalMessage}}</span></div>
+  </div>
+  {{end}}
 
   <form
     action="/api/v1/symptoms"

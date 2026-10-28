@@ -21,13 +21,26 @@ func (handler *Handler) buildSettingsSymptomsSectionData(c fiber.Ctx, user *mode
 		return localizedSettingsSymptomError(c, source)
 	}
 
+	activeRows := buildSettingsSymptomRows(viewData.ActiveCustomSymptoms, state.Row, statusLocalizer, errorLocalizer)
+	archivedRows := buildSettingsSymptomRows(viewData.ArchivedCustomSymptoms, state.Row, statusLocalizer, errorLocalizer)
+
+	// A refusal for an id the card has no row for (another owner's, one that
+	// never existed, a built-in) would otherwise render nowhere. The slot shows
+	// only the localized refusal, never the id, so another owner's id reads the
+	// same as one that never existed.
+	refusalMessage := ""
+	if state.Row.SymptomID != 0 && !settingsSymptomRowsInclude(activeRows, state.Row.SymptomID) && !settingsSymptomRowsInclude(archivedRows, state.Row.SymptomID) {
+		refusalMessage = errorLocalizer(state.Row.ErrorMessage)
+	}
+
 	return fiber.Map{
-		"ActiveCustomSymptoms":   buildSettingsSymptomRows(viewData.ActiveCustomSymptoms, state.Row, statusLocalizer, errorLocalizer),
-		"ArchivedCustomSymptoms": buildSettingsSymptomRows(viewData.ArchivedCustomSymptoms, state.Row, statusLocalizer, errorLocalizer),
+		"ActiveCustomSymptoms":   activeRows,
+		"ArchivedCustomSymptoms": archivedRows,
 		"HasCustomSymptoms":      viewData.HasCustomSymptoms,
 		"HasArchivedSymptoms":    viewData.HasArchivedSymptoms,
 		"SymptomStatusMessage":   statusLocalizer(state.SuccessStatus),
 		"SymptomErrorMessage":    errorLocalizer(state.ErrorMessage),
+		"SymptomRefusalMessage":  refusalMessage,
 		"SymptomDraftName":       sanitizeDraftName(state.Draft.Name),
 		"SymptomDraftIcon":       defaultSymptomDraftIcon(state.Draft.Icon),
 		"SymptomIconOptions":     buildSettingsSymptomIconOptions(state.Draft.Icon),

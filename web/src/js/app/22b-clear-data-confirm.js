@@ -48,6 +48,7 @@
       var statusTarget;
       var invalidPasswordMessage;
       var requestFailedMessage;
+      var tooManyRequestsMessage;
       var confirmMessage;
       var confirmAcceptLabel;
 
@@ -69,6 +70,7 @@
       statusTarget = clearDataStatusTarget(form);
       invalidPasswordMessage = String(form.getAttribute("data-clear-data-invalid-password") || "Invalid password.");
       requestFailedMessage = String(form.getAttribute("data-clear-data-request-failed") || "Request failed. Please try again.");
+      tooManyRequestsMessage = String(form.getAttribute("data-clear-data-too-many") || requestFailedMessage);
       confirmMessage = String(form.getAttribute("data-clear-data-confirm-message") || "");
       confirmAcceptLabel = String(form.getAttribute("data-clear-data-confirm-accept") || "");
 
@@ -94,11 +96,16 @@
             })
             .then(function (payload) {
               var errorCode = payload && payload.error ? String(payload.error) : "";
+              var message = requestFailedMessage;
+              // The re-auth budget answers 429 whatever the body says; the
+              // status, not the parsed envelope, is what decides it.
+              if (response.status === 429) {
+                message = tooManyRequestsMessage;
+              } else if (errorCode === "invalid password") {
+                message = invalidPasswordMessage;
+              }
               if (statusTarget) {
-                renderErrorStatus(
-                  statusTarget,
-                  errorCode === "invalid password" ? invalidPasswordMessage : requestFailedMessage
-                );
+                renderErrorStatus(statusTarget, message);
               }
               return false;
             });
