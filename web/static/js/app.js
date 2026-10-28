@@ -16,6 +16,7 @@
   var TIMEZONE_COOKIE_NAME = "ovumcy_tz";
   var TIMEZONE_HEADER_NAME = "X-Ovumcy-Timezone";
   var DAY_FORM_ACCOUNT_HEADER_NAME = "X-Ovumcy-Day-Form-Account";
+  var PAGE_LANGUAGE_HEADER_NAME = "X-Ovumcy-Page-Lang";
   var TIMEZONE_COOKIE_MAX_AGE_SECONDS = 31536000;
 
   function getEventTarget(event) {
@@ -2723,6 +2724,18 @@
   }
 
   function initHTMXHooks() {
+    // The server compares this with the language the request resolves to and
+    // answers HX-Refresh when another tab has switched it, so a fragment never
+    // lands in a different language than the page around it.
+    document.body.addEventListener("htmx:configRequest", function (event) {
+      var pageLanguage = (document.documentElement.getAttribute("lang") || "").trim();
+      if (!pageLanguage || !event || !event.detail) {
+        return;
+      }
+      event.detail.headers = event.detail.headers || {};
+      event.detail.headers[PAGE_LANGUAGE_HEADER_NAME] = pageLanguage;
+    });
+
     document.body.addEventListener("htmx:configRequest", function (event) {
       var tokenMeta = document.querySelector('meta[name="csrf-token"]');
       if (!tokenMeta || !event || !event.detail) {

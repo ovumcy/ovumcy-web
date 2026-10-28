@@ -186,16 +186,14 @@
 
   function browserLocaleFromLanguage(raw) {
     var normalized = normalizeLanguageCode(raw);
-    if (normalized === "ru") {
-      return "ru-RU";
+    try {
+      if (normalized && Intl.DateTimeFormat.supportedLocalesOf([normalized]).length) {
+        return normalized;
+      }
+    } catch {
+      // supportedLocalesOf throws RangeError on a malformed tag.
     }
-    if (normalized === "es") {
-      return "es-ES";
-    }
-    if (normalized === "fr") {
-      return "fr-FR";
-    }
-    return "en-US";
+    return "en";
   }
 
   function dateFieldController(target) {

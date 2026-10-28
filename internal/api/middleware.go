@@ -11,7 +11,10 @@ const (
 	languageCookieName = "ovumcy_lang"
 	timezoneCookieName = "ovumcy_tz"
 	timezoneHeaderName = "X-Ovumcy-Timezone"
-	flashCookieName    = "ovumcy_flash"
+	// pageLanguageHeaderName carries the <html lang> of the page an htmx
+	// request was sent from; see refreshPageInAnotherLanguage.
+	pageLanguageHeaderName = "X-Ovumcy-Page-Lang"
+	flashCookieName        = "ovumcy_flash"
 	// exemptFlashCookieName is the second flash channel: every write reachable
 	// through a request the CSRF middleware never validates — the OIDC
 	// callback's sole exemption, its unguarded query-mode GET twin, and the

@@ -186,16 +186,14 @@
 
   function browserLocaleFromLanguage(raw) {
     var normalized = normalizeLanguageCode(raw);
-    if (normalized === "ru") {
-      return "ru-RU";
+    try {
+      if (normalized && Intl.DateTimeFormat.supportedLocalesOf([normalized]).length) {
+        return normalized;
+      }
+    } catch {
+      // supportedLocalesOf throws RangeError on a malformed tag.
     }
-    if (normalized === "es") {
-      return "es-ES";
-    }
-    if (normalized === "fr") {
-      return "fr-FR";
-    }
-    return "en-US";
+    return "en";
   }
 
   function dateFieldController(target) {
@@ -604,21 +602,13 @@
     var lastSummaryBody = "";
     var summaryAbortController = null;
 
-    function updateSummaryText(totalEntries, hasData, dateFrom, dateTo, selectedFrom, selectedTo) {
+    // The range quoted is that of the entries counted, as the server renders
+    // it — not the selected window, whose end defaults to today.
+    function updateSummaryText(totalEntries, hasData, dateFrom, dateTo) {
       if (context.summaryTotalNode) {
         context.summaryTotalNode.textContent = formatTemplate(context.summaryTotalTemplate, [Number(totalEntries) || 0]);
       }
       if (!context.summaryRangeNode) {
-        return;
-      }
-
-      var selectedRangeFrom = String(selectedFrom || "").trim();
-      var selectedRangeTo = String(selectedTo || "").trim();
-      if (selectedRangeFrom && selectedRangeTo) {
-        context.summaryRangeNode.textContent = formatTemplate(context.summaryRangeTemplate, [
-          formatDateForDisplay(context.summaryDateFormatter, selectedRangeFrom),
-          formatDateForDisplay(context.summaryDateFormatter, selectedRangeTo)
-        ]);
         return;
       }
 
@@ -677,9 +667,7 @@
           payload.total_entries,
           payload.has_data,
           payload.date_from,
-          payload.date_to,
-          dateFieldValue(context.fromField, context.fromInput),
-          dateFieldValue(context.toField, context.toInput)
+          payload.date_to
         );
       } catch (error) {
         if (error && error.name === "AbortError") {

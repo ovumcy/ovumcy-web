@@ -101,6 +101,10 @@ export function readAppBundle() {
   return readFileSync(path.join(repoRoot, "web", "static", "js", "app.js"), "utf8");
 }
 
+export function readSettingsExportBundle() {
+  return readFileSync(path.join(repoRoot, "web", "static", "js", "settings-export.js"), "utf8");
+}
+
 export function readChartLite() {
   return readFileSync(path.join(repoRoot, "web", "static", "js", "chart-lite.js"), "utf8");
 }

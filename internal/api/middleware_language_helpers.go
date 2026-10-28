@@ -39,10 +39,31 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 	// zone when it is absent, so every anonymous page renders with that
 	// fallback instead.
 	language := handler.resolveRequestLanguage(c)
+	handler.refreshPageInAnotherLanguage(c, language)
 
 	c.Locals(contextLanguageKey, language)
 	c.Locals(contextMessagesKey, handler.i18n.Messages(language))
 	return c.Next()
+}
+
+// refreshPageInAnotherLanguage answers an htmx request with HX-Refresh when the
+// page it came from was rendered in a language other than the one this request
+// resolves to — the cookie was switched in another tab meanwhile. The fragment
+// would otherwise land in the new language inside a page left in the old one
+// (WEB-232). The handler still runs, so a write the request carries is applied;
+// htmx only replaces the swap with a full reload, which renders in one language.
+// A missing or unsupported page language asks for nothing.
+func (handler *Handler) refreshPageInAnotherLanguage(c fiber.Ctx, language string) {
+	if !isHTMX(c) {
+		return
+	}
+	pageLanguage := c.Get(pageLanguageHeaderName)
+	if pageLanguage == "" || !handler.i18n.IsSupportedLanguage(pageLanguage) {
+		return
+	}
+	if handler.i18n.NormalizeLanguage(pageLanguage) != language {
+		c.Set("HX-Refresh", "true")
+	}
 }
 
 // resolveOwnerRequestTimezone resolves the request-local timezone (header,

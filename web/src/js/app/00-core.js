@@ -16,6 +16,7 @@
   var TIMEZONE_COOKIE_NAME = "ovumcy_tz";
   var TIMEZONE_HEADER_NAME = "X-Ovumcy-Timezone";
   var DAY_FORM_ACCOUNT_HEADER_NAME = "X-Ovumcy-Day-Form-Account";
+  var PAGE_LANGUAGE_HEADER_NAME = "X-Ovumcy-Page-Lang";
   var TIMEZONE_COOKIE_MAX_AGE_SECONDS = 31536000;
 
   function getEventTarget(event) {
