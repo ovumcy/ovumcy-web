@@ -169,10 +169,10 @@ func (handler *Handler) ServeCalendarFeed(c fiber.Ctx) error {
 	}
 
 	c.Set(fiber.HeaderContentType, "text/calendar; charset=utf-8")
-	// Overwrites the middleware's default no-store: the feed is a private,
-	// owner-scoped resource a calendar client may cache briefly (1h) but that
-	// must not be stored by shared/proxy caches beyond the owner.
-	c.Set(fiber.HeaderCacheControl, "private, max-age=3600")
+	// Set here rather than left to the middleware's default: a stored copy
+	// would keep answering for this URL after the owner rotates or revokes it,
+	// and the settings copy says the old link stops working at once (WEB-233).
+	c.Set(fiber.HeaderCacheControl, "no-store")
 	c.Set("X-Robots-Tag", "noindex")
 	return c.Send(body)
 }
