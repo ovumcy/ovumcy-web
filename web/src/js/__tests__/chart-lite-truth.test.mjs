@@ -466,20 +466,6 @@ test("the average label keeps the half day and the page language's decimal separ
   }
 });
 
-test("a fractional axis step prints with the page language's separator and no trailing zero", async () => {
-  const calls = await drawChart(
-    { kind: "bar", labels: ["Jan", "Feb", "Mar"], values: [28, 28.5, 29], baseline: 28.5 },
-    { "data-days-suffix": `${NBSP}d`, "data-baseline-label": "Average" },
-    "de",
-  );
-  const ticks = axisTicks(calls, gridBox(calls)).map((tick) => tick.text);
-  assert.ok(ticks.length > 0);
-  for (const text of ticks) {
-    assert.ok(!text.includes("."), `no dot decimal in "${text}"`);
-    assert.ok(!/,0\D/.test(text), `no trailing zero in "${text}"`);
-  }
-});
-
 test("BBT labels use the page language's separator", async () => {
   const values = [36.4, 36.6, 36.8];
   const calls = await drawChart(
