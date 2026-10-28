@@ -104,11 +104,33 @@ func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.
 		state.LongPeriodCycleStart = cycleStart
 	}
 
-	if entry.IsPeriod && IsOwnerUser(user) {
-		state.PeriodOff = periodOffEffectFor(user, logs, day, now, location)
-	}
+	state.PeriodOff = periodOffForEntry(user, logs, entry, day, now, location)
 
 	return state, nil
+}
+
+// ResolvePeriodOff is the PeriodOff half of ResolveDayFeedback for a save whose
+// feedback could not be read: entry is the day as saved, so only the logs are
+// read again.
+func (service *DayService) ResolvePeriodOff(ctx context.Context, user *models.User, entry models.DailyLog, day time.Time, now time.Time, location *time.Location) (PeriodOffEffect, error) {
+	if service == nil || user == nil {
+		return PeriodOffEffect{}, nil
+	}
+	if location == nil {
+		location = time.UTC
+	}
+	logs, err := service.logs.ListByUser(ctx, user.ID)
+	if err != nil {
+		return PeriodOffEffect{}, err
+	}
+	return periodOffForEntry(user, logs, entry, DateAtLocation(day, location), now, location), nil
+}
+
+func periodOffForEntry(user *models.User, logs []models.DailyLog, entry models.DailyLog, day time.Time, now time.Time, location *time.Location) PeriodOffEffect {
+	if !entry.IsPeriod || !IsOwnerUser(user) {
+		return PeriodOffEffect{}
+	}
+	return periodOffEffectFor(user, logs, day, now, location)
 }
 
 func (service *DayService) AcknowledgeLongPeriodWarning(ctx context.Context, userID uint, cycleStart time.Time, location *time.Location) error {

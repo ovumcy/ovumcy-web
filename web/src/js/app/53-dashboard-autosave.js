@@ -900,7 +900,7 @@
         }
         form.__ovumcyPersistedState = sentState;
         if (typeof window.__ovumcyApplyPeriodOffConfirmHeader === "function") {
-          window.__ovumcyApplyPeriodOffConfirmHeader(form, response.headers.get("X-Ovumcy-Period-Off-Confirm"));
+          window.__ovumcyApplyPeriodOffConfirmHeader(form, response.headers.get("X-Ovumcy-Period-Off-Confirm"), response.headers.get("X-Ovumcy-Period-Off-Confirm-Key"));
         }
       }
       form.__ovumcyAutosaveFailed = false;

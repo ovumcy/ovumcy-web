@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -61,9 +62,16 @@ func seedTwoPeriodOffCycles(t *testing.T, database *gorm.DB, userID uint) {
 	seedPeriodOffRun(t, database, userID, time.Date(2026, time.August, 10, 0, 0, 0, 0, time.UTC), 5)
 }
 
-// savePeriodOffDay answers the question header of an HTMX day save, and
-// whether the answer carried it at all.
-func savePeriodOffDay(t *testing.T, app *fiber.App, authCookie string, userID uint, date string, isPeriod bool) (string, bool) {
+// periodOffAnswer is what an HTMX day save said about the toggle's question:
+// the headers, and whether the answer carried them at all.
+type periodOffAnswer struct {
+	question string
+	key      string
+	carried  bool
+}
+
+// savePeriodOffDay answers the question headers of an HTMX day save.
+func savePeriodOffDay(t *testing.T, app *fiber.App, authCookie string, userID uint, date string, isPeriod bool) periodOffAnswer {
 	t.Helper()
 	body := `{"is_period":false,"flow":"none","symptom_ids":[],"notes":""}`
 	if isPeriod {
@@ -80,14 +88,18 @@ func savePeriodOffDay(t *testing.T, app *fiber.App, authCookie string, userID ui
 		t.Fatalf("PUT %s = %d: %s", date, response.StatusCode, mustReadBodyString(t, response.Body))
 	}
 	values, carried := response.Header[http.CanonicalHeaderKey(periodOffConfirmHeader)]
-	if !carried || len(values) != 1 {
-		return "", false
+	keys, keyCarried := response.Header[http.CanonicalHeaderKey(periodOffConfirmKeyHeader)]
+	if carried != keyCarried {
+		t.Fatalf("PUT %s: the question and its key go out together or not at all (question=%t, key=%t)", date, carried, keyCarried)
+	}
+	if !carried || len(values) != 1 || len(keys) != 1 {
+		return periodOffAnswer{}
 	}
 	question, err := url.QueryUnescape(values[0])
 	if err != nil {
 		t.Fatalf("unescape %s: %v", periodOffConfirmHeader, err)
 	}
-	return question, true
+	return periodOffAnswer{question: question, key: keys[0], carried: true}
 }
 
 func TestDayEditorAsksBeforeUntickingACycleStartDay(t *testing.T) {
@@ -96,7 +108,7 @@ func TestDayEditorAsksBeforeUntickingACycleStartDay(t *testing.T) {
 
 	rendered := renderPeriodOffPage(t, app, "/calendar/day/2026-08-10?mode=edit", "en", authCookie)
 	for _, want := range []string{
-		`data-period-off-confirm="Un-marking this day moves the start of your cycle. Your statistics will be recalculated."`,
+		`data-period-off-confirm-key="dashboard.period_off_confirm.moves_start"`,
 		`data-period-off-confirm-accept="Yes, un-mark"`,
 	} {
 		if !strings.Contains(rendered, want) {
@@ -104,8 +116,9 @@ func TestDayEditorAsksBeforeUntickingACycleStartDay(t *testing.T) {
 		}
 	}
 
-	if inside := renderPeriodOffPage(t, app, "/calendar/day/2026-08-12?mode=edit", "en", authCookie); strings.Contains(inside, "data-period-off-confirm=") {
-		t.Fatal("a day inside a period must un-tick without a question")
+	inside := renderPeriodOffPage(t, app, "/calendar/day/2026-08-12?mode=edit", "en", authCookie)
+	if strings.Contains(inside, "data-period-off-confirm=") || strings.Contains(inside, "data-period-off-confirm-key=") {
+		t.Fatal("a day inside a period must un-tick without a question or key")
 	}
 }
 
@@ -128,7 +141,7 @@ func TestDashboardAsksBeforeUntickingTodaysCycleStart(t *testing.T) {
 	seedPeriodOffRun(t, database, userID, time.Date(2026, time.October, 5, 0, 0, 0, 0, time.UTC), 1)
 
 	rendered := renderPeriodOffPage(t, app, "/dashboard", "en", authCookie)
-	if !strings.Contains(rendered, `data-period-off-confirm="Un-marking this day moves the start of your cycle.`) {
+	if !strings.Contains(rendered, `data-period-off-confirm-key="dashboard.period_off_confirm.moves_start"`) {
 		t.Fatal("expected the Today form's period toggle to ask before un-ticking today's cycle start")
 	}
 }
@@ -140,13 +153,67 @@ func TestDaySaveAnswersWithTheQuestionTheSavedToggleAsks(t *testing.T) {
 	app, database, authCookie, userID := newPeriodOffOwner(t, "period-off-save@example.com", true)
 	seedPeriodOffRun(t, database, userID, time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC), 5)
 
-	question, carried := savePeriodOffDay(t, app, authCookie, userID, "2026-08-10", true)
-	if want := "Un-marking this day moves the start of your cycle and clears the period from 4 following days."; !carried || !strings.Contains(question, want) {
-		t.Fatalf("tick save: header carried=%t question=%q, want it to contain %q", carried, question, want)
+	answer := savePeriodOffDay(t, app, authCookie, userID, "2026-08-10", true)
+	if want := "dashboard.period_off_confirm.moves_start_and_clears"; !answer.carried || answer.key != want || answer.question == "" {
+		t.Fatalf("tick save: %+v, want key %q and its question", answer, want)
 	}
 
-	question, carried = savePeriodOffDay(t, app, authCookie, userID, "2026-08-10", false)
-	if !carried || question != "" {
-		t.Fatalf("un-tick save: header carried=%t question=%q, want an empty header", carried, question)
+	answer = savePeriodOffDay(t, app, authCookie, userID, "2026-08-10", false)
+	if !answer.carried || answer.question != "" || answer.key != "" {
+		t.Fatalf("un-tick save: %+v, want both headers empty", answer)
+	}
+}
+
+// failDayLogReads fails the daily_logs reads numbered from..to (1-based, in
+// request order) and returns the counter of reads seen.
+func failDayLogReads(t *testing.T, database *gorm.DB, name string, from, to int32) *atomic.Int32 {
+	t.Helper()
+	var reads atomic.Int32
+	if err := database.Callback().Query().Before("gorm:query").Register(name, func(tx *gorm.DB) {
+		if tx.Statement.Table != "daily_logs" {
+			return
+		}
+		if n := reads.Add(1); from > 0 && n >= from && n <= to {
+			_ = tx.AddError(gorm.ErrInvalidDB)
+		}
+	}); err != nil {
+		t.Fatalf("register %s: %v", name, err)
+	}
+	t.Cleanup(func() { _ = database.Callback().Query().Remove(name) })
+	return &reads
+}
+
+// When the save's feedback cannot be read the question still follows the save
+// (an empty header would let the next un-tick move the cycle start unasked);
+// when the effect cannot be read either, no header goes out.
+func TestDaySaveKeepsAskingWhenItsFeedbackCannotBeRead(t *testing.T) {
+	app, database, authCookie, userID := newPeriodOffOwner(t, "period-off-feedback-error@example.com", true)
+	seedPeriodOffRun(t, database, userID, time.Date(2026, time.July, 13, 0, 0, 0, 0, time.UTC), 5)
+
+	// The first save inserts the day; the repeats are the steady state whose
+	// reads are counted.
+	reads := failDayLogReads(t, database, "period-off:count", 0, 0)
+	savePeriodOffDay(t, app, authCookie, userID, "2026-08-10", true)
+	before := reads.Load()
+	savePeriodOffDay(t, app, authCookie, userID, "2026-08-10", true)
+	total := reads.Load() - before
+	_ = database.Callback().Query().Remove("period-off:count")
+
+	// The feedback's last read is the saved day's own entry; the effect is
+	// recomputed by one more list.
+	reads = failDayLogReads(t, database, "period-off:entry", total, total)
+	answer := savePeriodOffDay(t, app, authCookie, userID, "2026-08-10", true)
+	if reads.Load() != total+1 {
+		t.Fatalf("reads = %d, want the failed feedback read and the effect read (%d)", reads.Load(), total+1)
+	}
+	if !answer.carried || answer.key != "dashboard.period_off_confirm.moves_start_and_clears" || answer.question == "" {
+		t.Fatalf("feedback unreadable: %+v, want the question recomputed", answer)
+	}
+	_ = database.Callback().Query().Remove("period-off:entry")
+
+	reads = failDayLogReads(t, database, "period-off:both", total, total+1)
+	answer = savePeriodOffDay(t, app, authCookie, userID, "2026-08-10", true)
+	if reads.Load() != total+1 || answer.carried {
+		t.Fatalf("feedback and effect unreadable: reads=%d %+v, want no header", reads.Load(), answer)
 	}
 }

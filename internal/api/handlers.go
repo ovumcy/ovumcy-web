@@ -35,6 +35,11 @@ func NewHandler(secret string, location *time.Location, i18nManager *i18n.Manage
 		return nil, err
 	}
 
+	components, err := parseComponentTemplates(funcMap)
+	if err != nil {
+		return nil, err
+	}
+
 	handler := &Handler{
 		secretKey:    []byte(secret),
 		location:     location,
@@ -42,6 +47,7 @@ func NewHandler(secret string, location *time.Location, i18nManager *i18n.Manage
 		i18n:         i18nManager,
 		templates:    templates,
 		partials:     partials,
+		components:   components,
 	}
 	return handler.withDependencies(dependencies), nil
 }

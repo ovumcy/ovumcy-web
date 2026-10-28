@@ -25,6 +25,14 @@ func parsePageTemplates(funcMap template.FuncMap, pages []string) (map[string]*t
 	return parsed, nil
 }
 
+func parseComponentTemplates(funcMap template.FuncMap) (*template.Template, error) {
+	tmpl, err := template.New("components").Funcs(funcMap).ParseFS(templates.Files, "components/*.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse component templates: %w", err)
+	}
+	return tmpl, nil
+}
+
 func parsePartialTemplates(funcMap template.FuncMap, partialFiles []string) (map[string]*template.Template, error) {
 	partials := make(map[string]*template.Template, len(partialFiles))
 	for _, partial := range partialFiles {

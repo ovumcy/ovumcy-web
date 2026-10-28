@@ -13,6 +13,7 @@ import { readAppBundle, loadDOMWithScript } from "./_helpers.mjs";
 const APP_BUNDLE = readAppBundle();
 const QUESTION = "Un-marking this day moves the start of your cycle. Your statistics will be recalculated.";
 const ACCEPT = "Yes, un-mark";
+const KEY = "dashboard.period_off_confirm.moves_start";
 
 function page({ question = QUESTION, checked = true } = {}) {
   const asks = question ? ` data-period-off-confirm="${question}" data-period-off-confirm-accept="${ACCEPT}"` : "";
@@ -49,7 +50,7 @@ async function load(options = {}) {
       window.fetch = () => Promise.resolve({
         ok: true,
         status: 200,
-        headers: { get: (name) => (name === "X-Ovumcy-Period-Off-Confirm" ? options.answer : null) },
+        headers: { get: (name) => (name === "X-Ovumcy-Period-Off-Confirm" ? options.answer : name === "X-Ovumcy-Period-Off-Confirm-Key" ? KEY : null) },
         text: () => Promise.resolve(""),
       });
     },
@@ -173,6 +174,7 @@ test("a saved tick hands the toggle the question its next un-tick asks", async (
     toggle.click();
     await flushAndSettle(window);
     assert.equal(toggle.getAttribute("data-period-off-confirm"), QUESTION);
+    assert.equal(toggle.getAttribute("data-period-off-confirm-key"), KEY);
 
     toggle.click();
     assert.equal(toggle.checked, true, "the un-tick after the save is held for the question");
@@ -196,7 +198,7 @@ test("the calendar editor's save answer hands its toggle the question too", asyn
       detail: {
         elt: editor,
         successful,
-        xhr: { responseText: "", getResponseHeader: (name) => (name === "X-Ovumcy-Period-Off-Confirm" ? header : null) },
+        xhr: { responseText: "", getResponseHeader: (name) => (name === "X-Ovumcy-Period-Off-Confirm" ? header : name === "X-Ovumcy-Period-Off-Confirm-Key" ? KEY : null) },
       },
     }));
 
@@ -205,9 +207,11 @@ test("the calendar editor's save answer hands its toggle the question too", asyn
 
     answer(true, encodeURIComponent(QUESTION));
     assert.equal(editorToggle.getAttribute("data-period-off-confirm"), QUESTION);
+    assert.equal(editorToggle.getAttribute("data-period-off-confirm-key"), KEY);
 
     answer(true, "");
     assert.equal(editorToggle.hasAttribute("data-period-off-confirm"), false);
+    assert.equal(editorToggle.hasAttribute("data-period-off-confirm-key"), false);
   } finally {
     window.close();
   }
@@ -220,6 +224,7 @@ test("a saved un-tick takes the question away, and an answer without the header 
     cleared.window.document.getElementById("confirm-modal-accept").click();
     await flushAndSettle(cleared.window);
     assert.equal(cleared.toggle.hasAttribute("data-period-off-confirm"), false);
+    assert.equal(cleared.toggle.hasAttribute("data-period-off-confirm-key"), false);
   } finally {
     cleared.window.close();
   }

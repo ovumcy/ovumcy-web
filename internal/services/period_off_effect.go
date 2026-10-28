@@ -23,6 +23,20 @@ func (effect PeriodOffEffect) Any() bool {
 	return effect.ClearedDays > 0 || effect.MovesCycleStart
 }
 
+// MessageKey is the stable locale key of the question this effect asks, without
+// the plural suffix the count picks; empty when it asks nothing.
+func (effect PeriodOffEffect) MessageKey() string {
+	switch {
+	case effect.ClearedDays > 0 && effect.MovesCycleStart:
+		return "dashboard.period_off_confirm.moves_start_and_clears"
+	case effect.ClearedDays > 0:
+		return "dashboard.period_off_confirm.clears"
+	case effect.MovesCycleStart:
+		return "dashboard.period_off_confirm.moves_start"
+	}
+	return ""
+}
+
 // periodOffEffectFor is a dry run of the day write that un-ticks the period on
 // day (applyDayWriteAndAutoFill), read over the owner's logs as the form was
 // rendered: a day the form shows unticked has nothing to un-tick, so the effect

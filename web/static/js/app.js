@@ -1279,7 +1279,9 @@
   // on (X-Ovumcy-Period-Off-Confirm, empty when it asks nothing): both day forms
   // stay open after a save, so the question they were rendered with goes stale.
   // An answer without the header leaves that question as it is.
-  function applyPeriodOffConfirmHeader(form, raw) {
+  // X-Ovumcy-Period-Off-Confirm-Key, its stable key, follows the question into
+  // data-period-off-confirm-key.
+  function applyPeriodOffConfirmHeader(form, raw, key) {
     var toggle = form && form.querySelector ? form.querySelector("input[data-period-toggle]") : null;
     var question;
     if (!toggle || raw === null || raw === undefined) {
@@ -1288,8 +1290,10 @@
     question = window.__ovumcyDecodeResponseNoticeHeader(raw);
     if (question) {
       toggle.setAttribute("data-period-off-confirm", question);
+      toggle.setAttribute("data-period-off-confirm-key", key || "");
     } else {
       toggle.removeAttribute("data-period-off-confirm");
+      toggle.removeAttribute("data-period-off-confirm-key");
     }
   }
 
@@ -2787,7 +2791,7 @@
       setSaveButtonState(form, false);
       showResponseNotice(xhr);
       if (form && xhr && event.detail.successful && typeof window.__ovumcyApplyPeriodOffConfirmHeader === "function") {
-        window.__ovumcyApplyPeriodOffConfirmHeader(form, xhr.getResponseHeader("X-Ovumcy-Period-Off-Confirm"));
+        window.__ovumcyApplyPeriodOffConfirmHeader(form, xhr.getResponseHeader("X-Ovumcy-Period-Off-Confirm"), xhr.getResponseHeader("X-Ovumcy-Period-Off-Confirm-Key"));
       }
       // A stale refusal leaves the indicator to the newer save that answered.
       if (!ignored && form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
@@ -5166,7 +5170,7 @@
         }
         form.__ovumcyPersistedState = sentState;
         if (typeof window.__ovumcyApplyPeriodOffConfirmHeader === "function") {
-          window.__ovumcyApplyPeriodOffConfirmHeader(form, response.headers.get("X-Ovumcy-Period-Off-Confirm"));
+          window.__ovumcyApplyPeriodOffConfirmHeader(form, response.headers.get("X-Ovumcy-Period-Off-Confirm"), response.headers.get("X-Ovumcy-Period-Off-Confirm-Key"));
         }
       }
       form.__ovumcyAutosaveFailed = false;

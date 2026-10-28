@@ -270,6 +270,16 @@ func (handler *Handler) respondUpsertDaySuccess(c fiber.Ctx, day time.Time, entr
 			}
 			return handler.sendDaySaveStatus(c, feedback.MessageKey)
 		}
+		// The save went through, so the toggle's question must follow it: an
+		// empty header would drop the question and let the next un-tick move the
+		// cycle start unasked. When the effect cannot be read either, no header
+		// goes out and the form keeps the question it has.
+		if user, ok := currentUser(c); ok {
+			location := handler.requestLocation(c)
+			if effect, err := handler.dayService.ResolvePeriodOff(c.Context(), user, entry, day, handler.clockNow().In(location), location); err == nil {
+				handler.setPeriodOffConfirmHeader(c, effect)
+			}
+		}
 		return handler.sendDaySaveStatus(c, "")
 	}
 	return c.JSON(newDayResponse(entry))

@@ -32,6 +32,7 @@ type Handler struct {
 	i18n                 *i18n.Manager
 	templates            map[string]*template.Template
 	partials             map[string]*template.Template
+	components           *template.Template
 	authService          *services.AuthService
 	registrationService  RegistrationWorkflowService
 	passwordResetSvc     *services.PasswordResetService

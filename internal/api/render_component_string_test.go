@@ -15,7 +15,7 @@ func TestRenderComponentStringRefusesWhatItCannotRender(t *testing.T) {
 	}
 
 	tree := template.Must(template.New("page").Parse(`{{define "question"}}asks {{.}}{{end}}`))
-	handler := &Handler{partials: map[string]*template.Template{"page": tree}}
+	handler := &Handler{components: tree}
 	if _, err := handler.renderComponentString("missing", nil); err == nil {
 		t.Fatal("an undefined component rendered")
 	}

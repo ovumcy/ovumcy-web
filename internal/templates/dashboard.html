@@ -358,7 +358,7 @@
           </div>
 
           <label class="period-toggle" data-binary-toggle data-active="{{if .TodayEntry.IsPeriod}}true{{else}}false{{end}}">
-            <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input {{if .TodayEntry.IsPeriod}}checked{{end}}{{if .TodayPeriodOff.Any}} data-period-off-confirm="{{template "period_off_confirm" (dict "Messages" .Messages "Lang" .Lang "Effect" .TodayPeriodOff)}}"{{end}} data-period-off-confirm-accept="{{t .Messages "dashboard.period_off_confirm.accept"}}">
+            <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input {{if .TodayEntry.IsPeriod}}checked{{end}}{{if .TodayPeriodOff.Any}} data-period-off-confirm="{{template "period_off_confirm" (dict "Messages" .Messages "Lang" .Lang "Effect" .TodayPeriodOff)}}" data-period-off-confirm-key="{{.TodayPeriodOff.MessageKey}}"{{end}} data-period-off-confirm-accept="{{t .Messages "dashboard.period_off_confirm.accept"}}">
             <span class="period-toggle-copy">
               <span
                 class="period-toggle-main"
