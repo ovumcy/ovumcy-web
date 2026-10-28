@@ -26,7 +26,7 @@ func tryRunCLICommand() (bool, error) {
 
 type cliCommandHandlers struct {
 	runResetPassword    func(databaseConfig db.Config, args []string) error
-	runUsers            func(databaseConfig db.Config, args []string) error
+	runUsers            func(databaseConfig db.Config, localSignInEnabled func() (bool, error), args []string) error
 	runHealthcheck      func(port string, timeout time.Duration) error
 	runReadycheck       func(port string, timeout time.Duration) error
 	runNotify           func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error
@@ -84,7 +84,25 @@ func handleUsersCommand(args []string, handlers cliCommandHandlers) (bool, error
 	if err != nil {
 		return true, fmt.Errorf("invalid database config: %w", err)
 	}
-	return true, handlers.runUsers(databaseConfig, args[1:])
+	return true, handlers.runUsers(databaseConfig, resolveLocalSignInEnabled, args[1:])
+}
+
+// resolveLocalSignInEnabled reads OIDC_LOGIN_MODE through the boot's own
+// resolver, so a config the server would refuse is refused here too.
+func resolveLocalSignInEnabled() (bool, error) {
+	cookieSecure, err := getEnvBoolStrict("COOKIE_SECURE", false)
+	if err != nil {
+		return false, err
+	}
+	registrationMode, err := resolveRegistrationMode()
+	if err != nil {
+		return false, err
+	}
+	oidcConfig, err := resolveOIDCConfig(cookieSecure, registrationMode)
+	if err != nil {
+		return false, err
+	}
+	return oidcConfig.LocalPublicAuthEnabled(), nil
 }
 
 func handleHealthcheckCommand(args []string, handlers cliCommandHandlers) (bool, error) {

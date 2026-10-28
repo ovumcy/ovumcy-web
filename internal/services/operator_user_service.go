@@ -43,7 +43,7 @@ type OperatorUserRepository interface {
 // code, role, session version, cycle defaults) shared with web registration, so
 // a CLI-provisioned owner has the exact same shape as a browser-registered one.
 type OperatorOwnerBuilder interface {
-	BuildOwnerUserWithRecovery(email string, rawPassword string, createdAt time.Time) (models.User, string, error)
+	BuildOwnerUserWithRecovery(email string, rawPassword string, localSignInEnabled bool, createdAt time.Time) (models.User, string, error)
 }
 
 type OperatorUserService struct {
@@ -200,8 +200,9 @@ func (service *OperatorUserService) SetEmailByID(ctx context.Context, userID uin
 // start, cycle defaults) is intentionally left for the owner to complete on
 // first sign-in — health data must not flow through provisioning. The recovery
 // code is returned for the caller to surface; the CLI prints it only on explicit
-// opt-in so it cannot leak into install logs.
-func (service *OperatorUserService) CreateOwner(ctx context.Context, email string, rawPassword string, now time.Time) (models.OperatorUserSummary, string, error) {
+// opt-in so it cannot leak into install logs. With localSignInEnabled false
+// (OIDC_LOGIN_MODE=oidc_only) none is minted and the code returned is empty.
+func (service *OperatorUserService) CreateOwner(ctx context.Context, email string, rawPassword string, localSignInEnabled bool, now time.Time) (models.OperatorUserSummary, string, error) {
 	normalizedEmail, err := normalizeOperatorUserEmail(email)
 	if err != nil {
 		return models.OperatorUserSummary{}, "", err
@@ -210,7 +211,7 @@ func (service *OperatorUserService) CreateOwner(ctx context.Context, email strin
 		return models.OperatorUserSummary{}, "", ErrOperatorUserPasswordWeak
 	}
 
-	user, recoveryCode, err := service.builder.BuildOwnerUserWithRecovery(normalizedEmail, rawPassword, now)
+	user, recoveryCode, err := service.builder.BuildOwnerUserWithRecovery(normalizedEmail, rawPassword, localSignInEnabled, now)
 	if err != nil {
 		return models.OperatorUserSummary{}, "", fmt.Errorf("%w: %v", ErrOperatorUserCreateFailed, err)
 	}

@@ -80,7 +80,7 @@ func TestOperatorCommandsOpenTheDatabaseOnlyThroughTheSchemaCheck(t *testing.T) 
 		// server's boot passes, or a stalled catalog read hangs the command.
 		{passContext, open},
 	}
-	for _, command := range []string{"runUsersCommand", "runResetPasswordCommand", "runLinkOIDCIdentityCommand", "runNotifyOperatorCommand", "openWebhookCLIService"} {
+	for _, command := range []string{"runUsersCommandIn", "runResetPasswordCommand", "runLinkOIDCIdentityCommand", "runNotifyOperatorCommand", "openWebhookCLIService"} {
 		required = append(required, operatorGuardSite{open, resolveOperatorGuardFunc(t, pkg, operatorGuardCLIPath, command)})
 	}
 	for _, site := range required {

@@ -54,7 +54,7 @@ func TestRunUsersCommandUsageErrors(t *testing.T) {
 func TestRunUsersCommandRejectsUsageBeforeReadingAnything(t *testing.T) {
 	t.Parallel()
 
-	if err := RunUsersCommand(db.Config{}, nil); err == nil || !strings.Contains(err.Error(), "usage: ovumcy users") {
+	if err := RunUsersCommand(db.Config{}, localSignInOn, nil); err == nil || !strings.Contains(err.Error(), "usage: ovumcy users") {
 		t.Fatalf("expected the usage error, got %v", err)
 	}
 }
@@ -504,7 +504,7 @@ func TestParseUsersCreateArgsAcceptsFlags(t *testing.T) {
 func TestRunUsersCreateReturnsParseError(t *testing.T) {
 	t.Parallel()
 
-	if err := runUsersCreate(nil, []string{"--nope"}, strings.NewReader(""), &bytes.Buffer{}); err == nil {
+	if err := runUsersCreate(nil, localSignInOn, []string{"--nope"}, strings.NewReader(""), &bytes.Buffer{}); err == nil {
 		t.Fatal("expected a parse error for an unknown flag")
 	}
 }
@@ -512,7 +512,7 @@ func TestRunUsersCreateReturnsParseError(t *testing.T) {
 func TestRunUsersCreateReturnsPasswordError(t *testing.T) {
 	t.Parallel()
 
-	if err := runUsersCreate(nil, []string{"owner@example.com"}, strings.NewReader("\n"), &bytes.Buffer{}); err == nil {
+	if err := runUsersCreate(nil, localSignInOn, []string{"owner@example.com"}, strings.NewReader("\n"), &bytes.Buffer{}); err == nil {
 		t.Fatal("expected an empty-password error")
 	}
 }
@@ -521,7 +521,7 @@ func TestRunUsersCreateDefaultsNilOutputOnSuccess(t *testing.T) {
 	databasePath := createCLIUsersDatabase(t)
 	service := mustCLIUsersService(t, databasePath)
 
-	if err := runUsersCreate(service, []string{"owner@example.com"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
+	if err := runUsersCreate(service, localSignInOn, []string{"owner@example.com"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
 		t.Fatalf("runUsersCreate with nil output returned error: %v", err)
 	}
 }
@@ -531,7 +531,7 @@ func TestRunUsersCreateDefaultsNilOutputOnSkip(t *testing.T) {
 	createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
 	service := mustCLIUsersService(t, databasePath)
 
-	if err := runUsersCreate(service, []string{"owner@example.com", "--skip-if-exists"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
+	if err := runUsersCreate(service, localSignInOn, []string{"owner@example.com", "--skip-if-exists"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
 		t.Fatalf("runUsersCreate skip with nil output returned error: %v", err)
 	}
 }

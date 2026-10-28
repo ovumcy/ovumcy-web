@@ -327,7 +327,7 @@ func TestTryRunCLICommandWithHandlersUsersAndHealthcheckErrorBranches(t *testing
 		setValidBootEnv(t)
 		t.Setenv("DB_DRIVER", "bogus")
 		handled, err := tryRunCLICommandWithHandlers([]string{"users", "list"}, cliCommandHandlers{
-			runUsers: func(db.Config, []string) error { return errors.New("unreached") },
+			runUsers: func(db.Config, func() (bool, error), []string) error { return errors.New("unreached") },
 		})
 		if !handled || err == nil {
 			t.Fatalf("expected handled db-config error, got (%t, %v)", handled, err)

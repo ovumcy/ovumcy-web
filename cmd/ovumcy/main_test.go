@@ -1943,8 +1943,11 @@ func TestTryRunCLICommandWithHandlersDispatchesUsersCommand(t *testing.T) {
 			t.Fatal("did not expect reset-password handler")
 			return nil
 		},
-		runUsers: func(databaseConfig db.Config, args []string) error {
+		runUsers: func(databaseConfig db.Config, localSignInEnabled func() (bool, error), args []string) error {
 			called = true
+			if localSignInEnabled == nil {
+				t.Fatal("expected a local sign-in mode resolver")
+			}
 			if databaseConfig.Driver != db.DriverSQLite {
 				t.Fatalf("expected sqlite driver, got %q", databaseConfig.Driver)
 			}
@@ -1986,7 +1989,7 @@ func TestTryRunCLICommandWithHandlersPropagatesUsersError(t *testing.T) {
 			t.Fatal("did not expect reset-password handler")
 			return nil
 		},
-		runUsers: func(db.Config, []string) error {
+		runUsers: func(db.Config, func() (bool, error), []string) error {
 			return expectedErr
 		},
 	})

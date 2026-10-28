@@ -2310,15 +2310,30 @@ paths:
             status too, but answers `HX-Redirect: /recovery-code` with a
             plain-text `OK` body — NOT the JSON above. A plain browser request
             gets the `303` below.
+
+            Under `OIDC_LOGIN_MODE=oidc_only` (where only a forced-from-OIDC
+            token reaches this point) nothing can redeem a recovery code, so
+            none is minted: the JSON answer is `{"ok": true}` and htmx and
+            plain browser requests are sent to `/dashboard` (or `/onboarding`)
+            instead of `/recovery-code`.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/NextStepResponse' }
-              example:
-                ok: true
-                next_step: "recovery_code"
-                next_path: "/recovery-code"
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/NextStepResponse'
+                  - $ref: '#/components/schemas/OkResponse'
+              examples:
+                recoveryCode:
+                  summary: A recovery code was minted
+                  value:
+                    ok: true
+                    next_step: "recovery_code"
+                    next_path: "/recovery-code"
+                oidcOnly:
+                  summary: OIDC_LOGIN_MODE=oidc_only — no code minted
+                  value: { ok: true }
         '303':
-          description: "Redirect to `/recovery-code` after success, for a plain browser request — neither `Accept: application/json` nor htmx."
+          description: "Redirect to `/recovery-code` after success (to `/dashboard` or `/onboarding` under `OIDC_LOGIN_MODE=oidc_only`), for a plain browser request — neither `Accept: application/json` nor htmx."
         '400':
           $ref: '#/components/responses/ValidationError'
         '403':

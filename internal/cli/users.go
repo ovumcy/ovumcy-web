@@ -18,11 +18,14 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func RunUsersCommand(databaseConfig db.Config, args []string) error {
-	return runUsersCommand(databaseConfig, args, calendarFeedFencePath(), os.Stdin, os.Stdout)
+// RunUsersCommand runs `ovumcy users`. localSignInEnabled reports whether the
+// instance's OIDC_LOGIN_MODE leaves local sign-in on; only `create` resolves it,
+// so a config the server would refuse blocks provisioning and nothing else.
+func RunUsersCommand(databaseConfig db.Config, localSignInEnabled func() (bool, error), args []string) error {
+	return runUsersCommandIn(databaseConfig, localSignInEnabled, args, calendarFeedFencePath(), os.Stdin, os.Stdout)
 }
 
-func runUsersCommand(databaseConfig db.Config, args []string, fencePath string, input io.Reader, output io.Writer) error {
+func runUsersCommandIn(databaseConfig db.Config, localSignInEnabled func() (bool, error), args []string, fencePath string, input io.Reader, output io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("usage: ovumcy users <list|delete|create|set-email>")
 	}
@@ -63,7 +66,7 @@ func runUsersCommand(databaseConfig db.Config, args []string, fencePath string, 
 	case "delete":
 		return runUsersDelete(service, fencePath, fence, args[1:], input, output)
 	case "create":
-		return runUsersCreate(service, args[1:], input, output)
+		return runUsersCreate(service, localSignInEnabled, args[1:], input, output)
 	case "set-email":
 		return runUsersSetEmail(service, args[1:], output)
 	default:
@@ -268,10 +271,17 @@ func readDeleteConfirmation(input io.Reader) (bool, error) {
 	return strings.EqualFold(strings.TrimSpace(line), "DELETE"), nil
 }
 
-func runUsersCreate(service *services.OperatorUserService, args []string, input io.Reader, output io.Writer) error {
+func runUsersCreate(service *services.OperatorUserService, localSignInEnabled func() (bool, error), args []string, input io.Reader, output io.Writer) error {
 	opts, err := parseUsersCreateArgs(args)
 	if err != nil {
 		return err
+	}
+	if localSignInEnabled == nil {
+		return errors.New("local sign-in mode resolver is required")
+	}
+	localSignIn, err := localSignInEnabled()
+	if err != nil {
+		return fmt.Errorf("invalid OIDC config: %w", err)
 	}
 
 	password, err := readCreatePassword(input)
@@ -280,7 +290,7 @@ func runUsersCreate(service *services.OperatorUserService, args []string, input 
 	}
 	defer clear(password)
 
-	summary, recoveryCode, err := service.CreateOwner(context.Background(), opts.email, string(password), time.Now().UTC())
+	summary, recoveryCode, err := service.CreateOwner(context.Background(), opts.email, string(password), localSignIn, time.Now().UTC())
 	if err != nil {
 		// --skip-if-exists makes provisioning idempotent for install scripts
 		// (re-runs, upgrades): an existing email is not an error. It never
@@ -299,10 +309,13 @@ func runUsersCreate(service *services.OperatorUserService, args []string, input 
 		output = os.Stdout
 	}
 	_, _ = fmt.Fprintf(output, "✅ Created owner account %s (id=%d).\n", summary.Email, summary.ID)
-	if opts.showRecoveryCode {
+	switch {
+	case !localSignIn:
+		_, _ = fmt.Fprintln(output, "No recovery code was issued: with OIDC_LOGIN_MODE=oidc_only nothing can redeem one. After a move to hybrid, generate one from Settings.")
+	case opts.showRecoveryCode:
 		_, _ = fmt.Fprintf(output, "Recovery code: %s\n", recoveryCode)
 		_, _ = fmt.Fprintln(output, "Store it securely now — it is shown only once and must never be saved in install logs or scripts.")
-	} else {
+	default:
 		_, _ = fmt.Fprintln(output, "No recovery code was printed. Sign in and regenerate one from Settings to enable self-service password recovery.")
 	}
 	_, _ = fmt.Fprintln(output, "The owner completes onboarding (last period start, cycle defaults) on first sign-in.")

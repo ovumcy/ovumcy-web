@@ -98,9 +98,12 @@ type stubOwnerBuilder struct {
 	user models.User
 	code string
 	err  error
+
+	localSignInEnabled bool
 }
 
-func (stub *stubOwnerBuilder) BuildOwnerUserWithRecovery(email string, _ string, _ time.Time) (models.User, string, error) {
+func (stub *stubOwnerBuilder) BuildOwnerUserWithRecovery(email string, _ string, localSignInEnabled bool, _ time.Time) (models.User, string, error) {
+	stub.localSignInEnabled = localSignInEnabled
 	if stub.err != nil {
 		return models.User{}, "", stub.err
 	}
@@ -266,7 +269,7 @@ func TestOperatorUserServiceCreateOwnerProvisionsOwnerWithSymptoms(t *testing.T)
 	}
 	service := NewOperatorUserService(repo, builder)
 
-	summary, recoveryCode, err := service.CreateOwner(context.Background(), " Owner@Example.com ", "StrongPass1", time.Now().UTC())
+	summary, recoveryCode, err := service.CreateOwner(context.Background(), " Owner@Example.com ", "StrongPass1", true, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("CreateOwner() unexpected error: %v", err)
 	}
@@ -296,7 +299,7 @@ func TestOperatorUserServiceCreateOwnerAllowsMultipleOwners(t *testing.T) {
 	builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, code: "OVUM-DDDD-EEEE-FFFF"}
 	service := NewOperatorUserService(repo, builder)
 
-	summary, _, err := service.CreateOwner(context.Background(), "daughter@example.com", "StrongPass1", time.Now().UTC())
+	summary, _, err := service.CreateOwner(context.Background(), "daughter@example.com", "StrongPass1", true, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("CreateOwner() unexpected error for a second owner: %v", err)
 	}
@@ -315,7 +318,7 @@ func TestOperatorUserServiceCreateOwnerMapsDuplicateEmail(t *testing.T) {
 	builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, code: "OVUM-AAAA-BBBB-CCCC"}
 	service := NewOperatorUserService(repo, builder)
 
-	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", time.Now().UTC())
+	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", true, time.Now().UTC())
 	if !errors.Is(err, ErrOperatorUserEmailExists) {
 		t.Fatalf("expected ErrOperatorUserEmailExists from a duplicate email, got %v", err)
 	}
@@ -328,7 +331,7 @@ func TestOperatorUserServiceCreateOwnerWrapsBuilderError(t *testing.T) {
 	builder := &stubOwnerBuilder{err: errors.New("hash failure")}
 	service := NewOperatorUserService(repo, builder)
 
-	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", time.Now().UTC())
+	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", true, time.Now().UTC())
 	if !errors.Is(err, ErrOperatorUserCreateFailed) {
 		t.Fatalf("expected ErrOperatorUserCreateFailed from builder error, got %v", err)
 	}
@@ -344,7 +347,7 @@ func TestOperatorUserServiceCreateOwnerWrapsPersistenceError(t *testing.T) {
 	builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, code: "OVUM-AAAA-BBBB-CCCC"}
 	service := NewOperatorUserService(repo, builder)
 
-	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", time.Now().UTC())
+	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", true, time.Now().UTC())
 	if !errors.Is(err, ErrOperatorUserCreateFailed) {
 		t.Fatalf("expected ErrOperatorUserCreateFailed from a non-unique persistence error, got %v", err)
 	}
@@ -370,7 +373,7 @@ func TestOperatorUserServiceCreateOwnerValidatesInput(t *testing.T) {
 			t.Parallel()
 			repo := &stubOperatorUserRepo{}
 			service := NewOperatorUserService(repo, &stubOwnerBuilder{})
-			_, _, err := service.CreateOwner(context.Background(), testCase.email, testCase.password, time.Now().UTC())
+			_, _, err := service.CreateOwner(context.Background(), testCase.email, testCase.password, true, time.Now().UTC())
 			if !errors.Is(err, testCase.want) {
 				t.Fatalf("expected %v, got %v", testCase.want, err)
 			}

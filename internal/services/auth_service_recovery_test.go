@@ -226,7 +226,7 @@ func TestRecoveryCodeRotationsRefuseANilDeliveryBeforeTheirWrite(t *testing.T) {
 			return service.RegenerateRecoveryCode(context.Background(), user, true, nil)
 		}},
 		{"reset", func(user *models.User) (string, error) {
-			return service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), user, user.PasswordHash, "EvenStronger2", nil)
+			return service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), user, user.PasswordHash, "EvenStronger2", true, nil)
 		}},
 	} {
 		t.Run(rotation.name, func(t *testing.T) {
@@ -510,7 +510,7 @@ func TestAuthServiceBuildOwnerUserWithRecovery(t *testing.T) {
 	service := NewAuthService(&stubAuthUserRepo{})
 	createdAt := time.Date(2026, time.March, 2, 8, 0, 0, 0, time.UTC)
 
-	user, recoveryCode, err := service.BuildOwnerUserWithRecovery("owner@example.com", "StrongPass1", createdAt)
+	user, recoveryCode, err := service.BuildOwnerUserWithRecovery("owner@example.com", "StrongPass1", true, createdAt)
 	if err != nil {
 		t.Fatalf("BuildOwnerUserWithRecovery() unexpected error: %v", err)
 	}

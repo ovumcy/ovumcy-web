@@ -57,7 +57,7 @@ func TestMR3Auth_CASBumpsPassedUserSessionVersion(t *testing.T) {
 	}
 
 	recoveryCode, err := service.ResetPasswordAndRotateRecoveryCodeCAS(
-		context.Background(), &userSnap, string(originalHash), "EvenStronger2", noopRecoveryCodeDelivery,
+		context.Background(), &userSnap, string(originalHash), "EvenStronger2", true, noopRecoveryCodeDelivery,
 	)
 	if err != nil {
 		t.Fatalf("ResetPasswordAndRotateRecoveryCodeCAS: unexpected error: %v", err)

@@ -94,7 +94,7 @@ func TestResetPasswordAndRotateRecoveryCodeCASRejectsReplay(t *testing.T) {
 
 	// First redeem — must succeed.
 	userSnap := repo.user // copy for the CAS call
-	_, err = service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &userSnap, string(originalHash), "EvenStronger2", noopRecoveryCodeDelivery)
+	_, err = service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &userSnap, string(originalHash), "EvenStronger2", true, noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("first redeem: unexpected error: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestResetPasswordAndRotateRecoveryCodeCASRejectsReplay(t *testing.T) {
 
 	// Second redeem with the SAME oldPasswordHash — must fail.
 	userSnap2 := repo.user // state after first write
-	_, err = service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &userSnap2, string(originalHash), "AnotherPass3", noopRecoveryCodeDelivery)
+	_, err = service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &userSnap2, string(originalHash), "AnotherPass3", true, noopRecoveryCodeDelivery)
 	if !errors.Is(err, ErrResetTokenAlreadyConsumed) {
 		t.Fatalf("second redeem: expected ErrResetTokenAlreadyConsumed, got %v", err)
 	}
@@ -152,7 +152,7 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	}
 
 	// First CompleteReset — must succeed.
-	user, recoveryCode, err := resetSvc.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(time.Minute), noopRecoveryCodeDelivery)
+	user, recoveryCode, err := resetSvc.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(time.Minute), true, noopRecoveryCodeDelivery)
 	if err != nil {
 		t.Fatalf("first CompleteReset: unexpected error: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	// will reject because the stored hash changed after the first redeem.
 	// ResolveUserByResetToken returns the current user state (updated hash),
 	// which no longer matches the token fingerprint → ErrInvalidResetToken.
-	_, _, err = resetSvc.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(2*time.Minute), noopRecoveryCodeDelivery)
+	_, _, err = resetSvc.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(2*time.Minute), true, noopRecoveryCodeDelivery)
 	if err == nil {
 		t.Fatal("second CompleteReset: expected error for replayed token, got nil")
 	}
@@ -225,7 +225,7 @@ func TestCompleteResetLosesToASessionVersionBumpBetweenResolveAndWrite(t *testin
 		t.Fatalf("BuildPasswordResetToken: %v", err)
 	}
 
-	_, _, err = resetSvc.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(time.Minute), noopRecoveryCodeDelivery)
+	_, _, err = resetSvc.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(time.Minute), true, noopRecoveryCodeDelivery)
 	if !errors.Is(err, ErrResetTokenAlreadyConsumed) {
 		t.Fatalf("expected the reset to lose to the version bump, got %v", err)
 	}

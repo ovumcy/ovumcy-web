@@ -228,7 +228,8 @@ func (service *AuthService) RegisterOwner(ctx context.Context, email string, raw
 		return models.User{}, "", ErrAuthEmailExists
 	}
 
-	user, recoveryCode, err := service.BuildOwnerUserWithRecovery(email, rawPassword, createdAt)
+	// Public registration is refused before this under oidc_only (Register).
+	user, recoveryCode, err := service.BuildOwnerUserWithRecovery(email, rawPassword, true, createdAt)
 	if err != nil {
 		return models.User{}, "", ErrAuthRegisterFailed
 	}
@@ -326,14 +327,21 @@ func (service *AuthService) forceResetPassword(ctx context.Context, userID uint,
 	return nil
 }
 
-func (service *AuthService) BuildOwnerUserWithRecovery(email string, rawPassword string, createdAt time.Time) (models.User, string, error) {
+// BuildOwnerUserWithRecovery builds a local-password owner record. With
+// localSignInEnabled false (OIDC_LOGIN_MODE=oidc_only) nothing can redeem a
+// recovery code, so none is minted and the record carries an empty
+// recovery_code_hash (WEB-342).
+func (service *AuthService) BuildOwnerUserWithRecovery(email string, rawPassword string, localSignInEnabled bool, createdAt time.Time) (models.User, string, error) {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(rawPassword), passwordHashCost)
 	if err != nil {
 		return models.User{}, "", err
 	}
-	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
-	if err != nil {
-		return models.User{}, "", err
+	recoveryCode, recoveryHash := "", ""
+	if localSignInEnabled {
+		recoveryCode, recoveryHash, err = GenerateRecoveryCodeHash()
+		if err != nil {
+			return models.User{}, "", err
+		}
 	}
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
@@ -847,7 +855,11 @@ var topUpRecoveryLookupTiming = func(recoveryHash string, code string, passwordH
 //
 // deliver runs inside the write's transaction, before its commit (see
 // RecoveryCodeDelivery); an error from it leaves the row, and user, unchanged.
-func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Context, user *models.User, oldPasswordHash string, newPassword string, deliver RecoveryCodeDelivery) (string, error) {
+//
+// With localSignInEnabled false (OIDC_LOGIN_MODE=oidc_only) nothing can redeem
+// a recovery code, so none is minted: the write stores an empty
+// recovery_code_hash and deliver receives an empty code (WEB-342).
+func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Context, user *models.User, oldPasswordHash string, newPassword string, localSignInEnabled bool, deliver RecoveryCodeDelivery) (string, error) {
 	if user == nil {
 		return "", ErrAuthUserRequired // codecov:ignore -- defensive; callers always pass a resolved user
 	}
@@ -859,9 +871,12 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Co
 	if err != nil {
 		return "", err // codecov:ignore -- bcrypt only errors on an out-of-range cost
 	}
-	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
-	if err != nil {
-		return "", err // codecov:ignore -- crypto/rand failure, not reachable in tests
+	recoveryCode, recoveryHash := "", ""
+	if localSignInEnabled {
+		recoveryCode, recoveryHash, err = GenerateRecoveryCodeHash()
+		if err != nil {
+			return "", err // codecov:ignore -- crypto/rand failure, not reachable in tests
+		}
 	}
 
 	// CAS predicate prevents concurrent / replayed redeems.

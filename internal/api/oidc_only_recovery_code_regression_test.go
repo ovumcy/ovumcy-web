@@ -162,3 +162,61 @@ func TestRegenerateRecoveryCodeOnAnOIDCOnlyInstanceIsRefused(t *testing.T) {
 		})
 	}
 }
+
+// The forced-from-OIDC reset is the one reset an oidc_only instance still
+// redeems; it rewrites the password and re-issues the session at the version
+// its own write stored, but mints no code and stages no reveal (WEB-342).
+func TestForcedResetFromOIDCOnAnOIDCOnlyInstanceMintsNoRecoveryCode(t *testing.T) {
+	t.Parallel()
+
+	app, database, stub := newLocalAuthGateTestApp(t)
+	user := createOnboardingTestUser(t, database, "oidc-only-forced-reset-no-code@example.com", "StrongPass1", true)
+	const priorHash = "prior-recovery-hash"
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"must_change_password": true,
+		"recovery_code_hash":   priorHash,
+	}).Error; err != nil {
+		t.Fatalf("mark user must_change_password: %v", err)
+	}
+	user.MustChangePassword = true
+	user.RecoveryCodeHash = priorHash
+
+	resetCookieValue := forcedOIDCResetCookieFromCallback(t, app, stub, user)
+	stub.localPublicAuthEnabled = false
+
+	response := redeemResetCookie(t, app, resetCookieValue, "EvenStronger2")
+	defer func() { _ = response.Body.Close() }()
+	assertStatusCode(t, response, http.StatusOK)
+
+	if reveal := responseCookie(response.Cookies(), recoveryCodeCookieName); reveal != nil && strings.TrimSpace(reveal.Value) != "" {
+		t.Fatalf("expected no %s cookie on an oidc_only instance", recoveryCodeCookieName)
+	}
+	body := mustReadBodyString(t, response.Body)
+	if strings.Contains(body, "recovery_code") || strings.Contains(body, "/recovery-code") {
+		t.Fatalf("expected the answer not to name the reveal surface, got %q", body)
+	}
+	authCookie := responseCookie(response.Cookies(), authCookieName)
+	if authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		t.Fatal("expected the reset to re-issue the auth cookie past its own session bump")
+	}
+
+	var persisted models.User
+	if err := database.First(&persisted, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if strings.TrimSpace(persisted.RecoveryCodeHash) != "" {
+		t.Fatal("expected an empty recovery_code_hash on an oidc_only instance")
+	}
+	if persisted.PasswordHash == user.PasswordHash || persisted.MustChangePassword {
+		t.Fatal("expected the forced reset to replace the password and clear must_change_password")
+	}
+	if persisted.AuthSessionVersion <= user.AuthSessionVersion {
+		t.Fatalf("expected the reset to bump auth_session_version: before=%d after=%d", user.AuthSessionVersion, persisted.AuthSessionVersion)
+	}
+
+	probe := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	probe.Header.Set("Cookie", cookiePair(authCookie))
+	probeResponse := mustAppResponse(t, app, probe)
+	defer func() { _ = probeResponse.Body.Close() }()
+	assertStatusCode(t, probeResponse, http.StatusOK)
+}

@@ -137,7 +137,18 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 	// rotated code nobody had seen (WEB-58). The role arm of that failure stays
 	// unreachable besides: ResolveUserByResetToken refuses a non-owner before the
 	// write (TestUnsupportedLegacyRoleResetRedeemWritesNothing).
-	deliver, delivery := handler.newRecoveryCodeDelivery(false, services.PostLoginRedirectPath, recoveryCodeSurfaceDedicated)
+	//
+	// With local sign-in off only a forced-from-OIDC token gets this far, and
+	// nothing on the instance can redeem a recovery code, so none is minted and
+	// only the session is sealed (WEB-342).
+	localSignInEnabled := handler.localPublicAuthEnabled()
+	var deliver services.RecoveryCodeDelivery
+	var delivery *recoveryCodeRotationDelivery
+	if localSignInEnabled {
+		deliver, delivery = handler.newRecoveryCodeDelivery(false, services.PostLoginRedirectPath, recoveryCodeSurfaceDedicated)
+	} else {
+		deliver, delivery = handler.newSessionOnlyDelivery(false)
+	}
 	user, _, err := handler.passwordResetSvc.CompleteReset(
 		c.Context(),
 		handler.secretKey,
@@ -145,6 +156,7 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 		input.Password,
 		input.ConfirmPassword,
 		time.Now(),
+		localSignInEnabled,
 		deliver,
 	)
 	if delivery.failure != nil {
@@ -162,10 +174,13 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 	}
 
 	handler.writeAuthCookie(c, user, delivery.session)
-	handler.writeSealed(c, delivery.reveal)
 	handler.clearOIDCLogoutBridgeCookie(c)
 	handler.clearResetPasswordCookie(c)
 	handler.logSecurityEvent(c, "auth.reset_password", "success")
+	if !localSignInEnabled {
+		return redirectOrJSON(c, services.PostLoginRedirectPath(user))
+	}
+	handler.writeSealed(c, delivery.reveal)
 
 	return respondRecoveryCodeNextStep(c, fiber.StatusOK, delivery.nextPath)
 }

@@ -31,7 +31,7 @@ func TestOwnerAccountConstructorsLeaveAutoPeriodFillOff(t *testing.T) {
 	service := NewAuthService(&stubAuthUserRepo{})
 	createdAt := time.Date(2026, time.March, 2, 8, 0, 0, 0, time.UTC)
 
-	local, _, err := service.BuildOwnerUserWithRecovery("owner@example.com", "StrongPass1", createdAt)
+	local, _, err := service.BuildOwnerUserWithRecovery("owner@example.com", "StrongPass1", true, createdAt)
 	if err != nil {
 		t.Fatalf("BuildOwnerUserWithRecovery() unexpected error: %v", err)
 	}

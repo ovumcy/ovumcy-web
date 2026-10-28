@@ -54,7 +54,7 @@ func TestTimingEqualizationHashesMatchTargetCost(t *testing.T) {
 func TestNewPasswordHashesUseConfiguredCost(t *testing.T) {
 	t.Run("BuildOwnerUserWithRecovery hashes password and recovery code at target cost", func(t *testing.T) {
 		service := NewAuthService(&stubAuthUserRepo{})
-		user, recoveryCode, err := service.BuildOwnerUserWithRecovery("owner@example.com", "StrongPass1", time.Now())
+		user, recoveryCode, err := service.BuildOwnerUserWithRecovery("owner@example.com", "StrongPass1", true, time.Now())
 		if err != nil {
 			t.Fatalf("BuildOwnerUserWithRecovery: %v", err)
 		}
