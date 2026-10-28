@@ -100,10 +100,10 @@ func TestPasswordResetRedeemHTMXSurfaceAnswersHXRedirectNotJSON(t *testing.T) {
 // this 403 describes only fires then — handlers_auth_session_recovery.go's
 // ResetPassword never even calls PasswordResetTokenRefusedByLocalAuthGate
 // while it's on): the token
-// redeems, a session is issued, and a fresh recovery code is minted, exactly
-// like the must_change_password case
+// redeems and a session is issued, exactly like the must_change_password case
 // TestForcedResetFromOIDCRedeemSurvivesLocalPublicAuthBeingOff already
-// covers. The fixture user is genuinely TOTPEnabled with
+// covers; no recovery code is minted, since nothing on an oidc_only instance
+// could redeem one (WEB-342). The fixture user is genuinely TOTPEnabled with
 // MustChangePassword=false — the account shape
 // TestOIDCLoginServiceAuthenticateRoutesUnverifiableTOTPToForcedReset
 // (internal/services/oidc_login_service_test.go) pins as the one
@@ -135,8 +135,15 @@ func TestForcedResetFromOIDCUnverifiableTOTPRedeemCompletesRecovery(t *testing.T
 	assertStatusCode(t, response, http.StatusOK)
 
 	payload := readRecoveryCodeFlowJSON(t, response)
-	assertRecoveryCodeIssuedViaSurface(t, payload, "/recovery-code")
-	assertRecoveryCodeTransportCookies(t, response)
+	if payload["ok"] != true || payload["next_step"] != nil || payload["next_path"] != nil {
+		t.Fatalf("expected a plain ok answer with no reveal step on an oidc_only instance, got %#v", payload)
+	}
+	if reveal := responseCookie(response.Cookies(), recoveryCodeCookieName); reveal != nil && strings.TrimSpace(reveal.Value) != "" {
+		t.Fatalf("expected no %s cookie on an oidc_only instance", recoveryCodeCookieName)
+	}
+	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		t.Fatal("expected the forced reset to issue a session")
+	}
 }
 
 // forcedOIDCResetCookieFromUnverifiableTOTPCallback is
