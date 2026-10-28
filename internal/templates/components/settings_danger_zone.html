@@ -11,6 +11,7 @@
       <div>
         <h3 class="field-label field-label-lg">{{t .Messages "settings.clear_data.title"}}</h3>
         <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.subtitle"}}</p>
+        {{template "settings_clear_data_resets" .}}
       </div>
 
       <form
@@ -48,6 +49,8 @@
     <div class="card-quiet card-danger-soft mt-3 space-y-3" data-clear-data-stepup>
       <div>
         <h3 class="field-label field-label-lg">{{t .Messages "settings.clear_data.title"}}</h3>
+        <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.subtitle"}}</p>
+        {{template "settings_clear_data_resets" .}}
         <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.stepup_hint"}}</p>
       </div>
       <form
@@ -114,4 +117,18 @@
     </div>
     {{end}}
   </details>
+{{end}}
+
+{{/* One item per group of what UserRepository.ClearAllDataAndResetSettings
+     erases or resets. Regression: TestClearDataCopyNamesEveryColumnTheWipeWrites. */}}
+{{define "settings_clear_data_resets"}}
+  <ul class="journal-muted mt-1 space-y-1 text-sm" data-clear-data-resets>
+    <li>{{t .Messages "settings.clear_data.resets.calendar_feed"}}</li>
+    <li>{{t .Messages "settings.clear_data.resets.webhook"}}</li>
+    <li>{{t .Messages "settings.clear_data.resets.records"}}</li>
+    <li>{{t .Messages "settings.clear_data.resets.cycle"}}</li>
+    <li>{{t .Messages "settings.clear_data.resets.preferences"}}</li>
+    <li>{{t .Messages "settings.clear_data.resets.sessions"}}</li>
+  </ul>
+  <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.kept"}}</p>
 {{end}}

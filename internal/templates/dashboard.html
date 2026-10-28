@@ -75,7 +75,7 @@
                        substitute for withholding it. */}}
                   {{printf (tn .Messages .Lang "dashboard.next_period_need_cycles" cycleFloor) cycleFloor}}
                 {{else if .DisplayNextPeriodPrompt}}
-                  {{t .Messages "dashboard.next_period_prompt"}}
+                  <a href="/settings#settings-last-period-start-label" class="inline-link" data-dashboard-next-period-prompt>{{t .Messages "dashboard.next_period_prompt"}}</a>
                 {{else if .DisplayNextPeriodStart.IsZero}}
                   {{.NoDataLabel}}
                 {{else}}

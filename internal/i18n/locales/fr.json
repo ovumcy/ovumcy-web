@@ -321,7 +321,14 @@
   "settings.data.storage_copy": "Vos enregistrements restent dans la base SQLite ou PostgreSQL sur ce serveur. Les exports CSV et JSON vous donnent une copie quand vous en avez besoin.",
 
   "settings.clear_data.title": "Effacer toutes les données de suivi",
-  "settings.clear_data.subtitle": "Supprimez toutes les entrées de calendrier suivies, réinitialisez les paramètres du cycle par défaut et supprimez vos symptômes personnalisés. Les symptômes intégrés restent disponibles.",
+  "settings.clear_data.subtitle": "Effacer les données supprime ou réinitialise tout ce qui suit :",
+  "settings.clear_data.resets.calendar_feed": "Le lien de votre flux de calendrier cesse immédiatement de fonctionner ; générez-en un nouveau pour vous réabonner.",
+  "settings.clear_data.resets.webhook": "Les rappels par webhook sont désactivés, le point de terminaison enregistré est supprimé et le délai des rappels revient à sa valeur par défaut.",
+  "settings.clear_data.resets.records": "Toutes les entrées du calendrier et vos symptômes personnalisés sont supprimés. Les symptômes intégrés restent disponibles.",
+  "settings.clear_data.resets.cycle": "Les paramètres du cycle reviennent à leurs valeurs par défaut, y compris la date de début des dernières règles, la durée du cycle et des règles, l’objectif et la tranche d’âge.",
+  "settings.clear_data.resets.preferences": "Les préférences de suivi et d’affichage reviennent à leurs valeurs par défaut : suivi de la température et unité, glaire cervicale, champs masqués, phases passées, début de semaine, conseils masqués et fuseau horaire enregistré.",
+  "settings.clear_data.resets.sessions": "Tous les autres appareils sont déconnectés.",
+  "settings.clear_data.kept": "Votre compte, votre e-mail, votre mot de passe, la connexion à deux facteurs, votre code de récupération et la langue de l’interface sont conservés.",
   "settings.clear_data.submit": "Effacer toutes les données",
   "settings.clear_data.confirm_accept": "Oui, tout supprimer",
   "settings.clear_data.stepup_hint": "Ce compte se connecte via votre fournisseur d'identité : l'effacement des données de santé s'y confirme, et non par un mot de passe. Vous devrez vous reconnecter avant tout effacement.",
@@ -336,7 +343,7 @@
   "settings.delete_account.submit": "Supprimer le compte",
 
   "settings.confirm_regenerate_recovery_code": "Régénérer votre code de récupération ? L'ancien code ne fonctionnera plus.",
-  "settings.confirm_clear_data": "Supprimer tous les enregistrements du calendrier, réinitialiser votre cycle et supprimer les symptômes personnalisés ? Cette action est irréversible.",
+  "settings.confirm_clear_data": "Révoquer votre flux de calendrier, supprimer votre webhook, supprimer tous les enregistrements du calendrier et les symptômes personnalisés, réinitialiser tous les paramètres et déconnecter les autres appareils ? Cette action est irréversible.",
   "settings.confirm_delete_account": "Supprimer définitivement votre compte et toutes vos données ? Cette action est irréversible.",
 
   "settings.success.password_changed": "Mot de passe modifié avec succès.",
