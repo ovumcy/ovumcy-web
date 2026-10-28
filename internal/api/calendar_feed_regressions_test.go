@@ -109,7 +109,7 @@ func mustSplitFeedToken(t *testing.T, token string) (selector string, verifier s
 }
 
 // TestCalendarFeedServesOwnersICSWithHardenedHeaders is the happy-path contract:
-// a valid token returns 200 with text/calendar, a private 1h cache, the
+// a valid token returns 200 with text/calendar, Cache-Control no-store, the
 // noindex robots tag, structural .ics markers, and the medical-safety disclaimer
 // in a DESCRIPTION — and never a Set-Cookie.
 func TestCalendarFeedServesOwnersICSWithHardenedHeaders(t *testing.T) {
@@ -122,8 +122,11 @@ func TestCalendarFeedServesOwnersICSWithHardenedHeaders(t *testing.T) {
 	if ct := response.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/calendar") {
 		t.Fatalf("expected text/calendar content type, got %q", ct)
 	}
-	if cc := response.Header.Get("Cache-Control"); cc != "private, max-age=3600" {
-		t.Fatalf("expected private 1h cache, got %q", cc)
+	// A stored copy would keep answering for the old URL after the owner rotates
+	// or revokes it, while the settings copy says the link stops working at once
+	// (WEB-233).
+	if cc := response.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("expected no-store, got %q", cc)
 	}
 	if robots := response.Header.Get("X-Robots-Tag"); robots != "noindex" {
 		t.Fatalf("expected X-Robots-Tag noindex, got %q", robots)
