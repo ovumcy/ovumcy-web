@@ -294,15 +294,34 @@
     return ticks.length ? ticks : [domain.min, domain.max];
   }
 
-  function formatChartValue(value, suffix, decimals) {
+  // Languages that print a decimal comma; mirrors decimalSeparatorFor in
+  // internal/services/number_format.go.
+  var DECIMAL_COMMA_LANGUAGES = { de: true, es: true, fr: true, it: true, ru: true };
+
+  function decimalSeparator() {
+    var lang = String(document.documentElement.getAttribute("lang") || "").toLowerCase();
+    return DECIMAL_COMMA_LANGUAGES[lang.split(/[-_]/)[0]] ? "," : ".";
+  }
+
+  // Same rule as the Go formatter: the exact value rounded half away from zero
+  // (toFixed does this on the binary value), trailing zeros dropped, the page
+  // language's decimal separator. An axis column passes fixed so its labels
+  // keep one precision (37,0 / 36,8) instead of mixing 37 with 36,8.
+  function formatChartValue(value, suffix, decimals, fixed) {
     var precision = Math.max(0, Math.min(2, Math.round(Number(decimals) || 0)));
     var numeric = Number(value);
     if (!isFiniteNumber(numeric)) {
       return "";
     }
 
-    var rendered = precision > 0 ? numeric.toFixed(precision) : String(Math.round(numeric));
-    return rendered + String(suffix || "");
+    var rendered = numeric.toFixed(precision);
+    if (!fixed && rendered.indexOf(".") >= 0) {
+      rendered = rendered.replace(/0+$/, "").replace(/\.$/, "");
+    }
+    if (rendered === "-0") {
+      rendered = "0";
+    }
+    return rendered.replace(".", decimalSeparator()) + String(suffix || "");
   }
 
   // The grid is a set of solid hairlines, one per axis tick: a dashed grid
@@ -491,7 +510,7 @@
 
     for (var index = ticks.length - 1; index >= 0; index--) {
       context.fillText(
-        formatChartValue(ticks[index], valueSuffix, valueDecimals),
+        formatChartValue(ticks[index], valueSuffix, valueDecimals, true),
         padding.left - 8,
         yForValue(ticks[index])
       );
@@ -689,9 +708,10 @@
     if (valueSuffix === null) {
       valueSuffix = container.getAttribute("data-days-suffix") || "d";
     }
-    var valueDecimals = Number(container.getAttribute("data-value-decimals"));
+    var decimalsAttribute = container.getAttribute("data-value-decimals");
+    var valueDecimals = decimalsAttribute === null ? 1 : Number(decimalsAttribute);
     if (!isFiniteNumber(valueDecimals)) {
-      valueDecimals = valueSuffix === "d" ? 0 : 1;
+      valueDecimals = 1;
     }
     var errorText = container.getAttribute("data-error-text") || "Unable to render chart.";
     var baselineLabel = container.getAttribute("data-baseline-label");
@@ -730,11 +750,15 @@
     }
 
     var ticks = domainTicks(domain);
+    var tickDecimals = valueDecimals;
+    if (decimalsAttribute === null) {
+      tickDecimals = ticks.some(function (tick) { return tick !== Math.round(tick); }) ? 1 : 0;
+    }
 
     // The gutter follows the widest tick, so a three-digit °F label is not cut.
     context.font = "12px Quicksand, Nunito, sans-serif";
     for (var tickIndex = 0; tickIndex < ticks.length; tickIndex++) {
-      var tickWidth = context.measureText(formatChartValue(ticks[tickIndex], valueSuffix, valueDecimals)).width;
+      var tickWidth = context.measureText(formatChartValue(ticks[tickIndex], valueSuffix, tickDecimals, true)).width;
       padding.left = Math.max(padding.left, Math.ceil(tickWidth) + 8 + Y_LABEL_MARGIN);
     }
     var innerWidth = size.width - padding.left - padding.right;
@@ -789,7 +813,7 @@
       drawVerticalMarker(context, padding, innerHeight, xForIndex, chartData.markerIndex, chartData.markerLabel, colors.baseline);
     }
     drawXLabels(context, chartData.labels, xForIndex, size.height, padding, colors.label);
-    drawYLabels(context, ticks, padding, yForValue, valueSuffix, valueDecimals, colors.label);
+    drawYLabels(context, ticks, padding, yForValue, valueSuffix, tickDecimals, colors.label);
 
     if (container.hasAttribute(HOVER_ATTRIBUTE)) {
       setupChartHover(container, {

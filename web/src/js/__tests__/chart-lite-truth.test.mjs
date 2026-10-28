@@ -109,11 +109,11 @@ function createRecordingContext() {
   return context;
 }
 
-async function drawChart(payload, attributes = {}) {
+async function drawChart(payload, attributes = {}, lang = "") {
   const declared = Object.entries({ "data-chart": JSON.stringify(payload), ...attributes })
     .map(([name, value]) => `${name}='${value}'`)
     .join(" ");
-  const html = `<!doctype html><html><head></head><body><div id="chart" class="chart-shell" ${declared}></div></body></html>`;
+  const html = `<!doctype html><html${lang ? ` lang="${lang}"` : ""}><head></head><body><div id="chart" class="chart-shell" ${declared}></div></body></html>`;
 
   let context = null;
   const dom = await loadDOMWithScript(CHART_LITE, {
@@ -443,4 +443,53 @@ test("the average reference label stays inside the plot area", async () => {
   );
   assert.ok(label.left >= box.left, "the label does not spill past the left edge of the plot");
   assert.ok(label.y > box.top && label.y < box.bottom, "the label sits inside the plot area");
+});
+
+// The Go formatter (internal/services/number_format.go) owns the rule: the
+// exact value rounded half away from zero to one decimal, trailing zeros
+// dropped, and the decimal separator of the page language. The chart labels
+// must read the same as the card and caption beside them.
+const NBSP = " ";
+
+test("the average label keeps the half day and the page language's decimal separator", async () => {
+  const payload = { kind: "bar", labels: ["Jan", "Feb", "Mar", "Apr"], values: [26, 35, 28, 30], baseline: 30.5 };
+  const cases = [
+    ["en", "30.5"],
+    ["de", "30,5"],
+    ["ru", "30,5"],
+    ["fr-FR", "30,5"],
+  ];
+  for (const [lang, expected] of cases) {
+    const calls = await drawChart(payload, { "data-days-suffix": `${NBSP}d`, "data-baseline-label": "Average" }, lang);
+    const label = labelInsidePlot(calls, gridBox(calls));
+    assert.equal(label.text, `Average ${expected}${NBSP}d`, `lang ${lang}`);
+  }
+});
+
+test("a fractional axis step prints with the page language's separator and no trailing zero", async () => {
+  const calls = await drawChart(
+    { kind: "bar", labels: ["Jan", "Feb", "Mar"], values: [28, 28.5, 29], baseline: 28.5 },
+    { "data-days-suffix": `${NBSP}d`, "data-baseline-label": "Average" },
+    "de",
+  );
+  const ticks = axisTicks(calls, gridBox(calls)).map((tick) => tick.text);
+  assert.ok(ticks.length > 0);
+  for (const text of ticks) {
+    assert.ok(!text.includes("."), `no dot decimal in "${text}"`);
+    assert.ok(!/,0\D/.test(text), `no trailing zero in "${text}"`);
+  }
+});
+
+test("BBT labels use the page language's separator", async () => {
+  const values = [36.4, 36.6, 36.8];
+  const calls = await drawChart(
+    { kind: "line", labels: ["1", "2", "3"], values, baseline: 36.25 },
+    { ...BBT_ATTRIBUTES, "data-value-suffix": `${NBSP}°C` },
+    "ru",
+  );
+  const box = gridBox(calls);
+  for (const tick of axisTicks(calls, box)) {
+    assert.ok(!tick.text.includes("."), `no dot decimal in "${tick.text}"`);
+  }
+  assert.equal(labelInsidePlot(calls, box).text, `Coverline 36,3${NBSP}°C`);
 });
