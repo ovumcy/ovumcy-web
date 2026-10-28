@@ -340,7 +340,7 @@ func (service *AuthService) BuildOwnerUserWithRecovery(email string, rawPassword
 	if localSignInEnabled {
 		recoveryCode, recoveryHash, err = GenerateRecoveryCodeHash()
 		if err != nil {
-			return models.User{}, "", err
+			return models.User{}, "", err // codecov:ignore -- crypto/rand failure, not reachable in tests
 		}
 	}
 	if createdAt.IsZero() {
