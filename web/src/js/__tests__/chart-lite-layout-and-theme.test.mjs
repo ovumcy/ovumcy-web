@@ -138,6 +138,21 @@ test("an in-app theme change repaints the chart", async () => {
   assert.ok(context.calls.filter((call) => call.op === "clearRect").length > before, "the canvas was redrawn");
 });
 
+test("rewriting data-theme with the same value does not repaint", async () => {
+  const { dom, context } = await render(
+    { kind: "line", labels: labels(5), values: [36.4, 36.5, 36.6, 36.5, 36.4] },
+    { attributes: { "data-value-suffix": "°C" } },
+  );
+  const root = dom.window.document.documentElement;
+  root.setAttribute("data-theme", "light");
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const settled = context.calls.filter((call) => call.op === "clearRect").length;
+  root.setAttribute("data-theme", "light");
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  dom.window.close();
+  assert.equal(context.calls.filter((call) => call.op === "clearRect").length, settled);
+});
+
 test("the cannot-draw fallback is the template's text", async () => {
   const { dom } = await render(
     { kind: "line", labels: labels(5), values: [36.4, 36.5, 36.6, 36.5, 36.4] },

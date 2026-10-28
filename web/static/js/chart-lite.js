@@ -851,7 +851,16 @@
     }
   }
   if (typeof MutationObserver === "function") {
-    new MutationObserver(scheduleRender).observe(document.documentElement, {
+    // applyTheme rewrites data-theme with the value it already holds on every
+    // load; only a changed value has new ink to paint.
+    var paintedTheme = document.documentElement.getAttribute("data-theme");
+    new MutationObserver(function () {
+      var theme = document.documentElement.getAttribute("data-theme");
+      if (theme !== paintedTheme) {
+        paintedTheme = theme;
+        scheduleRender();
+      }
+    }).observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"]
     });
