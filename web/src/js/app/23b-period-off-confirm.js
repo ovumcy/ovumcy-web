@@ -3,14 +3,6 @@
   // The un-ticking click is held back before the box changes, so a declined
   // question leaves no input or change event behind and the day forms mark
   // nothing for saving; an accepted one un-ticks the box with both events.
-  function confirmPeriodOff(toggle) {
-    var question = toggle.getAttribute("data-period-off-confirm") || "";
-    if (typeof window.__ovumcyOpenConfirm === "function") {
-      return window.__ovumcyOpenConfirm(question, toggle.getAttribute("data-period-off-confirm-accept") || "");
-    }
-    return Promise.resolve(window.confirm(question));
-  }
-
   function bindPeriodOffConfirm() {
     document.addEventListener("click", function (event) {
       var toggle = event.target;
@@ -22,7 +14,10 @@
         return;
       }
       event.preventDefault();
-      confirmPeriodOff(toggle).then(function (confirmed) {
+      openCycleStartConfirm(
+        toggle.getAttribute("data-period-off-confirm") || "",
+        toggle.getAttribute("data-period-off-confirm-accept") || ""
+      ).then(function (confirmed) {
         if (!confirmed || !toggle.checked || !document.contains(toggle)) {
           return;
         }
