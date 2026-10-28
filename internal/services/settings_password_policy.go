@@ -178,7 +178,7 @@ func (service *SettingsService) FinalizeLocalPasswordSetup(ctx context.Context, 
 		var err error
 		recoveryCode, recoveryHash, err = GenerateRecoveryCodeHash()
 		if err != nil {
-			return "", fmt.Errorf("%w: %v", ErrSettingsRecoveryCodeGenerateFailed, err)
+			return "", fmt.Errorf("%w: %v", ErrSettingsRecoveryCodeGenerateFailed, err) // codecov:ignore -- crypto/rand failure, not reachable in tests
 		}
 	}
 	staged := *user

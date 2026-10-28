@@ -95,6 +95,26 @@ func TestLocalPasswordSetupSessionOnlyDeliveryRefusesARecoveryCode(t *testing.T)
 	}
 }
 
+// A session that cannot be sealed fails the delivery, so the enrollment write
+// rolls back instead of committing a bumped version no cookie carries.
+func TestLocalPasswordSetupSessionOnlyDeliveryFailsWhenTheSessionCannotBeSealed(t *testing.T) {
+	t.Parallel()
+
+	sealFault := errors.New("session issuance fault")
+	handler := &Handler{sessionIssuanceFault: func() error { return sealFault }}
+	deliver, delivery := handler.newSessionOnlyDelivery(false)
+	err := deliver(&models.User{ID: 1, Role: models.RoleOwner, AuthSessionVersion: 2}, "")
+	if !errors.Is(err, sealFault) {
+		t.Fatalf("expected the issuance fault, got %v", err)
+	}
+	if !errors.Is(delivery.failure, sealFault) {
+		t.Fatalf("expected the failure recorded for the handler, got %v", delivery.failure)
+	}
+	if delivery.session != (preparedSession{}) {
+		t.Fatal("expected no session sealed for a failed delivery")
+	}
+}
+
 // The regenerate route is refused on the instance's mode alone, before the
 // password is read: the mode is instance-wide, so the answer names nothing
 // about the account, and a wrong password must not reach the re-auth budget.
