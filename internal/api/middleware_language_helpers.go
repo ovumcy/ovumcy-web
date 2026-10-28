@@ -46,17 +46,16 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 	return c.Next()
 }
 
-// refreshPageInAnotherLanguage answers an htmx request with HX-Refresh when the
-// page it came from was rendered in a language other than the one this request
+// refreshPageInAnotherLanguage answers HX-Refresh when the page a script
+// request came from was rendered in a language other than the one this request
 // resolves to — the cookie was switched in another tab meanwhile. The fragment
 // would otherwise land in the new language inside a page left in the old one
 // (WEB-232). The handler still runs, so a write the request carries is applied;
-// htmx only replaces the swap with a full reload, which renders in one language.
-// A missing or unsupported page language asks for nothing.
+// the client only replaces the swap with a full reload, which renders in one
+// language. Only the page's scripts send the header — htmx and the dashboard's
+// own fetches, a plain page GET among them — and both honour the answer. A
+// missing or unsupported page language asks for nothing.
 func (handler *Handler) refreshPageInAnotherLanguage(c fiber.Ctx, language string) {
-	if !isHTMX(c) {
-		return
-	}
 	pageLanguage := c.Get(pageLanguageHeaderName)
 	if pageLanguage == "" || !handler.i18n.IsSupportedLanguage(pageLanguage) {
 		return

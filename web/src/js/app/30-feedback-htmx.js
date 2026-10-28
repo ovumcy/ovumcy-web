@@ -995,12 +995,22 @@
     // answers HX-Refresh when another tab has switched it, so a fragment never
     // lands in a different language than the page around it.
     document.body.addEventListener("htmx:configRequest", function (event) {
-      var pageLanguage = (document.documentElement.getAttribute("lang") || "").trim();
+      var pageLanguage = currentPageLanguage();
       if (!pageLanguage || !event || !event.detail) {
         return;
       }
       event.detail.headers = event.detail.headers || {};
       event.detail.headers[PAGE_LANGUAGE_HEADER_NAME] = pageLanguage;
+    });
+
+    // htmx reloads on HX-Refresh before htmx:afterRequest clears a day save's
+    // in-flight note, so the leave prompt would otherwise ask about a save
+    // whose answer has already arrived.
+    document.body.addEventListener("htmx:beforeOnLoad", function (event) {
+      var xhr = event && event.detail ? event.detail.xhr : null;
+      if (xhr && typeof xhr.getResponseHeader === "function" && xhr.getResponseHeader("HX-Refresh") === "true") {
+        responseReloadStarted = true;
+      }
     });
 
     document.body.addEventListener("htmx:configRequest", function (event) {

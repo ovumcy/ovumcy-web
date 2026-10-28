@@ -236,6 +236,30 @@
     writeClientCookie(TIMEZONE_COOKIE_NAME, timezone, TIMEZONE_COOKIE_MAX_AGE_SECONDS);
   }
 
+  function currentPageLanguage() {
+    return (document.documentElement.getAttribute("lang") || "").trim();
+  }
+
+  // Set once a response has asked for a full reload. The response has
+  // arrived, so whatever its request carried is saved: the leave prompts that
+  // guard a save still on the wire stand down for this reload.
+  var responseReloadStarted = false;
+
+  // The script's own fetches answer the server's HX-Refresh the way htmx does:
+  // the server sends it when another tab has switched the language, and a
+  // fragment in that language must not land in this page.
+  function reloadOnRefreshHeader(response) {
+    var refresh = response && response.headers && typeof response.headers.get === "function"
+      ? response.headers.get("HX-Refresh")
+      : "";
+    if (refresh !== "true") {
+      return false;
+    }
+    responseReloadStarted = true;
+    window.location.reload();
+    return true;
+  }
+
   function currentClientTimezone() {
     if (!signedInPage()) {
       return "";

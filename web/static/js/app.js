@@ -236,6 +236,30 @@
     writeClientCookie(TIMEZONE_COOKIE_NAME, timezone, TIMEZONE_COOKIE_MAX_AGE_SECONDS);
   }
 
+  function currentPageLanguage() {
+    return (document.documentElement.getAttribute("lang") || "").trim();
+  }
+
+  // Set once a response has asked for a full reload. The response has
+  // arrived, so whatever its request carried is saved: the leave prompts that
+  // guard a save still on the wire stand down for this reload.
+  var responseReloadStarted = false;
+
+  // The script's own fetches answer the server's HX-Refresh the way htmx does:
+  // the server sends it when another tab has switched the language, and a
+  // fragment in that language must not land in this page.
+  function reloadOnRefreshHeader(response) {
+    var refresh = response && response.headers && typeof response.headers.get === "function"
+      ? response.headers.get("HX-Refresh")
+      : "";
+    if (refresh !== "true") {
+      return false;
+    }
+    responseReloadStarted = true;
+    window.location.reload();
+    return true;
+  }
+
   function currentClientTimezone() {
     if (!signedInPage()) {
       return "";
@@ -2728,12 +2752,22 @@
     // answers HX-Refresh when another tab has switched it, so a fragment never
     // lands in a different language than the page around it.
     document.body.addEventListener("htmx:configRequest", function (event) {
-      var pageLanguage = (document.documentElement.getAttribute("lang") || "").trim();
+      var pageLanguage = currentPageLanguage();
       if (!pageLanguage || !event || !event.detail) {
         return;
       }
       event.detail.headers = event.detail.headers || {};
       event.detail.headers[PAGE_LANGUAGE_HEADER_NAME] = pageLanguage;
+    });
+
+    // htmx reloads on HX-Refresh before htmx:afterRequest clears a day save's
+    // in-flight note, so the leave prompt would otherwise ask about a save
+    // whose answer has already arrived.
+    document.body.addEventListener("htmx:beforeOnLoad", function (event) {
+      var xhr = event && event.detail ? event.detail.xhr : null;
+      if (xhr && typeof xhr.getResponseHeader === "function" && xhr.getResponseHeader("HX-Refresh") === "true") {
+        responseReloadStarted = true;
+      }
     });
 
     document.body.addEventListener("htmx:configRequest", function (event) {
@@ -4584,6 +4618,9 @@
     if (timezone) {
       headers[TIMEZONE_HEADER_NAME] = timezone;
     }
+    if (currentPageLanguage()) {
+      headers[PAGE_LANGUAGE_HEADER_NAME] = currentPageLanguage();
+    }
     // The account the page was rendered for rides on every request, the
     // body-less undo DELETE included: the server refuses a day write from a
     // page rendered for another account, and one that names no account at all.
@@ -4989,6 +5026,9 @@
       credentials: "same-origin",
       headers: headers
     }).then(function (response) {
+      if (reloadOnRefreshHeader(response)) {
+        return { text: "", refused: false };
+      }
       if (response.ok) {
         return response.text().then(function (text) {
           return { text: text, refused: false };
@@ -5150,6 +5190,7 @@
       headers: headers,
       body: body.toString()
     }).then(function (response) {
+      reloadOnRefreshHeader(response);
       if (!response.ok) {
         return response.text().catch(function () {
           return "";
@@ -5316,6 +5357,7 @@
       keepalive: true,
       headers: dashboardRequestHeaders(form)
     }).then(function (response) {
+      reloadOnRefreshHeader(response);
       if (!response.ok) {
         return response.text().catch(function () {
           return "";
@@ -5609,6 +5651,9 @@
   // prompt is the second rail, for whatever the network does to a request
   // that has to outlive its page.
   function warnBeforeLeavingDuringSave(event) {
+    if (responseReloadStarted) {
+      return;
+    }
     event.preventDefault();
     event.returnValue = "";
   }
@@ -5948,6 +5993,9 @@
       credentials: "same-origin",
       headers: headers
     }).then(function (response) {
+      if (reloadOnRefreshHeader(response)) {
+        return { text: "", refusal: null, reloading: true };
+      }
       if (response.ok) {
         return response.text().then(function (text) {
           return { text: text, refusal: null };
@@ -5963,6 +6011,9 @@
       var text = answer.text;
       var fresh;
       var unsaved;
+      if (answer.reloading) {
+        return false;
+      }
       // Another account holds the session now, and the server sent none of its
       // day: no choice can be applied, and a retry would be refused too.
       if (answer.refusal) {

@@ -30,7 +30,8 @@ func TestHTMXRequestFromAPageInAnotherLanguageAsksForAFullRefresh(t *testing.T) 
 		{name: "page language spelled with a region and case", htmx: true, cookie: "fr", pageLang: "FR-fr"},
 		{name: "no page language header", htmx: true, cookie: "de"},
 		{name: "unsupported page language", htmx: true, cookie: "de", pageLang: "xx"},
-		{name: "not an htmx request", cookie: "de", pageLang: "fr"},
+		{name: "script fetch that is not htmx", cookie: "de", pageLang: "fr", wantRefresh: true},
+		{name: "plain navigation names no page language", cookie: "de"},
 		{name: "no cookie, page differs from Accept-Language", htmx: true, pageLang: "fr", wantRefresh: true},
 	}
 

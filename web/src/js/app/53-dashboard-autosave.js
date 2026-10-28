@@ -305,6 +305,9 @@
     if (timezone) {
       headers[TIMEZONE_HEADER_NAME] = timezone;
     }
+    if (currentPageLanguage()) {
+      headers[PAGE_LANGUAGE_HEADER_NAME] = currentPageLanguage();
+    }
     // The account the page was rendered for rides on every request, the
     // body-less undo DELETE included: the server refuses a day write from a
     // page rendered for another account, and one that names no account at all.
@@ -710,6 +713,9 @@
       credentials: "same-origin",
       headers: headers
     }).then(function (response) {
+      if (reloadOnRefreshHeader(response)) {
+        return { text: "", refused: false };
+      }
       if (response.ok) {
         return response.text().then(function (text) {
           return { text: text, refused: false };
@@ -871,6 +877,7 @@
       headers: headers,
       body: body.toString()
     }).then(function (response) {
+      reloadOnRefreshHeader(response);
       if (!response.ok) {
         return response.text().catch(function () {
           return "";
@@ -1037,6 +1044,7 @@
       keepalive: true,
       headers: dashboardRequestHeaders(form)
     }).then(function (response) {
+      reloadOnRefreshHeader(response);
       if (!response.ok) {
         return response.text().catch(function () {
           return "";
@@ -1330,6 +1338,9 @@
   // prompt is the second rail, for whatever the network does to a request
   // that has to outlive its page.
   function warnBeforeLeavingDuringSave(event) {
+    if (responseReloadStarted) {
+      return;
+    }
     event.preventDefault();
     event.returnValue = "";
   }
@@ -1669,6 +1680,9 @@
       credentials: "same-origin",
       headers: headers
     }).then(function (response) {
+      if (reloadOnRefreshHeader(response)) {
+        return { text: "", refusal: null, reloading: true };
+      }
       if (response.ok) {
         return response.text().then(function (text) {
           return { text: text, refusal: null };
@@ -1684,6 +1698,9 @@
       var text = answer.text;
       var fresh;
       var unsaved;
+      if (answer.reloading) {
+        return false;
+      }
       // Another account holds the session now, and the server sent none of its
       // day: no choice can be applied, and a retry would be refused too.
       if (answer.refusal) {
