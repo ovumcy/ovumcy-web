@@ -48,6 +48,18 @@ func TestStatsBBTChartSummaryPrintsTheCoverlineWithLocaleSeparatorAndUnitSpace(t
 	}
 }
 
+func TestTemplateNumberRefusesATypeItCannotRead(t *testing.T) {
+	if _, err := formatTemplateNumber("en", "28"); err == nil {
+		t.Fatal("a string must fail the render, not print 0")
+	}
+	if got, err := formatTemplateQuantity("de", 31, "d"); err != nil || got != "31\xc2\xa0d" {
+		t.Fatalf("int quantity: got %q, %v", got, err)
+	}
+	if got, err := formatTemplateNumber("de", 30.5); err != nil || got != "30,5" {
+		t.Fatalf("float number: got %q, %v", got, err)
+	}
+}
+
 func TestStatsCycleChartSummaryNamesAUniformSeriesOnce(t *testing.T) {
 	for _, language := range statsLanguages {
 		got := buildStatsCycleChartSummary(mustLocaleMessages(t, language), language, services.StatsPageViewData{

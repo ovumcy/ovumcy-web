@@ -32,15 +32,6 @@ func TestFormatLocalizedNumberUsesTheLanguageSeparatorAndOneRoundingRule(t *test
 	}
 }
 
-func TestFormatLocalizedFixedKeepsTrailingZeros(t *testing.T) {
-	if got := FormatLocalizedFixed("de", 34, 2); got != "34,00" {
-		t.Fatalf("got %q", got)
-	}
-	if got := FormatLocalizedFixed("en", 36.5, 1); got != "36.5" {
-		t.Fatalf("got %q", got)
-	}
-}
-
 func TestMedianOfTwoMiddleCyclesKeepsItsHalfForDisplay(t *testing.T) {
 	var stats CycleStats
 	populateObservedCycleStats(&stats, []int{26, 35}, nil)

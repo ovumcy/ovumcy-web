@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -23,28 +24,41 @@ func formatTemplateFloat(value float64) string {
 	return services.FormatLocalizedNumber("en", value)
 }
 
-func formatTemplateNumber(language string, value any) string {
-	return services.FormatLocalizedNumber(language, templateNumber(value))
+func formatTemplateNumber(language string, value any) (string, error) {
+	number, err := templateNumber(value)
+	if err != nil {
+		return "", err
+	}
+	return services.FormatLocalizedNumber(language, number), nil
 }
 
-func formatTemplateQuantity(language string, value any, unit string) string {
-	return services.FormatLocalizedQuantity(language, templateNumber(value), unit)
+func formatTemplateQuantity(language string, value any, unit string) (string, error) {
+	number, err := templateNumber(value)
+	if err != nil {
+		return "", err
+	}
+	return services.FormatLocalizedQuantity(language, number, unit), nil
 }
 
 // templateNumber lets one template function take the int and float64 fields a
-// stats page mixes.
-func templateNumber(value any) float64 {
+// stats page mixes. A type it does not know fails the render rather than
+// printing a made-up 0 for a health figure.
+func templateNumber(value any) (float64, error) {
 	switch typed := value.(type) {
 	case float64:
-		return typed
+		return typed, nil
 	case float32:
-		return float64(typed)
+		return float64(typed), nil
 	case int:
-		return float64(typed)
+		return float64(typed), nil
+	case int32:
+		return float64(typed), nil
 	case int64:
-		return float64(typed)
+		return float64(typed), nil
+	case uint:
+		return float64(typed), nil
 	default:
-		return 0
+		return 0, fmt.Errorf("template number: unsupported type %T", value)
 	}
 }
 

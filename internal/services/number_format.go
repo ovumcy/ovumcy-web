@@ -24,12 +24,6 @@ func FormatLocalizedNumber(language string, value float64) string {
 	return formatLocalizedNumberAt(language, value, numberDecimals)
 }
 
-// FormatLocalizedFixed is FormatLocalizedNumber with the trailing zeros kept,
-// for a column of readings that must line up (36.50, not 36.5).
-func FormatLocalizedFixed(language string, value float64, decimals int) string {
-	return localizeDecimalSeparator(language, formatFixedHalfAway(value, decimals))
-}
-
 // FormatLocalizedQuantity prints a number followed by its unit.
 func FormatLocalizedQuantity(language string, value float64, unit string) string {
 	return JoinUnit(FormatLocalizedNumber(language, value), unit)
