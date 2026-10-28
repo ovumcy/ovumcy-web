@@ -34,7 +34,7 @@ import (
 //     an empty body.
 //   - Rate-limited per-IP by the edge /api-style limiter wired in main.go for
 //     this exact path; a 429 returns the limiter's own response (no UI needed).
-//   - Response headers pin text/calendar, a private 1-hour cache, and
+//   - Response headers pin text/calendar, Cache-Control: no-store, and
 //     X-Robots-Tag: noindex.
 
 const (
