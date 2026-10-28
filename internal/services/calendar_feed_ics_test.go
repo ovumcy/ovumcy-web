@@ -91,7 +91,7 @@ func TestBuildCalendarFeedICSEmitsNeutralEventsWithDisclaimer(t *testing.T) {
 	user := predictableFeedUser(t, "2026-03-02")
 	now := mustParseDashboardDay(t, "2026-03-20")
 
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       predictableFeedLogs(t),
 		Now:        now,
@@ -158,7 +158,7 @@ func TestBuildCalendarFeedICSSuppressesForPregnancyPause(t *testing.T) {
 		models.DailyLog{Date: mustParseDashboardDay(t, "2026-03-10"), PregnancyTest: models.PregnancyTestPositive},
 	)
 
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       logs,
 		Now:        now,
@@ -180,7 +180,7 @@ func TestBuildCalendarFeedICSSuppressesForUnpredictableCycle(t *testing.T) {
 	user.UnpredictableCycle = true
 	now := mustParseDashboardDay(t, "2026-03-20")
 
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       predictableFeedLogs(t),
 		Now:        now,
@@ -211,7 +211,7 @@ func TestBuildCalendarFeedICSSuppressesForOverdueCycle(t *testing.T) {
 	logs := predictableFeedLogs(t)
 
 	renderFeed := func(now time.Time) string {
-		return string(BuildCalendarFeedICS(CalendarFeedICSInput{
+		return string(buildTestFeedICS(CalendarFeedICSInput{
 			User:       user,
 			Logs:       logs,
 			Now:        now,
@@ -269,7 +269,7 @@ func TestBuildCalendarFeedICSSuppressesForOverdueCycle(t *testing.T) {
 func TestBuildCalendarFeedICSHandlesNoBaseline(t *testing.T) {
 	// A user with no last period start and no logs yields a valid empty feed,
 	// never a panic or a fabricated event.
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       &models.User{ID: 1, CycleLength: 28},
 		Logs:       nil,
 		Now:        mustParseDashboardDay(t, "2026-03-20"),
@@ -287,7 +287,7 @@ func TestBuildCalendarFeedICSHandlesNoBaseline(t *testing.T) {
 func TestBuildCalendarFeedICSHandlesNilUser(t *testing.T) {
 	// A nil user (defensive guard) must yield a well-formed, empty VCALENDAR —
 	// never a panic and never a fabricated event.
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       nil,
 		Logs:       predictableFeedLogs(t),
 		Now:        mustParseDashboardDay(t, "2026-03-20"),
@@ -312,14 +312,14 @@ func TestBuildCalendarFeedICSUIDsAreStableAcrossRenderTime(t *testing.T) {
 	user := predictableFeedUser(t, "2026-03-02")
 	logs := predictableFeedLogs(t)
 
-	firstBody := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	firstBody := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       logs,
 		Now:        mustParseDashboardDay(t, "2026-03-20"),
 		Location:   time.UTC,
 		Disclaimer: "disclaimer",
 	}))
-	secondBody := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	secondBody := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       logs,
 		Now:        mustParseDashboardDay(t, "2026-03-21"),
@@ -343,7 +343,7 @@ func TestBuildCalendarFeedICSUIDsAreStableAcrossRenderTime(t *testing.T) {
 func TestBuildCalendarFeedICSUIDsAreUniqueWithinARender(t *testing.T) {
 	user := predictableFeedUser(t, "2026-03-02")
 
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       predictableFeedLogs(t),
 		Now:        mustParseDashboardDay(t, "2026-03-20"),
@@ -365,13 +365,13 @@ func TestBuildCalendarFeedICSUIDsAreUniqueWithinARender(t *testing.T) {
 }
 
 // TestBuildCalendarFeedICSUIDCarriesNoIdentifyingData pins data-minimization
-// on the UID itself: it must be exactly "kind-YYYYMMDD@ovumcy" — no email, no
-// user id, no capability token, no render-order index.
+// on the UID itself: it must be exactly the opaque keyed form — no kind, no
+// email, no user id, no capability token, no render-order index.
 func TestBuildCalendarFeedICSUIDCarriesNoIdentifyingData(t *testing.T) {
 	user := predictableFeedUser(t, "2026-03-02")
 	user.Email = "owner@example.com"
 
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       predictableFeedLogs(t),
 		Now:        mustParseDashboardDay(t, "2026-03-20"),
@@ -379,14 +379,13 @@ func TestBuildCalendarFeedICSUIDCarriesNoIdentifyingData(t *testing.T) {
 		Disclaimer: "disclaimer",
 	}))
 
-	uidPattern := regexp.MustCompile(`^(period|ovulation)-\d{8}@ovumcy$`)
 	uids := extractICSUIDs(t, body)
 	if len(uids) == 0 {
 		t.Fatalf("expected at least one VEVENT, got:\n%s", body)
 	}
 	for _, uid := range uids {
-		if !uidPattern.MatchString(uid) {
-			t.Fatalf("UID %q does not match the pure kind-date form, got:\n%s", uid, body)
+		if !opaqueCalendarFeedUID.MatchString(uid) {
+			t.Fatalf("UID %q does not match the opaque keyed form, got:\n%s", uid, body)
 		}
 		if strings.Contains(uid, "example.com") || strings.Contains(uid, "owner") {
 			t.Fatalf("UID %q appears to leak owner-identifying data", uid)
@@ -446,7 +445,7 @@ func TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent(t *testin
 		Disclaimer: "",
 	}
 
-	body := string(BuildCalendarFeedICS(input))
+	body := string(buildTestFeedICS(input))
 	events := strings.Count(body, "BEGIN:VEVENT")
 	if events == 0 {
 		t.Fatalf("fixture: the feed must project events:\n%s", body)
@@ -456,7 +455,7 @@ func TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent(t *testin
 	}
 
 	input.Disclaimer = "estimate only"
-	control := string(BuildCalendarFeedICS(input))
+	control := string(buildTestFeedICS(input))
 	if got := strings.Count(control, "\r\nDESCRIPTION:estimate only\r\n"); got != events {
 		t.Fatalf("control: a non-empty disclaimer reaches every event: %d of %d", got, events)
 	}
@@ -473,19 +472,28 @@ func TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent(t *testin
 // stays unbounded by data confidence is the count: three cycles, whatever the
 // number of completed cycles behind them.
 func TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays(t *testing.T) {
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	input := CalendarFeedICSInput{
 		User:       predictableFeedUser(t, "2026-03-02"),
 		Logs:       predictableFeedLogs(t),
 		Now:        mustParseDashboardDay(t, "2026-03-20"),
 		Location:   time.UTC,
 		Disclaimer: "estimate only",
-	}))
+	}
+	body := string(buildTestFeedICS(input))
+	events := calendarFeedEvents(input)
 
 	var periods []time.Time
-	for _, uid := range extractICSUIDs(t, body) {
-		if rest, ok := strings.CutPrefix(uid, "period-"); ok {
-			periods = append(periods, mustParseDashboardDay(t, rest[:4]+"-"+rest[4:6]+"-"+rest[6:8]))
+	ovulations := 0
+	for _, event := range events {
+		switch event.kind {
+		case calendarFeedKindPeriod:
+			periods = append(periods, event.date)
+		case calendarFeedKindOvulation:
+			ovulations++
 		}
+	}
+	if got := strings.Count(body, "BEGIN:VEVENT"); got != len(events) {
+		t.Fatalf("the body carries %d events, the resolver %d", got, len(events))
 	}
 	if len(periods) != 3 {
 		t.Fatalf("expected exactly three projected period events (this cycle's end and the two after it), got %d:\n%s", len(periods), body)
@@ -502,12 +510,6 @@ func TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays(t *test
 
 	// Ovulation: cycle 0's day (2026-03-16) is already behind now, so the two
 	// chained cycles carry one each.
-	ovulations := 0
-	for _, uid := range extractICSUIDs(t, body) {
-		if strings.HasPrefix(uid, "ovulation-") {
-			ovulations++
-		}
-	}
 	if ovulations != 2 {
 		t.Fatalf("expected exactly two projected ovulation events (cycles 1 and 2), got %d:\n%s", ovulations, body)
 	}
@@ -541,13 +543,18 @@ func TestBuildCalendarFeedICSOfAnAccountWithOneCompletedCycleProjectsThreePeriod
 		t.Fatalf("fixture: the account must hold exactly one completed cycle, got %d", got)
 	}
 
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: time.UTC, Disclaimer: "estimate only"}))
+	input := CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: time.UTC, Disclaimer: "estimate only"}
+	body := string(buildTestFeedICS(input))
+	events := calendarFeedEvents(input)
+	if got := strings.Count(body, "BEGIN:VEVENT"); got != len(events) {
+		t.Fatalf("the body carries %d events, the resolver %d", got, len(events))
+	}
 	periods, ovulations := 0, 0
-	for _, uid := range extractICSUIDs(t, body) {
-		if strings.HasPrefix(uid, "period-") {
+	for _, event := range events {
+		switch event.kind {
+		case calendarFeedKindPeriod:
 			periods++
-		}
-		if strings.HasPrefix(uid, "ovulation-") {
+		case calendarFeedKindOvulation:
 			ovulations++
 		}
 	}
@@ -563,7 +570,7 @@ func TestBuildCalendarFeedICSProjectsMultipleCyclesAndEscapesDescription(t *test
 	user := predictableFeedUser(t, "2026-03-02")
 	now := mustParseDashboardDay(t, "2026-03-20")
 
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:     user,
 		Logs:     predictableFeedLogs(t),
 		Now:      now,

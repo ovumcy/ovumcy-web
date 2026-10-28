@@ -137,7 +137,7 @@ func TestConfirmedOvulationSupersedesNothingWithoutAProjectedDay(t *testing.T) {
 func TestCalendarFeedWithholdsAnOvulationTheTemperaturesHaveAnswered(t *testing.T) {
 	user, logs, now := outboundConfirmedFixture(t, true)
 
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       logs,
 		Now:        now,
@@ -148,7 +148,7 @@ func TestCalendarFeedWithholdsAnOvulationTheTemperaturesHaveAnswered(t *testing.
 		t.Fatalf("the feed published the projected ovulation the shift superseded:\n%s", body)
 	}
 	// The measured day takes the projection's place, under the same UID kind.
-	if !strings.Contains(body, "UID:ovulation-20260311@ovumcy") {
+	if !strings.Contains(body, "UID:"+feedTestUID(t, user.ID, calendarFeedKindOvulation, "20260311")) {
 		t.Fatalf("the feed must publish the confirmed ovulation 2026-03-11:\n%s", body)
 	}
 	// The bound, on the surface rather than on the helper: the next projected
@@ -159,7 +159,7 @@ func TestCalendarFeedWithholdsAnOvulationTheTemperaturesHaveAnswered(t *testing.
 	}
 
 	_, controlLogs, _ := outboundConfirmedFixture(t, false)
-	control := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	control := string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       controlLogs,
 		Now:        now,

@@ -22,7 +22,7 @@ import (
 const feedConfirmedDisclaimer = "Predictions are estimates, not medical advice or a method of contraception."
 
 func renderConfirmedFeed(user *models.User, logs []models.DailyLog, now time.Time) string {
-	return string(BuildCalendarFeedICS(CalendarFeedICSInput{
+	return string(buildTestFeedICS(CalendarFeedICSInput{
 		User:       user,
 		Logs:       logs,
 		Now:        now,
@@ -66,8 +66,8 @@ func TestCalendarFeedPublishesTheConfirmedDayOnceTheCycleIsOverdue(t *testing.T)
 
 	body := renderConfirmedFeed(user, logs, now)
 	uids := feedEventUIDs(body)
-	if len(uids) != 1 || uids[0] != "ovulation-20260311@ovumcy" {
-		t.Fatalf("overdue feed UIDs = %v, want exactly [ovulation-20260311@ovumcy]:\n%s", uids, body)
+	if want := feedTestUID(t, user.ID, calendarFeedKindOvulation, "20260311"); len(uids) != 1 || uids[0] != want {
+		t.Fatalf("overdue feed UIDs = %v, want exactly [%s]:\n%s", uids, want, body)
 	}
 	for _, want := range []string{
 		"DTSTART;VALUE=DATE:20260311",
@@ -123,9 +123,9 @@ func TestCalendarFeedWithholdsTheConfirmedDayUnderItsOwnGate(t *testing.T) {
 				t.Fatalf("fixture: %s must withhold the confirmed day", testCase.name)
 			}
 			body := renderConfirmedFeed(user, logs, now)
-			for _, uid := range feedEventUIDs(body) {
-				if strings.HasPrefix(uid, calendarFeedKindOvulation+"-") {
-					t.Fatalf("%s: the feed carries an ovulation event %s:\n%s", testCase.name, uid, body)
+			for _, event := range calendarFeedEvents(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: time.UTC}) {
+				if event.kind == calendarFeedKindOvulation {
+					t.Fatalf("%s: the feed carries an ovulation event on %s:\n%s", testCase.name, CalendarDayKey(event.date), body)
 				}
 			}
 			if strings.Contains(body, "DTSTART;VALUE=DATE:20260311") {
@@ -149,7 +149,7 @@ func TestCalendarFeedConfirmedDayKeepsTheProjectionsUID(t *testing.T) {
 		before = append(before, outboundBBTLog(t, user.ID, day, 36.20))
 	}
 	beforeUIDs := feedEventUIDs(renderConfirmedFeed(user, before, mustParseDashboardDay(t, "2026-03-14")))
-	const want = "ovulation-20260314@ovumcy"
+	want := feedTestUID(t, user.ID, calendarFeedKindOvulation, "20260314")
 	if countUID(beforeUIDs, want) != 1 {
 		t.Fatalf("fixture: the pre-shift feed must project %s once, got %v", want, beforeUIDs)
 	}
@@ -293,7 +293,7 @@ func TestResolveFeedPublishesTheConfirmedDayOnTheOwnersCalendarDay(t *testing.T)
 	if y, m, d := days.requestedTo.Date(); y != 2026 || m != time.March || d != 14 {
 		t.Fatalf("test setup: the owner's today must be 2026-03-14, got %04d-%02d-%02d", y, m, d)
 	}
-	if !strings.Contains(string(body), confirmedEvent) || countUID(feedEventUIDs(string(body)), "ovulation-20260311@ovumcy") != 1 {
+	if !strings.Contains(string(body), confirmedEvent) || countUID(feedEventUIDs(string(body)), feedTestUID(t, owner.ID, calendarFeedKindOvulation, "20260311")) != 1 {
 		t.Fatalf("the owner-zone feed must carry the confirmed day once (%s), got:\n%s", confirmedEvent, body)
 	}
 
@@ -360,8 +360,8 @@ func TestEverySurfaceAgreesOnTheConfirmedDayIncludingTheFeed(t *testing.T) {
 
 			confirmedStamp := strings.ReplaceAll(cohort.confirmed, "-", "")
 			uids := feedEventUIDs(renderConfirmedFeed(user, logs, today))
-			if countUID(uids, "ovulation-"+confirmedStamp+"@ovumcy") != 1 {
-				t.Errorf(".ics: UIDs %v, want ovulation-%s@ovumcy exactly once", uids, confirmedStamp)
+			if countUID(uids, feedTestUID(t, user.ID, calendarFeedKindOvulation, confirmedStamp)) != 1 {
+				t.Errorf(".ics: UIDs %v, want the ovulation UID of %s exactly once", uids, confirmedStamp)
 			}
 
 			for _, reminder := range DecideDueReminders(user, enabledWebhookSettings(14), logs, today, time.UTC) {

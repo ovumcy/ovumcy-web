@@ -244,6 +244,7 @@ func TestCalendarFeedPayloadInventoryMatchesARenderedEvent(t *testing.T) {
 
 	rendered := string(renderCalendarFeedICS(
 		[]calendarFeedEvent{{kind: "period", date: time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)}},
+		feedTestUIDs(t, 1),
 		"Predictions are estimates, not medical advice or a method of contraception.",
 		time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC),
 	))

@@ -1,12 +1,12 @@
 package services
 
 import (
-	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 // Calendar (.ics) feed builder (issue #126-replacement / .ics, slice 3). This
@@ -81,13 +81,15 @@ const (
 // history the prediction path consumes; now/location are injected (never
 // time.Now()); disclaimer is the localized medical-safety string the caller
 // resolved via the shared DisclaimerProvider seam (the same one the webhook
-// notify pass uses), placed in each event's DESCRIPTION.
+// notify pass uses), placed in each event's DESCRIPTION. SecretKey keys the
+// opaque event UIDs together with User.ID.
 type CalendarFeedICSInput struct {
 	User       *models.User
 	Logs       []models.DailyLog
 	Now        time.Time
 	Location   *time.Location
 	Disclaimer string
+	SecretKey  []byte
 }
 
 const (
@@ -108,8 +110,8 @@ const (
 )
 
 // calendarFeedEvent is one resolved all-day event before rendering.
-// kind is a stable, non-secret discriminator used only to build a deterministic
-// UID; it is NEVER placed in the SUMMARY (that stays neutral). end is the last
+// kind is a stable discriminator that only feeds the keyed UID; it is NEVER
+// written to the body — not in the SUMMARY, not in the UID. end is the last
 // day of a multi-day event, and the zero time for a single day.
 type calendarFeedEvent struct {
 	kind string
@@ -137,9 +139,19 @@ type calendarFeedEvent struct {
 //     projection + window helpers, and emit a predicted-next-period event and an
 //     ovulation event per projected cycle when each is calculable and not in the
 //     past.
+//
+// No UID key (no SecretKey, or a user with no id) renders zero events: an event
+// that cannot carry an opaque UID is withheld, never named by its kind.
 func BuildCalendarFeedICS(input CalendarFeedICSInput) []byte {
-	events := calendarFeedEvents(input)
-	return renderCalendarFeedICS(events, input.Disclaimer, input.Now)
+	var events []calendarFeedEvent
+	var uids *security.CalendarFeedEventUIDs
+	if input.User != nil {
+		var err error
+		if uids, err = security.NewCalendarFeedEventUIDs(input.SecretKey, input.User.ID); err == nil {
+			events = calendarFeedEvents(input)
+		}
+	}
+	return renderCalendarFeedICS(events, uids, input.Disclaimer, input.Now)
 }
 
 // calendarFeedEvents resolves the neutral, all-day events for the feed: the
@@ -300,7 +312,7 @@ func calendarDayWithin(day time.Time, first time.Time, last time.Time) bool {
 // VEVENT is an all-day event (VALUE=DATE DTSTART, exclusive next-day DTEND per
 // RFC 5545 §3.6.1), carries the fixed neutral SUMMARY, and puts the disclaimer
 // in DESCRIPTION.
-func renderCalendarFeedICS(events []calendarFeedEvent, disclaimer string, now time.Time) []byte {
+func renderCalendarFeedICS(events []calendarFeedEvent, uids *security.CalendarFeedEventUIDs, disclaimer string, now time.Time) []byte {
 	stamp := now.UTC().Format(calendarFeedTimestampLayout)
 
 	var b strings.Builder
@@ -310,13 +322,13 @@ func renderCalendarFeedICS(events []calendarFeedEvent, disclaimer string, now ti
 	writeICSLine(&b, "CALSCALE:GREGORIAN")
 	writeICSLine(&b, "METHOD:PUBLISH")
 	for _, event := range events {
-		writeCalendarFeedEvent(&b, event, stamp, disclaimer)
+		writeCalendarFeedEvent(&b, event, uids, stamp, disclaimer)
 	}
 	writeICSLine(&b, "END:VCALENDAR")
 	return []byte(b.String())
 }
 
-func writeCalendarFeedEvent(b *strings.Builder, event calendarFeedEvent, stamp string, disclaimer string) {
+func writeCalendarFeedEvent(b *strings.Builder, event calendarFeedEvent, uids *security.CalendarFeedEventUIDs, stamp string, disclaimer string) {
 	start := event.date.Format(calendarFeedDateLayout)
 	lastDay := event.date
 	if !event.end.IsZero() {
@@ -325,11 +337,11 @@ func writeCalendarFeedEvent(b *strings.Builder, event calendarFeedEvent, stamp s
 	end := AddCalendarDays(lastDay, 1, lastDay.Location()).Format(calendarFeedDateLayout)
 
 	writeICSLine(b, "BEGIN:VEVENT")
-	// UID is a pure function of (kind, date) — stable across renders/polls at
-	// different `now` so a calendar client recognizes the same logical event
-	// instead of recreating it (losing alarms/edits). No owner id, no secret,
-	// no render-order index.
-	writeICSLine(b, fmt.Sprintf("UID:%s-%s@ovumcy", event.kind, start))
+	// UID is a keyed function of (owner, kind, date) — stable across
+	// renders/polls at different `now` so a calendar client recognizes the same
+	// logical event instead of recreating it (losing alarms/edits), and opaque,
+	// so it names no cycle phase (WEB-234). No render-order index.
+	writeICSLine(b, "UID:"+uids.UID(event.kind, start))
 	writeICSLine(b, "DTSTAMP:"+stamp)
 	writeICSLine(b, "DTSTART;VALUE=DATE:"+start)
 	writeICSLine(b, "DTEND;VALUE=DATE:"+end)

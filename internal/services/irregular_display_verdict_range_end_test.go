@@ -63,7 +63,7 @@ func TestIrregularSpreadRangeLeavesWithItsLastDay(t *testing.T) {
 		t.Fatalf("single-date payload carries event_date_end %q", single.EventDateEnd)
 	}
 
-	feed := string(BuildCalendarFeedICS(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: time.UTC, Disclaimer: "estimate"}))
+	feed := string(buildTestFeedICS(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: time.UTC, Disclaimer: "estimate"}))
 	for _, want := range []struct{ start, end time.Time }{
 		{cycleContext.DisplayNextPeriodRangeStart, windowEnd},
 		{cycleContext.DisplayOvulationRangeStart, ovulationEnd},

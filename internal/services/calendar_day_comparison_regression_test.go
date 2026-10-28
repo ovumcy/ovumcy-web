@@ -166,7 +166,7 @@ func TestCalendarFeedKeepsTodaysOvulationEventWestOfUTC(t *testing.T) {
 			t.Parallel()
 
 			location := calendarDayComparisonZone(t, testCase.zone)
-			body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+			body := string(buildTestFeedICS(CalendarFeedICSInput{
 				User:       predictableFeedUser(t, "2026-02-25"),
 				Logs:       dayBoundaryFeedLogs(t),
 				Now:        mustParseDashboardDay(t, "2026-03-10").Add(12 * time.Hour),

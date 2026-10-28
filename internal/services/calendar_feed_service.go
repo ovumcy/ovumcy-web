@@ -196,6 +196,7 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 		Now:        now,
 		Location:   feedLocation,
 		Disclaimer: disclaimer,
+		SecretKey:  service.secretKey,
 	})
 	// The build succeeded: this is a successful, token-verified poll. Record
 	// the coarse day mark (WEB-46) synchronously, AFTER the body the caller

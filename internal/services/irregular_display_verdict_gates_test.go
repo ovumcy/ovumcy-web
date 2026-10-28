@@ -1,7 +1,6 @@
 package services
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -40,7 +39,7 @@ func TestIrregularConfirmedOvulationWithdrawsTheRangeFromWebhookAndFeed(t *testi
 	if _, ok := findDueReminder(DecideDueReminders(user, enabledWebhookSettings(MaxReminderLeadDays), logs, now, time.UTC), DueReminderTypeOvulation); !ok {
 		t.Fatal("control: no ovulation reminder without a confirmed shift — the fixture proves nothing")
 	}
-	if feed := renderConfirmedFeed(user, logs, now); !strings.Contains(feed, "ovulation-window") {
+	if !feedCarriesKind(user, logs, now, calendarFeedKindOvulationWindow) {
 		t.Fatal("control: no ovulation-window event in the feed without a confirmed shift")
 	}
 
@@ -58,7 +57,7 @@ func TestIrregularConfirmedOvulationWithdrawsTheRangeFromWebhookAndFeed(t *testi
 	if _, ok := findDueReminder(DecideDueReminders(user, enabledWebhookSettings(MaxReminderLeadDays), logs, now, time.UTC), DueReminderTypeOvulation); ok {
 		t.Error("webhook: sent the ovulation range for a cycle whose ovulation is confirmed")
 	}
-	if feed := renderConfirmedFeed(user, logs, now); strings.Contains(feed, "ovulation-window") {
+	if feedCarriesKind(user, logs, now, calendarFeedKindOvulationWindow) {
 		t.Error("feed: published the ovulation range for a cycle whose ovulation is confirmed")
 	}
 }
@@ -79,7 +78,7 @@ func TestIrregularUnplaceableOvulationSendsNoRangeFromTheFeed(t *testing.T) {
 	if !ResolveProjectionRanges(user, stats, prediction.NextPeriodStart, time.UTC).OvulationUseRange {
 		t.Fatal("fixture: no ovulation range is resolved, so the feed gate is not what is under test")
 	}
-	if feed := renderConfirmedFeed(user, logs, now); strings.Contains(feed, "ovulation-window") {
+	if feedCarriesKind(user, logs, now, calendarFeedKindOvulationWindow) {
 		t.Error("feed: published an ovulation range where the dashboard says it cannot be predicted")
 	}
 }

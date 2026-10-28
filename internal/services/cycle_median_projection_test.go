@@ -160,8 +160,10 @@ func TestMedianProjectionKeepsNeutralICSSummary(t *testing.T) {
 	loc := time.UTC
 	base := mustParseWebhookReminderDay(t, "2026-01-01", loc)
 	logs := []models.DailyLog{{Date: base, IsPeriod: true, CycleStart: true}}
-	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
-		User: regularWebhookUser(), Logs: logs, Now: base, Location: loc, Disclaimer: "estimate only",
+	user := regularWebhookUser()
+	user.ID = 1
+	body := string(buildTestFeedICS(CalendarFeedICSInput{
+		User: user, Logs: logs, Now: base, Location: loc, Disclaimer: "estimate only",
 	}))
 	if !strings.Contains(body, "SUMMARY:"+calendarFeedNeutralSummary) {
 		t.Fatalf("expected neutral SUMMARY in feed body")
