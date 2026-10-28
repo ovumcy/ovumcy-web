@@ -181,6 +181,50 @@ func TestUserRepositoryCompleteOnboardingStoresTheLanguageOnlyWhileUnset(t *test
 	}
 }
 
+// TestUserRepositoryCompleteOnboardingRollsBackWhenTheLanguageWriteFails pins
+// that the language fill shares completion's transaction: its failure comes
+// back as the error and leaves the account neither onboarded nor relabelled.
+func TestUserRepositoryCompleteOnboardingRollsBackWhenTheLanguageWriteFails(t *testing.T) {
+	repo := openRegistrationRepositoryForTest(t)
+	ctx := context.Background()
+	owner := &models.User{
+		Email:        "onboarding-locale-fault@example.com",
+		PasswordHash: "hash",
+		Role:         models.RoleOwner,
+		CycleLength:  models.DefaultCycleLength,
+		PeriodLength: models.DefaultPeriodLength,
+		CreatedAt:    time.Now().UTC(),
+	}
+	if err := repo.Create(ctx, owner); err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+
+	injected := errors.New("injected interface_language failure")
+	armed := true
+	if err := repo.database.Callback().Update().Before("gorm:update").Register("test:refuse_language_fill", func(tx *gorm.DB) {
+		if armed && tx.Statement.Table == "users" {
+			armed = false
+			_ = tx.AddError(injected)
+		}
+	}); err != nil {
+		t.Fatalf("register callback: %v", err)
+	}
+
+	startDay := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	err := repo.CompleteOnboarding(ctx, owner.ID, startDay, startDay, false, "de", models.WeekStartMonday)
+	if !errors.Is(err, injected) {
+		t.Fatalf("expected the failed language write back, got %v", err)
+	}
+
+	reloaded, err := repo.FindByID(ctx, owner.ID)
+	if err != nil {
+		t.Fatalf("reload owner: %v", err)
+	}
+	if reloaded.OnboardingCompleted || reloaded.InterfaceLanguage != "" || reloaded.WeekStartsOn != models.DefaultWeekStart {
+		t.Fatalf("a failed completion wrote: onboarded=%v language=%q week=%q", reloaded.OnboardingCompleted, reloaded.InterfaceLanguage, reloaded.WeekStartsOn)
+	}
+}
+
 // TestUserRepositoryCompleteOnboardingMarksAnExistingDayAsPeriod covers the
 // auto-fill loop's update arm: a day row that already exists on an onboarding
 // date is updated rather than inserted a second time.

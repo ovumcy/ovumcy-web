@@ -69,10 +69,23 @@ func (handler *Handler) resolveOwnerRequestTimezone(c fiber.Ctx) {
 // BEFORE that middleware runs can resolve the same language without also
 // running the timezone half — see ensureRequestMessages.
 func (handler *Handler) resolveRequestLanguage(c fiber.Ctx) string {
-	if cookieLanguage := c.Cookies(languageCookieName); cookieLanguage != "" {
-		return handler.i18n.NormalizeLanguage(cookieLanguage)
+	if language, ok := handler.requestNamedLanguage(c); ok {
+		return language
 	}
-	return handler.i18n.DetectFromAcceptLanguage(c.Get("Accept-Language"))
+	return handler.i18n.DefaultLanguage()
+}
+
+// requestNamedLanguage is resolveRequestLanguage without the DEFAULT_LANGUAGE
+// fallback: ok is false for an unsupported cookie, which still outranks the
+// header, and for a header naming no shipped locale.
+func (handler *Handler) requestNamedLanguage(c fiber.Ctx) (string, bool) {
+	if cookieLanguage := c.Cookies(languageCookieName); cookieLanguage != "" {
+		if !handler.i18n.IsSupportedLanguage(cookieLanguage) {
+			return "", false
+		}
+		return handler.i18n.NormalizeLanguage(cookieLanguage), true
+	}
+	return handler.i18n.MatchAcceptLanguage(c.Get("Accept-Language"))
 }
 
 // ensureRequestMessages resolves the locale catalogue for a request that has

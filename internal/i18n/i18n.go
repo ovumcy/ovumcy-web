@@ -6,6 +6,7 @@ import (
 	"maps"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -126,20 +127,33 @@ func (manager *Manager) DetectFromAcceptLanguage(raw string) string {
 
 // MatchAcceptLanguage is DetectFromAcceptLanguage without the fallback: ok is
 // false when no entry of the header names a shipped locale, so a caller can
-// tell a negotiated language from the default answered for none.
+// tell a negotiated language from the default answered for none. An entry
+// weighted q=0 is the client refusing that language (RFC 9110 §12.4.2), so it
+// never matches.
 func (manager *Manager) MatchAcceptLanguage(raw string) (string, bool) {
-	for _, part := range strings.Split(raw, ",") {
-		token := strings.TrimSpace(part)
-		if token == "" {
+	for part := range strings.SplitSeq(raw, ",") {
+		segments := strings.Split(strings.TrimSpace(part), ";")
+		if refusesLanguage(segments[1:]) {
 			continue
 		}
-		token = strings.TrimSpace(strings.Split(token, ";")[0])
-		normalized := normalizeLanguageTag(token)
+		normalized := normalizeLanguageTag(segments[0])
 		if manager.isSupported(normalized) {
 			return normalized, true
 		}
 	}
 	return "", false
+}
+
+func refusesLanguage(params []string) bool {
+	for _, param := range params {
+		name, value, found := strings.Cut(strings.TrimSpace(param), "=")
+		if !found || !strings.EqualFold(strings.TrimSpace(name), "q") {
+			continue
+		}
+		weight, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		return err == nil && weight <= 0
+	}
+	return false
 }
 
 // Messages returns the language's catalogue overlaid on the default one. The

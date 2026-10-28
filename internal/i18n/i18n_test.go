@@ -56,6 +56,38 @@ func TestIsSupportedLanguageSeparatesUnknownFromDefault(t *testing.T) {
 	}
 }
 
+// TestMatchAcceptLanguageTellsANegotiatedLanguageFromNone pins the no-fallback
+// half onboarding stores from: ok only for an entry naming a shipped locale,
+// and never for one the client refused with q=0.
+func TestMatchAcceptLanguageTellsANegotiatedLanguageFromNone(t *testing.T) {
+	manager := newTestI18nManager(t, LangEN)
+
+	cases := []struct {
+		header string
+		want   string
+		wantOK bool
+	}{
+		{header: "fr-CA,fr;q=0.9", want: LangFR, wantOK: true},
+		{header: "ja, it;q=0.5", want: LangIT, wantOK: true},
+		{header: "EN-us", want: LangEN, wantOK: true},
+		{header: "de;q=0, ru;q=0.3", want: LangRU, wantOK: true},
+		{header: "de; Q=0.000", want: "", wantOK: false},
+		{header: "es;q=bogus", want: LangES, wantOK: true},
+		{header: "ja, pt-BR", want: "", wantOK: false},
+		{header: "", want: "", wantOK: false},
+		{header: " , ;q=1", want: "", wantOK: false},
+	}
+	for _, tc := range cases {
+		got, ok := manager.MatchAcceptLanguage(tc.header)
+		if got != tc.want || ok != tc.wantOK {
+			t.Fatalf("MatchAcceptLanguage(%q) = (%q, %v), want (%q, %v)", tc.header, got, ok, tc.want, tc.wantOK)
+		}
+	}
+	if got := manager.DetectFromAcceptLanguage("de;q=0"); got != LangEN {
+		t.Fatalf("expected a refused-only header to fall back to %q, got %q", LangEN, got)
+	}
+}
+
 func TestRequiredLocalesCoversAllSupportedLanguages(t *testing.T) {
 	want := []string{LangDE, LangEN, LangES, LangFR, LangIT, LangRU}
 
