@@ -824,7 +824,7 @@ type stubOnboardingRepository struct {
 	findByID  func(ctx context.Context, userID uint) (models.User, error)
 	saveStep1 func(ctx context.Context, userID uint, start time.Time) error
 	saveStep2 func(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error
-	complete  func(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool) error
+	complete  func(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error
 }
 
 func (repo stubOnboardingRepository) FindByID(ctx context.Context, userID uint) (models.User, error) {
@@ -848,11 +848,11 @@ func (repo stubOnboardingRepository) SaveOnboardingStep2(ctx context.Context, us
 	return repo.saveStep2(ctx, userID, cycleLength, periodLength, autoPeriodFill, irregularCycle, usageGoal)
 }
 
-func (repo stubOnboardingRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool) error {
+func (repo stubOnboardingRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error {
 	if repo.complete == nil {
 		return errAuditedMutationStorage
 	}
-	return repo.complete(ctx, userID, startDay, fillEndDay, autoPeriodFill)
+	return repo.complete(ctx, userID, startDay, fillEndDay, autoPeriodFill, language, weekStart)
 }
 
 // stubSettingsRepository implements only the one write the profile handler

@@ -80,7 +80,7 @@ func TestSettingsStartMoveKeepsALegacyStampedFill(t *testing.T) {
 	if err := repositories.Users.UpdateByID(ctx, user.ID, map[string]any{"auto_period_fill": true}); err != nil {
 		t.Fatalf("enable auto-fill: %v", err)
 	}
-	if err := repositories.Users.CompleteOnboarding(ctx, user.ID, startMoveDay(time.September, 14), startMoveDay(time.September, 18), true); err != nil {
+	if err := repositories.Users.CompleteOnboarding(ctx, user.ID, startMoveDay(time.September, 14), startMoveDay(time.September, 18), true, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 	fill := startMoveListLogs(t, repositories, user.ID)

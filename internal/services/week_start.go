@@ -35,6 +35,18 @@ func NormalizeWeekStart(raw string) string {
 	}
 }
 
+// DefaultWeekStartForLanguage is the first day of the week an account starts
+// with in a given UI language: Monday wherever that is the convention, Sunday
+// (the pre-#225 grid) for English and for no language at all.
+func DefaultWeekStartForLanguage(language string) string {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "de", "es", "fr", "it", "ru":
+		return models.WeekStartMonday
+	default:
+		return models.DefaultWeekStart
+	}
+}
+
 // weekStartOffset returns how many days weekday sits after the week-start
 // column, i.e. its zero-based column index in the calendar grid. Sunday-first
 // uses the raw time.Weekday index; Monday-first rotates so Monday is column 0

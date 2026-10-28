@@ -14,6 +14,18 @@ import (
 // path carries rather than cycle_settings.
 var onboardingCompleteMutation = healthMutationKind{action: "onboarding.complete", target: "day_entry"}
 
+// onboardingAccountLanguage is the language the onboarding pages rendered in,
+// handed to completion as the account's language when it has none stored. Only
+// a code this build ships is passed on, normalized; anything else is "" so no
+// language nobody picked is pinned to the account.
+func (handler *Handler) onboardingAccountLanguage(c fiber.Ctx) string {
+	language := currentLanguage(c)
+	if !handler.i18n.IsSupportedLanguage(language) {
+		return ""
+	}
+	return handler.i18n.NormalizeLanguage(language)
+}
+
 func (handler *Handler) OnboardingComplete(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
@@ -30,7 +42,7 @@ func (handler *Handler) OnboardingComplete(c fiber.Ctx) error {
 			return handler.failMutation(c, onboardingCompleteMutation, onboardingFinishErrorSpec()) // codecov:ignore -- unreachable: ValidateOnboardingCompletionEligibility returns only the two sentinels above or nil.
 		}
 	}
-	_, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.clockNow(), handler.requestLocationFromOnboardingForm(c)) // codecov:ignore -- onboarding completion covered by the e2e onboarding flow
+	_, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.clockNow(), handler.requestLocationFromOnboardingForm(c), handler.onboardingAccountLanguage(c)) // codecov:ignore -- onboarding completion covered by the e2e onboarding flow
 	if err != nil {
 		// codecov:ignore:start -- defensive: eligibility (incl. steps-required) is validated above
 		// against the request user before CompleteOnboardingForUser re-reads the row, so this

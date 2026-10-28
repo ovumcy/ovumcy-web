@@ -38,7 +38,7 @@ func startMoveFixtureAt(t *testing.T, email string, onboarded time.Time, moved t
 	if err := repositories.Users.UpdateByID(ctx, user.ID, map[string]any{"auto_period_fill": true}); err != nil {
 		t.Fatalf("enable auto-fill: %v", err)
 	}
-	if err := repositories.Users.CompleteOnboarding(ctx, user.ID, onboarded, onboarded.AddDate(0, 0, 4), true); err != nil {
+	if err := repositories.Users.CompleteOnboarding(ctx, user.ID, onboarded, onboarded.AddDate(0, 0, 4), true, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 	if touch != nil {

@@ -16,6 +16,10 @@
       data-save-feedback
       data-settings-draft-form="interface"
       data-settings-interface-form
+      {{/* No language stored on the account yet (WEB-216): the page renders in
+           the cookie's language, so the matching radio is already checked and
+           Save must stay enabled for the owner to store it. */}}
+      {{with .CurrentUser}}{{if not .InterfaceLanguage}}data-settings-interface-language-unsaved{{end}}{{end}}
       data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
       data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -27,6 +31,7 @@
           <div class="space-y-1">
             <p class="field-label">{{t .Messages "settings.interface.language"}}</p>
             <p class="journal-muted text-sm">{{t .Messages "settings.interface.language_hint"}}</p>
+            {{with .CurrentUser}}{{if not .InterfaceLanguage}}<p class="journal-muted text-sm" data-settings-interface-language-unsaved-hint>{{t $.Messages "settings.interface.language_unsaved_hint"}}</p>{{end}}{{end}}
           </div>
           <div class="settings-interface-options settings-interface-language-options" role="radiogroup" aria-label="{{t .Messages "settings.interface.language"}}">
             {{range .LanguageOptions}}

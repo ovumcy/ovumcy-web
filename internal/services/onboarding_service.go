@@ -23,7 +23,7 @@ type OnboardingUserRepository interface {
 	FindByID(ctx context.Context, userID uint) (models.User, error)
 	SaveOnboardingStep1(ctx context.Context, userID uint, start time.Time) error
 	SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error
-	CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool) error
+	CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error
 }
 
 type OnboardingService struct {
@@ -107,7 +107,13 @@ func (service *OnboardingService) ParseAndNormalizeStep2Input(cycleRaw string, p
 	return safeCycleLength, safePeriodLength, autoPeriodFill, irregularCycle, NormalizeUsageGoal(usageGoal), nil
 }
 
-func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context, userID uint, now time.Time, location *time.Location) (time.Time, error) {
+// CompleteOnboardingForUser also settles the two locale-bound preferences the
+// owner has had no chance to choose yet. language is the normalized, supported
+// language the onboarding pages rendered in ("" when none applies): it is
+// stored only while the account has none (WEB-216), and the week start follows
+// the account's language — Settings, where it is chosen, is unreachable before
+// onboarding completes (WEB-257).
+func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context, userID uint, now time.Time, location *time.Location, language string) (time.Time, error) {
 	current, err := service.users.FindByID(ctx, userID)
 	if err != nil {
 		return time.Time{}, err
@@ -124,7 +130,14 @@ func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context,
 	// owner's location and handed over as the UTC-midnight calendar day the
 	// repository iterates.
 	fillEndDay := CalendarDay(periodFillLastDay(startDay, periodLength, now, location), time.UTC)
-	if err := service.users.CompleteOnboarding(ctx, userID, startDay, fillEndDay, current.AutoPeriodFill); err != nil {
+	accountLanguage := strings.TrimSpace(current.InterfaceLanguage)
+	languageToStore := ""
+	if accountLanguage == "" {
+		accountLanguage = language
+		languageToStore = language
+	}
+	weekStart := DefaultWeekStartForLanguage(accountLanguage)
+	if err := service.users.CompleteOnboarding(ctx, userID, startDay, fillEndDay, current.AutoPeriodFill, languageToStore, weekStart); err != nil {
 		return time.Time{}, err
 	}
 	return startDay, nil

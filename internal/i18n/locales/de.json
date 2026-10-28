@@ -205,6 +205,7 @@
   "settings.interface.title": "Oberfläche",
   "settings.interface.language": "Sprache",
   "settings.interface.language_hint": "Speichern, um Navigation, Einstellungen und Datumsangaben in der ganzen App zu aktualisieren.",
+  "settings.interface.language_unsaved_hint": "Diese Sprache ist noch nicht in deinem Konto gespeichert. Speichere sie, damit Kalender-Abos und Benachrichtigungen sie ebenfalls verwenden.",
   "settings.interface.theme": "Design",
   "settings.interface.theme_hint": "Wird nur in diesem Browser gespeichert.",
   "settings.draft.discard": "Änderungen verwerfen",

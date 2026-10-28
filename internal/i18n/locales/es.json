@@ -205,6 +205,7 @@
   "settings.interface.title": "Interfaz",
   "settings.interface.language": "Idioma",
   "settings.interface.language_hint": "Guarda para actualizar la navegación, la configuración y las fechas en toda la app.",
+  "settings.interface.language_unsaved_hint": "Este idioma aún no está guardado en tu cuenta. Guárdalo para que las suscripciones de calendario y las notificaciones también lo usen.",
   "settings.interface.theme": "Tema",
   "settings.interface.theme_hint": "Se guarda solo en este navegador.",
   "settings.draft.discard": "Descartar cambios",

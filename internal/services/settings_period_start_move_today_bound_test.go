@@ -57,7 +57,7 @@ func startMoveTodayBoundSave(t *testing.T, repositories *db.Repositories, userID
 func TestSettingsStartMoveToTodayFillsNoDayAfterToday(t *testing.T) {
 	onboarded := startMoveDay(time.September, 14)
 	repositories, userID := startMoveTodayBoundOwner(t, "start-move-today-bound@example.com", func(repositories *db.Repositories, userID uint) error {
-		return repositories.Users.CompleteOnboarding(context.Background(), userID, onboarded, onboarded.AddDate(0, 0, 4), true)
+		return repositories.Users.CompleteOnboarding(context.Background(), userID, onboarded, onboarded.AddDate(0, 0, 4), true, "", "")
 	})
 
 	startMoveTodayBoundSave(t, repositories, userID, "2026-10-07")
@@ -88,7 +88,7 @@ func TestSettingsStartMoveKeepsATodayOnboardingsSingleDay(t *testing.T) {
 		if err := repositories.Users.SaveOnboardingStep2(ctx, userID, 28, 5, true, false, ""); err != nil {
 			return err
 		}
-		_, err := NewOnboardingService(repositories.Users).CompleteOnboardingForUser(ctx, userID, startMoveTodayBoundNow, time.UTC)
+		_, err := NewOnboardingService(repositories.Users).CompleteOnboardingForUser(ctx, userID, startMoveTodayBoundNow, time.UTC, "")
 		return err
 	})
 	if got := startMoveLoggedDays(startMoveListLogs(t, repositories, userID)); len(got) != 1 || got[0] != "2026-10-07" {
@@ -117,7 +117,7 @@ func TestSettingsStartMoveKeepsATodayOnboardingsSingleDay(t *testing.T) {
 func TestSettingsStartMoveClearsTheOldFillPastToday(t *testing.T) {
 	oldStart := startMoveDay(time.October, 5)
 	repositories, userID := startMoveTodayBoundOwner(t, "start-move-old-fill-past-today@example.com", func(repositories *db.Repositories, userID uint) error {
-		return repositories.Users.CompleteOnboarding(context.Background(), userID, oldStart, oldStart.AddDate(0, 0, 4), true)
+		return repositories.Users.CompleteOnboarding(context.Background(), userID, oldStart, oldStart.AddDate(0, 0, 4), true, "", "")
 	})
 
 	startMoveTodayBoundSave(t, repositories, userID, "2026-10-06")

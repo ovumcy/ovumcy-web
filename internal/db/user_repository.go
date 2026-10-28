@@ -1906,7 +1906,11 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 // calendar days) as period days. The caller decides fillEndDay — the period's
 // last day or the owner's local today, whichever comes first — so the bound by
 // today is not computed here; an end before startDay writes no day at all.
-func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool) error {
+//
+// A non-empty weekStart replaces users.week_starts_on; a non-empty language is
+// stored in users.interface_language only while that column is still empty, so
+// a language the owner already chose is never overwritten.
+func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error {
 	// Checked up front, before any DailyLog write runs inside the
 	// transaction below: letting a zero id reach those writes first would
 	// create owner-less daily-log rows before the users UPDATE ever refused
@@ -1947,13 +1951,27 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 			}
 		}
 
+		if language != "" {
+			languageQuery, err := scopedUserUpdateTx(tx, userID)
+			if err != nil {
+				return err // codecov:ignore -- unreachable: requireUserOwnerID above already refused a zero userID before this transaction started, and userID does not change inside it
+			}
+			if err := languageQuery.Where("interface_language = ?", "").Update("interface_language", language).Error; err != nil {
+				return err
+			}
+		}
+
 		query, err := scopedUserUpdateTx(tx, userID)
 		if err != nil {
 			return err // codecov:ignore -- unreachable: requireUserOwnerID above already refused a zero userID before this transaction started, and userID does not change inside it
 		}
-		return query.Updates(map[string]any{
+		updates := map[string]any{
 			"last_period_start":    startDay,
 			"onboarding_completed": true,
-		}).Error
+		}
+		if weekStart != "" {
+			updates["week_starts_on"] = weekStart
+		}
+		return query.Updates(updates).Error
 	})
 }

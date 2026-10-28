@@ -205,6 +205,7 @@
   "settings.interface.title": "Интерфейс",
   "settings.interface.language": "Язык",
   "settings.interface.language_hint": "Сохраните, чтобы обновить навигацию, настройки и подписи дат во всём приложении.",
+  "settings.interface.language_unsaved_hint": "Этот язык ещё не сохранён в аккаунте. Сохраните его, чтобы подписки на календарь и уведомления тоже его использовали.",
   "settings.interface.theme": "Тема",
   "settings.interface.theme_hint": "Сохраняется только в этом браузере.",
   "settings.draft.discard": "Отменить изменения",

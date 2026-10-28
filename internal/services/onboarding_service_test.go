@@ -23,6 +23,8 @@ type stubOnboardingRepo struct {
 	completeStartDay   time.Time
 	completeFillEndDay time.Time
 	completeAutoFill   bool
+	completeLanguage   string
+	completeWeekStart  string
 	// The four ids below record which owner each call was scoped to. The stub
 	// serves a single embedded user, so no other assertion in this file can
 	// observe the service resolving or writing the wrong account. Every method
@@ -55,7 +57,9 @@ func (stub *stubOnboardingRepo) SaveOnboardingStep2(_ context.Context, userID ui
 	return nil
 }
 
-func (stub *stubOnboardingRepo) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool) error {
+func (stub *stubOnboardingRepo) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error {
+	stub.completeLanguage = language
+	stub.completeWeekStart = weekStart
 	stub.completeCalled = true
 	stub.completeUserID = userID
 	stub.completeStartDay = startDay
@@ -75,7 +79,7 @@ func TestCompleteOnboardingForUserRequiresStep1Date(t *testing.T) {
 	repo := &stubOnboardingRepo{user: models.User{}}
 	service := NewOnboardingService(repo)
 
-	_, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, time.Now(), time.UTC)
+	_, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, time.Now(), time.UTC, "")
 	if !errors.Is(err, ErrOnboardingStepsRequired) {
 		t.Fatalf("expected ErrOnboardingStepsRequired, got %v", err)
 	}
@@ -122,7 +126,7 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 
 	// Well past the period's end, so the fill bound is the sanitized length.
 	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
-	startDay, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, now, location)
+	startDay, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, now, location, "")
 	if err != nil {
 		t.Fatalf("CompleteOnboardingForUser() unexpected error: %v", err)
 	}
@@ -155,5 +159,46 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 	}
 	if repo.completeStartDay.Format("2006-01-02") != "2026-02-10" {
 		t.Fatalf("expected calendar day 2026-02-10 preserved, got %s", repo.completeStartDay.Format("2006-01-02"))
+	}
+}
+
+// TestCompleteOnboardingForUserSettlesTheAccountLocale pins WEB-216 and
+// WEB-257: the onboarding language is stored only while the account has none,
+// and the week start follows the account's language, a stored one first.
+func TestCompleteOnboardingForUserSettlesTheAccountLocale(t *testing.T) {
+	start := time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name          string
+		stored        string
+		rendered      string
+		wantLanguage  string
+		wantWeekStart string
+	}{
+		{name: "nothing stored, German pages", stored: "", rendered: "de", wantLanguage: "de", wantWeekStart: models.WeekStartMonday},
+		{name: "nothing stored, English pages", stored: "", rendered: "en", wantLanguage: "en", wantWeekStart: models.WeekStartSunday},
+		{name: "stored language wins", stored: "ru", rendered: "en", wantLanguage: "", wantWeekStart: models.WeekStartMonday},
+		{name: "no language at all", stored: "", rendered: "", wantLanguage: "", wantWeekStart: models.DefaultWeekStart},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lastStart := start
+			repo := &stubOnboardingRepo{user: models.User{
+				CycleLength:       28,
+				PeriodLength:      5,
+				LastPeriodStart:   &lastStart,
+				InterfaceLanguage: tc.stored,
+			}}
+			service := NewOnboardingService(repo)
+
+			if _, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, start.AddDate(0, 1, 0), time.UTC, tc.rendered); err != nil {
+				t.Fatalf("CompleteOnboardingForUser() unexpected error: %v", err)
+			}
+			if repo.completeLanguage != tc.wantLanguage {
+				t.Fatalf("expected language %q to be stored, got %q", tc.wantLanguage, repo.completeLanguage)
+			}
+			if repo.completeWeekStart != tc.wantWeekStart {
+				t.Fatalf("expected week start %q, got %q", tc.wantWeekStart, repo.completeWeekStart)
+			}
+		})
 	}
 }

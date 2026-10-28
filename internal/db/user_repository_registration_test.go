@@ -124,9 +124,60 @@ func TestUserRepositoryCompleteOnboardingRefusesZeroOwner(t *testing.T) {
 	repo := openRegistrationRepositoryForTest(t)
 
 	today := time.Now().UTC()
-	err := repo.CompleteOnboarding(context.Background(), 0, today, today.AddDate(0, 0, 4), false)
+	err := repo.CompleteOnboarding(context.Background(), 0, today, today.AddDate(0, 0, 4), false, "", "")
 	if !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("expected ErrUserOwnerRequired, got %v", err)
+	}
+}
+
+// TestUserRepositoryCompleteOnboardingStoresTheLanguageOnlyWhileUnset pins the
+// WEB-216 write: completion fills an empty users.interface_language and never
+// overwrites a chosen one, while the week start it is handed always lands.
+func TestUserRepositoryCompleteOnboardingStoresTheLanguageOnlyWhileUnset(t *testing.T) {
+	cases := []struct {
+		name         string
+		stored       string
+		wantLanguage string
+	}{
+		{name: "empty column is filled", stored: "", wantLanguage: "de"},
+		{name: "chosen language is kept", stored: "fr", wantLanguage: "fr"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := openRegistrationRepositoryForTest(t)
+			ctx := context.Background()
+			owner := &models.User{
+				Email:             "onboarding-locale@example.com",
+				PasswordHash:      "hash",
+				Role:              models.RoleOwner,
+				CycleLength:       models.DefaultCycleLength,
+				PeriodLength:      models.DefaultPeriodLength,
+				InterfaceLanguage: tc.stored,
+				CreatedAt:         time.Now().UTC(),
+			}
+			if err := repo.Create(ctx, owner); err != nil {
+				t.Fatalf("create owner: %v", err)
+			}
+			startDay := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+
+			if err := repo.CompleteOnboarding(ctx, owner.ID, startDay, startDay, false, "de", models.WeekStartMonday); err != nil {
+				t.Fatalf("complete onboarding: %v", err)
+			}
+
+			reloaded, err := repo.FindByID(ctx, owner.ID)
+			if err != nil {
+				t.Fatalf("reload owner: %v", err)
+			}
+			if reloaded.InterfaceLanguage != tc.wantLanguage {
+				t.Fatalf("expected interface_language %q, got %q", tc.wantLanguage, reloaded.InterfaceLanguage)
+			}
+			if reloaded.WeekStartsOn != models.WeekStartMonday {
+				t.Fatalf("expected week_starts_on %q, got %q", models.WeekStartMonday, reloaded.WeekStartsOn)
+			}
+			if !reloaded.OnboardingCompleted {
+				t.Fatal("expected onboarding to be completed")
+			}
+		})
 	}
 }
 
@@ -144,7 +195,7 @@ func TestUserRepositoryCompleteOnboardingMarksAnExistingDayAsPeriod(t *testing.T
 	ctx := context.Background()
 	ownerID, startDay, dayID := seedOnboardingOwnerWithExistingDay(t, repo)
 
-	if err := repo.CompleteOnboarding(ctx, ownerID, startDay, startDay, true); err != nil {
+	if err := repo.CompleteOnboarding(ctx, ownerID, startDay, startDay, true, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 
@@ -175,7 +226,7 @@ func TestUserRepositoryCompleteOnboardingUpdateIsScopedByOwner(t *testing.T) {
 		t.Fatalf("register update callback: %v", err)
 	}
 
-	if err := repo.CompleteOnboarding(context.Background(), ownerID, startDay, startDay, true); err != nil {
+	if err := repo.CompleteOnboarding(context.Background(), ownerID, startDay, startDay, true, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 

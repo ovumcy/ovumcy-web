@@ -205,6 +205,7 @@
   "settings.interface.title": "Interfaccia",
   "settings.interface.language": "Lingua",
   "settings.interface.language_hint": "Salva per aggiornare navigazione, impostazioni e etichette delle date in tutta l'app.",
+  "settings.interface.language_unsaved_hint": "Questa lingua non è ancora salvata nel tuo account. Salvala perché anche gli abbonamenti al calendario e le notifiche la usino.",
   "settings.interface.theme": "Tema",
   "settings.interface.theme_hint": "Salvato solo in questo browser.",
   "settings.draft.discard": "Annulla modifiche",

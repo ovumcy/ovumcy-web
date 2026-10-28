@@ -39,7 +39,7 @@ func onboardWithAutoPeriodFill(t *testing.T, startDay time.Time, now time.Time, 
 	if _, _, err := service.SaveStep2(ctx, owner.ID, 28, 5, autoPeriodFill, false, models.UsageGoalHealth); err != nil {
 		t.Fatalf("SaveStep2() unexpected error: %v", err)
 	}
-	if _, err := service.CompleteOnboardingForUser(ctx, owner.ID, now, location); err != nil {
+	if _, err := service.CompleteOnboardingForUser(ctx, owner.ID, now, location, ""); err != nil {
 		t.Fatalf("CompleteOnboardingForUser() unexpected error: %v", err)
 	}
 

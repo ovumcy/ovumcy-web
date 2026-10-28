@@ -220,6 +220,7 @@
   "settings.interface.title": "Interface",
   "settings.interface.language": "Langue",
   "settings.interface.language_hint": "Enregistrez pour mettre à jour la navigation, les paramètres et les dates dans toute l'application.",
+  "settings.interface.language_unsaved_hint": "Cette langue n'est pas encore enregistrée dans votre compte. Enregistrez-la pour que les abonnements au calendrier et les notifications l'utilisent aussi.",
   "settings.interface.theme": "Thème",
   "settings.interface.theme_hint": "Sauvegardé uniquement dans ce navigateur.",
   "settings.draft.discard": "Ignorer les modifications",

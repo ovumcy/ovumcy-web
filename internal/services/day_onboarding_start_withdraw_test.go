@@ -30,7 +30,7 @@ func withdrawFixture(t *testing.T, email string, autoFill bool) (*DayService, *d
 	if err := repositories.Users.UpdateByID(context.Background(), user.ID, map[string]any{"auto_period_fill": autoFill}); err != nil {
 		t.Fatalf("set auto-fill: %v", err)
 	}
-	if err := repositories.Users.CompleteOnboarding(context.Background(), user.ID, startMoveDay(time.September, 14), startMoveDay(time.September, 18), autoFill); err != nil {
+	if err := repositories.Users.CompleteOnboarding(context.Background(), user.ID, startMoveDay(time.September, 14), startMoveDay(time.September, 18), autoFill, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 	service := NewDayServiceWithTx(repositories.DailyLogs, repositories.Users, func(ctx context.Context, fn func(DayLogRepository) error) error {

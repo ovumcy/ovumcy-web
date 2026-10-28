@@ -7056,7 +7056,9 @@
     syncSettingsInterfaceOptionSelections(root);
     dirty = !sameSettingsInterfaceSelection(selection, state.initial);
     root.dataset.settingsDraftDirty = dirty ? "true" : "false";
-    syncSettingsDraftButton(state.saveButton, dirty);
+    // An account with no stored language can save the one already rendered;
+    // that is not a draft, so neither Discard nor the leave guard react to it.
+    syncSettingsDraftButton(state.saveButton, dirty || state.languageUnsaved);
     syncSettingsDraftButton(state.discardButton, dirty);
     if (!dirty) {
       setSettingsDraftTransition(root, false);
@@ -7114,11 +7116,13 @@
             theme: initialTheme
           },
           saveButton: root.querySelector("[data-settings-interface-save]"),
-          discardButton: root.querySelector("[data-settings-interface-discard]")
+          discardButton: root.querySelector("[data-settings-interface-discard]"),
+          languageUnsaved: root.hasAttribute("data-settings-interface-language-unsaved")
         };
       } else {
         root.__ovumcySettingsInterfaceState.initial.language = initialLanguage;
         root.__ovumcySettingsInterfaceState.initial.theme = initialTheme;
+        root.__ovumcySettingsInterfaceState.languageUnsaved = root.hasAttribute("data-settings-interface-language-unsaved");
       }
 
       setRadioGroupValue(root, "language", root.__ovumcySettingsInterfaceState.initial.language);
@@ -7161,6 +7165,12 @@
           }
           if (event.detail && event.detail.successful) {
             this.__ovumcySettingsInterfaceState.initial = currentSettingsInterfaceSelection(this);
+            this.__ovumcySettingsInterfaceState.languageUnsaved = false;
+            this.removeAttribute("data-settings-interface-language-unsaved");
+            var unsavedHint = this.querySelector("[data-settings-interface-language-unsaved-hint]");
+            if (unsavedHint) {
+              unsavedHint.hidden = true;
+            }
             syncSettingsInterfaceForm(this);
           } else {
             setSettingsDraftTransition(this, false);
