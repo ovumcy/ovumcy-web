@@ -117,3 +117,24 @@ func TestPeriodOffOnADayShownUntickedHasNoEffect(t *testing.T) {
 		t.Fatalf("effect = %+v, want none for a row-less day off the stored start", effect)
 	}
 }
+
+func TestPeriodOffWithoutAUserAsksNothingAndWithoutALocationReadsUTC(t *testing.T) {
+	day := startMoveDay(time.August, 10)
+	var logs []models.DailyLog
+	for _, first := range []time.Time{startMoveDay(time.July, 13), day} {
+		for offset := range 5 {
+			logs = append(logs, models.DailyLog{Date: first.AddDate(0, 0, offset), IsPeriod: true, Flow: models.FlowMedium})
+		}
+	}
+	if effect := periodOffEffectFor(nil, logs, day, periodOffNow, time.UTC); effect.Any() {
+		t.Fatalf("effect = %+v, want none without a user", effect)
+	}
+	user := &models.User{Role: models.RoleOwner}
+	inUTC := periodOffEffectFor(user, logs, day, periodOffNow, time.UTC)
+	if !inUTC.MovesCycleStart {
+		t.Fatalf("effect = %+v, want the only boundary withdrawn", inUTC)
+	}
+	if effect := periodOffEffectFor(user, logs, day, periodOffNow, nil); effect != inUTC {
+		t.Fatalf("effect without a location = %+v, want the UTC one %+v", effect, inUTC)
+	}
+}
