@@ -73,6 +73,7 @@ func TestMatchAcceptLanguageTellsANegotiatedLanguageFromNone(t *testing.T) {
 		{header: "de;q=0, ru;q=0.3", want: LangRU, wantOK: true},
 		{header: "de; Q=0.000", want: "", wantOK: false},
 		{header: "es;q=bogus", want: LangES, wantOK: true},
+		{header: "de;level=1;q=0, it;flag", want: LangIT, wantOK: true},
 		{header: "ja, pt-BR", want: "", wantOK: false},
 		{header: "", want: "", wantOK: false},
 		{header: " , ;q=1", want: "", wantOK: false},
