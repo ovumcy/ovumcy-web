@@ -29,8 +29,8 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 | `github.com/dustin/go-humanize` | MIT | [license text](https://github.com/dustin/go-humanize/blob/v1.0.1/LICENSE) |
 | `github.com/glebarez/go-sqlite` | BSD-3-Clause | [license text](https://github.com/glebarez/go-sqlite/blob/v1.21.2/LICENSE) |
 | `github.com/glebarez/sqlite` | MIT | [license text](https://github.com/glebarez/sqlite/blob/v1.11.0/License) |
-| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | [license text](https://github.com/go-jose/go-jose/blob/v4.1.4/json/LICENSE) |
-| `github.com/go-jose/go-jose/v4` | Apache-2.0 | [license text](https://github.com/go-jose/go-jose/blob/v4.1.4/LICENSE) |
+| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | [license text](https://github.com/go-jose/go-jose/blob/v4.1.6/json/LICENSE) |
+| `github.com/go-jose/go-jose/v4` | Apache-2.0 | [license text](https://github.com/go-jose/go-jose/blob/v4.1.6/LICENSE) |
 | `github.com/gofiber/fiber/v3` | MIT | [license text](https://github.com/gofiber/fiber/blob/v3.6.1/LICENSE) |
 | `github.com/gofiber/schema` | BSD-3-Clause | [license text](https://github.com/gofiber/schema/blob/v1.8.8/LICENSE) |
 | `github.com/gofiber/utils/v2/simd` | MIT | [license text](https://github.com/gofiber/utils/blob/v2.6.2/simd/LICENSE) |
