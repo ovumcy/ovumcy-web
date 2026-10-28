@@ -752,7 +752,10 @@
     var ticks = domainTicks(domain);
     var tickDecimals = valueDecimals;
     if (decimalsAttribute === null) {
-      tickDecimals = ticks.some(function (tick) { return tick !== Math.round(tick); }) ? 1 : 0;
+      tickDecimals = 0;
+      while (tickDecimals < 2 && ticks.some(function (tick) { return Number(tick.toFixed(tickDecimals)) !== tick; })) {
+        tickDecimals++;
+      }
     }
 
     // The gutter follows the widest tick, so a three-digit °F label is not cut.

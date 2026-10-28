@@ -19,6 +19,8 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { readChartLite, loadDOMWithScript } from "./_helpers.mjs";
 
 const CHART_LITE = readChartLite();
@@ -463,6 +465,21 @@ test("the average label keeps the half day and the page language's decimal separ
     const calls = await drawChart(payload, { "data-days-suffix": `${NBSP}d`, "data-baseline-label": "Average" }, lang);
     const label = labelInsidePlot(calls, gridBox(calls));
     assert.equal(label.text, `Average ${expected}${NBSP}d`, `lang ${lang}`);
+  }
+});
+
+test("the decimal-comma languages match the Go formatter's list", async () => {
+  const go = readFileSync(path.join(process.cwd(), "internal", "services", "number_format.go"), "utf8");
+  const commaLanguages = /case ((?:"[a-z]{2}",?\s*)+):\s*\n\s*return ","/.exec(go);
+  assert.ok(commaLanguages, "found the decimal-comma case in number_format.go");
+  const languages = [...commaLanguages[1].matchAll(/"([a-z]{2})"/g)].map((match) => match[1]);
+  assert.ok(languages.length > 0);
+
+  const payload = { kind: "bar", labels: ["Jan", "Feb", "Mar", "Apr"], values: [26, 35, 28, 30], baseline: 30.5 };
+  for (const lang of [...languages, "en"]) {
+    const calls = await drawChart(payload, { "data-days-suffix": "d", "data-baseline-label": "Average" }, lang);
+    const separator = languages.includes(lang) ? "," : ".";
+    assert.equal(labelInsidePlot(calls, gridBox(calls)).text, `Average 30${separator}5d`, `lang ${lang}`);
   }
 });
 
