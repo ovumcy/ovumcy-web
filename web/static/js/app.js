@@ -1290,7 +1290,11 @@
     question = window.__ovumcyDecodeResponseNoticeHeader(raw);
     if (question) {
       toggle.setAttribute("data-period-off-confirm", question);
-      toggle.setAttribute("data-period-off-confirm-key", key || "");
+      if (key) {
+        toggle.setAttribute("data-period-off-confirm-key", key);
+      } else {
+        toggle.removeAttribute("data-period-off-confirm-key");
+      }
     } else {
       toggle.removeAttribute("data-period-off-confirm");
       toggle.removeAttribute("data-period-off-confirm-key");
