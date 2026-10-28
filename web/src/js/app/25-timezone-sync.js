@@ -38,9 +38,24 @@
     return String(body.getAttribute("data-account-binding") || "").trim();
   }
 
+  // The mark is keyed by the account the page was rendered for: a sign-out
+  // keeps the tab's sessionStorage, and a mark shared across accounts let the
+  // next account in the tab skip its own sync and keep an empty stored zone.
+  function timezoneSyncStorageKey() {
+    var binding = accountBindingFromBody();
+    return binding ? TIMEZONE_SYNC_STORAGE_KEY + ":" + binding : TIMEZONE_SYNC_STORAGE_KEY;
+  }
+
+  // The onboarding gate refuses this endpoint until onboarding completes; the
+  // dashboard reached afterwards performs the sync.
+  function isOnboardingPendingPage() {
+    var body = document.body;
+    return !!(body && typeof body.hasAttribute === "function" && body.hasAttribute("data-onboarding-pending"));
+  }
+
   function markTimezoneSynced(value) {
     try {
-      window.sessionStorage.setItem(TIMEZONE_SYNC_STORAGE_KEY, value);
+      window.sessionStorage.setItem(timezoneSyncStorageKey(), value);
     } catch {
       // Ignore storage quota / privacy-mode errors: a failed mark only means we
       // may retry the (idempotent, no-op-on-unchanged) sync later this session.
@@ -49,7 +64,7 @@
 
   function alreadySyncedThisSession(value) {
     try {
-      return window.sessionStorage.getItem(TIMEZONE_SYNC_STORAGE_KEY) === value;
+      return window.sessionStorage.getItem(timezoneSyncStorageKey()) === value;
     } catch {
       return false;
     }
@@ -71,7 +86,7 @@
     // (login/register/forgot-password) there is no owner to sync for, and firing
     // a POST to /api/v1/users/current/timezone there would both 401 and be
     // miscounted by the register-flow e2e guard (it watches /api/v1/users).
-    if (!isAuthenticatedOwnerPage()) {
+    if (!isAuthenticatedOwnerPage() || isOnboardingPendingPage()) {
       return;
     }
 
@@ -93,6 +108,7 @@
     // Mark before the request so a slow round-trip cannot double-fire from a
     // rapid second navigation; the endpoint is idempotent regardless.
     markTimezoneSynced(detected);
+    var syncKey = timezoneSyncStorageKey();
 
     var body = new URLSearchParams();
     body.set("timezone", detected);
@@ -121,14 +137,14 @@
       }
       // Non-2xx: drop the session mark so a later navigation can retry.
       try {
-        window.sessionStorage.removeItem(TIMEZONE_SYNC_STORAGE_KEY);
+        window.sessionStorage.removeItem(syncKey);
       } catch {
         // Ignore storage errors.
       }
     }).catch(function () {
       // Network failure: fail silently, allow a later retry.
       try {
-        window.sessionStorage.removeItem(TIMEZONE_SYNC_STORAGE_KEY);
+        window.sessionStorage.removeItem(syncKey);
       } catch {
         // Ignore storage errors.
       }

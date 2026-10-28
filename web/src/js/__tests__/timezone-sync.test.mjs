@@ -299,3 +299,49 @@ test("retries after a fetch network rejection and marks the session done only on
     dom.window.close();
   }
 });
+
+// Regression (WEB-248): the onboarding gate refuses every /api/v1 write but its
+// own until onboarding completes, so a sync from a pre-onboarding page is a
+// guaranteed 403 that retried on every load. The dashboard reached after
+// onboarding performs the sync.
+test("does not post from a page rendered for an owner who has not finished onboarding", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz("", { binding: "acct-a" }).replace("<body", "<body data-onboarding-pending"),
+    beforeRun: stubTimezone("Europe/Belgrade"),
+  });
+  const calls = captureFetch(dom.window);
+  try {
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 0, "a pre-onboarding page must not POST the timezone");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// Regression (WEB-248): the session mark survived a sign-out, so a second
+// account signing in to the same tab with the same browser zone skipped its own
+// sync and kept an empty stored timezone.
+test("syncs again for a second account in the same tab session", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz("", { binding: "acct-a" }),
+    beforeRun: stubTimezone("Europe/Belgrade"),
+  });
+  const calls = captureFetch(dom.window);
+  try {
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 1, "the first account must sync");
+
+    dom.window.document.body.setAttribute("data-account-binding", "acct-b");
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 2, "a page rendered for another account must sync for it");
+
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 2, "the second account is marked done once synced");
+  } finally {
+    dom.window.close();
+  }
+});
