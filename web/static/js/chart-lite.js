@@ -303,7 +303,7 @@
     return DECIMAL_COMMA_LANGUAGES[lang.split(/[-_]/)[0]] ? "," : ".";
   }
 
-  // Same rule as the Go formatter: the exact value rounded half away from zero
+  // Same rule as the Go formatter: the exact value, half away from zero
   // (toFixed does this on the binary value), trailing zeros dropped, the page
   // language's decimal separator. An axis column passes fixed so its labels
   // keep one precision (37,0 / 36,8) instead of mixing 37 with 36,8.

@@ -448,7 +448,7 @@ test("the average reference label stays inside the plot area", async () => {
 });
 
 // The Go formatter (internal/services/number_format.go) owns the rule: the
-// exact value rounded half away from zero to one decimal, trailing zeros
+// exact value, half away from zero to one decimal, trailing zeros
 // dropped, and the decimal separator of the page language. The chart labels
 // must read the same as the card and caption beside them.
 const NBSP = " ";
