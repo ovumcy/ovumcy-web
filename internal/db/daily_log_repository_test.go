@@ -288,4 +288,9 @@ func TestDailyLogEarliestDateByUserIsOwnerScoped(t *testing.T) {
 	if _, _, err := repo.EarliestDateByUser(ctx, 0); !errors.Is(err, ErrDailyLogOwnerRequired) {
 		t.Fatalf("zero owner: got %v, want ErrDailyLogOwnerRequired", err)
 	}
+
+	requireNoErr(t, database.Migrator().DropTable(&models.DailyLog{}), "drop daily logs")
+	if _, found, err := repo.EarliestDateByUser(ctx, owner); err == nil || found {
+		t.Fatalf("failed read: found %v, err %v; want an error", found, err)
+	}
 }

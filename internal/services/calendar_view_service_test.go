@@ -21,12 +21,12 @@ type stubCalendarViewDayReader struct {
 	earliestUserID uint
 }
 
-func (stub *stubCalendarViewDayReader) EarliestLogDayForUser(_ context.Context, userID uint) (time.Time, bool, error) {
+func (stub *stubCalendarViewDayReader) EarliestLogDayForUser(_ context.Context, userID uint) (time.Time, error) {
 	stub.earliestUserID = userID
 	if stub.earliestErr != nil {
-		return time.Time{}, false, stub.earliestErr
+		return time.Time{}, stub.earliestErr
 	}
-	return stub.earliest, !stub.earliest.IsZero(), nil
+	return stub.earliest, nil
 }
 
 func (stub *stubCalendarViewDayReader) FetchLogsForUser(ctx context.Context, userID uint, _ time.Time, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {

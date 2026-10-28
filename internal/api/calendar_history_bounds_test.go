@@ -48,7 +48,7 @@ func TestCalendarReachesTheEarliestStoredEntry(t *testing.T) {
 		if !strings.Contains(html, `data-calendar-history-limit`) {
 			t.Fatalf("expected the history-limit hint beside the disabled prev, got:\n%s", html)
 		}
-		if !strings.Contains(html, `aria-describedby="calendar-history-limit"`) {
+		if !strings.Contains(html, `role="link" aria-disabled="true" aria-describedby="calendar-history-limit"`) {
 			t.Fatalf("expected the disabled prev to be described by the hint, got:\n%s", html)
 		}
 	})
@@ -106,6 +106,26 @@ func TestCalendarInvalidMonthRendersTheNoticeAndKeepsTheDay(t *testing.T) {
 	}
 	if !strings.Contains(html, `hx-get="/calendar?month=`+day[:7]+`"`) {
 		t.Fatalf("expected the grid to open on the day's month %s, got:\n%s", day[:7], html)
+	}
+}
+
+// A failed earliest-entry read fails the page rather than falling back to an
+// unbounded or creation-only range.
+func TestCalendarFailsWhenTheHistoryBoundCannotBeRead(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-history-read-failure@example.com", "StrongPass1", true)
+	cookie := issueAuthCookieForUser(t, user)
+	if err := database.Migrator().DropTable(&models.DailyLog{}); err != nil {
+		t.Fatalf("drop daily logs: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/calendar", nil)
+	request.Header.Set("Cookie", cookie)
+	response := mustAppResponse(t, app, request)
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("GET /calendar with an unreadable history = %d, want 500", response.StatusCode)
 	}
 }
 

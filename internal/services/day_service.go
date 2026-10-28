@@ -143,13 +143,13 @@ func (service *DayService) FetchAllLogsForUser(ctx context.Context, userID uint)
 }
 
 // EarliestLogDayForUser returns the owner's oldest stored day as a UTC-midnight
-// calendar day; found is false when the owner has no entries.
-func (service *DayService) EarliestLogDayForUser(ctx context.Context, userID uint) (time.Time, bool, error) {
+// calendar day, or the zero time when the owner has no entries.
+func (service *DayService) EarliestLogDayForUser(ctx context.Context, userID uint) (time.Time, error) {
 	day, found, err := service.logs.EarliestDateByUser(ctx, userID)
 	if err != nil || !found {
-		return time.Time{}, false, err
+		return time.Time{}, err
 	}
-	return CalendarDay(day, time.UTC), true, nil
+	return CalendarDay(day, time.UTC), nil
 }
 
 func (service *DayService) FetchLogByDate(ctx context.Context, userID uint, day time.Time, location *time.Location) (models.DailyLog, error) {

@@ -11,12 +11,12 @@
         {{if .PrevMonth}}
         <a href="/calendar?month={{.PrevMonth}}{{if .SelectedDate}}&day={{.SelectedDate}}{{end}}" class="btn-secondary">{{t .Messages "calendar.prev"}}</a>
         {{else}}
-        <span class="btn-secondary btn-disabled" aria-disabled="true" aria-describedby="calendar-history-limit">{{t .Messages "calendar.prev"}}</span>
+        <span class="btn-secondary btn-disabled" role="link" aria-disabled="true" aria-describedby="calendar-history-limit">{{t .Messages "calendar.prev"}}</span>
         {{end}}
         {{if .NextMonth}}
         <a href="/calendar?month={{.NextMonth}}{{if .SelectedDate}}&day={{.SelectedDate}}{{end}}" class="btn-secondary">{{t .Messages "calendar.next"}}</a>
         {{else}}
-        <span class="btn-secondary btn-disabled" aria-disabled="true">{{t .Messages "calendar.next"}}</span>
+        <span class="btn-secondary btn-disabled" role="link" aria-disabled="true">{{t .Messages "calendar.next"}}</span>
         {{end}}
         <a href="/calendar" class="btn-secondary btn-compact" data-calendar-today data-action-weight="secondary">{{t .Messages "calendar.today"}}</a>
       </div>

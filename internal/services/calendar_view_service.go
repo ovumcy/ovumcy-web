@@ -16,7 +16,7 @@ var (
 
 type CalendarViewDayReader interface {
 	FetchLogsForUser(ctx context.Context, userID uint, from time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error)
-	EarliestLogDayForUser(ctx context.Context, userID uint) (time.Time, bool, error)
+	EarliestLogDayForUser(ctx context.Context, userID uint) (time.Time, error)
 }
 
 // CalendarMonthBounds is the navigable month range of one owner's calendar; a
@@ -65,7 +65,7 @@ func NewCalendarViewService(days CalendarViewDayReader, stats CalendarViewStatsP
 // NavigableMonthBounds reads the owner's earliest stored day once per request,
 // so the handler's clamp and the page's prev/next links share one lower bound.
 func (service *CalendarViewService) NavigableMonthBounds(ctx context.Context, user *models.User, now time.Time, location *time.Location) (CalendarMonthBounds, error) {
-	earliest, _, err := service.days.EarliestLogDayForUser(ctx, user.ID)
+	earliest, err := service.days.EarliestLogDayForUser(ctx, user.ID)
 	if err != nil {
 		return CalendarMonthBounds{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadLogs, err)
 	}
