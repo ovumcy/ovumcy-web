@@ -128,7 +128,7 @@ test.describe('Stats: BBT chart', () => {
     // affordance, so this table is the only path to a per-day value that needs
     // neither: it lists one row per plotted day and the same numbers the chart
     // was handed.
-    const unit = localeText('en', 'stats.bbt_unit');
+    const unit = `\u{a0}${localeText('en', 'stats.bbt_unit')}`;
     const noReading = localeText('en', 'stats.bbt_table_no_reading');
     const disclosure = page.locator('[data-bbt-table-disclosure]');
     await expect(disclosure).toBeAttached();

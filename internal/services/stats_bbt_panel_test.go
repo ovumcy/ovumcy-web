@@ -67,7 +67,7 @@ func TestStatsBBTChartMarkerCarriesItsDate(t *testing.T) {
 			t.Fatalf("point %d: IsMarker=%v, marker index %d", index, point.IsMarker, chart.MarkerIndex)
 		}
 	}
-	if got := chart.BaselineText(); got != "36.3" {
+	if got := chart.BaselineText("en"); got != "36.3" {
 		t.Fatalf("expected the coverline to print at the chart's precision, got %q", got)
 	}
 }

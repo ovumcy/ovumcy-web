@@ -33,14 +33,14 @@ type StatsBBTChartViewData struct {
 	TemperatureUnit string
 }
 
+// BaselineText prints the coverline at the precision of every other reading.
+func (chart StatsBBTChartViewData) BaselineText(language string) string {
+	return formatBBTChartPointValue(language, chart.Baseline)
+}
+
 // UnitLabelKey names the catalogue entry for the unit the chart's numbers are
 // in, so the axis suffix, the table and the text summary print the unit the
 // values were converted to rather than a fixed one.
-// BaselineText prints the coverline at the precision of every other reading.
-func (chart StatsBBTChartViewData) BaselineText() string {
-	return formatBBTChartPointValue(chart.Baseline)
-}
-
 func (chart StatsBBTChartViewData) UnitLabelKey() string {
 	if NormalizeTemperatureUnit(chart.TemperatureUnit) == TemperatureUnitFahrenheit {
 		return "stats.bbt_unit_fahrenheit"
@@ -55,7 +55,7 @@ func (chart StatsBBTChartViewData) UnitLabelKey() string {
 // editor shows it (FormatDayBBTForInput) and its text is re-derived from the
 // converted value, so value, text, coverline and unit label stay one unit.
 // Stored data is never touched.
-func (chart StatsBBTChartViewData) inTemperatureUnit(unit string) StatsBBTChartViewData {
+func (chart StatsBBTChartViewData) inTemperatureUnit(language string, unit string) StatsBBTChartViewData {
 	if NormalizeTemperatureUnit(unit) != TemperatureUnitFahrenheit {
 		return chart
 	}
@@ -71,7 +71,7 @@ func (chart StatsBBTChartViewData) inTemperatureUnit(unit string) StatsBBTChartV
 	copy(points, chart.Points)
 	for index := range points {
 		if points[index].HasValue && index < len(values) && values[index] != nil {
-			points[index].ValueText = formatBBTChartPointValue(*values[index])
+			points[index].ValueText = formatBBTChartPointValue(language, *values[index])
 		}
 	}
 
@@ -318,7 +318,7 @@ func buildCurrentCycleBBTChartPoints(language string, cycleStart time.Time, labe
 			Date:     LocalizedDateShort(language, AddCalendarDays(cycleStart, index, cycleStart.Location())),
 		}
 		if index < len(values) && values[index] != nil {
-			point.ValueText = formatBBTChartPointValue(*values[index])
+			point.ValueText = formatBBTChartPointValue(language, *values[index])
 			point.HasValue = true
 		}
 		points = append(points, point)
@@ -329,11 +329,11 @@ func buildCurrentCycleBBTChartPoints(language string, cycleStart time.Time, labe
 // formatBBTChartPointValue renders one reading to the tenth of a degree the
 // chart labels its axis with. This is the only place a reading becomes text:
 // the table twin prints it and the crosshair readout is handed the same string
-// rather than re-rounding the float in the browser. Go rounds a tie to even and
-// JavaScript's toFixed rounds it up, so an exactly representable 36.25 would
-// otherwise read 36.2 in the table and 36.3 in the tooltip beside it.
-func formatBBTChartPointValue(value float64) string {
-	return strconv.FormatFloat(value, 'f', 1, 64)
+// rather than re-rounding the float in the browser. The decimal separator and
+// the rounding rule are FormatLocalizedNumber's, shared with every other
+// number on the page.
+func formatBBTChartPointValue(language string, value float64) string {
+	return FormatLocalizedNumber(language, value)
 }
 
 func resolveCurrentCycleBBTBounds(stats CycleStats, now time.Time, location *time.Location) (time.Time, time.Time, bool) {

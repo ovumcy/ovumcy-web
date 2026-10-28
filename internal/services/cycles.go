@@ -32,6 +32,10 @@ type CycleStats struct {
 	FertilityWindowEnd   time.Time `json:"fertility_window_end"`
 	PregnancyPaused      bool      `json:"pregnancy_paused"`
 
+	// MedianCycleLengthExact keeps the half a two-middle median rounds away, for
+	// display only: predictions read the whole-day MedianCycleLength.
+	MedianCycleLengthExact float64 `json:"-"`
+
 	// LutealPhasePersonalised reports whether LutealPhase holds the value
 	// InferUserLutealPhase refined from the owner's own logs, rather than the
 	// defaultLutealPhaseDays model constant. It says nothing about OvulationExact
@@ -276,6 +280,7 @@ func populateObservedCycleStats(stats *CycleStats, lengths []int, cycles []detec
 	if len(recentLengths) > 0 {
 		stats.AverageCycleLength = averageInts(recentLengths)
 		stats.MedianCycleLength = medianInt(recentLengths)
+		stats.MedianCycleLengthExact = medianFloat(recentLengths)
 		// Range and spread statistics describe the same recent window the
 		// median prediction uses: an outlier cycle that has aged out of the
 		// window must not keep widening irregular prediction ranges or the
@@ -680,6 +685,10 @@ func IsIrregularCycleSpread(stats CycleStats) bool {
 }
 
 func medianInt(values []int) int {
+	return int(medianFloat(values) + 0.5)
+}
+
+func medianFloat(values []int) float64 {
 	if len(values) == 0 {
 		return 0
 	}
@@ -690,12 +699,19 @@ func medianInt(values []int) int {
 
 	mid := len(sorted) / 2
 	if len(sorted)%2 == 1 {
-		return sorted[mid]
+		return float64(sorted[mid])
 	}
+	return float64(sorted[mid-1]+sorted[mid]) / 2
+}
 
-	left := sorted[mid-1]
-	right := sorted[mid]
-	return int(float64(left+right)/2 + 0.5)
+// MedianCycleLengthDisplay is the median at the precision the page prints:
+// the exact half where the whole-day prediction value rounded it, the whole-day
+// value where no observed cycle produced one (the configured baseline).
+func (stats CycleStats) MedianCycleLengthDisplay() float64 {
+	if stats.MedianCycleLengthExact > 0 {
+		return stats.MedianCycleLengthExact
+	}
+	return float64(stats.MedianCycleLength)
 }
 
 func betweenInclusive(day, start, end time.Time) bool {

@@ -2,8 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
-	"math"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -18,12 +16,36 @@ func formatTemplateLocalizedDate(language string, value time.Time, style string)
 	}
 }
 
+// formatTemplateFloat is the machine-readable form, with a "." decimal, for an
+// attribute such as <progress value>; anything a person reads goes through
+// formatTemplateNumber or formatTemplateQuantity.
 func formatTemplateFloat(value float64) string {
-	rounded := math.Round(value*10) / 10
-	if math.Abs(rounded-math.Round(rounded)) < 1e-9 {
-		return fmt.Sprintf("%.0f", rounded)
+	return services.FormatLocalizedNumber("en", value)
+}
+
+func formatTemplateNumber(language string, value any) string {
+	return services.FormatLocalizedNumber(language, templateNumber(value))
+}
+
+func formatTemplateQuantity(language string, value any, unit string) string {
+	return services.FormatLocalizedQuantity(language, templateNumber(value), unit)
+}
+
+// templateNumber lets one template function take the int and float64 fields a
+// stats page mixes.
+func templateNumber(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	default:
+		return 0
 	}
-	return fmt.Sprintf("%.1f", rounded)
 }
 
 // templateToJSON serializes a value for embedding in HTML data-* attributes

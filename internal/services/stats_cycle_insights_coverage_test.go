@@ -679,8 +679,8 @@ func TestStatsCycleInsightsBBTChartPointsSpellOutTheDrawnSeries(t *testing.T) {
 	if second.Date != LocalizedDateShort("en", statscycleinsightsCovDay(t, "2026-01-02")) {
 		t.Fatalf("expected cycle day 2 to be dated from the cycle start, got %q", second.Date)
 	}
-	if !second.HasValue || second.ValueText != "36.2" {
-		t.Fatalf("expected 36.25 to render once, as 36.2, got %q", second.ValueText)
+	if !second.HasValue || second.ValueText != "36.3" {
+		t.Fatalf("expected 36.25 to render once, as 36.3 (half away from zero), got %q", second.ValueText)
 	}
 
 	gap := chart.Points[5]

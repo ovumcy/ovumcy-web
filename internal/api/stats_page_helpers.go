@@ -79,7 +79,7 @@ func statsBBTChartPointColumns(chart services.StatsBBTChartViewData) ([]string, 
 	return dates, valueTexts
 }
 
-func buildStatsCycleChartSummary(messages map[string]string, viewData services.StatsPageViewData) string {
+func buildStatsCycleChartSummary(messages map[string]string, language string, viewData services.StatsPageViewData) string {
 	if !viewData.Flags.HasTrendData || len(viewData.ChartData.Values) == 0 {
 		return translateMessage(messages, "stats.no_cycle_data")
 	}
@@ -89,17 +89,27 @@ func buildStatsCycleChartSummary(messages map[string]string, viewData services.S
 	minCycleLength := viewData.ChartData.RangeMin
 	maxCycleLength := viewData.ChartData.RangeMax
 
+	// A series of one length has no range to state, and its latest cycle and
+	// its average are that length too: say it once rather than "Range 28 to 28".
+	if minCycleLength > 0 && minCycleLength == maxCycleLength {
+		pattern, translated := lookupMessage(messages, "stats.cycle_chart_summary_uniform")
+		if !translated {
+			pattern = "%d completed cycles shown, all %d %s long."
+		}
+		return fmt.Sprintf(pattern, len(viewData.ChartData.Values), latestCycleLength, daysShort)
+	}
+
 	if viewData.ChartBaseline > 0 {
 		pattern, translated := lookupMessage(messages, "stats.cycle_chart_summary")
 		if !translated {
-			pattern = "%d completed cycles shown. Latest cycle %d %s. Average %d %s. Range %d to %d %s."
+			pattern = "%d completed cycles shown. Latest cycle %d %s. Average %s %s. Range %d to %d %s."
 		}
 		return fmt.Sprintf(
 			pattern,
 			len(viewData.ChartData.Values),
 			latestCycleLength,
 			daysShort,
-			viewData.ChartBaseline,
+			services.FormatLocalizedNumber(language, viewData.ChartBaseline),
 			daysShort,
 			minCycleLength,
 			maxCycleLength,
@@ -122,7 +132,7 @@ func buildStatsCycleChartSummary(messages map[string]string, viewData services.S
 	)
 }
 
-func buildStatsBBTChartSummary(messages map[string]string, chart services.StatsBBTChartViewData) string {
+func buildStatsBBTChartSummary(messages map[string]string, language string, chart services.StatsBBTChartViewData) string {
 	readingsCount := 0
 	for _, value := range chart.Values {
 		if value != nil {
@@ -141,7 +151,7 @@ func buildStatsBBTChartSummary(messages map[string]string, chart services.StatsB
 		return fmt.Sprintf(pattern, readingsCount)
 	}
 
-	coverline := chart.BaselineText() + translateMessage(messages, chart.UnitLabelKey())
+	coverline := services.JoinUnit(chart.BaselineText(language), translateMessage(messages, chart.UnitLabelKey()))
 	if chart.HasMarker && chart.MarkerLabelKey != "" {
 		pattern, translated := lookupMessage(messages, "stats.bbt_chart_summary_with_marker")
 		if !translated {
@@ -176,8 +186,8 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		return nil, err
 	}
 
-	cycleChartSummary := buildStatsCycleChartSummary(messages, viewData)
-	bbtChartSummary := buildStatsBBTChartSummary(messages, viewData.CurrentCycleBBTChart)
+	cycleChartSummary := buildStatsCycleChartSummary(messages, language, viewData)
+	bbtChartSummary := buildStatsBBTChartSummary(messages, language, viewData.CurrentCycleBBTChart)
 
 	data := fiber.Map{
 		"Title":                               localizedPageTitle(messages, "meta.title.stats", "Ovumcy | Stats"),

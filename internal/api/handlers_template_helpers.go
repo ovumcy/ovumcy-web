@@ -12,6 +12,10 @@ func newTemplateFuncMap() template.FuncMap {
 	return template.FuncMap{
 		"formatLocalizedDate": formatTemplateLocalizedDate,
 		"formatFloat":         formatTemplateFloat,
+		"formatNumber":        formatTemplateNumber,
+		"formatQuantity":      formatTemplateQuantity,
+		"joinUnit":            services.JoinUnit,
+		"unitSuffix":          services.UnitSuffix,
 		"t": func(messages map[string]string, key string) string {
 			return translateMessage(messages, key)
 		},

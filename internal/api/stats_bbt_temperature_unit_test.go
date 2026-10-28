@@ -47,7 +47,7 @@ func TestStatsPageBBTSurfacesAgreeOnTheOwnersUnit(t *testing.T) {
 			if chart == nil {
 				t.Fatal("expected the BBT chart container")
 			}
-			if got := htmlAttr(chart, "data-value-suffix"); got != tc.symbol {
+			if got := htmlAttr(chart, "data-value-suffix"); got != "\xc2\xa0"+tc.symbol {
 				t.Fatalf("axis/crosshair suffix = %q, want %q", got, tc.symbol)
 			}
 			var payload struct {
@@ -72,15 +72,15 @@ func TestStatsPageBBTSurfacesAgreeOnTheOwnersUnit(t *testing.T) {
 			if row == nil {
 				t.Fatal("expected a table row for cycle day 3")
 			}
-			if cell := htmlElementWithAttr(row, "data-bbt-table-value"); cell == nil || strings.TrimSpace(htmlNodeText(cell)) != tc.text+tc.symbol {
-				t.Fatalf("expected the table twin to read %q for cycle day 3", tc.text+tc.symbol)
+			if cell := htmlElementWithAttr(row, "data-bbt-table-value"); cell == nil || strings.TrimSpace(htmlNodeText(cell)) != tc.text+"\xc2\xa0"+tc.symbol {
+				t.Fatalf("expected the table twin to read %q for cycle day 3", tc.text+"\xc2\xa0"+tc.symbol)
 			}
 
 			summary := htmlElementByID(document, "stats-bbt-summary")
 			if summary == nil {
 				t.Fatal("expected the BBT text summary")
 			}
-			if want := tc.text + tc.symbol; !strings.Contains(htmlNodeText(summary), want) {
+			if want := tc.text + "\xc2\xa0" + tc.symbol; !strings.Contains(htmlNodeText(summary), want) {
 				t.Fatalf("summary %q does not name the coverline as %q", htmlNodeText(summary), want)
 			}
 		})

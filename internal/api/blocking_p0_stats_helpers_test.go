@@ -53,7 +53,7 @@ func TestMapStatsChartData(t *testing.T) {
 		if kind, ok := payload["kind"]; !ok || kind != "cycle" {
 			t.Fatalf("expected kind=cycle, got %v (present=%v)", kind, ok)
 		}
-		if baseline, ok := payload["baseline"]; !ok || baseline != 29 {
+		if baseline, ok := payload["baseline"]; !ok || baseline != 29.0 {
 			t.Fatalf("expected baseline=29, got %v (present=%v)", baseline, ok)
 		}
 	})
@@ -155,7 +155,7 @@ func TestBuildStatsCycleChartSummary(t *testing.T) {
 
 	t.Run("no trend data returns no-data message", func(t *testing.T) {
 		t.Parallel()
-		got := buildStatsCycleChartSummary(noData, services.StatsPageViewData{
+		got := buildStatsCycleChartSummary(noData, "en", services.StatsPageViewData{
 			Flags:     services.StatsFlags{HasTrendData: false},
 			ChartData: services.StatsChartViewData{Values: []int{28}},
 		})
@@ -166,7 +166,7 @@ func TestBuildStatsCycleChartSummary(t *testing.T) {
 
 	t.Run("empty values returns no-data message", func(t *testing.T) {
 		t.Parallel()
-		got := buildStatsCycleChartSummary(noData, services.StatsPageViewData{
+		got := buildStatsCycleChartSummary(noData, "en", services.StatsPageViewData{
 			Flags:     services.StatsFlags{HasTrendData: true},
 			ChartData: services.StatsChartViewData{Values: []int{}},
 		})
@@ -177,7 +177,7 @@ func TestBuildStatsCycleChartSummary(t *testing.T) {
 
 	t.Run("with baseline announces average and range", func(t *testing.T) {
 		t.Parallel()
-		got := buildStatsCycleChartSummary(map[string]string{}, services.StatsPageViewData{
+		got := buildStatsCycleChartSummary(map[string]string{}, "en", services.StatsPageViewData{
 			Flags:         services.StatsFlags{HasTrendData: true},
 			ChartData:     services.StatsChartViewData{Values: []int{27, 31}, RangeMin: 27, RangeMax: 31},
 			ChartBaseline: 29,
@@ -194,7 +194,7 @@ func TestBuildStatsCycleChartSummary(t *testing.T) {
 
 	t.Run("no baseline announces range without an average", func(t *testing.T) {
 		t.Parallel()
-		got := buildStatsCycleChartSummary(map[string]string{}, services.StatsPageViewData{
+		got := buildStatsCycleChartSummary(map[string]string{}, "en", services.StatsPageViewData{
 			Flags:         services.StatsFlags{HasTrendData: true},
 			ChartData:     services.StatsChartViewData{Values: []int{27, 33}, RangeMin: 27, RangeMax: 33},
 			ChartBaseline: 0, // no baseline -> shorter sentence
@@ -211,7 +211,7 @@ func TestBuildStatsCycleChartSummary(t *testing.T) {
 
 	t.Run("range is the plotted span, not the prediction window", func(t *testing.T) {
 		t.Parallel()
-		got := buildStatsCycleChartSummary(map[string]string{}, services.StatsPageViewData{
+		got := buildStatsCycleChartSummary(map[string]string{}, "en", services.StatsPageViewData{
 			Flags:         services.StatsFlags{HasTrendData: true},
 			ChartData:     services.StatsChartViewData{Values: []int{365, 15, 128, 28}, RangeMin: 15, RangeMax: 365},
 			ChartBaseline: 134,
@@ -236,7 +236,7 @@ func TestBuildStatsBBTChartSummary(t *testing.T) {
 
 	t.Run("no readings returns no-data message", func(t *testing.T) {
 		t.Parallel()
-		got := buildStatsBBTChartSummary(map[string]string{"stats.no_cycle_data": "No cycle data yet"}, services.StatsBBTChartViewData{
+		got := buildStatsBBTChartSummary(map[string]string{"stats.no_cycle_data": "No cycle data yet"}, "en", services.StatsBBTChartViewData{
 			Values: []*float64{nil, nil},
 		})
 		if got != "No cycle data yet" {
@@ -246,7 +246,7 @@ func TestBuildStatsBBTChartSummary(t *testing.T) {
 
 	t.Run("counts only non-nil readings without marker", func(t *testing.T) {
 		t.Parallel()
-		got := buildStatsBBTChartSummary(messages, services.StatsBBTChartViewData{
+		got := buildStatsBBTChartSummary(messages, "en", services.StatsBBTChartViewData{
 			Values:      []*float64{f(36.4), nil, f(36.6), f(36.8)},
 			Baseline:    36.5,
 			HasBaseline: true,
@@ -262,7 +262,7 @@ func TestBuildStatsBBTChartSummary(t *testing.T) {
 
 	t.Run("marker clause appended when marker present", func(t *testing.T) {
 		t.Parallel()
-		got := buildStatsBBTChartSummary(messages, services.StatsBBTChartViewData{
+		got := buildStatsBBTChartSummary(messages, "en", services.StatsBBTChartViewData{
 			Values:         []*float64{f(36.4), f(36.6)},
 			Baseline:       36.5,
 			HasBaseline:    true,
@@ -279,7 +279,7 @@ func TestBuildStatsBBTChartSummary(t *testing.T) {
 
 	t.Run("no detected shift announces readings without a coverline value", func(t *testing.T) {
 		t.Parallel()
-		got := buildStatsBBTChartSummary(messages, services.StatsBBTChartViewData{
+		got := buildStatsBBTChartSummary(messages, "en", services.StatsBBTChartViewData{
 			Values: []*float64{f(36.4), f(36.6)},
 		})
 		// Default: "%d readings this cycle. No temperature shift detected yet."

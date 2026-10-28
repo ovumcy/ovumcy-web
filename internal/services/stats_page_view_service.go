@@ -22,7 +22,7 @@ var (
 type StatsChartViewData struct {
 	Labels      []string
 	Values      []int
-	Baseline    int
+	Baseline    float64
 	HasBaseline bool
 	Kind        string
 	RangeMin    int
@@ -40,7 +40,7 @@ type StatsSymptomCountViewData struct {
 type StatsPageViewData struct {
 	Stats                             CycleStats
 	ChartData                         StatsChartViewData
-	ChartBaseline                     int
+	ChartBaseline                     float64
 	Flags                             StatsFlags
 	PredictionSampleCount             int
 	PredictionSampleUsesRecentWindow  bool
@@ -103,7 +103,7 @@ type statsPageBaseData struct {
 	stats         CycleStats
 	logs          []models.DailyLog
 	chartData     StatsChartViewData
-	chartBaseline int
+	chartBaseline float64
 	flags         StatsFlags
 }
 
@@ -246,7 +246,7 @@ func (service *StatsService) buildStatsPageBaseData(ctx context.Context, user *m
 	}, nil
 }
 
-func buildStatsChartViewData(cycleLabelPattern string, lengths []int, baselineCycleLength int) StatsChartViewData {
+func buildStatsChartViewData(cycleLabelPattern string, lengths []int, baselineCycleLength float64) StatsChartViewData {
 	chartData := StatsChartViewData{
 		Labels: BuildCycleTrendLabels(cycleLabelPattern, len(lengths)),
 		Values: lengths,
@@ -280,7 +280,7 @@ func (service *StatsService) buildOwnerStatsInsights(ctx context.Context, user *
 		return insights, nil
 	}
 
-	insights.currentCycleBBTChart = buildOwnerCurrentCycleBBTChart(user, language, stats, logs, now, location).inTemperatureUnit(user.TemperatureUnit)
+	insights.currentCycleBBTChart = buildOwnerCurrentCycleBBTChart(user, language, stats, logs, now, location).inTemperatureUnit(language, user.TemperatureUnit)
 	// The cycle-length trend needs no symptom catalogue, so it is built before
 	// the reader check below: an owner with no symptom repository still gets
 	// the statement about their own cycle lengths.

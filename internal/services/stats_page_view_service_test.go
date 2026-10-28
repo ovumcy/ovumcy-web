@@ -57,8 +57,11 @@ func TestBuildStatsPageViewDataIrregularNoticeRespectsUserMode(t *testing.T) {
 	if regularView.IsIrregularMode {
 		t.Fatalf("expected IsIrregularMode=false for regular user")
 	}
-	if regularView.ChartBaseline != 36 {
-		t.Fatalf("expected averaged chart baseline 36, got %d", regularView.ChartBaseline)
+	if want := 109.0 / 3.0; regularView.ChartBaseline != want {
+		t.Fatalf("expected the exact average of 24, 44 and 41 (%v), got %v", want, regularView.ChartBaseline)
+	}
+	if text := FormatLocalizedNumber("en", regularView.ChartBaseline); text != "36.3" {
+		t.Fatalf("expected the baseline to read 36.3, got %q", text)
 	}
 
 	irregularUser := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32, IrregularCycle: true}
@@ -260,10 +263,10 @@ func assertOwnerTrendChartData(t *testing.T, viewData StatsPageViewData) {
 		t.Fatalf("expected chart kind=bar, got %q", viewData.ChartData.Kind)
 	}
 	if !viewData.ChartData.HasBaseline || viewData.ChartData.Baseline != 28 {
-		t.Fatalf("expected chart baseline=28, got has=%v value=%d", viewData.ChartData.HasBaseline, viewData.ChartData.Baseline)
+		t.Fatalf("expected chart baseline=28, got has=%v value=%v", viewData.ChartData.HasBaseline, viewData.ChartData.Baseline)
 	}
 	if viewData.ChartBaseline != 28 {
-		t.Fatalf("expected ChartBaseline=28, got %d", viewData.ChartBaseline)
+		t.Fatalf("expected ChartBaseline=28, got %v", viewData.ChartBaseline)
 	}
 	if len(viewData.ChartData.Labels) != 2 || viewData.ChartData.Labels[0] != "Cycle 1" || viewData.ChartData.Labels[1] != "Cycle 2" {
 		t.Fatalf("unexpected chart labels: %#v", viewData.ChartData.Labels)
@@ -425,7 +428,7 @@ func TestBuildStatsPageViewDataUnsupportedRoleSkipsBaselineAndSymptomLoading(t *
 		t.Fatalf("expected IsOwner=false")
 	}
 	if viewData.ChartData.HasBaseline || viewData.ChartData.Baseline != 0 || viewData.ChartBaseline != 0 {
-		t.Fatalf("expected no chart baseline for unsupported role, got chart=%#v baseline=%d", viewData.ChartData, viewData.ChartBaseline)
+		t.Fatalf("expected no chart baseline for unsupported role, got chart=%#v baseline=%v", viewData.ChartData, viewData.ChartBaseline)
 	}
 	if len(viewData.SymptomCounts) != 0 {
 		t.Fatalf("expected no symptom counts for unsupported role, got %#v", viewData.SymptomCounts)

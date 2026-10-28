@@ -44,10 +44,11 @@ func TestFormatBBTLocalizedMessageMutKill(t *testing.T) {
 }
 
 // The range copy names the bounds without the padding a fixed two-decimal
-// format adds ("34-43 °C", not "34.00-43.00 °C"), while the input attributes
-// the browser validates against keep the two decimals. Both halves are pinned
-// here: trimming the attributes too would change what `data-temperature-min`
-// carries, and trimming nothing brings the lab-style copy back.
+// format adds ("34-43 °C", not "34.00-43.00 °C") and with the language's
+// decimal separator, while the input attributes the browser validates against
+// keep the two decimals and a ".". Both halves are pinned here: formatting the
+// attributes too would change what `data-temperature-min` carries, and
+// formatting nothing brings the lab-style copy back.
 func TestBuildBBTFieldViewDataTrimsRangeCopyZeros(t *testing.T) {
 	patterns := map[string]string{
 		"dashboard.bbt_range_hint":  "hint %s-%s %s",
@@ -55,7 +56,7 @@ func TestBuildBBTFieldViewDataTrimsRangeCopyZeros(t *testing.T) {
 	}
 
 	t.Run("celsius bounds read as whole degrees", func(t *testing.T) {
-		view := buildBBTFieldViewData(patterns, services.TemperatureUnitCelsius)
+		view := buildBBTFieldViewData(patterns, "en", services.TemperatureUnitCelsius)
 		if view.RangeHint != "hint 34-43 °C" {
 			t.Fatalf("expected trimmed celsius hint, got %q", view.RangeHint)
 		}
@@ -68,7 +69,7 @@ func TestBuildBBTFieldViewDataTrimsRangeCopyZeros(t *testing.T) {
 	})
 
 	t.Run("fahrenheit bounds keep the decimal they need", func(t *testing.T) {
-		view := buildBBTFieldViewData(patterns, services.TemperatureUnitFahrenheit)
+		view := buildBBTFieldViewData(patterns, "en", services.TemperatureUnitFahrenheit)
 		if view.RangeHint != "hint 93.2-109.4 °F" {
 			t.Fatalf("expected one-decimal fahrenheit hint, got %q", view.RangeHint)
 		}
@@ -80,11 +81,13 @@ func TestBuildBBTFieldViewDataTrimsRangeCopyZeros(t *testing.T) {
 		}
 	})
 
-	t.Run("a label without a decimal point is untouched", func(t *testing.T) {
-		// Guards the `strings.Contains` branch: without it, TrimRight would eat
-		// the trailing zeros of an integer label such as "100".
-		if got := trimTemperatureLabelZeros("100"); got != "100" {
-			t.Fatalf("expected an integer label to survive the trim, got %q", got)
+	t.Run("the copy takes the language's decimal separator, the attributes do not", func(t *testing.T) {
+		view := buildBBTFieldViewData(patterns, "de", services.TemperatureUnitFahrenheit)
+		if view.RangeHint != "hint 93,2-109,4 °F" || view.RangeError != "error 93,2-109,4 °F" {
+			t.Fatalf("expected comma bounds in the copy, got %q / %q", view.RangeHint, view.RangeError)
+		}
+		if view.Min != "93.20" || view.Max != "109.40" {
+			t.Fatalf("the validated input bounds must keep a dot, got %q-%q", view.Min, view.Max)
 		}
 	})
 }

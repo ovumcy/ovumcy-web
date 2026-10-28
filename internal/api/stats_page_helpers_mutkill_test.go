@@ -28,7 +28,7 @@ func TestBuildStatsCycleChartSummaryMutKill(t *testing.T) {
 		got := buildStatsCycleChartSummary(map[string]string{
 			"stats.cycle_chart_summary": "CY[%d] latest=%d %s avg=%d %s min=%d max=%d %s",
 			"common.days_short":         "d",
-		}, services.StatsPageViewData{
+		}, "en", services.StatsPageViewData{
 			Flags:         services.StatsFlags{HasTrendData: true},
 			ChartData:     services.StatsChartViewData{Values: []int{27, 31}},
 			ChartBaseline: 29,
@@ -44,7 +44,7 @@ func TestBuildStatsCycleChartSummaryMutKill(t *testing.T) {
 		got := buildStatsCycleChartSummary(map[string]string{
 			"stats.cycle_chart_summary_no_baseline": "NOBASE[%d] latest=%d %s min=%d max=%d %s",
 			"common.days_short":                     "d",
-		}, services.StatsPageViewData{
+		}, "en", services.StatsPageViewData{
 			Flags:         services.StatsFlags{HasTrendData: true},
 			ChartData:     services.StatsChartViewData{Values: []int{27, 33}},
 			ChartBaseline: 0,
@@ -68,7 +68,7 @@ func TestBuildStatsBBTChartSummaryMutKill(t *testing.T) {
 		got := buildStatsBBTChartSummary(map[string]string{
 			"stats.bbt_chart_summary": "CNT[%d] base=%.2f %s",
 			"stats.bbt_unit":          "u",
-		}, services.StatsBBTChartViewData{
+		}, "en", services.StatsBBTChartViewData{
 			Values:      []*float64{f(36.4), nil, f(36.6), f(36.8)},
 			Baseline:    36.5,
 			HasBaseline: true,
@@ -88,7 +88,7 @@ func TestBuildStatsBBTChartSummaryMutKill(t *testing.T) {
 			"stats.bbt_chart_summary_with_marker": "MARK[%d] base=%.2f %s label=%s",
 			"stats.bbt_unit":                      "u",
 			"stats.ovulation_marker":              "Ov",
-		}, services.StatsBBTChartViewData{
+		}, "en", services.StatsBBTChartViewData{
 			Values:         []*float64{f(36.4), f(36.6)},
 			Baseline:       36.5,
 			HasBaseline:    true,

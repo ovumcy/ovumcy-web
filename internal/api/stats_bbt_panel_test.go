@@ -89,7 +89,7 @@ func TestStatsPageDatesTheMarkerAndFlagsItsTableRow(t *testing.T) {
 		t.Fatalf("expected exactly one marked table row, got %d", len(rows))
 	}
 	summary := htmlNodeText(htmlElementByID(document, "stats-bbt-summary"))
-	if !strings.Contains(summary, "Coverline 36.5°C") || strings.Contains(summary, "36.50") {
+	if !strings.Contains(summary, "Coverline 36.5\xc2\xa0°C") || strings.Contains(summary, "36.50") {
 		t.Fatalf("expected the coverline at the table's precision and spacing, got %q", summary)
 	}
 	if !strings.Contains(summary, "Probable ovulation, ") {

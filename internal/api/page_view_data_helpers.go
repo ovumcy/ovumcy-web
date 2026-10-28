@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -16,7 +15,7 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 	if err != nil {
 		return nil, err
 	}
-	bbtView := buildBBTFieldViewData(messages, user.TemperatureUnit)
+	bbtView := buildBBTFieldViewData(messages, language, user.TemperatureUnit)
 	formAccount, err := handler.dayFormAccountBinding(user)
 	if err != nil {
 		return nil, err // codecov:ignore -- NewHandler refuses an empty secret and a signed-in user has a non-zero id
@@ -127,7 +126,7 @@ func (handler *Handler) buildDayEditorPartialData(ctx context.Context, user *mod
 	if err != nil {
 		return nil, err
 	}
-	bbtView := buildBBTFieldViewData(messages, user.TemperatureUnit)
+	bbtView := buildBBTFieldViewData(messages, language, user.TemperatureUnit)
 	formAccount, err := handler.dayFormAccountBinding(user)
 	if err != nil {
 		return nil, err // codecov:ignore -- NewHandler refuses an empty secret and a signed-in user has a non-zero id
@@ -189,16 +188,16 @@ type bbtFieldViewData struct {
 	RangeError string
 }
 
-func buildBBTFieldViewData(messages map[string]string, unit string) bbtFieldViewData {
+func buildBBTFieldViewData(messages map[string]string, language string, unit string) bbtFieldViewData {
 	resolvedUnit := services.NormalizeTemperatureUnit(unit)
 	min, max := services.TemperatureUnitRange(resolvedUnit)
 	symbol := services.TemperatureUnitSymbol(resolvedUnit)
 	minLabel := fmt.Sprintf("%.2f", min)
 	maxLabel := fmt.Sprintf("%.2f", max)
 	// The input attributes stay machine-readable at two decimals; the copy the
-	// owner reads drops the padding zeros (34-43 °C, 93.2-109.4 °F).
-	minText := trimTemperatureLabelZeros(minLabel)
-	maxText := trimTemperatureLabelZeros(maxLabel)
+	// owner reads is the shared number format (34-43 °C, 93,2-109,4 °F in de).
+	minText := services.FormatLocalizedNumber(language, min)
+	maxText := services.FormatLocalizedNumber(language, max)
 
 	return bbtFieldViewData{
 		Unit:       resolvedUnit,
@@ -208,16 +207,6 @@ func buildBBTFieldViewData(messages map[string]string, unit string) bbtFieldView
 		RangeHint:  formatBBTLocalizedMessage(messages, "dashboard.bbt_range_hint", "Allowed range: %s-%s %s.", minText, maxText, symbol),
 		RangeError: formatBBTLocalizedMessage(messages, "dashboard.bbt_range_error", "Enter a value between %s and %s %s.", minText, maxText, symbol),
 	}
-}
-
-// trimTemperatureLabelZeros drops the padding a fixed two-decimal format adds:
-// "34.00" reads as "34", "93.20" as "93.2". A label without a decimal point is
-// returned untouched, so the trim can never eat an integer's own zeros.
-func trimTemperatureLabelZeros(label string) string {
-	if !strings.Contains(label, ".") {
-		return label
-	}
-	return strings.TrimSuffix(strings.TrimRight(label, "0"), ".")
 }
 
 func formatBBTLocalizedMessage(messages map[string]string, key string, fallback string, min string, max string, symbol string) string {

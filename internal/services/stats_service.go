@@ -160,13 +160,17 @@ func TrimTrailingCycleTrendLengths(lengths []int, maxPoints int) []int {
 	return lengths[len(lengths)-maxPoints:]
 }
 
-func (service *StatsService) BuildTrend(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location, maxTrendPoints int) ([]int, int) {
+// BuildTrend returns the plotted cycle lengths and their exact average. The
+// average is not rounded here: every surface rounds it through
+// FormatLocalizedNumber, so the chart caption cannot disagree with the card
+// beside it (30.5 against 31).
+func (service *StatsService) BuildTrend(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location, maxTrendPoints int) ([]int, float64) {
 	lengths := CompletedCycleTrendLengths(logs, now, location, BoundaryContextFor(user, DateAtLocation(now, location)))
 	lengths = TrimTrailingCycleTrendLengths(lengths, maxTrendPoints)
 	if len(lengths) == 0 {
 		return lengths, 0
 	}
-	return lengths, int(averageInts(lengths) + 0.5)
+	return lengths, averageInts(lengths)
 }
 
 // BuildFlags reads the completed-cycle count off stats.CompletedCycleCount, the

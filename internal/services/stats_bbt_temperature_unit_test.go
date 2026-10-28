@@ -55,7 +55,7 @@ func TestStatsBBTChartSpeaksTheOwnersTemperatureUnit(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.unit, func(t *testing.T) {
-			chart := stored.inTemperatureUnit(tc.unit)
+			chart := stored.inTemperatureUnit("en", tc.unit)
 
 			if got := chart.UnitLabelKey(); got != tc.labelKey {
 				t.Fatalf("unit label key = %q, want %q", got, tc.labelKey)

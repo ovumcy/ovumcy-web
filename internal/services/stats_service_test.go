@@ -226,7 +226,7 @@ func TestBuildTrendAndFlags(t *testing.T) {
 		t.Fatalf("expected trimmed trend lengths [28 28], got %#v", lengths)
 	}
 	if baseline != 28 {
-		t.Fatalf("expected baseline 28, got %d", baseline)
+		t.Fatalf("expected baseline 28, got %v", baseline)
 	}
 
 	stats := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
