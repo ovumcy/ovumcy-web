@@ -36,11 +36,22 @@ function page({ question = QUESTION, checked = true } = {}) {
 </body></html>`;
 }
 
-async function load(options) {
+// `answer`, when given, is the X-Ovumcy-Period-Off-Confirm value every save is
+// answered with (null: the header is absent); without it saves never answer.
+async function load(options = {}) {
   const dom = await loadDOMWithScript(APP_BUNDLE, {
     html: page(options),
     beforeRun: (window) => {
-      window.fetch = () => new Promise(() => {});
+      if (!("answer" in options)) {
+        window.fetch = () => new Promise(() => {});
+        return;
+      }
+      window.fetch = () => Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: (name) => (name === "X-Ovumcy-Period-Off-Confirm" ? options.answer : null) },
+        text: () => Promise.resolve(""),
+      });
     },
   });
   const { document } = dom.window;
@@ -130,5 +141,65 @@ test("a toggle without the question un-ticks at once, and ticking never asks", a
     assert.equal(unticked.modal.classList.contains("hidden"), true);
   } finally {
     unticked.window.close();
+  }
+});
+
+test("the quick action un-ticks a toggle without the question as the owner's click would", async () => {
+  const { window, toggle, modal, events } = await load({ question: "" });
+  try {
+    window.document.querySelector("[data-quick-action='period']").click();
+    assert.equal(toggle.checked, false);
+    assert.equal(modal.classList.contains("hidden"), true);
+    assert.deepEqual(events, ["input", "change"]);
+  } finally {
+    window.close();
+  }
+});
+
+// The form stays open after its save, so the save's answer replaces the
+// question the toggle was rendered with: a saved tick can make the next
+// un-tick reach past the day, a saved un-tick leaves nothing to ask.
+const flushAndSettle = async (window) => {
+  await settle();
+  window.dispatchEvent(new window.Event("pagehide"));
+  for (let round = 0; round < 5; round++) {
+    await settle();
+  }
+};
+
+test("a saved tick hands the toggle the question its next un-tick asks", async () => {
+  const { window, toggle, modal } = await load({ question: "", checked: false, answer: encodeURIComponent(QUESTION) });
+  try {
+    toggle.click();
+    await flushAndSettle(window);
+    assert.equal(toggle.getAttribute("data-period-off-confirm"), QUESTION);
+
+    toggle.click();
+    assert.equal(toggle.checked, true, "the un-tick after the save is held for the question");
+    assert.equal(modal.classList.contains("hidden"), false);
+  } finally {
+    window.close();
+  }
+});
+
+test("a saved un-tick takes the question away, and an answer without the header keeps it", async () => {
+  const cleared = await load({ answer: "" });
+  try {
+    cleared.toggle.click();
+    cleared.window.document.getElementById("confirm-modal-accept").click();
+    await flushAndSettle(cleared.window);
+    assert.equal(cleared.toggle.hasAttribute("data-period-off-confirm"), false);
+  } finally {
+    cleared.window.close();
+  }
+
+  const kept = await load({ answer: null });
+  try {
+    kept.toggle.click();
+    kept.window.document.getElementById("confirm-modal-accept").click();
+    await flushAndSettle(kept.window);
+    assert.equal(kept.toggle.getAttribute("data-period-off-confirm"), QUESTION);
+  } finally {
+    kept.window.close();
   }
 });

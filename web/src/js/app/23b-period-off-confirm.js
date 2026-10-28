@@ -27,3 +27,23 @@
       });
     }, true);
   }
+
+  // A day save answers with the question the saved day's toggle asks from then
+  // on (X-Ovumcy-Period-Off-Confirm, empty when it asks nothing): both day forms
+  // stay open after a save, so the question they were rendered with goes stale.
+  // An answer without the header leaves that question as it is.
+  function applyPeriodOffConfirmHeader(form, raw) {
+    var toggle = form && form.querySelector ? form.querySelector("input[data-period-toggle]") : null;
+    var question;
+    if (!toggle || raw === null || raw === undefined) {
+      return;
+    }
+    question = window.__ovumcyDecodeResponseNoticeHeader(raw);
+    if (question) {
+      toggle.setAttribute("data-period-off-confirm", question);
+    } else {
+      toggle.removeAttribute("data-period-off-confirm");
+    }
+  }
+
+  window.__ovumcyApplyPeriodOffConfirmHeader = applyPeriodOffConfirmHeader;

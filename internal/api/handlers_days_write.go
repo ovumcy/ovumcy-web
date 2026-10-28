@@ -141,6 +141,9 @@ func (handler *Handler) completeDayWrite(c fiber.Ctx, request upsertDayRequest, 
 	if request.payload.ConfirmCycleStart && entry.CycleStart {
 		handler.logMutationSuccess(c, cycleStartMarkMutation)
 	}
+	if isHTMX(c) && !dayFormNavigation(c) {
+		handler.setPeriodOffConfirmHeader(c, request, entry)
+	}
 	return handler.respondUpsertDaySuccess(c, request.day, entry, feedback, feedbackErr)
 }
 

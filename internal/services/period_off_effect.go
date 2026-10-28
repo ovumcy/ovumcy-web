@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+	"fmt"
 	"slices"
 	"time"
 
@@ -54,37 +56,56 @@ func periodOffEffectFor(user *models.User, logs []models.DailyLog, day time.Time
 		return PeriodOffEffect{}
 	}
 
-	today := DateAtLocation(now, location)
-	before := CycleBoundaries(logs, BoundaryContextFor(user, today))
-
-	after := slices.Clone(logs)
-	if found {
-		after[anchorIndex].IsPeriod = false
-		after[anchorIndex].CycleStart = false
-		after[anchorIndex].IsUncertain = false
-		after[anchorIndex].Flow = models.FlowNone
-	}
-	afterCtx := BoundaryContextFor(user, today)
-	if user.LastPeriodStart != nil && CalendarDayKey(dateOnly(*user.LastPeriodStart)) == dayKey {
-		afterCtx.OnboardingStart = time.Time{}
-	}
-
+	cleared := map[string]bool{dayKey: true}
 	effect := PeriodOffEffect{}
 	if found && user.AutoPeriodFill && !periodOffPreviousDayIsPeriod(logs, byDay, day, location) {
 		periodLength := normalizedAutoFillPeriodLength(user.PeriodLength)
 		for offset := 1; offset < periodLength; offset++ {
-			index, ok := byDay[CalendarDayKey(AddCalendarDays(day, offset, location))]
+			key := CalendarDayKey(AddCalendarDays(day, offset, location))
+			index, ok := byDay[key]
 			if !ok || !IsAutoFilledPeriodCandidate(logs[index], anchor.Flow) {
 				break
 			}
-			after[index].IsPeriod = false
-			after[index].Flow = models.FlowNone
+			cleared[key] = true
 			effect.ClearedDays++
 		}
 	}
 
-	effect.MovesCycleStart = !slices.EqualFunc(before, CycleBoundaries(after, afterCtx), time.Time.Equal)
+	// Only period days take part in the boundaries (periodDaysOf), so both
+	// sides are read over them alone rather than over a copy of the history.
+	before := make([]models.DailyLog, 0, len(logs)/4)
+	after := make([]models.DailyLog, 0, len(logs)/4)
+	for _, entry := range logs {
+		if !entry.IsPeriod {
+			continue
+		}
+		before = append(before, entry)
+		if !cleared[CalendarDayKey(entry.Date)] {
+			after = append(after, entry)
+		}
+	}
+	today := DateAtLocation(now, location)
+	afterCtx := BoundaryContextFor(user, today)
+	if user.LastPeriodStart != nil && CalendarDayKey(dateOnly(*user.LastPeriodStart)) == dayKey {
+		afterCtx.OnboardingStart = time.Time{}
+	}
+	effect.MovesCycleStart = !slices.EqualFunc(CycleBoundaries(before, BoundaryContextFor(user, today)), CycleBoundaries(after, afterCtx), time.Time.Equal)
 	return effect
+}
+
+// PeriodOffEffectAfterSave is the effect a day form that stays open after its
+// save carries from then on: the save changed what un-ticking that day would
+// reach, and nothing re-renders the form. A saved day without its period has
+// nothing to un-tick.
+func (service *DashboardViewService) PeriodOffEffectAfterSave(ctx context.Context, user *models.User, saved models.DailyLog, day time.Time, now time.Time, location *time.Location) (PeriodOffEffect, error) {
+	if !saved.IsPeriod || !IsOwnerUser(user) {
+		return PeriodOffEffect{}, nil
+	}
+	logs, err := service.days.FetchAllLogsForUser(ctx, user.ID)
+	if err != nil {
+		return PeriodOffEffect{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadLogs, err)
+	}
+	return periodOffEffectFor(user, logs, day, now, location), nil
 }
 
 func periodOffPreviousDayIsPeriod(logs []models.DailyLog, byDay map[string]int, day time.Time, location *time.Location) bool {

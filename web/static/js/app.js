@@ -1268,6 +1268,26 @@
     }, true);
   }
 
+  // A day save answers with the question the saved day's toggle asks from then
+  // on (X-Ovumcy-Period-Off-Confirm, empty when it asks nothing): both day forms
+  // stay open after a save, so the question they were rendered with goes stale.
+  // An answer without the header leaves that question as it is.
+  function applyPeriodOffConfirmHeader(form, raw) {
+    var toggle = form && form.querySelector ? form.querySelector("input[data-period-toggle]") : null;
+    var question;
+    if (!toggle || raw === null || raw === undefined) {
+      return;
+    }
+    question = window.__ovumcyDecodeResponseNoticeHeader(raw);
+    if (question) {
+      toggle.setAttribute("data-period-off-confirm", question);
+    } else {
+      toggle.removeAttribute("data-period-off-confirm");
+    }
+  }
+
+  window.__ovumcyApplyPeriodOffConfirmHeader = applyPeriodOffConfirmHeader;
+
   var PWA_INSTALL_DISMISS_STORAGE_KEY = "ovumcy_pwa_install_hidden_v1";
   var PWA_INSTALL_FALLBACK_DELAY_MS = 1200;
 
@@ -2759,6 +2779,9 @@
         daySaveRefusalIgnored(form, xhr ? xhr.responseText : "");
       setSaveButtonState(form, false);
       showResponseNotice(xhr);
+      if (form && xhr && event.detail.successful && typeof window.__ovumcyApplyPeriodOffConfirmHeader === "function") {
+        window.__ovumcyApplyPeriodOffConfirmHeader(form, xhr.getResponseHeader("X-Ovumcy-Period-Off-Confirm"));
+      }
       // A stale refusal leaves the indicator to the newer save that answered.
       if (!ignored && form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
         window.__ovumcyFinalizeDashboardManualSave(form);
@@ -5135,6 +5158,9 @@
           form.__ovumcyAutosaveUndo = previousState;
         }
         form.__ovumcyPersistedState = sentState;
+        if (typeof window.__ovumcyApplyPeriodOffConfirmHeader === "function") {
+          window.__ovumcyApplyPeriodOffConfirmHeader(form, response.headers.get("X-Ovumcy-Period-Off-Confirm"));
+        }
       }
       form.__ovumcyAutosaveFailed = false;
       setDashboardAutosaveIndicator(form, "saved");
@@ -5201,20 +5227,17 @@
     var periodToggle = root.querySelector("[data-period-toggle]");
     var moodSection = root.querySelector("[data-dashboard-section='mood']");
     var symptomSection = root.querySelector("[data-dashboard-section='symptoms']");
+    var periodWasTicked;
 
     switch (action) {
       case "period":
         if (!periodToggle) {
           return;
         }
-        // An un-tick with a question goes through the click the question holds.
-        if (periodToggle.checked && periodToggle.hasAttribute("data-period-off-confirm")) {
-          periodToggle.click();
-          break;
-        }
-        periodToggle.checked = !periodToggle.checked;
-        periodToggle.dispatchEvent(new Event("change", { bubbles: true }));
-        if (periodToggle.checked) {
+        // The owner's own click, so an un-tick with a question is held by it.
+        periodWasTicked = periodToggle.checked;
+        periodToggle.click();
+        if (!periodWasTicked && periodToggle.checked) {
           maybeAcknowledgePeriodTip(root);
         }
         break;

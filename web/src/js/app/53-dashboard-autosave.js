@@ -899,6 +899,9 @@
           form.__ovumcyAutosaveUndo = previousState;
         }
         form.__ovumcyPersistedState = sentState;
+        if (typeof window.__ovumcyApplyPeriodOffConfirmHeader === "function") {
+          window.__ovumcyApplyPeriodOffConfirmHeader(form, response.headers.get("X-Ovumcy-Period-Off-Confirm"));
+        }
       }
       form.__ovumcyAutosaveFailed = false;
       setDashboardAutosaveIndicator(form, "saved");
@@ -965,20 +968,17 @@
     var periodToggle = root.querySelector("[data-period-toggle]");
     var moodSection = root.querySelector("[data-dashboard-section='mood']");
     var symptomSection = root.querySelector("[data-dashboard-section='symptoms']");
+    var periodWasTicked;
 
     switch (action) {
       case "period":
         if (!periodToggle) {
           return;
         }
-        // An un-tick with a question goes through the click the question holds.
-        if (periodToggle.checked && periodToggle.hasAttribute("data-period-off-confirm")) {
-          periodToggle.click();
-          break;
-        }
-        periodToggle.checked = !periodToggle.checked;
-        periodToggle.dispatchEvent(new Event("change", { bubbles: true }));
-        if (periodToggle.checked) {
+        // The owner's own click, so an un-tick with a question is held by it.
+        periodWasTicked = periodToggle.checked;
+        periodToggle.click();
+        if (!periodWasTicked && periodToggle.checked) {
           maybeAcknowledgePeriodTip(root);
         }
         break;

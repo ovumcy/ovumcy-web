@@ -1054,6 +1054,9 @@
         daySaveRefusalIgnored(form, xhr ? xhr.responseText : "");
       setSaveButtonState(form, false);
       showResponseNotice(xhr);
+      if (form && xhr && event.detail.successful && typeof window.__ovumcyApplyPeriodOffConfirmHeader === "function") {
+        window.__ovumcyApplyPeriodOffConfirmHeader(form, xhr.getResponseHeader("X-Ovumcy-Period-Off-Confirm"));
+      }
       // A stale refusal leaves the indicator to the newer save that answered.
       if (!ignored && form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
         window.__ovumcyFinalizeDashboardManualSave(form);

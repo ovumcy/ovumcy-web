@@ -97,6 +97,22 @@ test.describe('calendar auto-fill clear-on-toggle-off', () => {
     }
   });
 
+  test('asks before un-ticking a period saved in the same open editor', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-autofill-same-form');
+
+    const todayISO = await todayISOFromCalendar(page);
+    const anchorISO = autofillAnchorISO(todayISO);
+
+    // The form rendered unticked, so only the save's answer can carry the question.
+    const form = await openCalendarDayEditor(page, anchorISO);
+    await form.locator('input[name="is_period"]').check();
+    await saveDayEditorForm(page, anchorISO, form);
+
+    expect(await untickPeriodThroughConfirm(page, form.locator('input[name="is_period"]'))).toBe(
+      localeTextWithCount('en', 'dashboard.period_off_confirm.moves_start_and_clears', 4),
+    );
+  });
+
   test('preserves a manual annotation while clearing the rest of the auto-fill window', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-autofill-preserve');
 
