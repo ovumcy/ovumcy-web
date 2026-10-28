@@ -308,15 +308,16 @@
           data-hover-empty-text='{{t .Messages "stats.bbt_table_no_reading"}}'
           role="img"
           aria-labelledby="stats-bbt-title"
-          aria-describedby="stats-bbt-summary stats-bbt-caption"
+          aria-describedby="stats-bbt-summary stats-bbt-caption stats-bbt-table-toggle"
           class="chart-shell">
         </div>
         <p id="stats-bbt-summary" class="journal-muted mt-3 text-xs">{{.BBTChartSummary}}</p>
+        {{if .BBTChartData.baseline}}<p class="journal-muted mt-2 text-xs" data-bbt-coverline-hint>{{t .Messages "stats.bbt_coverline_hint"}}</p>{{end}}
         <p id="stats-bbt-caption" class="journal-muted mt-2 text-sm">{{t .Messages "stats.bbt_caption"}}</p>
         {{$bbtUnit := .BBTUnitLabel}}
         {{$bbtNoReading := t .Messages "stats.bbt_table_no_reading"}}
         <details class="chart-table-disclosure mt-3" data-bbt-table-disclosure>
-          <summary class="chart-table-summary">{{t .Messages "stats.bbt_table_toggle"}}</summary>
+          <summary id="stats-bbt-table-toggle" class="chart-table-summary">{{t .Messages "stats.bbt_table_toggle"}}</summary>
           <div class="chart-table-scroll">
             <table class="chart-table" data-bbt-table>
               <caption class="chart-table-caption">{{t .Messages "stats.bbt_table_caption"}}</caption>
@@ -329,8 +330,8 @@
               </thead>
               <tbody>
                 {{range .BBTChartPoints}}
-                <tr data-bbt-table-row data-cycle-day="{{.Day}}">
-                  <th scope="row">{{.DayLabel}}</th>
+                <tr data-bbt-table-row data-cycle-day="{{.Day}}"{{if .IsMarker}} data-bbt-marker-row{{end}}>
+                  <th scope="row">{{.DayLabel}}{{if .IsMarker}} <span class="chart-table-marker">({{t $.Messages "stats.bbt_probable_ovulation"}})</span>{{end}}</th>
                   <td>{{.Date}}</td>
                   <td data-bbt-table-value>{{if .HasValue}}{{.ValueText}}{{$bbtUnit}}{{else}}{{$bbtNoReading}}{{end}}</td>
                 </tr>
@@ -339,6 +340,11 @@
             </table>
           </div>
         </details>
+      </section>
+      {{else if .BBTReadingsRequired}}
+      <section class="card p-4 sm:p-5 stats-trend-panel" data-stats-bbt-hint>
+        <h2 class="journal-subtitle">{{t .Messages "stats.bbt_title"}}</h2>
+        <p class="journal-muted mt-2 text-sm">{{printf (t .Messages "stats.bbt_need_readings") .BBTReadingsRequired .BBTReadingCount}}</p>
       </section>
       {{end}}
     </div>

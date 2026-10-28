@@ -8,6 +8,8 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+const minimumBBTChartReadings = 5
+
 type StatsBBTChartViewData struct {
 	Labels         []string
 	Values         []*float64
@@ -18,6 +20,14 @@ type StatsBBTChartViewData struct {
 	MarkerLabelKey string
 	HasMarker      bool
 	Points         []StatsBBTChartPointViewData
+	// MarkerDate is the calendar date of the marker, so the text that names the
+	// probable ovulation can say which day it is.
+	MarkerDate string
+	// ReadingCount and ReadingsRequired are set while the cycle has fewer
+	// readings than the chart needs, so the page can say how far along it is
+	// instead of dropping the panel without a word.
+	ReadingCount     int
+	ReadingsRequired int
 	// TemperatureUnit is the unit every number above is expressed in. The zero
 	// value is storage's Celsius; inTemperatureUnit is the only way to another.
 	TemperatureUnit string
@@ -26,6 +36,11 @@ type StatsBBTChartViewData struct {
 // UnitLabelKey names the catalogue entry for the unit the chart's numbers are
 // in, so the axis suffix, the table and the text summary print the unit the
 // values were converted to rather than a fixed one.
+// BaselineText prints the coverline at the precision of every other reading.
+func (chart StatsBBTChartViewData) BaselineText() string {
+	return formatBBTChartPointValue(chart.Baseline)
+}
+
 func (chart StatsBBTChartViewData) UnitLabelKey() string {
 	if NormalizeTemperatureUnit(chart.TemperatureUnit) == TemperatureUnitFahrenheit {
 		return "stats.bbt_unit_fahrenheit"
@@ -80,6 +95,7 @@ type StatsBBTChartPointViewData struct {
 	Date      string
 	ValueText string
 	HasValue  bool
+	IsMarker  bool
 }
 
 type StatsSymptomPatternViewData struct {
@@ -250,14 +266,19 @@ func buildCurrentCycleBBTChart(language string, stats CycleStats, logs []models.
 	recordedDays, dayValues := collectCurrentCycleBBTPoints(logs, cycleStart, today, location)
 	labels, values, ok := buildCurrentCycleBBTSeries(recordedDays, dayValues)
 	if !ok {
-		return StatsBBTChartViewData{}
+		return StatsBBTChartViewData{ReadingCount: len(recordedDays), ReadingsRequired: minimumBBTChartReadings}
 	}
 
 	detectionDays, detectionValues := bbtSeriesFromPoints(collectCycleBBTPoints(logs, cycleStart, currentCycleDetectionBound(today, location), location))
 	firstHighDay, coverline, hasShift := detectBBTShiftFirstHighDay(detectionDays, detectionValues)
 	markerIndex, hasMarker := probableOvulationMarkerIndex(firstHighDay, hasShift, len(labels))
 	points := buildCurrentCycleBBTChartPoints(language, cycleStart, labels, values)
-	return newCurrentCycleBBTChartViewData(labels, values, coverline, hasShift, markerIndex, hasMarker, points)
+	chart := newCurrentCycleBBTChartViewData(labels, values, coverline, hasShift, markerIndex, hasMarker, points)
+	if hasMarker {
+		chart.MarkerDate = points[markerIndex].Date
+		chart.Points[markerIndex].IsMarker = true
+	}
+	return chart
 }
 
 // buildOwnerCurrentCycleBBTChart is the chart the stats page draws. The
@@ -271,9 +292,15 @@ func buildCurrentCycleBBTChart(language string, stats CycleStats, logs []models.
 // chart under every one of them.
 func buildOwnerCurrentCycleBBTChart(user *models.User, language string, stats CycleStats, logs []models.DailyLog, now time.Time, location *time.Location) StatsBBTChartViewData {
 	chart := buildCurrentCycleBBTChart(language, stats, logs, now, location)
+	if !user.TrackBBT {
+		chart.ReadingCount, chart.ReadingsRequired = 0, 0
+	}
 	if _, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location); !confirmed {
 		chart.Baseline, chart.HasBaseline = 0, false
-		chart.MarkerIndex, chart.HasMarker = 0, false
+		chart.MarkerIndex, chart.HasMarker, chart.MarkerDate = 0, false, ""
+		for index := range chart.Points {
+			chart.Points[index].IsMarker = false
+		}
 	}
 	return chart
 }
@@ -349,7 +376,7 @@ func collectCurrentCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, 
 }
 
 func buildCurrentCycleBBTSeries(recordedDays []int, dayValues map[int]float64) ([]string, []*float64, bool) {
-	if len(recordedDays) < 5 {
+	if len(recordedDays) < minimumBBTChartReadings {
 		return nil, nil, false
 	}
 

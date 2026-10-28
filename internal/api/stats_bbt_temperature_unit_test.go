@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -81,7 +80,7 @@ func TestStatsPageBBTSurfacesAgreeOnTheOwnersUnit(t *testing.T) {
 			if summary == nil {
 				t.Fatal("expected the BBT text summary")
 			}
-			if want := fmt.Sprintf("%.2f %s", tc.control, tc.symbol); !strings.Contains(htmlNodeText(summary), want) {
+			if want := tc.text + tc.symbol; !strings.Contains(htmlNodeText(summary), want) {
 				t.Fatalf("summary %q does not name the coverline as %q", htmlNodeText(summary), want)
 			}
 		})

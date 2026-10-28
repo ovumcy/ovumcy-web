@@ -141,20 +141,20 @@ func buildStatsBBTChartSummary(messages map[string]string, chart services.StatsB
 		return fmt.Sprintf(pattern, readingsCount)
 	}
 
-	unit := translateMessage(messages, chart.UnitLabelKey())
+	coverline := chart.BaselineText() + translateMessage(messages, chart.UnitLabelKey())
 	if chart.HasMarker && chart.MarkerLabelKey != "" {
 		pattern, translated := lookupMessage(messages, "stats.bbt_chart_summary_with_marker")
 		if !translated {
-			pattern = "%d readings this cycle. Coverline %.2f %s. Marker: %s."
+			pattern = "%d readings this cycle. Coverline %s. Marker: %s, %s."
 		}
-		return fmt.Sprintf(pattern, readingsCount, chart.Baseline, unit, translateMessage(messages, chart.MarkerLabelKey))
+		return fmt.Sprintf(pattern, readingsCount, coverline, translateMessage(messages, chart.MarkerLabelKey), chart.MarkerDate)
 	}
 
 	pattern, translated := lookupMessage(messages, "stats.bbt_chart_summary")
 	if !translated {
-		pattern = "%d readings this cycle. Coverline %.2f %s."
+		pattern = "%d readings this cycle. Coverline %s."
 	}
-	return fmt.Sprintf(pattern, readingsCount, chart.Baseline, unit)
+	return fmt.Sprintf(pattern, readingsCount, coverline)
 }
 
 func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, error) {
@@ -226,6 +226,8 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"HasLastCycleSymptoms":                viewData.HasLastCycleSymptoms,
 		"HasSymptomPatterns":                  viewData.HasSymptomPatterns,
 		"HasCurrentCycleBBTChart":             viewData.HasCurrentCycleBBTChart,
+		"BBTReadingCount":                     viewData.CurrentCycleBBTChart.ReadingCount,
+		"BBTReadingsRequired":                 viewData.CurrentCycleBBTChart.ReadingsRequired,
 		"HasPhaseMoodInsights":                viewData.HasPhaseMoodInsights,
 		"HasPhaseSymptomInsights":             viewData.HasPhaseSymptomInsights,
 		"ShowIrregularityNotice":              viewData.ShowIrregularityNotice,
