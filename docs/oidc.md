@@ -454,7 +454,7 @@ After a local password is set:
 - recovery-code generation becomes available (not under `oidc_only`, where `POST /api/v1/users/current/recovery-code` answers `403 recovery code unavailable`);
 - password-confirmed sensitive actions become available.
 
-An account that set its local password under `oidc_only` holds no recovery code; if the instance later moves to `hybrid`, the user generates one from `Settings` with that password. The same holds for an account whose operator-forced password change was completed after an OIDC sign-in under `oidc_only` (the reset signs the user in with no `/recovery-code` reveal), and for one created with `ovumcy users create` there, which prints that no code was issued even with `--show-recovery-code`.
+An account that set its local password under `oidc_only` holds no recovery code; if the instance later moves to `hybrid`, the user generates one from `Settings` with that password. The same holds for an account whose operator-forced password change was completed after an OIDC sign-in under `oidc_only` (the reset signs the user in with no `/recovery-code` reveal, and removes any code the account held from an earlier `hybrid` period — a written-down one stops working), and for one created with `ovumcy users create` there, which prints that no code was issued even with `--show-recovery-code`.
 
 ### Logout clears Ovumcy but does not sign the user out of the provider
 

@@ -6,4 +6,6 @@
   `ovumcy users create` still minted one. The forced change now saves the password and signs the
   user in with no code — `POST /api/v1/password-resets/redeem` answers `{"ok": true}` instead of
   pointing at `/recovery-code` — and `ovumcy users create` prints that no code was issued, even
-  with `--show-recovery-code`. `hybrid` instances are unchanged.
+  with `--show-recovery-code`. Like any reset, the forced change replaces the account's previous
+  code, so one kept from an earlier `hybrid` period stops working; after a move back to `hybrid`,
+  generate a new one in Settings. `hybrid` instances are unchanged.

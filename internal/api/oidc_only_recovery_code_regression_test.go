@@ -220,3 +220,32 @@ func TestForcedResetFromOIDCOnAnOIDCOnlyInstanceMintsNoRecoveryCode(t *testing.T
 	defer func() { _ = probeResponse.Body.Close() }()
 	assertStatusCode(t, probeResponse, http.StatusOK)
 }
+
+// The reset form is a plain browser POST, so the redirect branch is the one a
+// person actually takes: it goes to the post-login path, not the reveal.
+func TestForcedResetFromOIDCOnAnOIDCOnlyInstanceRedirectsPastTheReveal(t *testing.T) {
+	t.Parallel()
+
+	app, database, stub := newLocalAuthGateTestApp(t)
+	user := createOnboardingTestUser(t, database, "oidc-only-forced-reset-browser@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("must_change_password", true).Error; err != nil {
+		t.Fatalf("mark user must_change_password: %v", err)
+	}
+	user.MustChangePassword = true
+
+	resetCookieValue := forcedOIDCResetCookieFromCallback(t, app, stub, user)
+	stub.localPublicAuthEnabled = false
+
+	response := redeemResetCookieAsBrowser(t, app, resetCookieValue, "EvenStronger2")
+	defer func() { _ = response.Body.Close() }()
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/dashboard" {
+		t.Fatalf("expected a redirect to /dashboard, got %q", location)
+	}
+	if reveal := responseCookie(response.Cookies(), recoveryCodeCookieName); reveal != nil && strings.TrimSpace(reveal.Value) != "" {
+		t.Fatalf("expected no %s cookie on an oidc_only instance", recoveryCodeCookieName)
+	}
+	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		t.Fatal("expected the reset to issue a session")
+	}
+}
