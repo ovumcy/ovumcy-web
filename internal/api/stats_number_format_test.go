@@ -48,9 +48,21 @@ func TestStatsBBTChartSummaryPrintsTheCoverlineWithLocaleSeparatorAndUnitSpace(t
 	}
 }
 
+func TestTemplateNumberReadsEveryNumericFieldTypeAStatsPageHolds(t *testing.T) {
+	for _, value := range []any{float64(28), float32(28), 28, int32(28), int64(28), uint(28)} {
+		got, err := formatTemplateNumber("en", value)
+		if err != nil || got != "28" {
+			t.Fatalf("%T: got %q, %v", value, got, err)
+		}
+	}
+}
+
 func TestTemplateNumberRefusesATypeItCannotRead(t *testing.T) {
 	if _, err := formatTemplateNumber("en", "28"); err == nil {
 		t.Fatal("a string must fail the render, not print 0")
+	}
+	if _, err := formatTemplateQuantity("en", "28", "d"); err == nil {
+		t.Fatal("a string quantity must fail the render, not print 0")
 	}
 	if got, err := formatTemplateQuantity("de", 31, "d"); err != nil || got != "31\xc2\xa0d" {
 		t.Fatalf("int quantity: got %q, %v", got, err)
