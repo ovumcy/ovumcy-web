@@ -591,6 +591,7 @@
   "stats.symptom_frequency": "Frecuencia de síntomas",
   "stats.no_symptom_data": "Todavía no hay datos de síntomas.",
   "stats.no_cycle_data": "Todavía no hay suficientes datos del ciclo.",
+  "stats.chart_unavailable": "No se puede mostrar el gráfico.",
   "stats.empty_title": "Sigue registrando para desbloquear análisis",
   "stats.empty_body_zero.one": "Completa %d ciclo para desbloquear análisis. Empieza registrando el primer día de tu próximo periodo.",
   "stats.empty_body_zero.other": "Completa %d ciclos para desbloquear análisis. Empieza registrando el primer día de tu próximo periodo.",

@@ -446,6 +446,9 @@
     context.fillText(label, markerX + 6, padding.top + 4);
   }
 
+  var LABEL_GAP = 4;
+  var Y_LABEL_MARGIN = 2;
+
   function drawXLabels(context, labels, xForIndex, canvasHeight, padding, color) {
     context.fillStyle = color;
     context.font = "12px Quicksand, Nunito, sans-serif";
@@ -457,15 +460,26 @@
     }
 
     var step = Math.max(1, Math.ceil(labels.length / MAX_VISIBLE_LABELS));
-    var lastDrawnIndex = -1;
+    var indexes = [];
     for (var index = 0; index < labels.length; index += step) {
-      context.fillText(labels[index], xForIndex(index), canvasHeight - padding.bottom + 10);
-      lastDrawnIndex = index;
+      indexes.push(index);
     }
 
+    // The last day is always labelled. When it lands within a label of the
+    // stepped one before it, that one gives way: an unmeasured pair read as
+    // "1718".
     var lastIndex = labels.length - 1;
-    if (lastDrawnIndex !== lastIndex) {
-      context.fillText(labels[lastIndex], xForIndex(lastIndex), canvasHeight - padding.bottom + 10);
+    if (indexes[indexes.length - 1] !== lastIndex) {
+      var previous = indexes[indexes.length - 1];
+      var reach = (context.measureText(labels[previous]).width + context.measureText(labels[lastIndex]).width) / 2 + LABEL_GAP;
+      if (xForIndex(lastIndex) - xForIndex(previous) < reach) {
+        indexes.pop();
+      }
+      indexes.push(lastIndex);
+    }
+
+    for (var position = 0; position < indexes.length; position++) {
+      context.fillText(labels[indexes[position]], xForIndex(indexes[position]), canvasHeight - padding.bottom + 10);
     }
   }
 
@@ -679,6 +693,7 @@
     if (!isFiniteNumber(valueDecimals)) {
       valueDecimals = valueSuffix === "d" ? 0 : 1;
     }
+    var errorText = container.getAttribute("data-error-text") || "Unable to render chart.";
     var baselineLabel = container.getAttribute("data-baseline-label");
     if (baselineLabel === null) {
       baselineLabel = "Baseline";
@@ -688,7 +703,7 @@
     container.textContent = "";
 
     if (!chartData) {
-      renderMessage(container, "Unable to render chart.");
+      renderMessage(container, errorText);
       return;
     }
 
@@ -701,13 +716,11 @@
     var size = getContainerSize(container);
     var canvasBundle = createCanvas(container, size);
     if (!canvasBundle) {
-      renderMessage(container, "Unable to render chart.");
+      renderMessage(container, errorText);
       return;
     }
     var context = canvasBundle.context;
     var padding = { top: 26, right: 22, bottom: 40, left: 46 };
-    var innerWidth = size.width - padding.left - padding.right;
-    var innerHeight = size.height - padding.top - padding.bottom;
     var isFahrenheitUnit = container.getAttribute("data-value-unit") === "fahrenheit";
     var domain = createDomain(chartData.values, chartData.baseline, chartData.kind, isFahrenheitUnit);
 
@@ -715,6 +728,17 @@
       renderMessage(container, emptyText);
       return;
     }
+
+    var ticks = domainTicks(domain);
+
+    // The gutter follows the widest tick, so a three-digit °F label is not cut.
+    context.font = "12px Quicksand, Nunito, sans-serif";
+    for (var tickIndex = 0; tickIndex < ticks.length; tickIndex++) {
+      var tickWidth = context.measureText(formatChartValue(ticks[tickIndex], valueSuffix, valueDecimals)).width;
+      padding.left = Math.max(padding.left, Math.ceil(tickWidth) + 8 + Y_LABEL_MARGIN);
+    }
+    var innerWidth = size.width - padding.left - padding.right;
+    var innerHeight = size.height - padding.top - padding.bottom;
 
     var xForIndex = function (index) {
       if (chartData.labels.length <= 1) {
@@ -739,8 +763,6 @@
       label: cssVar("--text-muted", "#9b8b7a"),
       surface: cssVar("--bg-card", "#ffffff")
     };
-
-    var ticks = domainTicks(domain);
 
     context.clearRect(0, 0, size.width, size.height);
     drawGrid(context, padding, innerWidth, ticks, yForValue, colors.grid);
@@ -816,6 +838,15 @@
   });
 
   window.addEventListener("resize", scheduleRender);
+
+  // The canvas takes its ink from CSS variables read at draw time, so a system
+  // light/dark flip needs a repaint to reach it.
+  if (typeof window.matchMedia === "function") {
+    var colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
+    if (colorScheme && typeof colorScheme.addEventListener === "function") {
+      colorScheme.addEventListener("change", scheduleRender);
+    }
+  }
 
   // A touch readout has no pointerleave to end it, so it is dismissed the two
   // ways a transient overlay is expected to be: by touching elsewhere, and by

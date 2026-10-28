@@ -591,6 +591,7 @@
   "stats.symptom_frequency": "Symptom frequency",
   "stats.no_symptom_data": "No symptom data yet.",
   "stats.no_cycle_data": "Not enough cycle data yet.",
+  "stats.chart_unavailable": "Unable to render the chart.",
   "stats.empty_title": "Keep logging to unlock insights",
   "stats.empty_body_zero.one": "Complete %d cycle to unlock insights. Start by entering the first day of your next period.",
   "stats.empty_body_zero.other": "Complete %d cycles to unlock insights. Start by entering the first day of your next period.",

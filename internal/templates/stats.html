@@ -298,6 +298,7 @@
           id="bbt-chart"
           data-chart='{{toJSON .BBTChartData}}'
           data-empty-text='{{t .Messages "stats.no_cycle_data"}}'
+          data-error-text='{{t .Messages "stats.chart_unavailable"}}'
           data-value-suffix='{{.BBTUnitLabel}}'
           data-value-unit='{{if eq .BBTUnitLabel (t .Messages "stats.bbt_unit_fahrenheit")}}fahrenheit{{else}}celsius{{end}}'
           data-value-decimals="1"
@@ -411,6 +412,7 @@
           id="cycle-chart"
           data-chart='{{toJSON .ChartData}}'
           data-empty-text='{{t .Messages "stats.no_cycle_data"}}'
+          data-error-text='{{t .Messages "stats.chart_unavailable"}}'
           data-days-suffix='{{t .Messages "common.days_short"}}'
           data-baseline-label='{{t .Messages "stats.legend.average"}}'
           role="img"

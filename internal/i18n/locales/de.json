@@ -591,6 +591,7 @@
   "stats.symptom_frequency": "Symptomhäufigkeit",
   "stats.no_symptom_data": "Noch keine Symptomdaten.",
   "stats.no_cycle_data": "Noch nicht genug Zyklusdaten.",
+  "stats.chart_unavailable": "Das Diagramm kann nicht dargestellt werden.",
   "stats.empty_title": "Weiter protokollieren, um Einblicke freizuschalten",
   "stats.empty_body_zero.one": "Schließen Sie %d Zyklus ab, um Einblicke freizuschalten. Beginnen Sie mit dem ersten Tag Ihrer nächsten Periode.",
   "stats.empty_body_zero.other": "Schließen Sie %d Zyklen ab, um Einblicke freizuschalten. Beginnen Sie mit dem ersten Tag Ihrer nächsten Periode.",
