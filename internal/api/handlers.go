@@ -36,8 +36,8 @@ func NewHandler(secret string, location *time.Location, i18nManager *i18n.Manage
 	}
 
 	components, err := parseComponentTemplates(funcMap)
-	if err != nil {
-		return nil, err
+	if err != nil { // codecov:ignore -- components/*.html is embedded; the sibling parses above fail the same way and every NewHandler test parses it
+		return nil, err // codecov:ignore -- see above
 	}
 
 	handler := &Handler{

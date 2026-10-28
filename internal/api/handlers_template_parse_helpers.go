@@ -27,8 +27,8 @@ func parsePageTemplates(funcMap template.FuncMap, pages []string) (map[string]*t
 
 func parseComponentTemplates(funcMap template.FuncMap) (*template.Template, error) {
 	tmpl, err := template.New("components").Funcs(funcMap).ParseFS(templates.Files, "components/*.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse component templates: %w", err)
+	if err != nil { // codecov:ignore -- the embedded components/*.html always parse; every NewHandler test would fail first
+		return nil, fmt.Errorf("parse component templates: %w", err) // codecov:ignore -- see above
 	}
 	return tmpl, nil
 }
