@@ -459,23 +459,39 @@
       return;
     }
 
-    var step = Math.max(1, Math.ceil(labels.length / MAX_VISIBLE_LABELS));
-    var indexes = [];
-    for (var index = 0; index < labels.length; index += step) {
-      indexes.push(index);
-    }
+    var widths = labels.map(function (label) {
+      return context.measureText(label).width;
+    });
+    var collides = function (left, right) {
+      return xForIndex(right) - xForIndex(left) < (widths[left] + widths[right]) / 2 + LABEL_GAP;
+    };
 
     // The last day is always labelled. When it lands within a label of the
     // stepped one before it, that one gives way: an unmeasured pair read as
-    // "1718".
+    // "1718". The step starts at the count-based one and grows until every
+    // adjacent pair clears, so a wide label mid-axis cannot collide either.
     var lastIndex = labels.length - 1;
-    if (indexes[indexes.length - 1] !== lastIndex) {
-      var previous = indexes[indexes.length - 1];
-      var reach = (context.measureText(labels[previous]).width + context.measureText(labels[lastIndex]).width) / 2 + LABEL_GAP;
-      if (xForIndex(lastIndex) - xForIndex(previous) < reach) {
-        indexes.pop();
+    var indexes = [lastIndex];
+    for (var step = Math.max(1, Math.ceil(labels.length / MAX_VISIBLE_LABELS)); step <= lastIndex; step++) {
+      var candidate = [];
+      for (var index = 0; index < labels.length; index += step) {
+        candidate.push(index);
       }
-      indexes.push(lastIndex);
+      if (candidate[candidate.length - 1] !== lastIndex) {
+        if (collides(candidate[candidate.length - 1], lastIndex)) {
+          candidate.pop();
+        }
+        candidate.push(lastIndex);
+      }
+
+      var clear = true;
+      for (var pair = 1; pair < candidate.length && clear; pair++) {
+        clear = !collides(candidate[pair - 1], candidate[pair]);
+      }
+      if (clear) {
+        indexes = candidate;
+        break;
+      }
     }
 
     for (var position = 0; position < indexes.length; position++) {

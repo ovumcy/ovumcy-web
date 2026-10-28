@@ -98,6 +98,25 @@ test("no two x labels touch, and the final label is still drawn", async () => {
   }
 });
 
+test("a wide label mid-axis pushes the step up instead of colliding with its neighbours", async () => {
+  // Twelve days stepped by two leave 45 px between labels; the long date at
+  // index 6 needs 52 px to clear "5" and "7", which the old last-pair-only
+  // check never measured.
+  const wide = labels(12);
+  wide[6] = "Wed 30 Oct 2026";
+  const values = Array.from({ length: 12 }, (_, i) => 36.4 + (i % 3) * 0.1);
+  const { dom, context } = await render({ kind: "line", labels: wide, values }, { attributes: { "data-value-suffix": "°C" } });
+  dom.window.close();
+  const spans = textSpans(lastRender(context.calls), "center").sort((a, b) => a.left - b.left);
+  assert.equal(spans[spans.length - 1].text, "12", "the last day is labelled");
+  for (let i = 1; i < spans.length; i++) {
+    assert.ok(
+      spans[i].left - spans[i - 1].right >= 4,
+      `"${spans[i - 1].text}" and "${spans[i].text}" keep the label gap`,
+    );
+  }
+});
+
 test("the y gutter is wide enough for the widest tick", async () => {
   const { dom, context } = await render(
     { kind: "line", labels: labels(5), values: [99.8, 100.1, 100.4, 100.2, 100.6] },
