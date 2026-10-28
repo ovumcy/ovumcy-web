@@ -321,8 +321,11 @@ func renderCalendarFeedICS(events []calendarFeedEvent, uids *security.CalendarFe
 	writeICSLine(&b, "PRODID:"+calendarFeedProductID)
 	writeICSLine(&b, "CALSCALE:GREGORIAN")
 	writeICSLine(&b, "METHOD:PUBLISH")
-	for _, event := range events {
-		writeCalendarFeedEvent(&b, event, uids, stamp, disclaimer)
+	// No UID key, no events: an event is never written without an opaque UID.
+	if uids != nil {
+		for _, event := range events {
+			writeCalendarFeedEvent(&b, event, uids, stamp, disclaimer)
+		}
 	}
 	writeICSLine(&b, "END:VCALENDAR")
 	return []byte(b.String())
