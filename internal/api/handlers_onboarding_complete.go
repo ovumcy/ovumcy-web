@@ -15,15 +15,20 @@ import (
 var onboardingCompleteMutation = healthMutationKind{action: "onboarding.complete", target: "day_entry"}
 
 // onboardingAccountLanguage is the language the onboarding pages rendered in,
-// handed to completion as the account's language when it has none stored. Only
-// a code this build ships is passed on, normalized; anything else is "" so no
-// language nobody picked is pinned to the account.
+// handed to completion as the account's language when it has none stored. It
+// resolves in resolveRequestLanguage's order but answers "" where that one
+// falls back to DEFAULT_LANGUAGE — an unsupported cookie, or no header entry
+// naming a shipped locale — because pinning the fallback to the account would
+// store a language nobody picked.
 func (handler *Handler) onboardingAccountLanguage(c fiber.Ctx) string {
-	language := currentLanguage(c)
-	if !handler.i18n.IsSupportedLanguage(language) {
-		return ""
+	if cookieLanguage := c.Cookies(languageCookieName); cookieLanguage != "" {
+		if !handler.i18n.IsSupportedLanguage(cookieLanguage) {
+			return ""
+		}
+		return handler.i18n.NormalizeLanguage(cookieLanguage)
 	}
-	return handler.i18n.NormalizeLanguage(language)
+	language, _ := handler.i18n.MatchAcceptLanguage(c.Get("Accept-Language"))
+	return language
 }
 
 func (handler *Handler) OnboardingComplete(c fiber.Ctx) error {

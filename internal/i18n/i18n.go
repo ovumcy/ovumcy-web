@@ -118,6 +118,16 @@ func (manager *Manager) IsSupportedLanguage(raw string) bool {
 }
 
 func (manager *Manager) DetectFromAcceptLanguage(raw string) string {
+	if language, ok := manager.MatchAcceptLanguage(raw); ok {
+		return language
+	}
+	return manager.defaultLanguage
+}
+
+// MatchAcceptLanguage is DetectFromAcceptLanguage without the fallback: ok is
+// false when no entry of the header names a shipped locale, so a caller can
+// tell a negotiated language from the default answered for none.
+func (manager *Manager) MatchAcceptLanguage(raw string) (string, bool) {
 	for _, part := range strings.Split(raw, ",") {
 		token := strings.TrimSpace(part)
 		if token == "" {
@@ -126,10 +136,10 @@ func (manager *Manager) DetectFromAcceptLanguage(raw string) string {
 		token = strings.TrimSpace(strings.Split(token, ";")[0])
 		normalized := normalizeLanguageTag(token)
 		if manager.isSupported(normalized) {
-			return normalized
+			return normalized, true
 		}
 	}
-	return manager.defaultLanguage
+	return "", false
 }
 
 // Messages returns the language's catalogue overlaid on the default one. The

@@ -17,13 +17,19 @@ import (
 // and starts its weeks on Monday; a language the owner already chose is kept.
 func TestOnboardingCompleteStoresTheRenderedLanguageAndItsWeekStart(t *testing.T) {
 	cases := []struct {
-		name          string
-		stored        string
-		wantLanguage  string
-		wantWeekStart string
+		name           string
+		stored         string
+		cookie         string
+		acceptLanguage string
+		wantLanguage   string
+		wantWeekStart  string
 	}{
-		{name: "nothing stored", stored: "", wantLanguage: "de", wantWeekStart: models.WeekStartMonday},
-		{name: "chosen language kept", stored: "en", wantLanguage: "en", wantWeekStart: models.WeekStartSunday},
+		{name: "nothing stored", stored: "", cookie: "de", wantLanguage: "de", wantWeekStart: models.WeekStartMonday},
+		{name: "chosen language kept", stored: "en", cookie: "de", wantLanguage: "en", wantWeekStart: models.WeekStartSunday},
+		{name: "negotiated language stored", stored: "", acceptLanguage: "fr-CA,fr;q=0.9", wantLanguage: "fr", wantWeekStart: models.WeekStartMonday},
+		// The page fell back to DEFAULT_LANGUAGE: no language was picked, so none is pinned.
+		{name: "default fallback not stored", stored: "", acceptLanguage: "ja", wantLanguage: "", wantWeekStart: models.DefaultWeekStart},
+		{name: "unsupported cookie not stored", stored: "", cookie: "xx", acceptLanguage: "de", wantLanguage: "", wantWeekStart: models.DefaultWeekStart},
 	}
 	for index, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -43,7 +49,12 @@ func TestOnboardingCompleteStoresTheRenderedLanguageAndItsWeekStart(t *testing.T
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/complete", strings.NewReader(""))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			req.Header.Set("HX-Request", "true")
-			req.Header.Set("Cookie", authCookie+"; "+languageCookieName+"=de")
+			cookies := authCookie
+			if tc.cookie != "" {
+				cookies += "; " + languageCookieName + "=" + tc.cookie
+			}
+			req.Header.Set("Cookie", cookies)
+			req.Header.Set("Accept-Language", tc.acceptLanguage)
 			bindDayWriteForTest(t, req, user.ID)
 			resp := mustAppResponse(t, app, req)
 			defer func() { _ = resp.Body.Close() }()
