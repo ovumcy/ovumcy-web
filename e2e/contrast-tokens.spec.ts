@@ -111,6 +111,8 @@ test.describe('WEB-260 contrast tokens', () => {
     await registerAndOpenCalendar(page);
 
     for (const theme of ['light', 'dark'] as const) {
+      // A fixed month that starts on a Thursday, so it always shows out-of-month days.
+      await page.goto('/calendar?month=2026-10');
       await applyTheme(page, theme);
       const result = await measure(page);
 
@@ -123,8 +125,9 @@ test.describe('WEB-260 contrast tokens', () => {
       expect(result.outRatio, `${theme}: out-of-month day number`).toBeGreaterThanOrEqual(WCAG_AA_TEXT_CONTRAST);
       expect(result.amberRatio, `${theme}: .warning-amber`).toBeGreaterThanOrEqual(WCAG_AA_TEXT_CONTRAST);
 
+      await page.goto('/calendar');
       const ring = await focusRingRatio(page);
-      expect(ring.todayShadowDiffers, `${theme}: focused today cell draws a solid outline (${ring.style})`).toBe(true);
+      expect(ring.todayShadowDiffers,`${theme}: focused today cell draws a solid outline (${ring.style})`).toBe(true);
       expect(ring.ratio, `${theme}: focus ring`).toBeGreaterThanOrEqual(WCAG_AA_GRAPHIC_CONTRAST);
     }
   });

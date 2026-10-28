@@ -5046,6 +5046,7 @@
         rgb(255 255 255 / 0) 10px
       ),
       rgb(69 109 88 / 0.34);
+    --cal-line-period: rgb(var(--cal-period) / 0.7);
     --cal-line-predicted: rgb(var(--cal-predicted) / 0.82);
     --cal-line-fertile: rgb(var(--cal-fertile) / 0.8);
     /* Lighter than the fill it outlines, the way every dark-theme calendar
