@@ -32,7 +32,7 @@ const (
 
 	xContentTypeOptionsNoSniff     = "nosniff"
 	referrerPolicyStrictOrigin     = "strict-origin-when-cross-origin"
-	permissionsPolicyDefault       = "geolocation=(), camera=(), microphone=(), accelerometer=(), gyroscope=(), payment=(), usb=(), interest-cohort=()"
+	permissionsPolicyDefault       = "geolocation=(), camera=(), microphone=(), accelerometer=(), gyroscope=(), payment=(), usb=()"
 	crossOriginOpenerPolicyDefault = "same-origin"
 	xFrameOptionsDeny              = "DENY"
 	contentSecurityPolicyDefault   = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'"

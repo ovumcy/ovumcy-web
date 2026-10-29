@@ -67,6 +67,35 @@ func TestNotFoundPageForGuestUsesLoginPrimaryAction(t *testing.T) {
 	}
 }
 
+func TestNotFoundKeepsEveryAnswerOutOfSearchIndexes(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	for name, prepare := range map[string]func(*http.Request){
+		"page": func(r *http.Request) {},
+		"json": func(r *http.Request) { r.Header.Set("Accept", "application/json") },
+		"api":  nil,
+	} {
+		target := "/missing-page"
+		if prepare == nil {
+			target = "/api/v1/missing"
+			prepare = func(*http.Request) {}
+		}
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		prepare(request)
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("%s: request failed: %v", name, err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s: expected 404, got %d", name, response.StatusCode)
+		}
+		if got := response.Header.Get("X-Robots-Tag"); got != "noindex" {
+			t.Fatalf("%s: expected X-Robots-Tag noindex on a 404, got %q", name, got)
+		}
+	}
+}
+
 func TestNotFoundPageForAuthenticatedUserUsesDashboardPrimaryAction(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "not-found-owner@example.com", "StrongPass1", true)

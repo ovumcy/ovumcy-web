@@ -53,7 +53,9 @@ func normalizeSymptomIconInput(raw string) (string, error) {
 	if utf8.RuneCountInString(icon) > maxSymptomIconLength {
 		return "", ErrSymptomNameTooLong
 	}
-	if containsInvalidPlainTextLabelRune(icon) {
+	// "?" is the glyph the interface paints for an icon it cannot show, so a
+	// stored "?" would be indistinguishable from a broken one.
+	if icon == "?" || containsInvalidPlainTextLabelRune(icon) {
 		return "", ErrSymptomNameInvalidCharacters
 	}
 	return icon, nil
