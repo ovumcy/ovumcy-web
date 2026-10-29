@@ -308,12 +308,9 @@
         return;
       }
       var destination = marked || root.querySelector("summary") || root;
-      if (!destination.hasAttribute("tabindex") && !destination.matches("a[href], button, input, select, textarea, summary")) {
-        destination.setAttribute("tabindex", "-1");
-      }
       // preventScroll: the scroll below knows about the sticky chrome, the
       // browser's own focus scroll does not.
-      destination.focus({ preventScroll: true });
+      restoreFocus(destination);
       scrollIntoViewBelowStickyChrome(destination);
     });
   }

@@ -167,7 +167,8 @@
               hx-patch="/api/v1/users/current/cycle?source=dashboard"
               hx-target="#dashboard-usage-goal-status"
               hx-swap="innerHTML"
-              data-usage-goal-quick-switch-form>
+              data-usage-goal-quick-switch-form
+              data-focus-after-reload="[data-usage-goal-chip]">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <input type="hidden" name="_method" value="PATCH">
               <input type="hidden" name="day_form_account" value="{{$.DayFormAccount}}">

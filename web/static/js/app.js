@@ -1964,6 +1964,12 @@
       return;
     }
 
+    // A focused button that becomes disabled drops focus to BODY, and being
+    // enabled again does not give it back: note the hold going in, restore it
+    // coming out, unless the owner moved on meanwhile.
+    if (isBusy) {
+      button.__ovumcyHeldFocus = document.activeElement === button;
+    }
     button.disabled = isBusy;
     if (isBusy) {
       button.setAttribute("aria-busy", "true");
@@ -1972,6 +1978,12 @@
     }
     button.removeAttribute("aria-busy");
     button.classList.remove("btn-loading");
+    if (button.__ovumcyHeldFocus) {
+      button.__ovumcyHeldFocus = false;
+      if (focusIsLost()) {
+        restoreFocus(button);
+      }
+    }
   }
 
   function clearStatusTargetIfEmpty(target) {
@@ -2775,6 +2787,7 @@
       var xhr = event && event.detail ? event.detail.xhr : null;
       if (xhr && typeof xhr.getResponseHeader === "function" && xhr.getResponseHeader("HX-Refresh") === "true") {
         responseReloadStarted = true;
+        rememberFocusAfterReload(event.detail.elt);
       }
     });
 
@@ -3035,6 +3048,81 @@
       return;
     }
     node.removeAttribute("hidden");
+  }
+
+  function focusIsLost() {
+    var active = document.activeElement;
+    return !active || active === document.body || !active.isConnected;
+  }
+
+  // The one way an in-page action hands keyboard focus back: to the control it
+  // was pressed on when that survives, else to a stable target (a heading, the
+  // section a link points at). Disabling, hiding or replacing the focused
+  // control drops focus to BODY, so every such action ends here. A target that
+  // is not focusable by nature is made focusable by script only (tabindex -1,
+  // never a tab stop).
+  function restoreFocus(node, preventScroll) {
+    if (!node || !node.isConnected || typeof node.focus !== "function") {
+      return false;
+    }
+    if (!node.hasAttribute("tabindex") && !node.matches("a[href], button, input, select, textarea, summary")) {
+      node.setAttribute("tabindex", "-1");
+    }
+    node.focus({ preventScroll: preventScroll !== false });
+    return document.activeElement === node;
+  }
+
+  // A reload throws the page, and the focus with it. The control that asks for
+  // one names, in data-focus-after-reload, what the reloaded page should focus;
+  // the name outlives the reload in sessionStorage and is spent once.
+  var FOCUS_AFTER_RELOAD_KEY = "ovumcy:focus-after-reload";
+
+  function rememberFocusAfterReload(source) {
+    var holder = source && source.closest ? source.closest("[data-focus-after-reload]") : null;
+    var selector = holder ? String(holder.getAttribute("data-focus-after-reload") || "") : "";
+    if (!selector) {
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(FOCUS_AFTER_RELOAD_KEY, selector);
+    } catch {
+      // Storage refused: the reload lands without a focus target, as before.
+    }
+  }
+
+  function consumeFocusAfterReload() {
+    var selector = "";
+    try {
+      selector = String(window.sessionStorage.getItem(FOCUS_AFTER_RELOAD_KEY) || "");
+      window.sessionStorage.removeItem(FOCUS_AFTER_RELOAD_KEY);
+    } catch {
+      return;
+    }
+    if (!selector) {
+      return;
+    }
+    // The target may arrive with a fragment the page loads on its own (the
+    // calendar's day editor), so the first few swaps get another try.
+    var deadline = Date.now() + 5000;
+    function attempt() {
+      if (!focusIsLost()) {
+        return true;
+      }
+      try {
+        return restoreFocus(document.querySelector(selector), false);
+      } catch {
+        return true;
+      }
+    }
+    if (attempt()) {
+      return;
+    }
+    function retry() {
+      if (attempt() || Date.now() > deadline) {
+        document.body.removeEventListener("htmx:afterSettle", retry);
+      }
+    }
+    document.body.addEventListener("htmx:afterSettle", retry);
   }
 
   function parseDateValue(value) {
@@ -3765,9 +3853,7 @@
     // The button the owner just pressed is now hidden, and focus on a hidden
     // control falls back to the page body. It lands on the first result: the
     // control the removal hands the field back to.
-    if (radios.length > 0 && typeof radios[0].focus === "function") {
-      radios[0].focus();
-    }
+    restoreFocus(radios[0], false);
     carrier.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
@@ -4286,7 +4372,12 @@
       if (!link) {
         return;
       }
-      revealHashTarget(link.getAttribute("href"));
+      var target = revealHashTarget(link.getAttribute("href"));
+      // A link to a plain section leaves focus on the link, or on BODY once the
+      // link is gone; the late-cycle actions hand it to the section they name.
+      if (target && link.hasAttribute("data-late-cycle-action")) {
+        restoreFocus(target);
+      }
     });
 
     // Arriving with the anchor already in the URL — a shared link, a reload,
@@ -7090,12 +7181,9 @@
         return;
       }
       var destination = marked || root.querySelector("summary") || root;
-      if (!destination.hasAttribute("tabindex") && !destination.matches("a[href], button, input, select, textarea, summary")) {
-        destination.setAttribute("tabindex", "-1");
-      }
       // preventScroll: the scroll below knows about the sticky chrome, the
       // browser's own focus scroll does not.
-      destination.focus({ preventScroll: true });
+      restoreFocus(destination);
       scrollIntoViewBelowStickyChrome(destination);
     });
   }
@@ -8396,6 +8484,7 @@
     bindOnboardingFlows();
     bindRecoveryCodeTools();
     bindRecoveryCodeConfirmForms();
+    consumeFocusAfterReload();
   }
 
   function configureHTMXForCSP() {

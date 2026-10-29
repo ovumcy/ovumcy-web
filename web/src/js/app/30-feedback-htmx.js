@@ -199,6 +199,12 @@
       return;
     }
 
+    // A focused button that becomes disabled drops focus to BODY, and being
+    // enabled again does not give it back: note the hold going in, restore it
+    // coming out, unless the owner moved on meanwhile.
+    if (isBusy) {
+      button.__ovumcyHeldFocus = document.activeElement === button;
+    }
     button.disabled = isBusy;
     if (isBusy) {
       button.setAttribute("aria-busy", "true");
@@ -207,6 +213,12 @@
     }
     button.removeAttribute("aria-busy");
     button.classList.remove("btn-loading");
+    if (button.__ovumcyHeldFocus) {
+      button.__ovumcyHeldFocus = false;
+      if (focusIsLost()) {
+        restoreFocus(button);
+      }
+    }
   }
 
   function clearStatusTargetIfEmpty(target) {
@@ -1010,6 +1022,7 @@
       var xhr = event && event.detail ? event.detail.xhr : null;
       if (xhr && typeof xhr.getResponseHeader === "function" && xhr.getResponseHeader("HX-Refresh") === "true") {
         responseReloadStarted = true;
+        rememberFocusAfterReload(event.detail.elt);
       }
     });
 

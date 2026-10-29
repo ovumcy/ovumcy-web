@@ -36,4 +36,5 @@
     bindOnboardingFlows();
     bindRecoveryCodeTools();
     bindRecoveryCodeConfirmForms();
+    consumeFocusAfterReload();
   }

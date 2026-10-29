@@ -33,9 +33,11 @@
 {{- end}}
   data-cycle-start-confirm-form
 {{- if eq .Surface "dashboard"}}
+  data-focus-after-reload="[data-dashboard-cycle-start-button]"
   data-dashboard-cycle-start-form
   data-dashboard-date="{{.DateParam}}"
 {{- else}}
+  data-focus-after-reload="[data-day-cycle-start-button]"
   data-day-cycle-start-form
   data-day-cycle-start-date="{{.DateParam}}"
 {{- end}}>

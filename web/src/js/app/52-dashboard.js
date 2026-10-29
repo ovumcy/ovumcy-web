@@ -314,7 +314,12 @@
       if (!link) {
         return;
       }
-      revealHashTarget(link.getAttribute("href"));
+      var target = revealHashTarget(link.getAttribute("href"));
+      // A link to a plain section leaves focus on the link, or on BODY once the
+      // link is gone; the late-cycle actions hand it to the section they name.
+      if (target && link.hasAttribute("data-late-cycle-action")) {
+        restoreFocus(target);
+      }
     });
 
     // Arriving with the anchor already in the URL — a shared link, a reload,

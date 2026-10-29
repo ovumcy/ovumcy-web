@@ -156,9 +156,7 @@
     // The button the owner just pressed is now hidden, and focus on a hidden
     // control falls back to the page body. It lands on the first result: the
     // control the removal hands the field back to.
-    if (radios.length > 0 && typeof radios[0].focus === "function") {
-      radios[0].focus();
-    }
+    restoreFocus(radios[0], false);
     carrier.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
