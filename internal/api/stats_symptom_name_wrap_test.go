@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -59,8 +61,22 @@ func TestStatsLongSymptomNamesWrapInsteadOfClippingBehindATitle(t *testing.T) {
 		if htmlHasAttr(name, "title") {
 			t.Errorf("name %d: the full text must not hide behind a hover-only title", index)
 		}
-		if !htmlHasClass(name, "whitespace-normal!") {
-			t.Errorf("name %d: expected the name to wrap rather than clip", index)
-		}
+	}
+
+	source, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "css", "input.css"))
+	if err != nil {
+		t.Fatalf("read input.css: %v", err)
+	}
+	css := string(source)
+	start := strings.Index(css, "@utility stats-symptom-name {")
+	if start < 0 {
+		t.Fatal("stats-symptom-name utility not found")
+	}
+	block := css[start : start+strings.Index(css[start:], "\n}\n")]
+	if !strings.Contains(block, "white-space: normal") || !strings.Contains(block, "overflow-wrap: anywhere") {
+		t.Error("the name utility must wrap itself rather than rely on per-span overrides")
+	}
+	if strings.Contains(block, "text-overflow") || strings.Contains(block, "nowrap") {
+		t.Error("the name utility must not clip or ellipsize")
 	}
 }
