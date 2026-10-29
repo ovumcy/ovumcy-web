@@ -2811,9 +2811,8 @@
 
 @utility stats-symptom-name {
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-size: var(--text-sm);
   line-height: 1.25;
 
