@@ -72,7 +72,12 @@ func TestStatsLongSymptomNamesWrapInsteadOfClippingBehindATitle(t *testing.T) {
 	if start < 0 {
 		t.Fatal("stats-symptom-name utility not found")
 	}
-	block := css[start : start+strings.Index(css[start:], "\n}\n")]
+	css = strings.ReplaceAll(css[start:], "\r\n", "\n")
+	end := strings.Index(css, "\n}\n")
+	if end < 0 {
+		t.Fatal("stats-symptom-name utility block is not closed")
+	}
+	block := css[:end]
 	if !strings.Contains(block, "white-space: normal") || !strings.Contains(block, "overflow-wrap: anywhere") {
 		t.Error("the name utility must wrap itself rather than rely on per-span overrides")
 	}
