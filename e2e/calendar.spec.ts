@@ -798,7 +798,7 @@ test.describe('Calendar page', () => {
       headers: { ...apiOriginHeader(page), 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
       data: {
         track_bbt: true,
-        temperature_unit: 'celsius',
+        temperature_unit: 'c',
         track_cervical_mucus: false,
         hide_sex_chip: false,
         hide_cycle_factors: false,
