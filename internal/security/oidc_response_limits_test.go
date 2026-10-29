@@ -3,7 +3,7 @@ package security
 // oidc_response_limits_test.go — the OIDC HTTP client bounds every response
 // it reads, in body and in headers, and an oversized one is an error rather
 // than a truncated document that parses. The reads happen inside go-oidc
-// (discovery, JWKS) and oauth2 (token), so each site is driven through the
+// (discovery, JWKS, UserInfo) and oauth2 (token), so each site is driven through the
 // production path against the TLS mock IdP from oidc_runtime_poc_test.go.
 // Positive control for normal-size responses: TestExchangeCodeHappyPath
 // (discovery + token + JWKS verification end-to-end).
@@ -94,6 +94,17 @@ func TestOIDCResponseLimitRefusesOversizedTokenBody(t *testing.T) {
 
 	_, err := client.ExchangeCode(context.Background(), "auth-code", "verifier-xyz", "nonce-token")
 	requireOIDCResponseTooLarge(t, "token", err)
+}
+
+// go-oidc reads the UserInfo response with an unbounded io.ReadAll, so the
+// client cap is the only bound on it.
+func TestOIDCResponseLimitRefusesOversizedUserInfoBody(t *testing.T) {
+	mock, caPEM := newMockOIDCProvider(t)
+	mock.userInfoBody = map[string]any{"sub": "user-123", "x_padding": strings.Repeat("a", int(oidcResponseBodyLimit))}
+	client, exchange := exchangeWithoutEmail(t, mock, caPEM)
+
+	_, err := client.UserInfoClaims(context.Background(), exchange)
+	requireOIDCResponseTooLarge(t, "userinfo", err)
 }
 
 func TestOIDCResponseLimitRefusesOversizedResponseHeaders(t *testing.T) {

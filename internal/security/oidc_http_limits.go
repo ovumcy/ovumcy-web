@@ -8,8 +8,8 @@ import (
 
 // Every response the OIDC HTTP client reads is bounded, because the reads
 // themselves happen inside the libraries: go-oidc reads the discovery document
-// (NewProvider) and the JWKS (RemoteKeySet.updateKeys) with an unbounded
-// io.ReadAll, and oauth2 reads the token response through a 1 MiB LimitReader
+// (NewProvider), the JWKS (RemoteKeySet.updateKeys) and the UserInfo response
+// (Provider.UserInfo) with an unbounded io.ReadAll, and oauth2 reads the token response through a 1 MiB LimitReader
 // that truncates silently — a form-encoded token response cut at 1 MiB still
 // parses. So the bound lives in the client every one of those fetches shares.
 //

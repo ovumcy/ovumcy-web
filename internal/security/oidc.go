@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -88,7 +90,26 @@ type OIDCSession struct {
 type OIDCExchangeResult struct {
 	Claims  OIDCClaims
 	Session OIDCSession
+
+	// userInfo is what UserInfoClaims needs to ask the provider about this
+	// sign-in. It is unexported so that only ExchangeCode can fill it: a result
+	// assembled anywhere else carries no access token and reaches no endpoint.
+	userInfo oidcUserInfoGrant
 }
+
+// oidcUserInfoGrant holds the access token the code exchange returned and the
+// ID token's sub exactly as issued, untrimmed, because a UserInfo response is
+// matched against that value byte for byte.
+type oidcUserInfoGrant struct {
+	accessToken string
+	tokenType   string
+	subject     string
+}
+
+// ErrOIDCUserInfoUnavailable reports that the provider offers no UserInfo
+// endpoint Ovumcy will request: discovery named none, or named one that failed
+// the issuer-origin pin. It is not a failed sign-in, and no request was sent.
+var ErrOIDCUserInfoUnavailable = errors.New("oidc provider has no usable userinfo_endpoint")
 
 type OIDCClient struct {
 	config OIDCConfig
@@ -431,7 +452,125 @@ func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVer
 			EndSessionEndpoint: client.metadata.EndSessionEndpoint,
 			IDTokenHint:        strings.TrimSpace(rawIDToken),
 		},
+		userInfo: oidcUserInfoGrant{
+			accessToken: token.AccessToken,
+			tokenType:   token.TokenType,
+			subject:     idToken.Subject,
+		},
 	}, nil
+}
+
+// UserInfoClaims asks the provider's UserInfo endpoint for the email claims of
+// the sign-in exchange describes, and returns exchange.Claims with Email and
+// EmailVerified both taken from the response. The two are replaced together,
+// never one alone, so a verification flag is never paired with an address it
+// was not issued for.
+//
+// OpenID Connect Core 1.0 §5.4 delivers the claims of the email scope from the
+// UserInfo endpoint whenever the token endpoint issues an access token, as the
+// code flow always does; a conforming provider may leave them out of the ID
+// token entirely, so this is where they are read.
+//
+// The response is used only when its sub equals the ID token's exactly (§5.3.2:
+// otherwise its values MUST NOT be used). When it names an iss or an aud — a
+// signed response must name both — the iss must be the configured issuer and
+// the aud must include this client. A signed (application/jwt) response is
+// verified by go-oidc against the issuer's JWKS, whose jwks_uri is pinned to the
+// issuer origin, with the same asymmetric algorithms ID tokens are held to.
+//
+// ErrOIDCUserInfoUnavailable means the provider has no usable endpoint and no
+// request was made; any other error means the request or its answer failed.
+func (client *OIDCClient) UserInfoClaims(ctx context.Context, exchange OIDCExchangeResult) (OIDCClaims, error) {
+	if !client.Enabled() {
+		return OIDCClaims{}, errors.New("oidc is disabled")
+	}
+	ctx = client.clientContext(ctx)
+	provider, endpoint, err := client.loadUserInfoProvider(ctx)
+	if err != nil {
+		return OIDCClaims{}, err
+	}
+	if endpoint == "" {
+		return OIDCClaims{}, ErrOIDCUserInfoUnavailable
+	}
+	grant := exchange.userInfo
+	if grant.accessToken == "" {
+		return OIDCClaims{}, errors.New("oidc exchange carries no access token")
+	}
+
+	// provider.UserInfo requests the discovery value itself, which is the exact
+	// string sanitizeOIDCUserInfoEndpoint parsed and accepted. StaticTokenSource
+	// never refreshes, so this sends the token the exchange returned and nothing
+	// else.
+	info, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(&oauth2.Token{
+		AccessToken: grant.accessToken,
+		TokenType:   grant.tokenType,
+	}))
+	if err != nil {
+		return OIDCClaims{}, fmt.Errorf("fetch oidc userinfo: %w", err)
+	}
+	if info.Subject == "" || info.Subject != grant.subject {
+		return OIDCClaims{}, errors.New("oidc userinfo sub does not match the id_token sub")
+	}
+	if err := client.checkUserInfoBinding(info); err != nil {
+		return OIDCClaims{}, err
+	}
+
+	claims := exchange.Claims
+	claims.Email = strings.TrimSpace(info.Email)
+	claims.EmailVerified = info.EmailVerified
+	return claims, nil
+}
+
+// loadUserInfoProvider returns the discovered provider together with the
+// pinned userinfo_endpoint, empty when there is none to request.
+func (client *OIDCClient) loadUserInfoProvider(ctx context.Context) (*oidc.Provider, string, error) {
+	if _, _, err := client.loadProvider(ctx); err != nil {
+		return nil, "", err
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.provider, client.userInfoEndpoint, nil
+}
+
+// checkUserInfoBinding refuses a UserInfo response that names another issuer
+// or an audience without this client. A response naming neither passes: plain
+// JSON UserInfo is not required to carry them.
+func (client *OIDCClient) checkUserInfoBinding(info *oidc.UserInfo) error {
+	var binding struct {
+		Issuer   *string         `json:"iss"`
+		Audience json.RawMessage `json:"aud"`
+	}
+	if err := info.Claims(&binding); err != nil {
+		return fmt.Errorf("decode oidc userinfo iss and aud: %w", err)
+	}
+	if binding.Issuer != nil && *binding.Issuer != client.config.IssuerURL {
+		return errors.New("oidc userinfo iss does not match the issuer")
+	}
+	if len(binding.Audience) == 0 || string(binding.Audience) == "null" {
+		return nil
+	}
+	audiences, err := decodeOIDCAudience(binding.Audience)
+	if err != nil {
+		return fmt.Errorf("decode oidc userinfo aud: %w", err)
+	}
+	if !slices.Contains(audiences, client.config.ClientID) {
+		return errors.New("oidc userinfo aud does not include this client")
+	}
+	return nil
+}
+
+// decodeOIDCAudience reads an aud claim in either of the shapes RFC 7519 §4.1.3
+// allows: a single string, or an array of strings.
+func decodeOIDCAudience(raw json.RawMessage) ([]string, error) {
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		return []string{single}, nil
+	}
+	var many []string
+	if err := json.Unmarshal(raw, &many); err != nil {
+		return nil, err
+	}
+	return many, nil
 }
 
 func (client *OIDCClient) clientContext(ctx context.Context) context.Context {
@@ -808,11 +947,12 @@ func newOIDCHTTPClient(config OIDCConfig) *http.Client {
 }
 
 // oidcRedirectPolicy is the CheckRedirect policy for the OIDC HTTP client.
-// Every outbound OIDC request (discovery, JWKS fetch, code exchange) starts
-// at a URL that is origin-pinned to the configured issuer; this extends the
-// same pin to HTTP redirects, so a redirecting response cannot steer a
-// request — or the client secret and authorization code the exchange
-// carries — off the issuer origin after the initial URL validation passed
+// Every outbound OIDC request (discovery, JWKS fetch, code exchange, UserInfo)
+// starts at a URL that is origin-pinned to the configured issuer; this extends
+// the same pin to HTTP redirects, so a redirecting response cannot steer a
+// request — or the client secret and authorization code the exchange carries,
+// or the access token UserInfo carries — off the issuer origin after the
+// initial URL validation passed
 // (SSRF via redirect). Same-origin redirects (an IdP normalizing its
 // discovery path) follow normally; the stdlib ten-hop cap is re-applied
 // because installing a custom CheckRedirect replaces the default that

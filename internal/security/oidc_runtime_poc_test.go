@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -144,6 +145,19 @@ type mockOIDCProvider struct {
 	userInfoEndpoint     string
 	omitUserInfoEndpoint bool
 
+	// userInfoBody is what /userinfo answers: served as application/json, or,
+	// with userInfoSigned, signed RS256 with the mock's key and served as
+	// application/jwt. userInfoStatus, when set, replaces the 200 with that
+	// status, and userInfoRedirectTo answers 302 to that URL instead. Every
+	// request is counted in userInfoRequests and its Authorization header kept
+	// in userInfoAuthorization.
+	userInfoBody          map[string]any
+	userInfoSigned        bool
+	userInfoStatus        int
+	userInfoRedirectTo    string
+	userInfoRequests      atomic.Int64
+	userInfoAuthorization atomic.Value
+
 	// discoveryRedirectTo, when set, makes the canonical discovery path
 	// answer 302 to this URL instead of serving the document. Tests use it
 	// to exercise the redirect origin-pin on the OIDC HTTP client (a
@@ -208,6 +222,7 @@ func newMockOIDCProvider(t *testing.T) (*mockOIDCProvider, []byte) {
 		http.Error(w, "authorize stub: PoC tests do not drive the browser flow", http.StatusNotImplemented)
 	})
 	mux.HandleFunc("/token", mock.serveToken)
+	mux.HandleFunc("/userinfo", mock.serveUserInfo)
 
 	caPEM, serverCert := newTestCAAndLeaf(t)
 	server := httptest.NewUnstartedServer(mux)
@@ -302,6 +317,33 @@ func (m *mockOIDCProvider) serveToken(w http.ResponseWriter, r *http.Request) {
 		"expires_in":   3600,
 		"id_token":     m.idToken,
 	})
+}
+
+// serveUserInfo answers the UserInfo GET with userInfoBody, shaped by the
+// userInfo* fields above.
+func (m *mockOIDCProvider) serveUserInfo(w http.ResponseWriter, r *http.Request) {
+	m.userInfoRequests.Add(1)
+	m.userInfoAuthorization.Store(r.Header.Get("Authorization"))
+	if m.userInfoRedirectTo != "" {
+		http.Redirect(w, r, m.userInfoRedirectTo, http.StatusFound)
+		return
+	}
+	if m.userInfoStatus != 0 {
+		http.Error(w, "userinfo stub refusal", m.userInfoStatus)
+		return
+	}
+	if m.userInfoSigned {
+		signed, err := signTestRS256IDToken(m, jwt.MapClaims(m.userInfoBody))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/jwt")
+		_, _ = w.Write([]byte(signed))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(m.userInfoBody)
 }
 
 func (m *mockOIDCProvider) serveJWKS(w http.ResponseWriter, r *http.Request) {

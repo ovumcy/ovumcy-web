@@ -24,6 +24,11 @@ package security
 //     points there, so the operation does perform the fetch the foreign case
 //     says it withheld.
 //
+// UserInfo is the one server fetch made after the exchange rather than during
+// it, so its cases drive ExchangeCode and then UserInfoClaims. A foreign
+// userinfo_endpoint is dropped rather than refused, so there the zero sits
+// beside ErrOIDCUserInfoUnavailable instead of an error naming the pin.
+//
 // The authorization_endpoint and end_session_endpoint are not server fetches:
 // the client only composes those URLs and hands them to the browser, so there
 // is no server request to count. Their pins are covered by
@@ -33,6 +38,7 @@ package security
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -80,6 +86,28 @@ func runOIDCSignInWithFetchOn(t *testing.T, mock *mockOIDCProvider, issuerCA []b
 	return client, err
 }
 
+// requireForeignOriginReachable is the reachability control: the very client
+// that sent nothing can reach and trust the foreign server, so a zero count
+// before it is the pin, not a failure to connect.
+func requireForeignOriginReachable(t *testing.T, client *OIDCClient, foreign *httptest.Server, foreignCounter *originRequestCounter) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, foreign.URL+"/reachability-probe", nil)
+	if err != nil {
+		t.Fatalf("build reachability probe: %v", err)
+	}
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		t.Fatalf("reachability control: the OIDC client cannot reach the foreign server, so a zero count proves nothing: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reachability control: foreign server answered %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := foreignCounter.requests.Load(); got != 1 {
+		t.Fatalf("reachability control: foreign counter reads %d after one direct request, want 1", got)
+	}
+}
+
 func requireOIDCFetchNeverLeavesTheIssuerOrigin(t *testing.T, fetch string, refusal string, point func(mock *mockOIDCProvider, origin string)) {
 	t.Helper()
 
@@ -97,24 +125,7 @@ func requireOIDCFetchNeverLeavesTheIssuerOrigin(t *testing.T, fetch string, refu
 			t.Fatalf("%s on a foreign origin: sign-in error = %v, want the origin-pin refusal %q", fetch, err, refusal)
 		}
 
-		// Reachability control: the very client that sent nothing can reach and
-		// trust the foreign server, so the zero above is the pin, not a failure
-		// to connect.
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, foreign.URL+"/reachability-probe", nil)
-		if err != nil {
-			t.Fatalf("build reachability probe: %v", err)
-		}
-		resp, err := client.httpClient.Do(req)
-		if err != nil {
-			t.Fatalf("reachability control: the OIDC client cannot reach the foreign server, so a zero count proves nothing: %v", err)
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("reachability control: foreign server answered %d, want %d", resp.StatusCode, http.StatusOK)
-		}
-		if got := foreignCounter.requests.Load(); got != 1 {
-			t.Fatalf("reachability control: foreign counter reads %d after one direct request, want 1", got)
-		}
+		requireForeignOriginReachable(t, client, foreign, foreignCounter)
 	})
 
 	t.Run("the issuer origin receives the request", func(t *testing.T) {
@@ -153,5 +164,74 @@ func TestOIDC_RuntimePoC_ForeignJWKSURIGetsNoRequest(t *testing.T) {
 func TestOIDC_RuntimePoC_ForeignTokenEndpointGetsNoRequest(t *testing.T) {
 	requireOIDCFetchNeverLeavesTheIssuerOrigin(t, "token_endpoint", "oidc token_endpoint origin must match the issuer origin", func(mock *mockOIDCProvider, origin string) {
 		mock.tokenEndpoint = origin + "/token"
+	})
+}
+
+// requireUserInfoFetchNeverLeavesTheIssuerOrigin is the UserInfo counterpart of
+// requireOIDCFetchNeverLeavesTheIssuerOrigin. UserInfo is requested after the
+// code exchange, by UserInfoClaims, so the exchange has to complete first; and
+// a userinfo_endpoint that fails the pin is dropped rather than refused, so the
+// caller names the outcome the pin produces instead of a fixed refusal text.
+func requireUserInfoFetchNeverLeavesTheIssuerOrigin(t *testing.T, fetch string, pinned func(err error) bool, point func(mock *mockOIDCProvider, origin string)) {
+	t.Helper()
+
+	askUserInfo := func(t *testing.T, mock *mockOIDCProvider, caBundle []byte, origin string) (*OIDCClient, error) {
+		t.Helper()
+		point(mock, origin)
+		mock.idToken = mustSignMockIDToken(t, mock, oidcLimitTestClaims(mock.issuer, "nonce-foreign-userinfo"))
+		client := newExchangeTestClient(t, mock, writeIssuerCAFile(t, caBundle))
+		exchange, err := client.ExchangeCode(context.Background(), "auth-code", "verifier-xyz", "nonce-foreign-userinfo")
+		if err != nil {
+			t.Fatalf("%s: the code exchange must complete before UserInfo is asked: %v", fetch, err)
+		}
+		_, err = client.UserInfoClaims(context.Background(), exchange)
+		return client, err
+	}
+
+	t.Run("a foreign origin receives no request", func(t *testing.T) {
+		mock, issuerCA := newMockOIDCProvider(t)
+		foreign, foreignCounter, foreignCA := newForeignOriginServer(t)
+
+		client, err := askUserInfo(t, mock, slices.Concat(issuerCA, foreignCA), foreign.URL)
+		if got := foreignCounter.requests.Load(); got != 0 {
+			t.Fatalf("%s on a foreign origin: UserInfoClaims sent %d request(s) to %s; the access token must never leave the issuer origin", fetch, got, foreign.URL)
+		}
+		if !pinned(err) {
+			t.Fatalf("%s on a foreign origin: UserInfoClaims error = %v, want the origin pin's outcome", fetch, err)
+		}
+		requireForeignOriginReachable(t, client, foreign, foreignCounter)
+	})
+
+	t.Run("the issuer origin receives the request", func(t *testing.T) {
+		mock, issuerCA := newMockOIDCProvider(t)
+
+		// The counter answers {} rather than a UserInfo document, so the call
+		// fails on the sub check after the fetch; what matters is the arrival.
+		_, _ = askUserInfo(t, mock, issuerCA, mock.issuer+"/counted")
+		if got := mock.countedOnIssuer.requests.Load(); got < 1 {
+			t.Fatalf("%s on the issuer origin: the counter saw %d requests; UserInfoClaims must perform this fetch, or the foreign-origin zero is vacuous", fetch, got)
+		}
+	})
+}
+
+// TestOIDC_RuntimePoC_ForeignUserInfoEndpointGetsNoRequest: a foreign
+// userinfo_endpoint is dropped at provider load, so UserInfoClaims reports no
+// usable endpoint and the access token is never sent to it.
+func TestOIDC_RuntimePoC_ForeignUserInfoEndpointGetsNoRequest(t *testing.T) {
+	requireUserInfoFetchNeverLeavesTheIssuerOrigin(t, "userinfo_endpoint", func(err error) bool {
+		return errors.Is(err, ErrOIDCUserInfoUnavailable)
+	}, func(mock *mockOIDCProvider, origin string) {
+		mock.userInfoEndpoint = origin + "/userinfo"
+	})
+}
+
+// TestOIDC_RuntimePoC_CrossOriginUserInfoRedirectSendsNoRequest: a UserInfo
+// response redirecting to another origin is refused by the client's
+// CheckRedirect before the redirected request, and the token with it, is sent.
+func TestOIDC_RuntimePoC_CrossOriginUserInfoRedirectSendsNoRequest(t *testing.T) {
+	requireUserInfoFetchNeverLeavesTheIssuerOrigin(t, "userinfo redirect", func(err error) bool {
+		return err != nil && strings.Contains(err.Error(), "oidc http redirect left the issuer origin")
+	}, func(mock *mockOIDCProvider, origin string) {
+		mock.userInfoRedirectTo = origin + "/userinfo"
 	})
 }
