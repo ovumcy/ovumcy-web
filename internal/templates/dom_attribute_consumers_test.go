@@ -84,7 +84,6 @@ var domAttrConsumerResidual = map[string]string{
 	// Control hooks nothing drives.
 	"data-day-editor-cancel":           "calendar day-editor cancel button",
 	"data-dashboard-more-toggle":       "journal More disclosure summary; the details element carries data-dashboard-more",
-	"data-saving-label":                "the in-flight button caption, declared at nine sites and read at none",
 	"data-settings-cycle-submit":       "cycle settings submit button",
 	"data-settings-reminder-lead-days": "reminder lead-days field",
 	"data-settings-reminders-save":     "reminder settings save button",
