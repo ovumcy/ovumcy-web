@@ -531,11 +531,15 @@ func TestOpenAPIResponseSchemaDescriptionsMatchTheValuesTheServerAnswers(t *test
 
 	t.Run("TrackingSettingsUpdated echoes the stored normalisation", func(t *testing.T) {
 		owner := newSchemaGuardOwner(t)
+		status, body := owner.send(t, http.MethodPatch, "/api/v1/users/current/tracking", map[string]any{
+			"temperature_unit": "fahrenheit", "week_starts_on": "tuesday",
+		})
+		requireSchemaGuardStatus(t, "PATCH tracking with an unrecognised temperature_unit", status, body, http.StatusBadRequest)
 		unrecognised := decode(t)(owner.send(t, http.MethodPatch, "/api/v1/users/current/tracking", map[string]any{
-			"temperature_unit": "kelvin", "week_starts_on": "tuesday",
+			"week_starts_on": "tuesday",
 		}))
 		if unrecognised["temperature_unit"] != "c" || unrecognised["week_starts_on"] != "sunday" {
-			t.Fatalf("want unrecognised values echoed as c / sunday, got %v", unrecognised)
+			t.Fatalf("want an omitted unit and an unrecognised week start echoed as c / sunday, got %v", unrecognised)
 		}
 		monday := decode(t)(owner.send(t, http.MethodPatch, "/api/v1/users/current/tracking", map[string]any{"week_starts_on": "monday"}))
 		if monday["week_starts_on"] != "monday" {
