@@ -95,6 +95,13 @@ test.describe('Dashboard on small screens', () => {
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
     await expect(chip).toBeFocused();
+
+    await chip.click();
+    await expect(panel).toBeVisible();
+    await page.locator('[data-usage-goal-choice]').first().focus();
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(chip).toBeFocused();
   });
 
   test('ticking the period day refreshes the status header', async ({ page }) => {
@@ -104,6 +111,10 @@ test.describe('Dashboard on small screens', () => {
     const toggle = page.locator('input[name="is_period"]');
     const label = page.locator('.period-toggle-main');
     const labelBefore = (await label.textContent())?.trim();
+    // The cycle-day node is replaced by a refresh, so a mark on it is lost.
+    await page.locator('[data-dashboard-cycle-day]').evaluate((node) => {
+      (node as HTMLElement & { staleMark?: boolean }).staleMark = true;
+    });
     const refresh = page.waitForResponse(
       (response) =>
         response.request().method() === 'GET' &&
@@ -112,6 +123,13 @@ test.describe('Dashboard on small screens', () => {
     );
     await toggle.setChecked(!(await toggle.isChecked()));
     await refresh;
+    await expect
+      .poll(() =>
+        page
+          .locator('[data-dashboard-cycle-day]')
+          .evaluate((node) => (node as HTMLElement & { staleMark?: boolean }).staleMark === true),
+      )
+      .toBe(false);
     expect((await label.textContent())?.trim()).toBe(labelBefore);
   });
 
