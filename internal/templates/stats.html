@@ -181,7 +181,7 @@
             <span aria-hidden="true">{{template "icon" (phaseIcon .Phase)}}</span>
             <span class="text-sm font-semibold text-(--text-primary)">{{phaseLabel $.Messages .Phase}}</span>
             <span class="stats-symptom-icon">{{.SymptomIcon}}</span>
-            <span class="stats-symptom-name">{{symptomLabel $.Messages .SymptomName}}</span>
+            <span class="stats-symptom-name whitespace-normal! break-words!">{{symptomLabel $.Messages .SymptomName}}</span>
           </div>
           <p class="journal-muted mt-2 text-sm">{{printf (tn $.Messages $.Lang .Key .Total) .Count .Total}}</p>
           {{else}}
@@ -269,7 +269,7 @@
           <li class="card-quiet stats-symptom-row">
             <span class="stats-symptom-meta">
               <span class="stats-symptom-icon">{{.Icon}}</span>
-              <span class="stats-symptom-name" title="{{$label}}">{{$label}}</span>
+              <span class="stats-symptom-name whitespace-normal! break-words!">{{$label}}</span>
             </span>
             <span class="stats-symptom-frequency">{{.FrequencySummary}}</span>
           </li>
@@ -467,7 +467,7 @@
           <li class="card-quiet stats-symptom-row">
             <span class="stats-symptom-meta">
               <span class="stats-symptom-icon">{{.Icon}}</span>
-              <span class="stats-symptom-name" title="{{$label}}">{{$label}}</span>
+              <span class="stats-symptom-name whitespace-normal! break-words!">{{$label}}</span>
             </span>
             <span class="stats-symptom-frequency">{{.FrequencySummary}}</span>
           </li>
@@ -559,7 +559,7 @@
               <li class="phase-symptom-row">
                 <span class="stats-symptom-meta">
                   <span class="stats-symptom-icon">{{.Icon}}</span>
-                  <span class="stats-symptom-name" title="{{symptomLabel $.Messages .Name}}">{{symptomLabel $.Messages .Name}}</span>
+                  <span class="stats-symptom-name whitespace-normal! break-words!">{{symptomLabel $.Messages .Name}}</span>
                 </span>
                 <span class="stats-symptom-frequency">{{formatNumber $.Lang .Percentage}}%</span>
               </li>

@@ -112,6 +112,10 @@
       return;
     }
 
+    // localStorage outlives a sign-out, so the mark names the account the page
+    // was rendered for; a page without a binding keeps the unkeyed key.
+    var binding = accountBindingFromBody();
+
     var tips = root.querySelectorAll("[data-once-tip]");
     for (var index = 0; index < tips.length; index++) {
       var tip = tips[index];
@@ -120,13 +124,14 @@
         continue;
       }
 
-      if (safeLocalStorageGet("ovumcy_once_tip:" + key) === "1") {
+      var storageKey = "ovumcy_once_tip:" + (binding ? binding + ":" : "") + key;
+      if (safeLocalStorageGet(storageKey) === "1") {
         setNodeHidden(tip, true);
         continue;
       }
 
       setNodeHidden(tip, false);
-      safeLocalStorageSet("ovumcy_once_tip:" + key, "1");
+      safeLocalStorageSet(storageKey, "1");
     }
   }
 
