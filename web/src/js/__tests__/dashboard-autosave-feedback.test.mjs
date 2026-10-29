@@ -47,9 +47,9 @@ function dashboardPage() {
 function statusOKFragment(escapedMessage) {
   return (
     '<div class="status-ok"><div class="toast-body"><span class="toast-message-wrap">' +
-    '<span class="toast-icon" aria-hidden="true">✓</span>' +
+    '<span class="toast-icon" aria-hidden="true"></span>' +
     `<span class="toast-message">${escapedMessage}</span></span>` +
-    '<button type="button" class="toast-close" data-dismiss-status aria-label="Close">×</button>' +
+    '<button type="button" class="toast-close" data-dismiss-status aria-label="Close"></button>' +
     "</div></div>"
   );
 }
