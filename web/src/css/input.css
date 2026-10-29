@@ -4304,10 +4304,18 @@
   flex: 0 0 1rem;
   font-size: var(--text-sm);
   line-height: 1;
+
+  &::before {
+    content: "✓";
+  }
 }
 
 @utility toast-icon-error {
   font-size: var(--text-sm);
+
+  &::before {
+    content: "⚠";
+  }
 }
 
 @utility toast-message {
@@ -4331,6 +4339,10 @@
   line-height: 1;
   opacity: 0.92;
   cursor: pointer;
+
+  &::before {
+    content: "×";
+  }
 
   &:hover {
     opacity: 1;

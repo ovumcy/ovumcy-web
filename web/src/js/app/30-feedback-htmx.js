@@ -118,9 +118,6 @@
     icon.setAttribute("aria-hidden", "true");
     if (kind === "error") {
       icon.classList.add("toast-icon-error");
-      icon.textContent = "⚠";
-    } else {
-      icon.textContent = "✓";
     }
     messageWrap.appendChild(icon);
 
@@ -161,7 +158,6 @@
       closeButton.type = "button";
       closeButton.className = "toast-close";
       closeButton.setAttribute("aria-label", document.body.getAttribute("data-toast-close") || "Close");
-      closeButton.textContent = "×";
       closeButton.addEventListener("click", function () {
         toast.remove();
       });
@@ -275,7 +271,6 @@
     closeButton.className = "toast-close";
     closeButton.setAttribute("aria-label", closeLabelText());
     closeButton.setAttribute("data-dismiss-status", "true");
-    closeButton.textContent = "×";
     body.appendChild(closeButton);
 
     successNode.appendChild(body);
