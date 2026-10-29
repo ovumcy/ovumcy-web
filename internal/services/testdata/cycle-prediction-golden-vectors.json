@@ -127,5 +127,51 @@
         }
       }
     ]
+  },
+  "irregularRange": {
+    "$comment": "Irregular range mode: the current cycle's fertile window is [PredictCycleWindow(min).fertilityStart, PredictCycleWindow(max).ovulationDate] (irregularFertilityWindow), where `cycleLength` is the median prediction length. A shortest cycle below the 15-day floor (no calculable window) starts the window at lastPeriodStart; the same start clamp applies to a 15-day cycle whose window would begin before it. A longest cycle below the floor leaves the median window's end in place. A window whose last day falls after 9999-12-31 is withheld as a whole (`withheld: true`, null dates). Consumed by ovumcy-web's TestIrregularRangeWindow_GoldenVectors; ovumcy-app has no twin consumer yet and ignores this key. See docs/cycle-prediction.md.",
+    "schemaVersion": 1,
+    "vectors": [
+      {
+        "name": "regular spread [26..32], median 28: [ovulation(26) - 5, ovulation(32)]",
+        "input": { "lastPeriodStart": "2026-03-01", "cycleLength": 28, "minCycleLength": 26, "maxCycleLength": 32, "lutealPhase": 14 },
+        "expected": { "withheld": false, "windowStart": "2026-03-07", "windowEnd": "2026-03-18" }
+      },
+      {
+        "name": "min == max (21): the window is the single cycle's own window",
+        "input": { "lastPeriodStart": "2026-03-01", "cycleLength": 21, "minCycleLength": 21, "maxCycleLength": 21, "lutealPhase": 14 },
+        "expected": { "withheld": false, "windowStart": "2026-03-02", "windowEnd": "2026-03-07" }
+      },
+      {
+        "name": "min 15: window start clamped to the cycle start",
+        "input": { "lastPeriodStart": "2026-03-01", "cycleLength": 28, "minCycleLength": 15, "maxCycleLength": 28, "lutealPhase": 14 },
+        "expected": { "withheld": false, "windowStart": "2026-03-01", "windowEnd": "2026-03-14" }
+      },
+      {
+        "name": "min 14 (below the 15-day floor): start falls back to the cycle start",
+        "input": { "lastPeriodStart": "2026-03-01", "cycleLength": 28, "minCycleLength": 14, "maxCycleLength": 30, "lutealPhase": 14 },
+        "expected": { "withheld": false, "windowStart": "2026-03-01", "windowEnd": "2026-03-16" }
+      },
+      {
+        "name": "min 10 (far below the floor): start falls back to the cycle start",
+        "input": { "lastPeriodStart": "2026-03-01", "cycleLength": 28, "minCycleLength": 10, "maxCycleLength": 30, "lutealPhase": 14 },
+        "expected": { "withheld": false, "windowStart": "2026-03-01", "windowEnd": "2026-03-16" }
+      },
+      {
+        "name": "max 14 (below the floor): end falls back to the median window end",
+        "input": { "lastPeriodStart": "2026-03-01", "cycleLength": 28, "minCycleLength": 12, "maxCycleLength": 14, "lutealPhase": 14 },
+        "expected": { "withheld": false, "windowStart": "2026-03-01", "windowEnd": "2026-03-14" }
+      },
+      {
+        "name": "9999 edge: window ending exactly on 9999-12-31 is kept",
+        "input": { "lastPeriodStart": "9999-12-10", "cycleLength": 28, "minCycleLength": 26, "maxCycleLength": 36, "lutealPhase": 14 },
+        "expected": { "withheld": false, "windowStart": "9999-12-16", "windowEnd": "9999-12-31" }
+      },
+      {
+        "name": "9999 cut: window ending one day past 9999-12-31 is withheld as a whole",
+        "input": { "lastPeriodStart": "9999-12-10", "cycleLength": 28, "minCycleLength": 26, "maxCycleLength": 37, "lutealPhase": 14 },
+        "expected": { "withheld": true, "windowStart": null, "windowEnd": null }
+      }
+    ]
   }
 }
