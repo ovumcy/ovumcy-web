@@ -44,3 +44,27 @@ test("showToast appends toasts into the pre-existing live region", async () => {
     dom.window.close();
   }
 });
+
+// WEB-358: the glyphs are painted by CSS ::before, so a toast's textContent
+// carries only the message — not the icon or the × (which a text reader or
+// copy would otherwise duplicate).
+test("toast icon and close button carry no text; the message is the whole textContent", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: PAGE });
+  try {
+    const { document } = dom.window;
+    dom.window.showToast("Saved.", "ok");
+    dom.window.showToast("Request failed.", "error");
+
+    const toasts = document.querySelectorAll(".toast-stack > *");
+    assert.equal(toasts.length, 2);
+    for (const el of document.querySelectorAll(".toast-icon, .toast-close")) {
+      assert.equal(el.textContent, "", `${el.className} must be glyph-free in the DOM`);
+    }
+    assert.equal(toasts[0].textContent.trim(), "Saved.");
+    assert.equal(toasts[1].textContent.trim(), "Request failed.");
+    assert.equal(document.querySelector(".toast-close").getAttribute("aria-label"), "Close");
+    assert.equal(document.querySelector(".toast-icon").getAttribute("aria-hidden"), "true");
+  } finally {
+    dom.window.close();
+  }
+});

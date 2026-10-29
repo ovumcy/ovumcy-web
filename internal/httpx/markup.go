@@ -45,7 +45,7 @@ func DismissibleStatusOKMarkupOfKind(message string, closeLabel string, kind str
 		kindAttribute = fmt.Sprintf(" data-status-kind=\"%s\"", template.HTMLEscapeString(kind))
 	}
 	return fmt.Sprintf(
-		"<div class=\"status-ok\"%s><div class=\"toast-body\"><span class=\"toast-message-wrap\"><span class=\"toast-icon\" aria-hidden=\"true\">✓</span><span class=\"toast-message\">%s</span></span><button type=\"button\" class=\"toast-close\" data-dismiss-status aria-label=\"%s\">×</button></div></div>",
+		"<div class=\"status-ok\"%s><div class=\"toast-body\"><span class=\"toast-message-wrap\"><span class=\"toast-icon\" aria-hidden=\"true\"></span><span class=\"toast-message\">%s</span></span><button type=\"button\" class=\"toast-close\" data-dismiss-status aria-label=\"%s\"></button></div></div>",
 		kindAttribute,
 		template.HTMLEscapeString(message),
 		template.HTMLEscapeString(closeLabel),
