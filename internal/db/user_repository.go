@@ -1607,6 +1607,7 @@ func (repo *UserRepository) UpdateCycleSettingsMovingPeriodStart(ctx context.Con
 // carries the same createdAt, so the rows that write produced stay one
 // recognisable cohort — a day the owner ticked by hand later has its own.
 func bareOnboardingPeriodDay(userID uint, day time.Time, createdAt time.Time) models.DailyLog {
+	autoFilled := true
 	return models.DailyLog{
 		UserID:        userID,
 		Date:          day,
@@ -1618,6 +1619,7 @@ func bareOnboardingPeriodDay(userID uint, day time.Time, createdAt time.Time) mo
 		CervicalMucus: models.CervicalMucusNone,
 		PregnancyTest: models.PregnancyTestNone,
 		SymptomIDs:    []uint{},
+		AutoFilled:    &autoFilled,
 	}
 }
 

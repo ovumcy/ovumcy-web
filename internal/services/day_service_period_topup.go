@@ -192,5 +192,11 @@ func newAutoFilledPeriodEntry(userID uint, day time.Time, flow string) models.Da
 		PregnancyTest:   models.PregnancyTestNone,
 		CycleFactorKeys: []string{},
 		SymptomIDs:      []uint{},
+		AutoFilled:      autoFilledMark(true),
 	}
+}
+
+// autoFilledMark is the value a writer stores in DailyLog.AutoFilled.
+func autoFilledMark(filled bool) *bool {
+	return &filled
 }

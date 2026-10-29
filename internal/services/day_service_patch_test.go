@@ -258,8 +258,9 @@ func TestMergeDayEntryPatchCarriesStoredValuesNormalized(t *testing.T) {
 // The auto-fill clear behind unchecking a period start runs on the partial
 // write too, and it reads the anchor's flow from the stored row, not from the
 // merged day: a hand-logged flow on a following day survives, a stored legacy
-// spelling of the propagated flow still reads as the fill's own value, and a
-// fill whose anchor was edited after it is kept.
+// spelling of the propagated flow still reads as the fill's own value on rows
+// that predate the provenance mark, and a fill whose anchor was edited after it
+// is cleared when the mark says the fill wrote it and kept when no mark exists.
 func TestPatchUncheckingAnAutoFilledAnchorAppliesTheClearFlowRules(t *testing.T) {
 	anchor := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
 	now := anchor.AddDate(0, 0, 14) // every fill day is in the past
@@ -292,12 +293,24 @@ func TestPatchUncheckingAnAutoFilledAnchorAppliesTheClearFlowRules(t *testing.T)
 				stored := logs.entries["2026-09-07"]
 				stored.Flow = " MEDIUM "
 				logs.entries["2026-09-07"] = stored
+				dropAutoFillProvenance(logs, "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11")
 			},
 			wantCleared: []string{"2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11"},
 		},
 		{
 			name:       "anchor flow edited after the fill",
 			anchorFlow: models.FlowLight,
+			steps: []patchStep{
+				{day: anchor, input: DayEntryInput{Flow: models.FlowHeavy}, fields: DayEntryFields{Flow: true}},
+			},
+			wantCleared: []string{"2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11"},
+		},
+		{
+			name:       "anchor flow edited after a fill that predates the provenance mark",
+			anchorFlow: models.FlowLight,
+			afterFill: func(logs *dayLogRepositoryStub) {
+				dropAutoFillProvenance(logs, "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11")
+			},
 			steps: []patchStep{
 				{day: anchor, input: DayEntryInput{Flow: models.FlowHeavy}, fields: DayEntryFields{Flow: true}},
 			},

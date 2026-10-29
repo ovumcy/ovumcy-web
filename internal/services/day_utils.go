@@ -278,17 +278,17 @@ func comparableDayFlow(flow string) string {
 // factors, symptoms, notes), days marked as a cycle anchor, and uncertain
 // anchors are kept intact.
 //
-// Flow is a manual signal with one exception. Web's auto-fill writes the
-// anchor's own flow into the neighbours it creates, so that single value is
-// the fill's mark rather than the owner's: propagatedFlow is the flow the
-// anchor carried when it was unchecked, and a neighbour whose flow is empty,
-// none or equal to it is still bare. Any other flow (a heavy day inside a
-// medium period, spotting beside a none anchor) was entered by hand. An empty
-// propagatedFlow means the anchor carried none, so every non-none flow counts
-// as manual. A neighbour that happens to carry the same flow by hand is
-// indistinguishable from the fill and stays clearable. This is the parity
-// counterpart of `isAutoFilledPeriodCandidate` in ovumcy-app, where auto-fill
-// does not propagate flow and any flow is a signal.
+// The day's AutoFilled mark decides whose the flow is (WEB-282). A day the
+// owner wrote (false) is never a candidate. A day a fill wrote (true) carries
+// the fill's flow whatever the anchor's flow has become since, so its flow is
+// no signal. Only a row that predates the mark (nil) falls back to the flow
+// heuristic: web's auto-fill writes the anchor's own flow into the neighbours
+// it creates, so propagatedFlow is the flow the anchor carried when it was
+// unchecked, and a neighbour whose flow is empty, none or equal to it reads as
+// bare. Any other flow was entered by hand. An empty propagatedFlow means the
+// anchor carried none, so every non-none flow counts as manual. This is the
+// parity counterpart of `isAutoFilledPeriodCandidate` in ovumcy-app, where
+// auto-fill does not propagate flow and any flow is a signal.
 //
 // The manual-signal fields it tests mirror DayHasData's, and
 // day_field_mirror_barrier_test.go holds the two together: a field wired into
@@ -299,7 +299,10 @@ func IsAutoFilledPeriodCandidate(entry models.DailyLog, propagatedFlow string) b
 	if !entry.IsPeriod || entry.CycleStart || entry.IsUncertain {
 		return false
 	}
-	if flow := comparableDayFlow(entry.Flow); flow != "" && flow != models.FlowNone && flow != comparableDayFlow(propagatedFlow) {
+	if entry.AutoFilled != nil && !*entry.AutoFilled {
+		return false
+	}
+	if flow := comparableDayFlow(entry.Flow); entry.AutoFilled == nil && flow != "" && flow != models.FlowNone && flow != comparableDayFlow(propagatedFlow) {
 		return false
 	}
 	if entry.Mood >= MinDayMood && entry.Mood <= MaxDayMood {

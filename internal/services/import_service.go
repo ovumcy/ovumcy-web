@@ -431,6 +431,9 @@ func (service *ImportService) writeDays(ctx context.Context, userID uint, planne
 				CycleFactorKeys: day.input.CycleFactorKeys,
 				SymptomIDs:      symptomIDs,
 				Notes:           day.input.Notes,
+				// The export carries no provenance, so an imported day is the
+				// owner's own record (WEB-282).
+				AutoFilled: autoFilledMark(false),
 			})
 		}
 

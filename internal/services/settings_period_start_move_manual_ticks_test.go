@@ -45,11 +45,15 @@ func (fixture manualTickFixture) tickByHand(t *testing.T, day time.Time, hoursAf
 	if err != nil {
 		t.Fatalf("tick %s: %v", day.Format("2006-01-02"), err)
 	}
+	// The tick is stored as a row that predates the provenance mark (WEB-282):
+	// a marked hand tick is kept by the mark alone, so only an unmarked one
+	// shows the onboarding cohort is what tells it from the fill.
+	entry.AutoFilled = nil
 	if !IsAutoFilledPeriodCandidate(entry, "") {
 		t.Fatalf("fixture: the hand tick on %s is not bare, so it cannot tell the fill apart: %+v", day.Format("2006-01-02"), entry)
 	}
 	stamp := time.Now().UTC().Add(time.Duration(hoursAfterOnboarding) * time.Hour)
-	if err := fixture.database.Model(&models.DailyLog{}).Where("id = ? AND user_id = ?", entry.ID, fixture.userID).Update("created_at", stamp).Error; err != nil {
+	if err := fixture.database.Model(&models.DailyLog{}).Where("id = ? AND user_id = ?", entry.ID, fixture.userID).Updates(map[string]any{"created_at": stamp, "auto_filled": nil}).Error; err != nil {
 		t.Fatalf("stamp %s: %v", day.Format("2006-01-02"), err)
 	}
 }

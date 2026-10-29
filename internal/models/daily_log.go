@@ -44,8 +44,12 @@ type DailyLog struct {
 	CycleFactorKeys []string  `gorm:"column:cycle_factor_keys;serializer:json"`
 	SymptomIDs      []uint    `gorm:"serializer:json"`
 	Notes           string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// AutoFilled is the period auto-fill's provenance mark (WEB-282): true on a
+	// day a fill wrote, false once the owner writes the day or import creates
+	// it, nil on rows that predate migration 042. Never exported.
+	AutoFilled *bool `gorm:"column:auto_filled"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 
 	// HasSpottingSymptom is read-time context, never persisted: the owner's
 	// built-in "Spotting" symptom is among SymptomIDs. A symptom is a per-owner
