@@ -47,18 +47,17 @@ func TestClearDataCopyNamesEveryColumnTheWipeWrites(t *testing.T) {
 
 	var written []string
 	record := func(tx *gorm.DB) {
-		switch {
-		case tx.Statement.Table == "users":
-			values, ok := tx.Statement.Dest.(map[string]any)
-			if !ok {
-				t.Errorf("users update with a %T destination; this test can only read a column map", tx.Statement.Dest)
-				return
-			}
-			for column := range values {
-				written = append(written, column)
-			}
-		default:
+		if tx.Statement.Table != "users" {
 			t.Errorf("unexpected update of table %q", tx.Statement.Table)
+			return
+		}
+		values, ok := tx.Statement.Dest.(map[string]any)
+		if !ok {
+			t.Errorf("users update with a %T destination; this test can only read a column map", tx.Statement.Dest)
+			return
+		}
+		for column := range values {
+			written = append(written, column)
 		}
 	}
 	if err := repo.database.Callback().Update().Before("gorm:update").Register("test:clear_data_copy_update", record); err != nil {
