@@ -165,10 +165,12 @@ func TestUncheckingAutoFilledAnchorStillClearsEveryPropagatedFlowDay(t *testing.
 	}
 }
 
-// The fill's provenance is not stored, so once the anchor's flow differs from
-// what the fill wrote the walk cannot tell the fill days from hand-logged ones
-// and errs toward keeping data: no hand-logged flow is ever lost.
-func TestUncheckingAnchorWhoseFlowChangedAfterTheFillKeepsTheFillDays(t *testing.T) {
+// On rows that predate the provenance mark (WEB-282), once the anchor's flow
+// differs from what the fill wrote the walk cannot tell the fill days from
+// hand-logged ones and errs toward keeping data: no hand-logged flow is ever
+// lost. Marked rows are cleared instead
+// (TestUncheckingAnchorAfterItsFlowChangedClearsTheFillDays).
+func TestUncheckingAnchorWhoseFlowChangedAfterAPreMarkFillKeepsTheFillDays(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := NewDayService(logs, &dayUserRepositoryStub{settings: models.User{PeriodLength: 5, AutoPeriodFill: true}})
 	ctx := context.Background()
@@ -186,6 +188,7 @@ func TestUncheckingAnchorWhoseFlowChangedAfterTheFillKeepsTheFillDays(t *testing
 		if _, err := service.UpsertDayEntryWithAutoFillAt(ctx, 10, anchor, step.input, now, time.UTC); err != nil {
 			t.Fatalf("%s: %v", step.name, err)
 		}
+		dropAutoFillProvenance(logs, "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11")
 	}
 
 	if logs.entries["2026-09-07"].IsPeriod {

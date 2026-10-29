@@ -47,6 +47,15 @@ func TestSettingsStartMoveKeepsAHandTickedOldStart(t *testing.T) {
 	for _, day := range []int{14, 15} {
 		withdrawSave(t, service, userID, startMoveDay(time.September, day), DayEntryInput{IsPeriod: true, Flow: models.FlowNone})
 	}
+	// The ticks are stored as rows that predate the provenance mark (WEB-282):
+	// a marked hand tick is kept by the mark alone, so only unmarked ones show
+	// the cohort is what tells them from the fill.
+	for _, entry := range startMoveListLogs(t, repositories, userID) {
+		entry.AutoFilled = nil
+		if err := repositories.DailyLogs.Save(ctx, &entry); err != nil {
+			t.Fatalf("unmark %s: %v", entry.Date.Format("2006-01-02"), err)
+		}
+	}
 	before := startMoveListLogs(t, repositories, userID)
 	first, foundFirst := startMoveRowOn(before, "2026-09-14")
 	second, foundSecond := startMoveRowOn(before, "2026-09-15")

@@ -193,6 +193,7 @@ func findDailyLogInDayRange(query *gorm.DB, userID uint, dayStart time.Time, day
 			"cycle_factor_keys",
 			"symptom_ids",
 			"notes",
+			"auto_filled",
 			"created_at",
 			"updated_at",
 		).

@@ -42,6 +42,7 @@ var (
 	dayCandidateOnlyFields = map[string]string{
 		"CycleStart":  "an explicit cycle anchor is never an auto-filled neighbour",
 		"IsUncertain": "an uncertain anchor is never an auto-filled neighbour",
+		"AutoFilled":  "provenance, not data: it says who wrote the day, which the fields DayHasData reads cannot",
 	}
 
 	// dayMirrorGateFields are read by both functions as the period gate rather

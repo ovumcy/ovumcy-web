@@ -263,6 +263,7 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		entry.CycleFactorKeys = payload.CycleFactorKeys
 		entry.SymptomIDs = payload.SymptomIDs
 		entry.Notes = payload.Notes
+		entry.AutoFilled = autoFilledMark(false)
 		if err := service.logs.Save(ctx, &entry); err != nil {
 			return models.DailyLog{}, priorDayState{}, ErrDayEntryUpdateFailed
 		}
@@ -282,6 +283,7 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		CycleFactorKeys: payload.CycleFactorKeys,
 		Notes:           payload.Notes,
 		SymptomIDs:      payload.SymptomIDs,
+		AutoFilled:      autoFilledMark(false),
 	}
 	if err := service.logs.Create(ctx, &entry); err != nil {
 		var uniqueErr interface{ UniqueConstraint() string }
@@ -1137,6 +1139,7 @@ func (service *DayService) autoFillFollowingPeriodDaysThrough(ctx context.Contex
 
 			entry.IsPeriod = true
 			entry.Flow = flow
+			entry.AutoFilled = autoFilledMark(true)
 			if err := service.logs.Save(ctx, &entry); err != nil {
 				return err
 			}
