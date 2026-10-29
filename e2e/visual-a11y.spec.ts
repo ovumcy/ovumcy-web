@@ -159,8 +159,16 @@ test.describe('Visual and accessibility regressions', () => {
         const input = document.querySelector<HTMLElement>('#settings-import-file');
         const box = input?.parentElement?.getBoundingClientRect();
         const rect = input?.getBoundingClientRect();
+        // The painted text, not the box: a label spilling into its neighbour
+        // leaves scrollWidth untouched when the box itself is clipped to the column.
         const labels = Array.from(document.querySelectorAll<HTMLElement>('.mobile-tabbar-link')).map(
-          (link) => link.scrollWidth - link.clientWidth,
+          (link) => {
+            const range = document.createRange();
+            range.selectNodeContents(link);
+            const text = range.getBoundingClientRect();
+            const box = link.getBoundingClientRect();
+            return Math.max(box.left - text.left, text.right - box.right, 0);
+          },
         );
         return {
           inputOverflow: rect && box ? rect.right - box.right : 0,
