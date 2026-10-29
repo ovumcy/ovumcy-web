@@ -88,10 +88,11 @@ Notes:
 2. Ovumcy starts a server-side Authorization Code flow with PKCE and writes a sealed one-time state cookie containing the OIDC `state`, `nonce`, PKCE verifier, and expiry timestamp.
 3. The identity provider authenticates the user and returns the browser to `/auth/oidc/callback` — an auto-POST of the `code` and `state` in the request body (`form_post`, the default) or a `GET` redirect carrying them in the URL query (`query`). Ovumcy reads the callback from exactly one source keyed by the mode; it never reads both.
 4. Ovumcy validates the sealed state, exchanges the authorization code for tokens, and verifies the ID token plus `nonce`.
-   When the identity is not linked yet (step 5 does not apply), Ovumcy reads `email` and `email_verified` from the provider's UserInfo
-   endpoint, as OpenID Connect specifies for the code flow, and uses that answer only when its `sub` equals the ID token's. Only a provider
-   with no usable `userinfo_endpoint` has the ID token's `email` and `email_verified` used instead; if that ID token carries no email, only
-   an identity already linked (step 5) can sign in.
+   When the identity is not linked yet (step 5 does not apply) and the ID token carries no verified email, Ovumcy reads `email` and
+   `email_verified` from the provider's UserInfo endpoint, as OpenID Connect specifies for the code flow, and uses that answer only when its
+   `sub` equals the ID token's; an answer for another `sub`, issuer or client, or a failed request, fails the sign-in. An ID token that
+   already carries a verified email is used as is and UserInfo is never asked. A provider with no usable `userinfo_endpoint` whose ID token
+   carries no verified email can sign in only through an identity already linked (step 5).
 5. If the `(issuer, subject)` identity link already exists, the linked local account is used immediately.
 6. Otherwise, if a verified email claim matches an existing local account, Ovumcy **neither links the two nor signs the user in**. It redirects to `/login` with a message pointing the account holder at Settings: sign in with your existing method, then link the new identity from there.
    There is no unauthenticated way to complete this link — the public `/auth/oidc/link-confirm` route that used to accept a password on this page was removed for good (WEB-77). Without this gate, any provider able to assert an existing user's email address could take over their account.

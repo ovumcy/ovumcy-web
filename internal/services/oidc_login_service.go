@@ -659,17 +659,22 @@ func (service *OIDCLoginService) authenticateLinkedIdentity(ctx context.Context,
 }
 
 // emailClaims returns the claims an unlinked sign-in resolves its account by.
-// They are read from the provider's UserInfo endpoint, which is where OpenID
-// Connect delivers the email scope's claims to a code-flow client (Core 1.0
-// §5.4), whatever the ID token also carries. A linked (issuer, subject) never
-// reaches this, so neither a returning sign-in nor a step-up ever depends on
-// UserInfo.
+// An ID token that already carries a verified address is used as is, with no
+// UserInfo request: that is the sign-in every such provider had before, and it
+// owes nothing to an endpoint it never needed. Otherwise the claims are read
+// from the provider's UserInfo endpoint, which is where OpenID Connect delivers
+// the email scope's claims to a code-flow client (Core 1.0 §5.4). A linked
+// (issuer, subject) never reaches this, so neither a returning sign-in nor a
+// step-up ever depends on UserInfo.
 //
-// Only a provider with no usable UserInfo endpoint has its ID token's claims
-// used, unchanged, and resolveUserForClaims refuses an address they lack
-// exactly as it did before. Any UserInfo failure — the request, its status, a
-// sub that is not the ID token's — fails the sign-in.
+// A provider with no usable endpoint keeps the ID token's claims, and
+// resolveUserForClaims refuses the address they lack exactly as before. Any
+// UserInfo failure — the request, its status, a sub that is not the ID
+// token's — fails the sign-in.
 func (service *OIDCLoginService) emailClaims(ctx context.Context, exchange security.OIDCExchangeResult) (security.OIDCClaims, error) {
+	if exchange.Claims.EmailVerified && strings.TrimSpace(exchange.Claims.Email) != "" {
+		return exchange.Claims, nil
+	}
 	claims, err := service.client.UserInfoClaims(ctx, exchange)
 	switch {
 	case errors.Is(err, security.ErrOIDCUserInfoUnavailable):
