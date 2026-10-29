@@ -14,6 +14,19 @@ func bbtPtr(value float64) *float64 {
 	return &value
 }
 
+func TestIsRecognisedTemperatureUnit(t *testing.T) {
+	t.Parallel()
+
+	for raw, want := range map[string]bool{
+		"": true, "c": true, "f": true, " F ": true, "C": true,
+		"fahrenheit": false, "kelvin": false, "k": false,
+	} {
+		if got := IsRecognisedTemperatureUnit(raw); got != want {
+			t.Errorf("IsRecognisedTemperatureUnit(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
 func TestParseDayBBTRawWithUnitRejectsNonNumeric(t *testing.T) {
 	t.Parallel()
 
