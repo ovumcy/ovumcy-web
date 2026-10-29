@@ -9,6 +9,18 @@ import (
 	"golang.org/x/net/html"
 )
 
+func TestBrandedPageTitleFallsBackWhenTheCatalogueLacksAnEntry(t *testing.T) {
+	if got := brandedPageTitle(map[string]string{}, "page.key", "Ovumcy | Fallback"); got != "Ovumcy | Fallback" {
+		t.Errorf("expected the fallback for an untranslated page, got %q", got)
+	}
+	if got := brandedPageTitle(map[string]string{"page.key": "Page"}, "page.key", "x"); got != "Ovumcy | Page" {
+		t.Errorf("expected the built-in app name when the catalogue has none, got %q", got)
+	}
+	if got := brandedPageTitle(map[string]string{"page.key": "Page", "app.name": "Овумси"}, "page.key", "x"); got != "Овумси | Page" {
+		t.Errorf("expected the catalogue app name, got %q", got)
+	}
+}
+
 // Every page title reads "Ovumcy | <page>"; the 2FA settings page took the bare
 // catalogue entry instead, in every language but the English fallback.
 func TestTwoFactorSettingsPageTitleCarriesTheAppName(t *testing.T) {
