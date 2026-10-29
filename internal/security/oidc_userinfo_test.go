@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 )
 
 // TestSanitizeOIDCUserInfoEndpoint pins the userinfo_endpoint origin check: a
@@ -286,6 +287,116 @@ func TestOIDCUserInfoClaimsRefusesAFailedRequest(t *testing.T) {
 	}
 	if err.Error() != "fetch oidc userinfo failed" {
 		t.Fatalf("a failed UserInfo request must not carry the provider's status or body, got %q", err)
+	}
+}
+
+// TestSanitizeOIDCUserInfoEndpointRefusesAnIssuerThatDialsThisMachine: an
+// endpoint on the issuer's own origin is still dropped when that origin dials
+// this machine, so the HostDialsThisMachine branch is what refuses it, not an
+// origin mismatch.
+func TestSanitizeOIDCUserInfoEndpointRefusesAnIssuerThatDialsThisMachine(t *testing.T) {
+	if got := sanitizeOIDCUserInfoEndpoint("https://id.example.com/userinfo", "https://id.example.com"); got == "" {
+		t.Fatal("control: a same-origin endpoint on a remote issuer must survive")
+	}
+	for _, issuer := range []string{"https://0.0.0.0", "https://[::]", "https://0.1.2.3:8443", "https://:8443"} {
+		if got := sanitizeOIDCUserInfoEndpoint(issuer+"/userinfo", issuer); got != "" {
+			t.Fatalf("userinfo_endpoint on machine-dialing issuer %q must be dropped, got %q", issuer, got)
+		}
+	}
+}
+
+// TestOIDCUserInfoClaimsRefusesAnUnverifiableSignature: a signed answer whose
+// signature does not verify against the issuer's JWKS — a foreign key, or a
+// corrupted signature — is refused, never parsed as if it were plain claims.
+func TestOIDCUserInfoClaimsRefusesAnUnverifiableSignature(t *testing.T) {
+	body := func(issuer string) map[string]any {
+		return map[string]any{"sub": "user-123", "email": "owner@example.com", "email_verified": true, "iss": issuer, "aud": "ovumcy"}
+	}
+	for name, tamper := range map[string]func(t *testing.T, mock *mockOIDCProvider){
+		"signed with a key the JWKS does not hold": func(t *testing.T, mock *mockOIDCProvider) {
+			foreign, _ := newMockOIDCProvider(t)
+			foreign.keyID = mock.keyID
+			mock.userInfoSigner = foreign
+		},
+		"a corrupted signature": func(_ *testing.T, mock *mockOIDCProvider) {
+			mock.userInfoCorruptSignature = true
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mock, caPEM := newMockOIDCProvider(t)
+			mock.userInfoBody = body(mock.issuer)
+			mock.userInfoSigned = true
+			tamper(t, mock)
+			client, exchange := exchangeWithoutEmail(t, mock, caPEM)
+
+			if claims, err := client.UserInfoClaims(context.Background(), exchange); err == nil {
+				t.Fatalf("UserInfoClaims accepted an answer whose signature does not verify, returning %+v", claims)
+			}
+		})
+	}
+}
+
+// TestOIDCUserInfoClaimsRefusesAnExpiredAnswer: an answer naming an exp already
+// past (beyond one minute of skew) is refused, so an older JWT the issuer
+// signed for the same sub cannot stand in for this sign-in's answer.
+func TestOIDCUserInfoClaimsRefusesAnExpiredAnswer(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		exp    time.Time
+		accept bool
+	}{
+		"exp in the future":              {exp: time.Now().Add(5 * time.Minute), accept: true},
+		"exp just past, within the skew": {exp: time.Now().Add(-10 * time.Second), accept: true},
+		"exp past, beyond the skew":      {exp: time.Now().Add(-10 * time.Minute)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mock, caPEM := newMockOIDCProvider(t)
+			mock.userInfoBody = map[string]any{"sub": "user-123", "email": "owner@example.com", "email_verified": true, "iss": mock.issuer, "aud": "ovumcy", "exp": testCase.exp.Unix()}
+			mock.userInfoSigned = true
+			client, exchange := exchangeWithoutEmail(t, mock, caPEM)
+
+			_, err := client.UserInfoClaims(context.Background(), exchange)
+			if testCase.accept && err != nil {
+				t.Fatalf("UserInfoClaims refused an unexpired answer: %v", err)
+			}
+			if !testCase.accept && err == nil {
+				t.Fatal("UserInfoClaims accepted an answer whose exp has passed")
+			}
+		})
+	}
+}
+
+// TestOIDCUserInfoClaimsMatchesTheIDTokenSubUntrimmed: the sub match uses the
+// ID token's sub exactly as issued, so a sub with surrounding whitespace is
+// matched by the same bytes and refused against its trimmed form.
+func TestOIDCUserInfoClaimsMatchesTheIDTokenSubUntrimmed(t *testing.T) {
+	const paddedSub = " user-123 "
+	for name, testCase := range map[string]struct {
+		userInfoSub string
+		accept      bool
+	}{
+		"the same padded sub": {userInfoSub: paddedSub, accept: true},
+		"the trimmed sub":     {userInfoSub: "user-123"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mock, caPEM := newMockOIDCProvider(t)
+			claims := oidcLimitTestClaims(mock.issuer, "nonce-userinfo")
+			claims["sub"] = paddedSub
+			mock.idToken = mustSignMockIDToken(t, mock, claims)
+			mock.userInfoBody = map[string]any{"sub": testCase.userInfoSub, "email": "owner@example.com", "email_verified": true}
+			client := newExchangeTestClient(t, mock, writeIssuerCAFile(t, caPEM))
+			exchange, err := client.ExchangeCode(context.Background(), "auth-code", "verifier-xyz", "nonce-userinfo")
+			if err != nil {
+				t.Fatalf("ExchangeCode: %v", err)
+			}
+
+			_, err = client.UserInfoClaims(context.Background(), exchange)
+			if testCase.accept && err != nil {
+				t.Fatalf("UserInfoClaims refused the ID token's own sub: %v", err)
+			}
+			if !testCase.accept && err == nil {
+				t.Fatal("UserInfoClaims matched a trimmed sub against a padded ID-token sub")
+			}
+		})
 	}
 }
 

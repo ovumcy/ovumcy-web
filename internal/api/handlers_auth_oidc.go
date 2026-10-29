@@ -135,9 +135,13 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		// the authenticated Settings step-up
 		// (StartOIDCIdentityLinkStepup/completeOIDCIdentityLinkStepup) and the
 		// operator command `ovumcy link-oidc-identity`.
-		spec := authOIDCLinkConfirmUnavailableErrorSpec()
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
-		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
+		//
+		// The audit keeps the link-confirm outcome, but the owner-facing flash is
+		// the one an address with no account gets: two different flashes would
+		// tell anyone able to assert a verified email at the issuer whether that
+		// email holds an account here.
+		handler.logSecurityError(c, "auth.oidc_callback", authOIDCLinkConfirmUnavailableErrorSpec())
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: authOIDCAccountUnavailableErrorSpec().Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	if err != nil {

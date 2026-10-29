@@ -193,15 +193,16 @@ test.describe('Auth: OIDC login entry', () => {
     // authorised by a factor verified now, which an unauthenticated page
     // cannot do (issue #701). So the browser lands back on /login carrying the
     // refusal flash, never on a password-confirmation page and never on the
-    // dashboard.
+    // dashboard. The flash is the same one an address with no account gets, so
+    // it does not reveal that the email holds an account (WEB-360).
     await page.locator('[data-auth-sso-cta]').click();
     await expect(
       page.locator(
-        '[data-auth-server-error][data-error-key="auth.error.sso_link_confirmation_unavailable"]',
+        '[data-auth-server-error][data-error-key="auth.error.sso_sign_in_unavailable"]',
       ),
     ).toBeVisible();
     await expect(page.locator('[data-auth-server-error]')).toContainText(
-      localeText('en', 'auth.error.sso_link_confirmation_unavailable'),
+      localeText('en', 'auth.error.sso_sign_in_unavailable'),
     );
     await expect(page).toHaveURL(/\/login$/);
     expectNoSensitiveAuthParams(page.url());
@@ -295,7 +296,7 @@ test.describe('Auth: OIDC login entry', () => {
     await page.locator('[data-auth-sso-cta]').click();
     await expect(
       page.locator(
-        '[data-auth-server-error][data-error-key="auth.error.sso_link_confirmation_unavailable"]',
+        '[data-auth-server-error][data-error-key="auth.error.sso_sign_in_unavailable"]',
       ),
     ).toBeVisible();
     expect(await cookieByName(context, 'ovumcy_auth')).toBeFalsy();
