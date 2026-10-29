@@ -50,3 +50,18 @@ func localizedPageTitle(messages map[string]string, key string, fallback string)
 	}
 	return title
 }
+
+// brandedPageTitle is localizedPageTitle for a page whose catalogue entry is
+// the bare page name rather than a full "Ovumcy | …" title: the app name is
+// prefixed the way every other page's title carries it.
+func brandedPageTitle(messages map[string]string, key string, fallback string) string {
+	title, translated := lookupMessage(messages, key)
+	if !translated {
+		return fallback
+	}
+	appName, named := lookupMessage(messages, "app.name")
+	if !named {
+		appName = "Ovumcy"
+	}
+	return appName + " | " + title
+}
