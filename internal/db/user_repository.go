@@ -1589,7 +1589,7 @@ func (repo *UserRepository) UpdateCycleSettingsMovingPeriodStart(ctx context.Con
 		if !move.MarkDay.IsZero() {
 			if err := tx.Model(&models.DailyLog{}).
 				Where("user_id = ? AND date >= ? AND date < ? AND is_period = ?", userID, move.MarkDay, move.MarkDay.AddDate(0, 0, 1), false).
-				Update("is_period", true).Error; err != nil {
+				Updates(map[string]any{"is_period": true, "auto_filled": false}).Error; err != nil {
 				return err
 			}
 		}
@@ -1945,8 +1945,9 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 				}
 
 				if err := tx.Model(&entry).Where("user_id = ?", userID).Updates(map[string]any{
-					"is_period": true,
-					"flow":      models.FlowNone,
+					"is_period":   true,
+					"flow":        models.FlowNone,
+					"auto_filled": true,
 				}).Error; err != nil {
 					return err
 				}
