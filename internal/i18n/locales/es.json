@@ -300,7 +300,7 @@
   "settings.clear_data.resets.calendar_feed": "El enlace de tu feed de calendario deja de funcionar al instante; genera uno nuevo para volver a suscribirte.",
   "settings.clear_data.resets.webhook": "Los recordatorios por webhook se desactivan, se elimina el endpoint guardado y la antelación de los recordatorios vuelve a su valor predeterminado.",
   "settings.clear_data.resets.records": "Se eliminan todas las entradas del calendario y tus síntomas personalizados. Los síntomas integrados seguirán disponibles.",
-  "settings.clear_data.resets.cycle": "La configuración del ciclo vuelve a sus valores predeterminados, incluida la fecha de inicio del último periodo, la duración del ciclo y del periodo, el objetivo y el grupo de edad.",
+  "settings.clear_data.resets.cycle": "La configuración del ciclo vuelve a sus valores predeterminados, incluida la fecha de inicio del último periodo, la duración del ciclo y del periodo, el objetivo y el grupo de edad; el relleno automático de los días del periodo se desactiva.",
   "settings.clear_data.resets.preferences": "Las preferencias de registro y visualización vuelven a sus valores predeterminados: registro de temperatura y unidad, moco cervical, campos ocultos, fases pasadas, inicio de semana, consejos descartados y la zona horaria guardada.",
   "settings.clear_data.resets.sessions": "Se cierra la sesión en todos los demás dispositivos.",
   "settings.clear_data.kept": "Se conservan tu cuenta, tu correo electrónico, tu contraseña, el inicio de sesión en dos pasos, tu código de recuperación y el idioma de la interfaz.",

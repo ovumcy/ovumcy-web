@@ -9,8 +9,8 @@ import (
 
 // TestDashboardStartDatePromptLinksToTheSettingsField pins the way back in for
 // an account with no cycle anchor — the state a clear-data wipe leaves, where
-// /onboarding is no longer reachable: the dashboard prompt is a link, and its
-// fragment names an element the settings page actually renders.
+// /onboarding is no longer reachable: the dashboard prompt links to the settings
+// card holding the start-date field, and the settings page renders that card.
 func TestDashboardStartDatePromptLinksToTheSettingsField(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "start-date-reentry@example.com", "StrongPass1", true)
@@ -26,11 +26,19 @@ func TestDashboardStartDatePromptLinksToTheSettingsField(t *testing.T) {
 		return mustReadBodyString(t, response.Body)
 	}
 
-	const link = `<a href="/settings#settings-last-period-start-label" class="inline-link" data-dashboard-next-period-prompt>Enter the start date of your last cycle</a>`
-	if dashboard := get("/dashboard"); !strings.Contains(dashboard, link) {
-		t.Fatalf("expected the dashboard start-date prompt to link to the settings field")
+	dashboard := get("/dashboard")
+	prompt := strings.Index(dashboard, "Enter the start date of your last cycle")
+	if prompt < 0 {
+		t.Fatal("expected the dashboard to show the start-date prompt for an account with no cycle anchor")
 	}
-	if settings := get("/settings"); !strings.Contains(settings, `id="settings-last-period-start-label"`) {
-		t.Fatalf("settings page no longer renders the start-date prompt's link target")
+	anchor := strings.LastIndex(dashboard[:prompt], "<a ")
+	if anchor < 0 || strings.Contains(dashboard[anchor:prompt], "</a>") || !strings.Contains(dashboard[anchor:prompt], `href="/settings#settings-cycle"`) {
+		t.Fatal("expected the start-date prompt to be a link to /settings#settings-cycle")
+	}
+
+	settings := get("/settings")
+	card := strings.Index(settings, `id="settings-cycle"`)
+	if card < 0 || !strings.Contains(settings[card:], `id="settings-last-period-start"`) {
+		t.Fatal("expected the settings-cycle card to hold the start-date field")
 	}
 }

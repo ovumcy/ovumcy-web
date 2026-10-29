@@ -300,7 +300,7 @@
   "settings.clear_data.resets.calendar_feed": "Your calendar feed link stops working at once; generate a new one to subscribe again.",
   "settings.clear_data.resets.webhook": "Webhook reminders are turned off, the saved endpoint is removed, and the reminder lead time returns to its default.",
   "settings.clear_data.resets.records": "Every calendar entry and your custom symptoms are deleted. Built-in symptoms stay available.",
-  "settings.clear_data.resets.cycle": "Cycle settings return to defaults, including the last period start date, cycle and period length, goal and age group.",
+  "settings.clear_data.resets.cycle": "Cycle settings return to defaults, including the last period start date, cycle and period length, goal and age group; auto-fill of period days is turned off.",
   "settings.clear_data.resets.preferences": "Tracking and display preferences return to defaults: temperature tracking and unit, cervical mucus, hidden fields, past phases, week start, dismissed tips and the saved time zone.",
   "settings.clear_data.resets.sessions": "Every other device is signed out.",
   "settings.clear_data.kept": "Your account, email, password, two-factor sign-in, recovery code and interface language are kept.",

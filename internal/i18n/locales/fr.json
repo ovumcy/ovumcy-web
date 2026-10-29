@@ -325,7 +325,7 @@
   "settings.clear_data.resets.calendar_feed": "Le lien de votre flux de calendrier cesse immédiatement de fonctionner ; générez-en un nouveau pour vous réabonner.",
   "settings.clear_data.resets.webhook": "Les rappels par webhook sont désactivés, le point de terminaison enregistré est supprimé et le délai des rappels revient à sa valeur par défaut.",
   "settings.clear_data.resets.records": "Toutes les entrées du calendrier et vos symptômes personnalisés sont supprimés. Les symptômes intégrés restent disponibles.",
-  "settings.clear_data.resets.cycle": "Les paramètres du cycle reviennent à leurs valeurs par défaut, y compris la date de début des dernières règles, la durée du cycle et des règles, l’objectif et la tranche d’âge.",
+  "settings.clear_data.resets.cycle": "Les paramètres du cycle reviennent à leurs valeurs par défaut, y compris la date de début des dernières règles, la durée du cycle et des règles, l’objectif et la tranche d’âge ; le remplissage automatique des jours de règles est désactivé.",
   "settings.clear_data.resets.preferences": "Les préférences de suivi et d’affichage reviennent à leurs valeurs par défaut : suivi de la température et unité, glaire cervicale, champs masqués, phases passées, début de semaine, conseils masqués et fuseau horaire enregistré.",
   "settings.clear_data.resets.sessions": "Tous les autres appareils sont déconnectés.",
   "settings.clear_data.kept": "Votre compte, votre e-mail, votre mot de passe, la connexion à deux facteurs, votre code de récupération et la langue de l’interface sont conservés.",

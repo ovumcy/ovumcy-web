@@ -300,7 +300,7 @@
   "settings.clear_data.resets.calendar_feed": "Ihr Kalender-Feed-Link funktioniert sofort nicht mehr; erstellen Sie einen neuen, um ihn erneut zu abonnieren.",
   "settings.clear_data.resets.webhook": "Webhook-Erinnerungen werden deaktiviert, der gespeicherte Endpunkt wird entfernt und die Vorlaufzeit der Erinnerungen wird auf den Standardwert zurückgesetzt.",
   "settings.clear_data.resets.records": "Alle Kalendereinträge und Ihre eigenen Symptome werden gelöscht. Eingebaute Symptome bleiben verfügbar.",
-  "settings.clear_data.resets.cycle": "Die Zykluseinstellungen werden auf Standardwerte zurückgesetzt, einschließlich Beginn der letzten Periode, Zyklus- und Periodenlänge, Ziel und Altersgruppe.",
+  "settings.clear_data.resets.cycle": "Die Zykluseinstellungen werden auf Standardwerte zurückgesetzt, einschließlich Beginn der letzten Periode, Zyklus- und Periodenlänge, Ziel und Altersgruppe; das automatische Ausfüllen der Periodentage wird ausgeschaltet.",
   "settings.clear_data.resets.preferences": "Erfassungs- und Anzeigeeinstellungen werden auf Standardwerte zurückgesetzt: Temperaturerfassung und Einheit, Zervixschleim, ausgeblendete Felder, vergangene Phasen, Wochenbeginn, ausgeblendete Hinweise und die gespeicherte Zeitzone.",
   "settings.clear_data.resets.sessions": "Alle anderen Geräte werden abgemeldet.",
   "settings.clear_data.kept": "Ihr Konto, Ihre E-Mail-Adresse, Ihr Passwort, die Zwei-Faktor-Anmeldung, Ihr Wiederherstellungscode und die Sprache der Oberfläche bleiben erhalten.",

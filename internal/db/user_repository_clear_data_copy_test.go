@@ -92,6 +92,10 @@ func TestClearDataCopyNamesEveryColumnTheWipeWrites(t *testing.T) {
 	if err != nil || len(locales) == 0 {
 		t.Fatalf("glob locales: %v (%d files)", err, len(locales))
 	}
+	// The password and the OIDC step-up variants of the card each render the list.
+	if uses := strings.Count(string(template), `{{template "settings_clear_data_resets" .}}`); uses != 2 {
+		t.Errorf("expected both clear-data variants to render settings_clear_data_resets, found %d uses", uses)
+	}
 	for group := range clearDataCopyGroups {
 		key := "settings.clear_data.resets." + group
 		if !strings.Contains(string(template), `"`+key+`"`) {
