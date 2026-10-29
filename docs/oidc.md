@@ -308,6 +308,8 @@ Authelia configures OIDC clients in its own configuration file. Keep the raw cli
 
 Authelia sign-in is compatible with Ovumcy's callback contract. Logout should still be treated as local-only fallback unless your deployed Authelia build starts publishing a usable `end_session_endpoint`.
 
+Authelia 4.39 and later leave `email` and `email_verified` out of the ID token unless a claims policy puts them there, and return them from the UserInfo endpoint instead. Ovumcy reads them from UserInfo (see [How Sign-In Works](#how-sign-in-works)), so the client needs no `claims_policy`. Earlier Ovumcy releases read the email from the ID token only, and against Authelia 4.39 or later they refused every first sign-in unless the client's `claims_policy` named a `claims_policies` entry whose `id_token` list held `email` and `email_verified`.
+
 Typical client skeleton:
 
 ```yaml
@@ -485,6 +487,7 @@ For provider-specific UI details, use the current official docs:
 - Authentik OAuth2 / OIDC provider docs: https://docs.goauthentik.io/add-secure-apps/providers/oauth2/
 - Keycloak server admin docs: https://www.keycloak.org/docs/latest/server_admin/
 - Authelia OIDC client config: https://www.authelia.com/configuration/identity-providers/openid-connect/clients/
+- Authelia OIDC claims (which claims the ID token carries and which only UserInfo returns): https://www.authelia.com/integration/openid-connect/openid-connect-1.0-claims/
 - ZITADEL self-hosting and login application docs: https://zitadel.com/docs/self-hosting
 - Pocket ID OIDC client authentication: https://pocket-id.org/docs/guides/oidc-client-authentication/ (supported on Pocket ID 2.7.0+; older versions are incompatible)
 - Pocket ID client examples and callback/logout fields: https://pocket-id.org/docs/client-examples/outline (supported on Pocket ID 2.7.0+; older versions are incompatible)
