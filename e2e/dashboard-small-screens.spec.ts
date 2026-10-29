@@ -94,7 +94,8 @@ test.describe('Dashboard on small screens', () => {
     expect(links.length).toBeGreaterThan(0);
     for (const link of links) {
       const box = await link.boundingBox();
-      expect(box!.height).toBeGreaterThanOrEqual(24);
+      // 1.5rem lands a hair under 24 on some engines' subpixel rounding.
+      expect(box!.height).toBeGreaterThanOrEqual(23.9);
     }
   });
 });
