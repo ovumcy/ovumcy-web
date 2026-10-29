@@ -200,7 +200,18 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 		}
 	}
 
-	planned, otherOriginals, rejected := service.planEntries(entries, location)
+	planned, rejected := service.planEntries(entries, location)
+
+	// Custom symptoms are created only for days that will be written: a file of
+	// days the owner already has imports nothing and must leave no symptom behind.
+	otherOriginals := map[string]string{}
+	if len(planned) > 0 {
+		existing, err := existingDayKeys(ctx, service.logs, userID, planned)
+		if err != nil {
+			return ImportResult{}, ErrImportWriteFailed
+		}
+		otherOriginals = customSymptomNamesOfNewDays(planned, existing)
+	}
 
 	catalogByKey, builtins, err := service.reconcileSymptoms(ctx, userID, otherOriginals)
 	if err != nil {
@@ -232,12 +243,9 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 // and hands the owner back their form, while a restore has no one to ask and
 // drops the offending field to its neutral value, keeping the rest of the day —
 // the file is restored, that one field is not. Pinned by
-// TestImportServiceSanitizesGarbageValues. It also collects the first-seen
-// spelling of each custom symptom name so the reconciler can create the missing
-// ones.
-func (service *ImportService) planEntries(entries []ExportJSONEntry, location *time.Location) ([]plannedImportDay, map[string]string, int) {
+// TestImportServiceSanitizesGarbageValues.
+func (service *ImportService) planEntries(entries []ExportJSONEntry, location *time.Location) ([]plannedImportDay, int) {
 	planned := make([]plannedImportDay, 0, len(entries))
-	otherOriginals := make(map[string]string)
 	seen := make(map[string]struct{}, len(entries))
 	rejected := 0
 
@@ -270,19 +278,31 @@ func (service *ImportService) planEntries(entries []ExportJSONEntry, location *t
 			flags:       entry.Symptoms,
 			otherNames:  entry.OtherSymptoms,
 		})
+	}
 
-		for _, name := range entry.OtherSymptoms {
+	return planned, rejected
+}
+
+// customSymptomNamesOfNewDays collects the first-seen spelling of each custom
+// symptom name, keyed by its normalized form, over the planned days that are
+// not already stored.
+func customSymptomNamesOfNewDays(planned []plannedImportDay, existing map[string]struct{}) map[string]string {
+	originals := make(map[string]string)
+	for _, day := range planned {
+		if _, found := existing[CalendarDayKey(day.dayStart)]; found {
+			continue
+		}
+		for _, name := range day.otherNames {
 			key := normalizeSymptomNameKey(name)
 			if key == "" {
 				continue
 			}
-			if _, ok := otherOriginals[key]; !ok {
-				otherOriginals[key] = strings.TrimSpace(name)
+			if _, ok := originals[key]; !ok {
+				originals[key] = strings.TrimSpace(name)
 			}
 		}
 	}
-
-	return planned, otherOriginals, rejected
+	return originals
 }
 
 // normalizeImportEntryInput sanitizes every field of an incoming record to a

@@ -154,6 +154,47 @@ func TestImportServiceSkipsExistingDays(t *testing.T) {
 	}
 }
 
+// A file whose days all exist already imports nothing, so it must not leave
+// its custom symptom names behind in the owner's catalogue either.
+func TestImportServiceCreatesNoCustomSymptomsForDaysItSkips(t *testing.T) {
+	_, database := newDayServiceIntegration(t)
+	repositories := db.NewRepositories(database)
+	symptomService := NewSymptomService(repositories.Symptoms)
+
+	user := createDayServiceTestUser(t, database, "import-skip-symptoms@example.com")
+	existing := models.DailyLog{
+		UserID: user.ID, Date: time.Date(2026, time.April, 10, 0, 0, 0, 0, time.UTC),
+		Notes: "original", CycleFactorKeys: []string{},
+	}
+	if err := database.Create(&existing).Error; err != nil {
+		t.Fatalf("create existing: %v", err)
+	}
+
+	payload := importPayload{Entries: []ExportJSONEntry{
+		{Date: "2026-04-10", OtherSymptoms: []string{"Ghost ache"}, CycleFactors: []string{}},
+	}}
+	raw, _ := json.Marshal(payload)
+
+	importService := newImportServiceIntegration(t, database, symptomService)
+	result, err := importService.ImportJSON(context.Background(), user.ID, raw, time.UTC)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if result.Added != 0 || result.Skipped != 1 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+
+	catalog, err := symptomService.FetchSymptoms(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("FetchSymptoms: %v", err)
+	}
+	for _, symptom := range catalog {
+		if !symptom.IsBuiltin {
+			t.Fatalf("a skipped day left custom symptom %q in the catalogue", symptom.Name)
+		}
+	}
+}
+
 // TestImportServiceDropsCycleStartOnNonPeriodDay ensures a crafted file cannot
 // persist an inconsistent anchor (cycle_start without a period day).
 func TestImportServiceDropsCycleStartOnNonPeriodDay(t *testing.T) {

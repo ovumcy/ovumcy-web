@@ -31,7 +31,7 @@ func TestImportPlanEntriesRejectsADateOutsideTheAcceptedRange(t *testing.T) {
 			t.Fatalf("load %s: %v", zone, err)
 		}
 
-		planned, _, rejected := (&ImportService{}).planEntries(entries, location)
+		planned, rejected := (&ImportService{}).planEntries(entries, location)
 		if rejected != 3 {
 			t.Errorf("%s: rejected = %d, want the 3 out-of-range rows", zone, rejected)
 		}
