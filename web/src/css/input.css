@@ -1269,6 +1269,16 @@
   }
 }
 
+/* A native file input sizes to its "no file chosen" text (~327px), wider than a
+   320px column; cap it to the container so it never forces horizontal scroll. */
+@utility input-field-file {
+  &.input-field {
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
 @utility textarea-field {
   width: 100%;
   border-radius: var(--radius-control);
@@ -1651,6 +1661,8 @@
 
 @utility btn-secondary {
   display: inline-flex;
+  max-width: 100%;
+  text-align: center;
   align-items: center;
   justify-content: center;
   min-height: 2.75rem;
@@ -1784,6 +1796,7 @@
 
 @utility period-toggle {
   display: inline-flex;
+  max-width: 100%;
   align-items: center;
   gap: 0.65rem;
   border-radius: var(--radius-pill);
@@ -1911,9 +1924,11 @@
 
 @utility settings-tracking-toggle-copy {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 0.22rem;
   flex: 1 1 0%;
+  min-width: 0;
 
   & .period-toggle-main {
     max-width: 68ch;
@@ -3288,6 +3303,7 @@
 
 @utility settings-account-stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.65rem;
 }
 
@@ -4364,6 +4380,11 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   text-align: center;
+  /* At 200% text zoom a column is ~40px: let a long label wrap inside its
+     own column instead of running into the neighbour. */
+  min-width: 0;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 @utility mobile-tabbar-link-active {
