@@ -543,19 +543,27 @@ func (client *OIDCClient) loadUserInfoProvider(ctx context.Context) (*oidc.Provi
 	return client.provider, client.userInfoEndpoint, nil
 }
 
-// checkUserInfoBinding refuses a UserInfo response that names another issuer
-// or an audience without this client. A response naming neither passes: plain
-// JSON UserInfo is not required to carry them.
+// checkUserInfoBinding refuses a UserInfo response that names another issuer,
+// an audience without this client, or an exp already past. A response naming
+// none of them passes: plain JSON UserInfo is not required to carry them. The
+// exp check matters for a signed response, which go-oidc verifies by signature
+// alone, so an older JWT the issuer signed for the same sub would otherwise
+// pass as this sign-in's answer.
 func (client *OIDCClient) checkUserInfoBinding(info *oidc.UserInfo) error {
 	var binding struct {
 		Issuer   *string         `json:"iss"`
 		Audience json.RawMessage `json:"aud"`
+		Expiry   *float64        `json:"exp"`
 	}
 	if err := info.Claims(&binding); err != nil {
-		return fmt.Errorf("decode oidc userinfo iss and aud: %w", err)
+		return fmt.Errorf("decode oidc userinfo iss, aud and exp: %w", err)
 	}
 	if binding.Issuer != nil && *binding.Issuer != client.config.IssuerURL {
 		return errors.New("oidc userinfo iss does not match the issuer")
+	}
+	// One minute of clock skew is tolerated, as for the step-up's auth_time.
+	if binding.Expiry != nil && !time.Unix(int64(*binding.Expiry), 0).After(time.Now().Add(-time.Minute)) {
+		return errors.New("oidc userinfo exp has passed")
 	}
 	if len(binding.Audience) == 0 || string(binding.Audience) == "null" {
 		return nil

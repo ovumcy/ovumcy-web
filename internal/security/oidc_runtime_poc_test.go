@@ -151,12 +151,18 @@ type mockOIDCProvider struct {
 	// status, and userInfoRedirectTo answers 302 to that URL instead. Every
 	// request is counted in userInfoRequests and its Authorization header kept
 	// in userInfoAuthorization.
-	userInfoBody          map[string]any
-	userInfoSigned        bool
-	userInfoStatus        int
-	userInfoRedirectTo    string
-	userInfoRequests      atomic.Int64
-	userInfoAuthorization atomic.Value
+	// userInfoSigner, when set, signs the application/jwt answer in place of
+	// the mock (a key the issuer's JWKS does not hold), and
+	// userInfoCorruptSignature changes one character inside the signature (not
+	// the last, whose low bits are base64 padding and may decode unchanged).
+	userInfoBody             map[string]any
+	userInfoSigned           bool
+	userInfoSigner           *mockOIDCProvider
+	userInfoCorruptSignature bool
+	userInfoStatus           int
+	userInfoRedirectTo       string
+	userInfoRequests         atomic.Int64
+	userInfoAuthorization    atomic.Value
 
 	// discoveryRedirectTo, when set, makes the canonical discovery path
 	// answer 302 to this URL instead of serving the document. Tests use it
@@ -333,10 +339,22 @@ func (m *mockOIDCProvider) serveUserInfo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if m.userInfoSigned {
-		signed, err := signTestRS256IDToken(m, jwt.MapClaims(m.userInfoBody))
+		signer := m
+		if m.userInfoSigner != nil {
+			signer = m.userInfoSigner
+		}
+		signed, err := signTestRS256IDToken(signer, jwt.MapClaims(m.userInfoBody))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if m.userInfoCorruptSignature {
+			at := len(signed) - 10
+			replacement := byte('A')
+			if signed[at] == 'A' {
+				replacement = 'B'
+			}
+			signed = signed[:at] + string(replacement) + signed[at+1:]
 		}
 		w.Header().Set("Content-Type", "application/jwt")
 		_, _ = w.Write([]byte(signed))

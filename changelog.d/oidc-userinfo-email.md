@@ -22,5 +22,11 @@
 - **A UserInfo answer is used only for the sign-in it belongs to.** Ovumcy uses the email from
   UserInfo only when the answer names the same subject as the ID token, and, when it says which
   issuer sent it and which client it is for, only when those are the configured issuer and Ovumcy.
-  Any other answer fails the sign-in. The address and its verification flag always come from the
-  same answer.
+  Any other answer fails the sign-in, and so does a signed answer whose `exp` has already passed.
+  The address and its verification flag always come from the same answer.
+
+- **SSO sign-in no longer reveals whether an email holds an account.** An unlinked SSO sign-in
+  whose email matched an existing account was refused with a different message from one whose
+  email matched no account, which told anyone able to assert that email at the provider that the
+  account existed. Both now show the same message; the account holder still signs in with their
+  existing method and links the provider from Settings.
