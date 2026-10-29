@@ -428,7 +428,7 @@ components:
       type: object
       description: |
         JSON answer of the tracking-preferences save: the outcome key and the
-        saved settings, normalised the way they are stored (an unrecognised
+        saved settings, normalised the way they are stored (an omitted
         `temperature_unit` reads as `c`, an unrecognised `week_starts_on` as
         `sunday`).
       required: [ok, status, track_bbt, temperature_unit, track_cervical_mucus, hide_sex_chip, hide_cycle_factors, hide_notes_field, show_historical_phases, week_starts_on]
@@ -1572,7 +1572,9 @@ components:
         toggles read "show" in the interface — and the server converts the two
         vocabularies in a single place. Every field is a full snapshot: an
         omitted flag reads as `false`, it is not a no-op; an omitted or
-        unrecognised `week_starts_on` reads as `sunday`.
+        unrecognised `week_starts_on` reads as `sunday`. An omitted
+        `temperature_unit` reads as `c`; a value other than `c` / `f` is
+        refused with `400`.
       properties:
         track_bbt: { type: boolean }
         temperature_unit:

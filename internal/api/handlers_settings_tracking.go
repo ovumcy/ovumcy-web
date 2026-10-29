@@ -14,7 +14,7 @@ func (handler *Handler) UpdateTrackingSettings(c fiber.Ctx) error {
 	}
 
 	update, err := parseTrackingSettingsInput(c)
-	if err != nil {
+	if err != nil || !services.IsRecognisedTemperatureUnit(update.TemperatureUnit) {
 		return handler.failMutation(c, trackingSettingsMutation, settingsInvalidInputErrorSpec())
 	}
 
