@@ -41,11 +41,7 @@
     <label class="period-toggle" data-binary-toggle data-active="{{if .Log.IsPeriod}}true{{else}}false{{end}}">
       <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input {{if .Log.IsPeriod}}checked{{end}}{{if .PeriodOff.Any}} data-period-off-confirm="{{template "period_off_confirm" (dict "Messages" .Messages "Lang" .Lang "Effect" .PeriodOff)}}" data-period-off-confirm-key="{{.PeriodOff.MessageKey}}"{{end}} data-period-off-confirm-accept="{{t .Messages "dashboard.period_off_confirm.accept"}}">
       <span class="period-toggle-copy">
-        <span
-          class="period-toggle-main"
-          data-period-toggle-label
-          data-period-label-on="{{t .Messages "dashboard.period_day"}}"
-          data-period-label-off="{{t .Messages "dashboard.period_day"}}"><span data-period-toggle-glyph aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "dashboard.period_day"}}</span>
+        <span class="period-toggle-main"><span data-period-toggle-glyph aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "dashboard.period_day"}}</span>
       </span>
     </label>
     {{if .ShowCycleStartQuestion}}

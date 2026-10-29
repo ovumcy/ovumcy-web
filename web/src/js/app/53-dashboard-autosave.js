@@ -912,7 +912,12 @@
       }
       form.__ovumcyAutosaveFailed = false;
       setDashboardAutosaveIndicator(form, "saved");
-      if (previousState && dashboardStateValue(sentState, "pregnancy_test") !== dashboardStateValue(previousState, "pregnancy_test")) {
+      // The period tick moves the cycle day, the ribbon and the phase line just
+      // as a pregnancy-test result does.
+      if (previousState && (
+        dashboardStateValue(sentState, "pregnancy_test") !== dashboardStateValue(previousState, "pregnancy_test") ||
+        dashboardStateValue(sentState, "is_period") !== dashboardStateValue(previousState, "is_period")
+      )) {
         refreshDashboardStatusHeader();
       }
       return readDashboardSaveFeedback(response).then(function (text) {
@@ -1860,7 +1865,6 @@
     var periodToggle = form.querySelector("[data-period-toggle]");
     var isPeriod = !!(periodToggle && periodToggle.checked);
     syncPeriodFieldsets(form, isPeriod);
-    syncPeriodToggleLabels(form, isPeriod);
     syncNoteDisclosure(form);
   }
 

@@ -23,6 +23,7 @@
     // scroll-margin-top, which depends on the measured section-index height.
     bindSettingsSectionNavOffset();
     bindHashDisclosureReveals();
+    bindGoalChipEscape();
     bindDashboardNotesCounters(document);
     bindSettingsCycleForms();
     bindSettingsTrackingForms();

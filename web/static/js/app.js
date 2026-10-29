@@ -4098,41 +4098,15 @@
     }
   }
 
-  // Reveals the period-only fields and restates the toggle's own labels. This
-  // once also drove a journal preview block, but no template has rendered
-  // [data-dashboard-preview] or any of its seven sub-targets for a long time,
-  // so that half was building a summary nothing displayed.
+  // Reveals the period-only fields. The toggle's label keeps one text in both
+  // states: a checkbox's name must not flip with its own state, the checked
+  // state is what announces it. This once also drove a journal preview block,
+  // but no template has rendered [data-dashboard-preview] for a long time.
   function syncPeriodToggleState(root) {
     var periodToggle = root.querySelector("[data-period-toggle]");
     var isPeriod = !!(periodToggle && periodToggle.checked);
 
     syncPeriodFieldsets(root, isPeriod);
-    syncPeriodToggleLabels(root, isPeriod);
-  }
-
-  function syncPeriodToggleLabels(root, isPeriod) {
-    if (!root || !root.querySelectorAll) {
-      return;
-    }
-
-    var labels = root.querySelectorAll("[data-period-toggle-label]");
-    for (var index = 0; index < labels.length; index++) {
-      var label = labels[index];
-      var onText = String(label.getAttribute("data-period-label-on") || "");
-      var offText = String(label.getAttribute("data-period-label-off") || "");
-      var text = isPeriod ? onText : offText;
-      // The glyph is decorative and carries aria-hidden, so it is moved rather
-      // than reprinted: rewriting textContent with a literal prefix would drop
-      // the wrapper and read the emoji out to assistive technology again.
-      var glyph = label.querySelector("[data-period-toggle-glyph]");
-      label.textContent = "";
-      if (glyph) {
-        label.appendChild(glyph);
-        label.appendChild(document.createTextNode(" " + text));
-      } else {
-        label.textContent = text;
-      }
-    }
   }
 
   function syncNoteDisclosure(root) {
@@ -4433,6 +4407,31 @@
       scrollToHashTarget();
     });
     scrollToHashTarget();
+  }
+
+  // A <details> disclosure has no Escape of its own. The goal chip is a popover
+  // in effect, so Escape closes it and hands focus back to its summary, where
+  // the reader opened it from.
+  function bindGoalChipEscape() {
+    if (!document.body || document.body.dataset.goalChipEscapeBound === "1") {
+      return;
+    }
+    document.body.dataset.goalChipEscapeBound = "1";
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+      var chip = closestFromEvent(event, "details[data-usage-goal-summary]");
+      if (!chip || !chip.open) {
+        return;
+      }
+      chip.open = false;
+      var summary = chip.querySelector("[data-usage-goal-chip]");
+      if (summary && typeof summary.focus === "function") {
+        summary.focus();
+      }
+    });
   }
 
   function focusSectionControl(section, selector) {
@@ -5371,7 +5370,12 @@
       }
       form.__ovumcyAutosaveFailed = false;
       setDashboardAutosaveIndicator(form, "saved");
-      if (previousState && dashboardStateValue(sentState, "pregnancy_test") !== dashboardStateValue(previousState, "pregnancy_test")) {
+      // The period tick moves the cycle day, the ribbon and the phase line just
+      // as a pregnancy-test result does.
+      if (previousState && (
+        dashboardStateValue(sentState, "pregnancy_test") !== dashboardStateValue(previousState, "pregnancy_test") ||
+        dashboardStateValue(sentState, "is_period") !== dashboardStateValue(previousState, "is_period")
+      )) {
         refreshDashboardStatusHeader();
       }
       return readDashboardSaveFeedback(response).then(function (text) {
@@ -6319,7 +6323,6 @@
     var periodToggle = form.querySelector("[data-period-toggle]");
     var isPeriod = !!(periodToggle && periodToggle.checked);
     syncPeriodFieldsets(form, isPeriod);
-    syncPeriodToggleLabels(form, isPeriod);
     syncNoteDisclosure(form);
   }
 
@@ -8517,6 +8520,7 @@
     // scroll-margin-top, which depends on the measured section-index height.
     bindSettingsSectionNavOffset();
     bindHashDisclosureReveals();
+    bindGoalChipEscape();
     bindDashboardNotesCounters(document);
     bindSettingsCycleForms();
     bindSettingsTrackingForms();
