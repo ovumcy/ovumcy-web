@@ -99,6 +99,10 @@ type OIDCClient struct {
 	metadata    oidcProviderMetadata
 	oauthConfig *oauth2.Config
 	verifier    *oidc.IDTokenVerifier
+	// userInfoEndpoint is the discovery-supplied userinfo_endpoint once it has
+	// passed sanitizeOIDCUserInfoEndpoint, or empty when the provider names
+	// none or names one that fails the pin.
+	userInfoEndpoint string
 }
 
 type oidcProviderMetadata struct {
@@ -493,8 +497,15 @@ func (client *OIDCClient) loadProvider(ctx context.Context) (*oauth2.Config, *oi
 		return nil, nil, err
 	}
 
+	// The userinfo_endpoint is pinned to the issuer origin too, but dropped
+	// rather than refused, as end_session_endpoint is: a provider whose ID
+	// tokens carry every claim Ovumcy reads needs no UserInfo request, so a
+	// foreign endpoint costs that provider nothing and is simply never asked.
+	userInfoEndpoint := sanitizeOIDCUserInfoEndpoint(provider.UserInfoEndpoint(), client.config.IssuerURL)
+
 	client.provider = provider
 	client.metadata = metadata
+	client.userInfoEndpoint = userInfoEndpoint
 	client.oauthConfig = &oauth2.Config{
 		ClientID:     client.config.ClientID,
 		ClientSecret: client.config.ClientSecret,
@@ -630,6 +641,31 @@ func sanitizeOIDCEndSessionEndpoint(rawEndpoint string, issuerURL string) string
 		return ""
 	}
 	if !sameOriginURL(parsed, parsedIssuer) {
+		return ""
+	}
+	return parsed.String()
+}
+
+// sanitizeOIDCUserInfoEndpoint pins the discovery-supplied userinfo_endpoint to
+// the issuer origin. The endpoint survives only when it is an absolute https URL
+// with no fragment on the same origin (scheme + host + effective port) as the
+// configured issuer, whose host does not dial this machine; anything else,
+// including an issuer that does not parse, yields the empty string. A UserInfo
+// request carries the access token, so an endpoint on another origin would hand
+// that token to whoever serves it.
+//
+// The value is parsed exactly as discovery supplied it, without trimming:
+// go-oidc's Provider.UserInfo requests that same string, so the pin judges the
+// URL that is actually dialed.
+func sanitizeOIDCUserInfoEndpoint(rawEndpoint string, issuerURL string) string {
+	if rawEndpoint == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawEndpoint)
+	if err != nil || !parsed.IsAbs() || !strings.EqualFold(parsed.Scheme, "https") || parsed.Fragment != "" {
+		return ""
+	}
+	if !OnIssuerOrigin(parsed, issuerURL) {
 		return ""
 	}
 	return parsed.String()
