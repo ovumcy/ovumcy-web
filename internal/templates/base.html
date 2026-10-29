@@ -40,7 +40,7 @@
   <a href="#main-content" class="skip-link">{{t .Messages "a11y.skip_to_content"}}</a>
   <div class="app-shell">
     <header class="paper-header">
-      <div class="container-main flex items-center justify-between py-4">
+      <div class="container-main flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-4">
         <a href="{{if .CurrentUser}}{{if .HideNavigation}}/onboarding{{else}}/dashboard{{end}}{{else}}/login{{end}}" class="brand-mark" aria-label="{{t .Messages "app.name"}}">
           <span class="brand-lockup">
             <img src="/static/brand/ovumcy-icon.svg" width="28" height="28" alt="" class="brand-symbol" aria-hidden="true">
@@ -48,7 +48,7 @@
           </span>
         </a>
 
-        <div class="flex min-w-0 items-center gap-3">
+        <div class="ml-auto flex min-w-0 items-center gap-3">
           {{if and (or (not .CurrentUser) .HideNavigation) (not .HideLanguageSwitch)}}
           <form action="/lang" method="post" class="lang-switch" aria-label="{{t .Messages "lang.switch"}}" data-language-switch-form>
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
