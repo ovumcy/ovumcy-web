@@ -28,7 +28,9 @@ import (
 //   - A write whose map operand is a call to a source, or a variable that was
 //     assigned or declared from one (aliases follow `b := a` as well).
 //   - A write through a parameter of a function in the swept packages when any
-//     call site passes a tainted map for that parameter.
+//     call site passes a tainted map for that parameter. The parameter is
+//     tainted for the whole function: a helper called with both a shared and a
+//     local map is flagged for writes on the local one too (copy first).
 //   - A write to the result of a function that returns a tainted map (such a
 //     function becomes a source itself).
 //   - A call through an anonymous interface type that *Manager implements and
