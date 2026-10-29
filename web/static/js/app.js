@@ -1990,13 +1990,23 @@
       button.__ovumcyHeldFocus = document.activeElement === button;
     }
     button.disabled = isBusy;
+    var savingLabel = button.getAttribute("data-saving-label");
     if (isBusy) {
       button.setAttribute("aria-busy", "true");
       button.classList.add("btn-loading");
+      // Text-only buttons; the first busy call alone records what to restore.
+      if (savingLabel && button.__ovumcyIdleLabel === undefined && !button.children.length) {
+        button.__ovumcyIdleLabel = button.textContent;
+        button.textContent = savingLabel;
+      }
       return;
     }
     button.removeAttribute("aria-busy");
     button.classList.remove("btn-loading");
+    if (button.__ovumcyIdleLabel !== undefined) {
+      button.textContent = button.__ovumcyIdleLabel;
+      button.__ovumcyIdleLabel = undefined;
+    }
     if (button.__ovumcyHeldFocus) {
       button.__ovumcyHeldFocus = false;
       if (focusIsLost()) {
@@ -2839,6 +2849,19 @@
         event.detail.headers[TIMEZONE_HEADER_NAME] = timezone;
       }
     });
+
+    // A form the browser refuses to submit sends no request, so nothing else
+    // replaces its status row: the previous save's "Saved." would sit beside the
+    // native validation bubble. `invalid` does not bubble, hence the capture.
+    document.addEventListener("invalid", function (event) {
+      var form = event.target && event.target.form;
+      if (!form || !form.matches || !form.matches("form[data-save-feedback]")) {
+        return;
+      }
+      var selector = form.getAttribute("hx-target");
+      var target = (selector ? document.querySelector(selector) : null) || form.querySelector(".save-status");
+      withdrawSuccessStatus(statusContainerFor(target, event.target));
+    }, true);
 
     document.body.addEventListener("htmx:beforeRequest", function (event) {
       var statusTarget = statusContainerFor(event && event.detail ? event.detail.target : null, requestSourceFromEvent(event));
