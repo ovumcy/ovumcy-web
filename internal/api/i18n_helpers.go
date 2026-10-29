@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -100,6 +101,13 @@ func (handler *Handler) withTemplateDefaults(c fiber.Ctx, data fiber.Map) fiber.
 	// already set its own (the day forms compute theirs) keeps it.
 	if _, ok := data["DayFormAccount"]; !ok {
 		data["DayFormAccount"] = handler.renderedAccountBinding(c, data)
+	}
+
+	// The layout keeps the timezone sync off pages the onboarding gate would
+	// refuse it from; the same predicate as the gate keeps the two in step.
+	if _, ok := data["OnboardingPending"]; !ok {
+		user, _ := data["CurrentUser"].(*models.User)
+		data["OnboardingPending"] = services.RequiresOnboarding(user)
 	}
 
 	if _, ok := data["AssetVersion"]; !ok {

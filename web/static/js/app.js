@@ -1666,12 +1666,13 @@
     return String(body.getAttribute("data-account-binding") || "").trim();
   }
 
-  // The mark is keyed by the account the page was rendered for: a sign-out
-  // keeps the tab's sessionStorage, and a mark shared across accounts let the
-  // next account in the tab skip its own sync and keep an empty stored zone.
-  function timezoneSyncStorageKey() {
+  // The mark names the account the page was rendered for: a sign-out keeps the
+  // tab's sessionStorage, and a zone-only mark let the next account in the tab
+  // skip its own sync and keep an empty stored zone. One key, so a later
+  // account's mark replaces the previous one.
+  function timezoneSyncMark(zone) {
     var binding = accountBindingFromBody();
-    return binding ? TIMEZONE_SYNC_STORAGE_KEY + ":" + binding : TIMEZONE_SYNC_STORAGE_KEY;
+    return binding ? binding + " " + zone : zone;
   }
 
   // The onboarding gate refuses this endpoint until onboarding completes; the
@@ -1681,18 +1682,18 @@
     return !!(body && typeof body.hasAttribute === "function" && body.hasAttribute("data-onboarding-pending"));
   }
 
-  function markTimezoneSynced(value) {
+  function markTimezoneSynced(mark) {
     try {
-      window.sessionStorage.setItem(timezoneSyncStorageKey(), value);
+      window.sessionStorage.setItem(TIMEZONE_SYNC_STORAGE_KEY, mark);
     } catch {
       // Ignore storage quota / privacy-mode errors: a failed mark only means we
       // may retry the (idempotent, no-op-on-unchanged) sync later this session.
     }
   }
 
-  function alreadySyncedThisSession(value) {
+  function alreadySyncedThisSession(mark) {
     try {
-      return window.sessionStorage.getItem(timezoneSyncStorageKey()) === value;
+      return window.sessionStorage.getItem(TIMEZONE_SYNC_STORAGE_KEY) === mark;
     } catch {
       return false;
     }
@@ -1729,14 +1730,14 @@
       return;
     }
 
-    if (detected === persistedTimezone() || alreadySyncedThisSession(detected)) {
+    var mark = timezoneSyncMark(detected);
+    if (detected === persistedTimezone() || alreadySyncedThisSession(mark)) {
       return;
     }
 
     // Mark before the request so a slow round-trip cannot double-fire from a
     // rapid second navigation; the endpoint is idempotent regardless.
-    markTimezoneSynced(detected);
-    var syncKey = timezoneSyncStorageKey();
+    markTimezoneSynced(mark);
 
     var body = new URLSearchParams();
     body.set("timezone", detected);
@@ -1765,14 +1766,14 @@
       }
       // Non-2xx: drop the session mark so a later navigation can retry.
       try {
-        window.sessionStorage.removeItem(syncKey);
+        window.sessionStorage.removeItem(TIMEZONE_SYNC_STORAGE_KEY);
       } catch {
         // Ignore storage errors.
       }
     }).catch(function () {
       // Network failure: fail silently, allow a later retry.
       try {
-        window.sessionStorage.removeItem(syncKey);
+        window.sessionStorage.removeItem(TIMEZONE_SYNC_STORAGE_KEY);
       } catch {
         // Ignore storage errors.
       }

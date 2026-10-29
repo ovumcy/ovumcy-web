@@ -35,7 +35,7 @@
   data-csrf-refused="{{t .Messages "common.error.csrf_refused"}}"
   data-period-tip-message="{{t .Messages "dashboard.period_tip_once"}}"
   data-period-tip-pending="{{if and .CurrentUser (not .CurrentUser.ShownPeriodTip)}}true{{else}}false{{end}}"
-  {{if .CurrentUser}}data-persisted-timezone="{{.CurrentUser.Timezone}}" data-account-binding="{{.DayFormAccount}}"{{if not .CurrentUser.OnboardingCompleted}} data-onboarding-pending="true"{{end}}{{end}}>
+  {{if .CurrentUser}}data-persisted-timezone="{{.CurrentUser.Timezone}}" data-account-binding="{{.DayFormAccount}}"{{if .OnboardingPending}} data-onboarding-pending="true"{{end}}{{end}}>
   {{template "icon_sprite" .}}
   <a href="#main-content" class="skip-link">{{t .Messages "a11y.skip_to_content"}}</a>
   <div class="app-shell">
