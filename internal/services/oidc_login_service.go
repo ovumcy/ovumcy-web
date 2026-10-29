@@ -78,6 +78,10 @@ type OIDCProviderClient interface {
 	Config() security.OIDCConfig
 	AuthCodeURL(ctx context.Context, state string, nonce string, codeVerifier string, extra map[string]string) (string, error)
 	ExchangeCode(ctx context.Context, code string, codeVerifier string, expectedNonce string) (security.OIDCExchangeResult, error)
+	// UserInfoClaims returns exchange.Claims with Email and EmailVerified read
+	// from the provider's UserInfo endpoint, or security.ErrOIDCUserInfoUnavailable
+	// when the provider has no endpoint it may be asked at.
+	UserInfoClaims(ctx context.Context, exchange security.OIDCExchangeResult) (security.OIDCClaims, error)
 }
 
 type OIDCIdentityStore interface {
@@ -418,7 +422,12 @@ func (service *OIDCLoginService) authenticateExchange(ctx context.Context, excha
 		return result, err
 	}
 
-	user, autoProvisioned, err := service.resolveUserForClaims(ctx, exchange.Claims, loginTime)
+	claims, err := service.emailClaims(ctx, exchange)
+	if err != nil {
+		return OIDCLoginResult{}, err
+	}
+
+	user, autoProvisioned, err := service.resolveUserForClaims(ctx, claims, loginTime)
 	if err != nil {
 		return OIDCLoginResult{}, err
 	}
@@ -430,14 +439,13 @@ func (service *OIDCLoginService) authenticateExchange(ctx context.Context, excha
 	// current local password before the link is created. Auto-provisioned new
 	// users are unaffected — by definition no other party holds that email.
 	if !autoProvisioned {
-		claims := exchange.Claims
 		return OIDCLoginResult{
 			User:              user,
 			PendingLinkClaims: &claims,
 		}, ErrOIDCLinkRequiresConfirmation
 	}
 
-	if err := service.linkIdentity(ctx, user.ID, exchange.Claims, loginTime); err != nil {
+	if err := service.linkIdentity(ctx, user.ID, claims, loginTime); err != nil {
 		return OIDCLoginResult{}, err
 	}
 
@@ -648,6 +656,28 @@ func (service *OIDCLoginService) authenticateLinkedIdentity(ctx context.Context,
 	}
 	_ = service.identities.TouchLastUsed(ctx, identity.ID, identity.UserID, loginTime)
 	return OIDCLoginResult{User: user}, true, nil
+}
+
+// emailClaims returns the claims an unlinked sign-in resolves its account by.
+// They are read from the provider's UserInfo endpoint, which is where OpenID
+// Connect delivers the email scope's claims to a code-flow client (Core 1.0
+// §5.4), whatever the ID token also carries. A linked (issuer, subject) never
+// reaches this, so neither a returning sign-in nor a step-up ever depends on
+// UserInfo.
+//
+// Only a provider with no usable UserInfo endpoint has its ID token's claims
+// used, unchanged, and resolveUserForClaims refuses an address they lack
+// exactly as it did before. Any UserInfo failure — the request, its status, a
+// sub that is not the ID token's — fails the sign-in.
+func (service *OIDCLoginService) emailClaims(ctx context.Context, exchange security.OIDCExchangeResult) (security.OIDCClaims, error) {
+	claims, err := service.client.UserInfoClaims(ctx, exchange)
+	switch {
+	case errors.Is(err, security.ErrOIDCUserInfoUnavailable):
+		return exchange.Claims, nil
+	case err != nil:
+		return security.OIDCClaims{}, ErrOIDCAuthenticationFailed
+	}
+	return claims, nil
 }
 
 func (service *OIDCLoginService) resolveUserForClaims(ctx context.Context, claims security.OIDCClaims, loginTime time.Time) (models.User, bool, error) {

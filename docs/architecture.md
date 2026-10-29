@@ -88,7 +88,7 @@ flowchart TB
   delivering, and writing each per-reminder watermark — stays in
   `internal/services`, and the outbound POST it makes is the only call the app
   places that no one asked it for; everything else it dials (OIDC discovery, JWKS,
-  token exchange) happens inside a request it is answering. Because the pass runs
+  token exchange, UserInfo) happens inside a request it is answering. Because the pass runs
   outside a request it has no session and no CSRF token: its owner scoping comes
   from the same per-`user_id` repository calls the request path uses.
 - **`internal/cli` (operator commands).** The second entry point of the binary

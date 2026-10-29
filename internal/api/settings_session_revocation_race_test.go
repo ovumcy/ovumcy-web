@@ -811,6 +811,9 @@ func (enabledOIDCProviderForLinkTest) AuthCodeURL(context.Context, string, strin
 func (enabledOIDCProviderForLinkTest) ExchangeCode(context.Context, string, string, string) (security.OIDCExchangeResult, error) {
 	panic("this fixture never exchanges a code")
 }
+func (enabledOIDCProviderForLinkTest) UserInfoClaims(context.Context, security.OIDCExchangeResult) (security.OIDCClaims, error) {
+	panic("this fixture never asks the UserInfo endpoint")
+}
 
 // storedAuthSessionVersion re-reads the persisted AuthSessionVersion,
 // bypassing any in-memory copy the request path might still be holding.

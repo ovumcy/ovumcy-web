@@ -70,7 +70,7 @@ Notes:
   provider whose sign-in page lives on another host (for example a separate `login.` subdomain) is refused when Ovumcy loads its discovery
   document, and SSO stays unavailable until `OIDC_ISSUER_URL` names an issuer whose endpoints share its origin. An `end_session_endpoint` on
   another origin is dropped, so sign-out stays local. A `userinfo_endpoint` on another origin is dropped too, and Ovumcy never sends it a
-  request. A stored provider-logout target is checked against the issuer configured now, so after the issuer's origin (scheme, host or port)
+  request; a first sign-in then needs the email in the ID token (see [How Sign-In Works](#how-sign-in-works)). A stored provider-logout target is checked against the issuer configured now, so after the issuer's origin (scheme, host or port)
   changes, a sign-out from a session started before the change is local only; a change that keeps the origin (for example another
   realm on the same host) does not affect it. The address the provider returns the browser to after sign-out is always the one
   configured now (`OIDC_POST_LOGOUT_REDIRECT_URL`, or `/login` on the `OIDC_REDIRECT_URL` origin), never one saved with the session.
@@ -88,6 +88,10 @@ Notes:
 2. Ovumcy starts a server-side Authorization Code flow with PKCE and writes a sealed one-time state cookie containing the OIDC `state`, `nonce`, PKCE verifier, and expiry timestamp.
 3. The identity provider authenticates the user and returns the browser to `/auth/oidc/callback` — an auto-POST of the `code` and `state` in the request body (`form_post`, the default) or a `GET` redirect carrying them in the URL query (`query`). Ovumcy reads the callback from exactly one source keyed by the mode; it never reads both.
 4. Ovumcy validates the sealed state, exchanges the authorization code for tokens, and verifies the ID token plus `nonce`.
+   When the identity is not linked yet (step 5 does not apply), Ovumcy reads `email` and `email_verified` from the provider's UserInfo
+   endpoint, as OpenID Connect specifies for the code flow, and uses that answer only when its `sub` equals the ID token's. Only a provider
+   with no usable `userinfo_endpoint` has the ID token's `email` and `email_verified` used instead; if that ID token carries no email, only
+   an identity already linked (step 5) can sign in.
 5. If the `(issuer, subject)` identity link already exists, the linked local account is used immediately.
 6. Otherwise, if a verified email claim matches an existing local account, Ovumcy **neither links the two nor signs the user in**. It redirects to `/login` with a message pointing the account holder at Settings: sign in with your existing method, then link the new identity from there.
    There is no unauthenticated way to complete this link — the public `/auth/oidc/link-confirm` route that used to accept a password on this page was removed for good (WEB-77). Without this gate, any provider able to assert an existing user's email address could take over their account.
@@ -395,7 +399,7 @@ Fix it by making the provider's registered redirect URI exactly match `OIDC_REDI
 
 ### Clicking SSO returns to `/login` with a generic error
 
-This usually means Ovumcy could not complete provider discovery or token exchange.
+This usually means Ovumcy could not complete provider discovery, the token exchange, or the UserInfo request.
 
 Check:
 
@@ -403,7 +407,8 @@ Check:
 - the provider is reachable from the Ovumcy host or container;
 - the provider certificate chain is trusted by the Ovumcy runtime, or `OIDC_CA_FILE` points to a readable PEM bundle for your private CA;
 - reverse-proxy DNS and firewall rules allow Ovumcy to reach the provider;
-- the provider's discovery document, key set (JWKS) and token response each stay under 512 KiB, with under 64 KiB of response headers. Ovumcy refuses a larger response outright rather than truncating it. Real providers answer in a few KiB, so hitting either limit points at a proxy or captive portal answering in the provider's place, or at a misbehaving provider.
+- when the provider advertises a `userinfo_endpoint`, its UserInfo response answers `200` and names the same `sub` as the ID token, and any `iss` or `aud` it names are the issuer and the Ovumcy client ID;
+- the provider's discovery document, key set (JWKS), token response and UserInfo response each stay under 512 KiB, with under 64 KiB of response headers. Ovumcy refuses a larger response outright rather than truncating it. Real providers answer in a few KiB, so hitting either limit points at a proxy or captive portal answering in the provider's place, or at a misbehaving provider.
 
 ### Auto-provision does not happen
 
@@ -411,7 +416,7 @@ Check:
 
 - `OIDC_AUTO_PROVISION=true`;
 - `REGISTRATION_MODE=open`;
-- the provider marks the email as verified;
+- the provider sends the email and marks it as verified, in the ID token or in its UserInfo response;
 - `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS` is empty, or the email domain is listed there exactly.
 
 ### SSO resolves to an existing account but does not sign the user in

@@ -18,6 +18,15 @@ type stubOIDCProviderClient struct {
 	authErr       error
 	exchangeErr   error
 	lastAuthExtra map[string]string
+
+	// userInfo is what UserInfoClaims answers; nil answers
+	// security.ErrOIDCUserInfoUnavailable, a provider with no endpoint.
+	// userInfoErr, when set, is returned instead. userInfoCalls counts the
+	// calls and userInfoExchange keeps the exchange the last one was handed.
+	userInfo         *security.OIDCClaims
+	userInfoErr      error
+	userInfoCalls    int
+	userInfoExchange security.OIDCExchangeResult
 }
 
 func (stub *stubOIDCProviderClient) Enabled() bool {
@@ -45,6 +54,18 @@ func (stub *stubOIDCProviderClient) ExchangeCode(context.Context, string, string
 		return security.OIDCExchangeResult{}, stub.exchangeErr
 	}
 	return stub.exchange, nil
+}
+
+func (stub *stubOIDCProviderClient) UserInfoClaims(_ context.Context, exchange security.OIDCExchangeResult) (security.OIDCClaims, error) {
+	stub.userInfoCalls++
+	stub.userInfoExchange = exchange
+	switch {
+	case stub.userInfoErr != nil:
+		return security.OIDCClaims{}, stub.userInfoErr
+	case stub.userInfo == nil:
+		return security.OIDCClaims{}, security.ErrOIDCUserInfoUnavailable
+	}
+	return *stub.userInfo, nil
 }
 
 type stubOIDCIdentityStore struct {
