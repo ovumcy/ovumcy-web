@@ -6,9 +6,21 @@ import (
 )
 
 type languageSwitchOption struct {
-	Code   string
-	Label  string
-	Active bool
+	Code  string
+	Label string
+	// AccessibleName spells the language in its own script and keeps the visible
+	// Label inside it, so a screen reader does not announce a bare "de".
+	AccessibleName string
+	Active         bool
+}
+
+var languageEndonyms = map[string]string{
+	"de": "Deutsch",
+	"en": "English",
+	"es": "Español",
+	"fr": "Français",
+	"it": "Italiano",
+	"ru": "Русский",
 }
 
 func buildLanguageSwitchOptions(messages map[string]string, currentLanguage string, supported []string) []languageSwitchOption {
@@ -18,10 +30,16 @@ func buildLanguageSwitchOptions(messages map[string]string, currentLanguage stri
 		if normalizedCode == "" {
 			continue
 		}
+		label := localizedLanguageSwitchLabel(messages, normalizedCode)
+		accessibleName := label
+		if endonym, known := languageEndonyms[normalizedCode]; known {
+			accessibleName = endonym + " (" + label + ")"
+		}
 		options = append(options, languageSwitchOption{
-			Code:   normalizedCode,
-			Label:  localizedLanguageSwitchLabel(messages, normalizedCode),
-			Active: normalizedCode == currentLanguage,
+			Code:           normalizedCode,
+			Label:          label,
+			AccessibleName: accessibleName,
+			Active:         normalizedCode == currentLanguage,
 		})
 	}
 	return options

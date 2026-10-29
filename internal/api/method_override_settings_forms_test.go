@@ -74,9 +74,10 @@ func renderNoJSForm(t *testing.T, app *fiber.App, page string, cookies map[strin
 	for _, cookie := range response.Cookies() {
 		held[cookie.Name] = cookie.Value
 	}
-	secret := strings.TrimSpace(htmlNodeText(htmlFindElement(document, func(node *html.Node) bool {
+	// The page shows the seed in groups of four; an authenticator ignores the spaces.
+	secret := strings.Join(strings.Fields(htmlNodeText(htmlFindElement(document, func(node *html.Node) bool {
 		return node.Type == html.ElementNode && htmlHasAttr(node, "data-totp-manual-secret")
-	})))
+	}))), "")
 	return noJSForm{action: htmlAttr(form, "action"), fields: fields, cookies: held, secret: secret, node: form}
 }
 

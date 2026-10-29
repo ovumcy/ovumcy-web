@@ -36,7 +36,7 @@
           <div class="settings-interface-options settings-interface-language-options" role="radiogroup" aria-label="{{t .Messages "settings.interface.language"}}">
             {{range .LanguageOptions}}
             <label class="choice-option settings-interface-option" data-settings-interface-language-option="{{.Code}}" data-selected="{{if .Active}}true{{else}}false{{end}}">
-              <input type="radio" name="language" value="{{.Code}}" class="choice-input" {{if .Active}}checked{{end}}>
+              <input type="radio" name="language" value="{{.Code}}" aria-label="{{.AccessibleName}}" class="choice-input" {{if .Active}}checked{{end}}>
               <span class="chip chip-stack chip-inline"><span>{{.Label}}</span></span>
             </label>
             {{end}}

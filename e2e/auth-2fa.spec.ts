@@ -22,7 +22,8 @@ const DISABLE_2FA_SUBMIT =
 async function readTOTPSecret(page: Page): Promise<string> {
   const el = page.locator('[data-totp-manual-secret]');
   await expect(el).toBeVisible();
-  const secret = (await el.textContent())?.trim() ?? '';
+  // The page shows the seed in groups of four; authenticators ignore the spaces.
+  const secret = ((await el.textContent()) ?? '').replace(/\s+/g, '');
   if (!secret) throw new Error('manual TOTP secret element is missing or empty');
   return secret;
 }

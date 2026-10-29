@@ -89,10 +89,17 @@
         height="200"
         class="rounded-sm border border-gray-200 dark:border-gray-700" />
 
-      <div class="space-y-2">
+      <div
+        class="space-y-2"
+        data-recovery-code-tools
+        data-copy-success-message="{{t .Messages "settings.2fa.secret_copied"}}"
+        data-copy-failed-message="{{t .Messages "settings.2fa.secret_copy_failed"}}">
         <p class="field-label">{{t .Messages "settings.2fa.secret_label"}}</p>
-        <p data-totp-manual-secret class="font-mono text-sm break-all journal-muted">{{.TOTPSecret}}</p>
+        <p data-totp-manual-secret data-recovery-code-value class="font-mono text-sm break-all journal-muted">{{.TOTPSecret}}</p>
         <p class="journal-muted text-xs">{{t .Messages "settings.2fa.secret_hint"}}</p>
+        <button type="button" class="btn-secondary" data-recovery-action="copy">{{t .Messages "settings.2fa.secret_copy"}}</button>
+        <p class="status-ok text-sm" data-recovery-status="copied" role="status" hidden>{{t .Messages "settings.2fa.secret_copied"}}</p>
+        <p class="status-error text-sm" data-recovery-status="copy-failed" role="alert" hidden>{{t .Messages "settings.2fa.secret_copy_failed"}}</p>
       </div>
     </div>
 

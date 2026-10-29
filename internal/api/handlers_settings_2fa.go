@@ -69,8 +69,21 @@ func (handler *Handler) ShowTOTPSetupPage(c fiber.Ctx) error {
 	}
 
 	data["QRDataURL"] = template.URL(qrDataURL) // #nosec G203 -- server-built data: URI from a server-rendered PNG, no user input
-	data["TOTPSecret"] = key.Secret()
+	data["TOTPSecret"] = groupTOTPSecret(key.Secret())
 	return handler.render(c, "settings_2fa", data)
+}
+
+// groupTOTPSecret spaces the base32 seed into groups of four for transcription;
+// authenticators ignore the whitespace when the key is typed or pasted.
+func groupTOTPSecret(secret string) string {
+	var grouped strings.Builder
+	for index, character := range secret {
+		if index > 0 && index%4 == 0 {
+			grouped.WriteByte(' ')
+		}
+		grouped.WriteRune(character)
+	}
+	return grouped.String()
 }
 
 // VerifyTOTP2FAEnrollment confirms TOTP enrollment by validating the user-supplied
