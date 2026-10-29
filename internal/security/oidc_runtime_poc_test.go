@@ -137,6 +137,13 @@ type mockOIDCProvider struct {
 	// exercise the token_endpoint origin-pin rejection in loadProvider.
 	tokenEndpoint string
 
+	// userInfoEndpoint overrides the advertised userinfo_endpoint (default:
+	// same-origin issuer+"/userinfo"), and omitUserInfoEndpoint leaves the
+	// member out of discovery altogether. Tests use them to exercise the
+	// userinfo_endpoint origin pin in loadProvider.
+	userInfoEndpoint     string
+	omitUserInfoEndpoint bool
+
 	// discoveryRedirectTo, when set, makes the canonical discovery path
 	// answer 302 to this URL instead of serving the document. Tests use it
 	// to exercise the redirect origin-pin on the OIDC HTTP client (a
@@ -251,6 +258,13 @@ func (m *mockOIDCProvider) serveDiscoveryDocument(w http.ResponseWriter, r *http
 	}
 	if m.endSessionEndpoint != "" {
 		payload["end_session_endpoint"] = m.endSessionEndpoint
+	}
+	if !m.omitUserInfoEndpoint {
+		userInfoEndpoint := m.issuer + "/userinfo"
+		if m.userInfoEndpoint != "" {
+			userInfoEndpoint = m.userInfoEndpoint
+		}
+		payload["userinfo_endpoint"] = userInfoEndpoint
 	}
 	if m.discoveryPadding > 0 {
 		payload["x_padding"] = strings.Repeat("a", m.discoveryPadding)

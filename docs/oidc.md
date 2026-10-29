@@ -65,11 +65,12 @@ Notes:
   The same requirement applies to the `authorization_endpoint` your provider advertises
   in its discovery document, which must additionally be present and an absolute `https://` URL; a document that omits it or fails the check leaves SSO
   unavailable rather than sending the browser to that URL.
-- Every endpoint the provider's discovery document advertises and Ovumcy uses — `authorization_endpoint`, `token_endpoint`, `jwks_uri` and
-  `end_session_endpoint` — must be on the issuer's origin: the same scheme, host and port as `OIDC_ISSUER_URL`. A provider whose sign-in page
-  lives on another host (for example a separate `login.` subdomain) is refused when Ovumcy loads its discovery document, and SSO stays
-  unavailable until `OIDC_ISSUER_URL` names an issuer whose endpoints share its origin. An `end_session_endpoint` on another origin is dropped, so
-  sign-out stays local. A stored provider-logout target is checked against the issuer configured now, so after the issuer's origin (scheme, host or port)
+- Every endpoint the provider's discovery document advertises and Ovumcy uses — `authorization_endpoint`, `token_endpoint`, `jwks_uri`,
+  `userinfo_endpoint` and `end_session_endpoint` — must be on the issuer's origin: the same scheme, host and port as `OIDC_ISSUER_URL`. A
+  provider whose sign-in page lives on another host (for example a separate `login.` subdomain) is refused when Ovumcy loads its discovery
+  document, and SSO stays unavailable until `OIDC_ISSUER_URL` names an issuer whose endpoints share its origin. An `end_session_endpoint` on
+  another origin is dropped, so sign-out stays local. A `userinfo_endpoint` on another origin is dropped too, and Ovumcy never sends it a
+  request. A stored provider-logout target is checked against the issuer configured now, so after the issuer's origin (scheme, host or port)
   changes, a sign-out from a session started before the change is local only; a change that keeps the origin (for example another
   realm on the same host) does not affect it. The address the provider returns the browser to after sign-out is always the one
   configured now (`OIDC_POST_LOGOUT_REDIRECT_URL`, or `/login` on the `OIDC_REDIRECT_URL` origin), never one saved with the session.
