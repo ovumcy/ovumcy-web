@@ -27,7 +27,7 @@ func (handler *Handler) ShowTOTPSetupPage(c fiber.Ctx) error {
 
 	messages := currentMessages(c)
 	data := fiber.Map{
-		"Title":       localizedPageTitle(messages, "settings.2fa.title", "Ovumcy | Two-Factor Authentication"),
+		"Title":       brandedPageTitle(messages, "settings.2fa.title", "Ovumcy | Two-Factor Authentication"),
 		"CurrentUser": user,
 		"TOTPEnabled": user.TOTPEnabled,
 		// Both 2FA writes re-authenticate against the account's own password

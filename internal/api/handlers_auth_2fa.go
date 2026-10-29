@@ -26,7 +26,7 @@ func (handler *Handler) ShowTOTPChallengePage(c fiber.Ctx) error {
 	// straight through rendered it verbatim in every language.
 	errorKey := services.AuthErrorTranslationKey(services.ResolveAuthErrorSource(flash.AuthError))
 	data := fiber.Map{
-		"Title":         localizedPageTitle(messages, "auth.2fa.title", "Ovumcy | Two-Factor Authentication"),
+		"Title":         brandedPageTitle(messages, "auth.2fa.title", "Ovumcy | Two-Factor Authentication"),
 		"ErrorKey":      errorKey,
 		"InvalidFields": services.InvalidAuthFields(errorKey),
 		// The recovery flow the link leads to is the public forgot-password
