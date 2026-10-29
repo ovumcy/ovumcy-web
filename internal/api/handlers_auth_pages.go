@@ -185,12 +185,10 @@ func (handler *Handler) ShowForgotPasswordPage(c fiber.Ctx) error {
 	if !handler.localPublicAuthEnabled() {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
-	redirected, err := handler.redirectAuthenticatedUserIfPresent(c)
-	if err != nil {
+	// One branch for both outcomes: a failed redirect hands back its error, a
+	// performed one hands back nil, so the page below renders only for a guest.
+	if redirected, err := handler.redirectAuthenticatedUserIfPresent(c); redirected || err != nil {
 		return err
-	}
-	if redirected {
-		return nil
 	}
 	flash := handler.popFlashCookie(c)
 	data := buildForgotPasswordPageData(currentMessages(c), flash)
