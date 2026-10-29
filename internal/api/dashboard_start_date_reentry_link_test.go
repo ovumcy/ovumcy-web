@@ -38,7 +38,14 @@ func TestDashboardStartDatePromptLinksToTheSettingsField(t *testing.T) {
 
 	settings := get("/settings")
 	card := strings.Index(settings, `id="settings-cycle"`)
-	if card < 0 || !strings.Contains(settings[card:], `id="settings-last-period-start"`) {
+	if card < 0 {
+		t.Fatal("settings page no longer renders the settings-cycle card")
+	}
+	body := settings[card:]
+	if next := strings.Index(body[1:], `<details id="settings-`); next >= 0 {
+		body = body[:next+1]
+	}
+	if !strings.Contains(body, `id="settings-last-period-start"`) {
 		t.Fatal("expected the settings-cycle card to hold the start-date field")
 	}
 }
