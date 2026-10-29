@@ -99,6 +99,17 @@ func IsValidDayBBT(value *float64) bool {
 	return *value >= MinDayBBTCelsius && *value <= MaxDayBBTCelsius
 }
 
+// IsRecognisedTemperatureUnit reports whether a save may carry raw: an omitted
+// unit (the full-snapshot default, c) or one of the two real values.
+func IsRecognisedTemperatureUnit(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", TemperatureUnitCelsius, TemperatureUnitFahrenheit:
+		return true
+	default:
+		return false
+	}
+}
+
 func NormalizeTemperatureUnit(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case TemperatureUnitFahrenheit:
