@@ -1,10 +1,10 @@
 package services
 
-// oidc_login_service_userinfo_test.go — an unlinked sign-in resolves its
-// account by the email claims of the provider's UserInfo endpoint, where OpenID
-// Connect delivers them to a code-flow client. The ID token's email claims are
-// used only when the provider has no usable endpoint, and a linked identity
-// never asks.
+// oidc_login_service_userinfo_test.go — an unlinked sign-in whose ID token
+// carries no verified address resolves its account by the email claims of the
+// provider's UserInfo endpoint, where OpenID Connect delivers them to a
+// code-flow client. An ID token with a verified address never asks, and
+// neither does a linked identity.
 
 import (
 	"context"
@@ -99,16 +99,17 @@ func TestOIDCLoginServiceAuthenticateAutoProvisionsFromTheUserInfoEmail(t *testi
 	}
 }
 
-// TestOIDCLoginServiceAuthenticatePrefersUserInfoOverTheIDTokenEmail: when the
-// provider has a usable UserInfo endpoint, its address is the one the account is
-// resolved by, even when the ID token carries another.
-func TestOIDCLoginServiceAuthenticatePrefersUserInfoOverTheIDTokenEmail(t *testing.T) {
+// TestOIDCLoginServiceAuthenticateVerifiedIDTokenEmailNeverAsksUserInfo: an ID
+// token that already carries a verified address signs in on it exactly as
+// before UserInfo was consulted, so a UserInfo endpoint that is down, slow or
+// answering differently costs that provider nothing.
+func TestOIDCLoginServiceAuthenticateVerifiedIDTokenEmailNeverAsksUserInfo(t *testing.T) {
 	t.Parallel()
 
 	client := &stubOIDCProviderClient{
-		enabled:  true,
-		exchange: userInfoTestExchange("id-token-sub", "id-token@example.com"),
-		userInfo: userInfoTestClaims("id-token-sub", "owner@example.com", true),
+		enabled:     true,
+		exchange:    userInfoTestExchange("id-token-sub", "owner@example.com"),
+		userInfoErr: errors.New("userinfo must not be asked"),
 	}
 	users := &stubOIDCUserStore{
 		byEmailFound: true,
@@ -119,17 +120,17 @@ func TestOIDCLoginServiceAuthenticatePrefersUserInfoOverTheIDTokenEmail(t *testi
 	if _, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Now()); !errors.Is(err, ErrOIDCLinkRequiresConfirmation) {
 		t.Fatalf("Authenticate() error = %v, want ErrOIDCLinkRequiresConfirmation", err)
 	}
-	if client.userInfoCalls != 1 {
-		t.Fatalf("UserInfoClaims was called %d times, want 1", client.userInfoCalls)
+	if client.userInfoCalls != 0 {
+		t.Fatalf("UserInfoClaims was called %d times for a verified ID-token address, want 0", client.userInfoCalls)
 	}
 	if users.lastLookupEmail != "owner@example.com" {
-		t.Fatalf("account looked up by %q, want the UserInfo address", users.lastLookupEmail)
+		t.Fatalf("account looked up by %q, want the ID token's address", users.lastLookupEmail)
 	}
 }
 
-// TestOIDCLoginServiceAuthenticateTakesVerificationFromUserInfoAlone: the
-// address and its verification flag both come from UserInfo, so an ID token's
-// flag neither rescues an unverified UserInfo address nor blocks a verified one.
+// TestOIDCLoginServiceAuthenticateTakesVerificationFromUserInfoAlone: once
+// UserInfo is asked, the address and its verification flag both come from it,
+// so an unverified ID-token address never rescues an unverified UserInfo one.
 func TestOIDCLoginServiceAuthenticateTakesVerificationFromUserInfoAlone(t *testing.T) {
 	t.Parallel()
 
@@ -138,8 +139,8 @@ func TestOIDCLoginServiceAuthenticateTakesVerificationFromUserInfoAlone(t *testi
 		userInfoVerified bool
 		want             error
 	}{
-		"unverified in the ID token, verified in UserInfo": {idTokenVerified: false, userInfoVerified: true, want: ErrOIDCLinkRequiresConfirmation},
-		"verified in the ID token, unverified in UserInfo": {idTokenVerified: true, userInfoVerified: false, want: ErrOIDCAccountUnavailable},
+		"unverified in the ID token, verified in UserInfo":   {idTokenVerified: false, userInfoVerified: true, want: ErrOIDCLinkRequiresConfirmation},
+		"unverified in the ID token, unverified in UserInfo": {idTokenVerified: false, userInfoVerified: false, want: ErrOIDCAccountUnavailable},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -164,29 +165,25 @@ func TestOIDCLoginServiceAuthenticateTakesVerificationFromUserInfoAlone(t *testi
 }
 
 // TestOIDCLoginServiceAuthenticateFallsBackToTheIDTokenWithoutUserInfo: a
-// provider with no usable UserInfo endpoint signs in on the ID token's email
-// claims, as before.
+// provider with no usable UserInfo endpoint has the ID token's email claims
+// judged unchanged, so an unverified address is refused as before.
 func TestOIDCLoginServiceAuthenticateFallsBackToTheIDTokenWithoutUserInfo(t *testing.T) {
 	t.Parallel()
 
-	client := &stubOIDCProviderClient{
-		enabled:  true,
-		exchange: userInfoTestExchange("id-token-sub", "owner@example.com"),
-	}
+	exchange := userInfoTestExchange("id-token-sub", "owner@example.com")
+	exchange.Claims.EmailVerified = false
+	client := &stubOIDCProviderClient{enabled: true, exchange: exchange}
 	users := &stubOIDCUserStore{
 		byEmailFound: true,
 		byEmail:      models.User{ID: 9, Email: "owner@example.com", Role: models.RoleOwner, OnboardingCompleted: true},
 	}
 	service := NewOIDCLoginService(client, &stubOIDCIdentityStore{}, users, nil)
 
-	if _, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Now()); !errors.Is(err, ErrOIDCLinkRequiresConfirmation) {
-		t.Fatalf("Authenticate() error = %v, want ErrOIDCLinkRequiresConfirmation", err)
+	if _, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Now()); !errors.Is(err, ErrOIDCAccountUnavailable) {
+		t.Fatalf("Authenticate() error = %v, want ErrOIDCAccountUnavailable", err)
 	}
 	if client.userInfoCalls != 1 {
 		t.Fatalf("UserInfoClaims was called %d times, want 1", client.userInfoCalls)
-	}
-	if users.lastLookupEmail != "owner@example.com" {
-		t.Fatalf("account looked up by %q, want the ID token's address", users.lastLookupEmail)
 	}
 }
 
@@ -260,22 +257,24 @@ func TestOIDCLoginServiceAuthenticateWithoutAnyEmailSource(t *testing.T) {
 // TestOIDCLoginServiceAuthenticateFailsOnAFailedUserInfoRequest: a UserInfo
 // request that fails, or whose answer is refused, fails the sign-in as an
 // authentication failure rather than reading as an account without an email,
-// and never falls back to an email the ID token carries.
+// and never falls back to an unverified email the ID token carries.
 func TestOIDCLoginServiceAuthenticateFailsOnAFailedUserInfoRequest(t *testing.T) {
 	t.Parallel()
 
 	for name, idTokenEmail := range map[string]string{
-		"ID token without an email": "",
-		"ID token with an email":    "owner@example.com",
+		"ID token without an email":         "",
+		"ID token with an unverified email": "owner@example.com",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			exchange := userInfoTestExchange("failed-sub", idTokenEmail)
+			exchange.Claims.EmailVerified = false
 			provisioner := &stubOIDCAutoProvisioner{user: models.User{ID: 17, Email: "owner@example.com", Role: models.RoleOwner}}
 			service := NewOIDCLoginService(&stubOIDCProviderClient{
 				enabled:     true,
 				config:      security.OIDCConfig{Enabled: true, AutoProvision: true},
-				exchange:    userInfoTestExchange("failed-sub", idTokenEmail),
+				exchange:    exchange,
 				userInfoErr: errors.New("oidc userinfo sub does not match the id_token sub"),
 			}, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, provisioner)
 

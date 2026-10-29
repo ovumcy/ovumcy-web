@@ -5,10 +5,10 @@
   claims from the provider's UserInfo endpoint in the authorization code flow, and a provider may
   leave them out of the ID token entirely, as Authelia 4.39 and later do by default. Every first
   sign-in through such a provider was refused as an unavailable account, whether it would have
-  created an account or matched an existing one. A first sign-in now reads the address and its
-  verification flag from the UserInfo endpoint, whatever the ID token carries; only a provider that
-  advertises no usable UserInfo endpoint is still read from the ID token. A sign-in through an
-  already linked identity never asks UserInfo.
+  created an account or matched an existing one. When the ID token carries no verified address, a
+  first sign-in now reads the address and its verification flag from the UserInfo endpoint. An ID
+  token that does carry one is used as before, with no UserInfo request, and a sign-in through an
+  already linked identity never asks UserInfo either.
 
 ### Security
 
