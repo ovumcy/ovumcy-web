@@ -77,6 +77,9 @@ func TestIrregularRangeWindow_GoldenVectors(t *testing.T) {
 				}
 				return
 			}
+			if vector.Expected.WindowStart == nil || vector.Expected.WindowEnd == nil {
+				t.Fatalf("fixture bug: vector %q is not withheld but has a null window date", vector.Name)
+			}
 			if got, want := start.Format("2006-01-02"), *vector.Expected.WindowStart; got != want {
 				t.Errorf("window start = %s, want %s", got, want)
 			}
