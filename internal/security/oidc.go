@@ -472,9 +472,10 @@ func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVer
 // token entirely, so this is where they are read.
 //
 // The response is used only when its sub equals the ID token's exactly (§5.3.2:
-// otherwise its values MUST NOT be used). When it names an iss or an aud — a
-// signed response must name both — the iss must be the configured issuer and
-// the aud must include this client. A signed (application/jwt) response is
+// otherwise its values MUST NOT be used). When it names an iss or an aud, the
+// iss must be the configured issuer and the aud must include this client;
+// go-oidc does not report whether the response was signed, so a signed response
+// naming neither is not refused. A signed (application/jwt) response is
 // verified by go-oidc against the issuer's JWKS, whose jwks_uri is pinned to the
 // issuer origin, with the same asymmetric algorithms ID tokens are held to.
 //
@@ -506,7 +507,17 @@ func (client *OIDCClient) UserInfoClaims(ctx context.Context, exchange OIDCExcha
 		TokenType:   grant.tokenType,
 	}))
 	if err != nil {
-		return OIDCClaims{}, fmt.Errorf("fetch oidc userinfo: %w", err)
+		// go-oidc puts the provider's response body (up to the body cap) into a
+		// non-200 error, so only a transport error, which carries no body, is
+		// passed on.
+		var transportErr *url.Error
+		switch {
+		case errors.As(err, &transportErr):
+			return OIDCClaims{}, fmt.Errorf("fetch oidc userinfo: %w", transportErr)
+		case strings.Contains(err.Error(), errOIDCResponseTooLarge.Error()):
+			return OIDCClaims{}, fmt.Errorf("fetch oidc userinfo: %w", errOIDCResponseTooLarge)
+		}
+		return OIDCClaims{}, errors.New("fetch oidc userinfo failed")
 	}
 	if info.Subject == "" || info.Subject != grant.subject {
 		return OIDCClaims{}, errors.New("oidc userinfo sub does not match the id_token sub")
