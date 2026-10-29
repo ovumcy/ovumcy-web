@@ -4196,9 +4196,7 @@
 
     // localStorage outlives a sign-out, so the mark names the account the page
     // was rendered for; a page without a binding keeps the unkeyed key.
-    var binding = document.body && document.body.getAttribute
-      ? String(document.body.getAttribute("data-account-binding") || "").trim()
-      : "";
+    var binding = accountBindingFromBody();
 
     var tips = root.querySelectorAll("[data-once-tip]");
     for (var index = 0; index < tips.length; index++) {
