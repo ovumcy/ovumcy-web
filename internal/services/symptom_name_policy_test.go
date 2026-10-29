@@ -38,6 +38,15 @@ func TestNormalizeSymptomIconInput(t *testing.T) {
 		}
 	})
 
+	t.Run("the bare question mark is rejected", func(t *testing.T) {
+		// "?" is the glyph the interface paints for an icon it cannot show.
+		for _, raw := range []string{"?", " ? "} {
+			if _, err := normalizeSymptomIconInput(raw); err != ErrSymptomNameInvalidCharacters {
+				t.Fatalf("%q: got %v, want ErrSymptomNameInvalidCharacters", raw, err)
+			}
+		}
+	})
+
 	t.Run("over-long icon is rejected", func(t *testing.T) {
 		if _, err := normalizeSymptomIconInput(strings.Repeat("x", maxSymptomIconLength+1)); err != ErrSymptomNameTooLong {
 			t.Fatalf("got %v, want ErrSymptomNameTooLong", err)

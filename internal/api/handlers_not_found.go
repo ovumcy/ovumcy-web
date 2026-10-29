@@ -26,6 +26,7 @@ import (
 const notFoundRenderedPath = "/404"
 
 func (handler *Handler) NotFound(c fiber.Ctx) error {
+	c.Set("X-Robots-Tag", "noindex")
 	if strings.HasPrefix(httpx.RoutingNormalizedPath(c.Path()), "/api/") || acceptsJSON(c) || isHTMX(c) {
 		return handler.respondNotFoundMappedError(c)
 	}

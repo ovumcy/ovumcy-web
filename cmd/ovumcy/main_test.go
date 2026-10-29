@@ -1634,8 +1634,10 @@ func assertDefaultSecurityHeaders(t *testing.T, response *http.Response, expectS
 // Chrome logs "Unrecognized feature" once per page for a token it no longer
 // knows; the policy lists only features a browser still understands.
 func TestPermissionsPolicyNamesNoRetiredFeature(t *testing.T) {
-	if strings.Contains(permissionsPolicyDefault, "ambient-light-sensor") {
-		t.Fatalf("permissions policy still lists ambient-light-sensor: %q", permissionsPolicyDefault)
+	for _, retired := range []string{"ambient-light-sensor", "interest-cohort"} {
+		if strings.Contains(permissionsPolicyDefault, retired) {
+			t.Fatalf("permissions policy still lists %s: %q", retired, permissionsPolicyDefault)
+		}
 	}
 }
 
