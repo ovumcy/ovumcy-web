@@ -204,7 +204,7 @@
             data-cycle-ribbon-day="{{.Day}}"
             data-phase="{{.Phase}}"
             role="img"
-            aria-label="{{t $.Messages "dashboard.cycle_day"}} {{.Day}}: {{phaseLabel $.Messages .Phase}}{{if .IsToday}}, {{t $.Messages "nav.today"}}{{end}}{{if .IsFertile}}, {{t $.Messages "dashboard.fertile_window"}}{{end}}{{if .IsStartWindow}},{{t $.Messages "calendar.legend.start_window"}}{{end}}{{if .IsLogged}}, {{t $.Messages "calendar.data_logged"}}{{end}}"
+            aria-label="{{t $.Messages "dashboard.cycle_day"}} {{.Day}}: {{phaseLabel $.Messages .Phase}}{{if .IsToday}}, {{t $.Messages "nav.today"}}{{end}}{{if .IsFertile}}, {{t $.Messages "dashboard.fertile_window"}}{{end}}{{if .IsStartWindow}}, {{t $.Messages "calendar.legend.start_window"}}{{end}}{{if .IsLogged}}, {{t $.Messages "calendar.data_logged"}}{{end}}"
             {{if .IsToday}}data-today="true"{{end}}
             {{if .IsPredictedFlow}}data-predicted-flow="true"{{end}}
             {{if .IsFertile}}data-fertile="true"{{end}}
