@@ -36,6 +36,10 @@ func TestOIDCLoginServiceCompleteIdentityLinkReauthLinksOnFreshExchange(t *testi
 	if identities.created.UserID != 42 || identities.created.Issuer != "https://id.example.com" || identities.created.Subject != "settings-link-sub" {
 		t.Fatalf("unexpected persisted identity: %+v", identities.created)
 	}
+	// The exchange carries no email, and the link step-up still never asks UserInfo.
+	if client.userInfoCalls != 0 {
+		t.Fatalf("UserInfoClaims was called %d times for a link step-up, want 0", client.userInfoCalls)
+	}
 }
 
 // TestOIDCLoginServiceCompleteIdentityLinkReauthRefusesStaleExchange pins the
