@@ -140,6 +140,38 @@ test.describe('Visual and accessibility regressions', () => {
     await expectCalendarMonthFitsMobileViewport(page);
   });
 
+  test('200% zoom keeps tabbar labels inside their tabs and the import field inside its card', async ({
+    page,
+  }) => {
+    await registerOwnerAndReachDashboard(page, 'visual-zoom-reflow');
+    // Text-only zoom (a browser's "larger text" setting) scales the root font
+    // size and leaves the viewport alone; 320px is the narrowest supported phone.
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 700 });
+      await page.goto('/settings');
+      await page.evaluate(() => {
+        document.documentElement.style.fontSize = '200%';
+      });
+      await page.locator('#settings-import summary').click();
+      await assertNoHorizontalOverflow(page);
+
+      const fit = await page.evaluate(() => {
+        const input = document.querySelector<HTMLElement>('#settings-import-file');
+        const box = input?.parentElement?.getBoundingClientRect();
+        const rect = input?.getBoundingClientRect();
+        const labels = Array.from(document.querySelectorAll<HTMLElement>('.mobile-tabbar-link')).map(
+          (link) => link.scrollWidth - link.clientWidth,
+        );
+        return {
+          inputOverflow: rect && box ? rect.right - box.right : 0,
+          labelOverflow: Math.max(...labels),
+        };
+      });
+      expect(fit.inputOverflow, `import field overflows its card at ${width}px`).toBeLessThanOrEqual(1);
+      expect(fit.labelOverflow, `a tabbar label overflows its tab at ${width}px`).toBeLessThanOrEqual(1);
+    }
+  });
+
   test('mobile tabbar paints opaquely in both themes and page bottoms clear it', async ({
     page,
   }) => {
