@@ -838,6 +838,16 @@
   display: inline-flex;
   align-items: center;
   gap: 0.34rem;
+
+  /* A "Label: value" item keeps its label whole ("Next period:" never splits
+     across lines); only the value wraps. */
+  &:has(> [data-dashboard-next-period], > [data-dashboard-ovulation]) {
+    white-space: nowrap;
+
+    & > * {
+      white-space: normal;
+    }
+  }
 }
 
 @utility dashboard-status-item-warning {
@@ -925,6 +935,27 @@
 
 @utility dashboard-status-separator {
   color: rgba(172, 136, 96, 0.72);
+}
+
+/* On a phone the status items stack, one per line: a wrapping row strands a
+   lone "·" at a line edge, and each item is a self-contained fact anyway. */
+@media (max-width: 640px) {
+  .dashboard-status-line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .dashboard-status-separator {
+    display: none;
+  }
+}
+
+/* The late-cycle quick links are inline text; give them a 24px hit area. */
+[data-dashboard-late-cycle-actions] .inline-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
 }
 
 @utility dashboard-status-header {
@@ -1149,7 +1180,9 @@
 }
 
 @utility dashboard-goal-chip {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   margin-inline-start: auto;
 
   & > summary::-webkit-details-marker {
@@ -1183,6 +1216,15 @@
   align-items: center;
   gap: 0.5rem;
   padding-top: 0.5rem;
+
+  & > form,
+  & button {
+    max-width: 100%;
+  }
+
+  & button {
+    white-space: normal;
+  }
 }
 
 @utility stat-label {

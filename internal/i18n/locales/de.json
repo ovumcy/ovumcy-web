@@ -510,6 +510,7 @@
   "prediction.explainer.awaiting_more_cycles.other": "Die Fruchtbarkeitsdetails warten auf %d abgeschlossene Zyklen. Bis dahin steht dahinter zu wenig Verlauf, um sie anzuzeigen.",
   "dashboard.median_cycle": "Medianer Zyklus",
   "dashboard.fertile_window": "Fruchtbares Fenster",
+  "dashboard.cycle_ribbon_truncated": "Das Band zeigt die ersten %d Tage dieses Zyklus; spätere Tage werden nicht dargestellt.",
   "dashboard.flow.none": "Keine",
   "dashboard.flow.unspecified": "Nicht angegeben",
   "dashboard.flow.spotting": "Schmierblutung",
