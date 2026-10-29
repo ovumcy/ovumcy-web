@@ -884,6 +884,27 @@
   padding-left: 0.7rem;
 }
 
+/* The outcome of an autosave sits after every form section, which on a phone
+   is far below the control the owner just changed. While a save is in flight
+   or done, the bar pins itself above the floating tab bar, so the confirmation
+   (and its Undo) is on screen wherever the tap happened. Idle renders nothing,
+   so the bar only takes a surface when there is something to say. */
+@utility dashboard-autosave-bar {
+  @media (width < 40rem) {
+    position: sticky;
+    bottom: var(--mobile-tabbar-clearance);
+    z-index: 30;
+
+    &:has([data-autosave-state]:not([data-autosave-state='idle'])) {
+      border-radius: var(--radius-card);
+      border: 1px solid var(--line-soft);
+      background: var(--bg-card);
+      padding: 0.4rem 0.75rem;
+      box-shadow: var(--elevation-3);
+    }
+  }
+}
+
 @utility dashboard-autosave-indicator {
   display: inline-flex;
   align-items: center;
