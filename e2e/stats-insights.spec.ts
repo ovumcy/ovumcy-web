@@ -229,7 +229,7 @@ test.describe('Stats: BBT chart', () => {
       },
       data: {
         track_bbt: true,
-        temperature_unit: 'celsius',
+        temperature_unit: 'c',
         track_cervical_mucus: false,
         hide_sex_chip: false,
         hide_cycle_factors: false,
