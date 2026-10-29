@@ -317,7 +317,7 @@
       var target = revealHashTarget(link.getAttribute("href"));
       // A link to a plain section leaves focus on the link, or on BODY once the
       // link is gone; the late-cycle actions hand it to the section they name.
-      if (target && link.hasAttribute("data-late-cycle-action")) {
+      if (target && link.hasAttribute("data-late-cycle-action") && isPrimaryClick(event)) {
         restoreFocus(target);
       }
     });

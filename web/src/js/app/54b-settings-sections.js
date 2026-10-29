@@ -299,8 +299,7 @@
       if (marked) {
         announceDescription(marked);
       }
-      var active = document.activeElement;
-      var focusLost = !active || active === document.body || !active.isConnected;
+      var focusLost = focusIsLost();
       // Focus the owner moved elsewhere while the request was in flight is
       // theirs: it moves only when it was in the swapped region or is gone.
       var moveFocus = marked ? inside || focusLost : inside && focusLost;

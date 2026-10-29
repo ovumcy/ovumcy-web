@@ -158,7 +158,7 @@ test("a reload asked by a control that names a focus target carries the name acr
     const { window } = dom;
     const form = window.document.getElementById("goal");
     htmxEvent(window, "htmx:beforeOnLoad", form, { xhr: refreshResponse("true") });
-    assert.equal(window.sessionStorage.getItem("ovumcy:focus-after-reload"), "[data-usage-goal-chip]");
+    assert.match(window.sessionStorage.getItem("ovumcy:focus-after-reload"), /^\d+\|\[data-usage-goal-chip\]$/);
   } finally {
     dom.window.close();
   }
@@ -180,7 +180,7 @@ test("the reloaded page focuses the remembered target once and forgets it", asyn
   const dom = await loadDOMWithScript(APP_BUNDLE, {
     html: `<!doctype html><html><head></head><body><details><summary data-usage-goal-chip>Health</summary></details></body></html>`,
     beforeRun(window) {
-      window.sessionStorage.setItem("ovumcy:focus-after-reload", "[data-usage-goal-chip]");
+      window.sessionStorage.setItem("ovumcy:focus-after-reload", `${Date.now()}|[data-usage-goal-chip]`);
     },
   });
   try {
@@ -192,11 +192,47 @@ test("the reloaded page focuses the remembered target once and forgets it", asyn
   }
 });
 
+test("a focus target left by a reload that never came is dropped, not applied to a later page", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: `<!doctype html><html><head></head><body><details><summary data-usage-goal-chip>Health</summary></details></body></html>`,
+    beforeRun(window) {
+      window.sessionStorage.setItem("ovumcy:focus-after-reload", `${Date.now() - 60000}|[data-usage-goal-chip]`);
+    },
+  });
+  try {
+    const { window } = dom;
+    assert.equal(window.document.activeElement, window.document.body);
+    assert.equal(window.sessionStorage.getItem("ovumcy:focus-after-reload"), null);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a save button already busy keeps the focus note of the first request", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: SAVE_PAGE });
+  try {
+    const { window } = dom;
+    const document = window.document;
+    const form = document.getElementById("day-form");
+    const button = form.querySelector("[data-save-button]");
+    button.focus();
+
+    htmxEvent(window, "htmx:beforeRequest", form);
+    blurLikeABrowser(button);
+    htmxEvent(window, "htmx:beforeRequest", form);
+    htmxEvent(window, "htmx:afterRequest", form);
+
+    assert.equal(document.activeElement, button);
+  } finally {
+    dom.window.close();
+  }
+});
+
 test("a target that arrives with a later swap is focused when it settles", async () => {
   const dom = await loadDOMWithScript(APP_BUNDLE, {
     html: `<!doctype html><html><head></head><body><div id="day-editor"></div></body></html>`,
     beforeRun(window) {
-      window.sessionStorage.setItem("ovumcy:focus-after-reload", "[data-day-cycle-start-button]");
+      window.sessionStorage.setItem("ovumcy:focus-after-reload", `${Date.now()}|[data-day-cycle-start-button]`);
     },
   });
   try {

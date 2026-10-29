@@ -202,7 +202,9 @@
     // A focused button that becomes disabled drops focus to BODY, and being
     // enabled again does not give it back: note the hold going in, restore it
     // coming out, unless the owner moved on meanwhile.
-    if (isBusy) {
+    // Only the first busy call: a repeat on a button already disabled sees
+    // BODY and would erase what the first one noted.
+    if (isBusy && !button.disabled) {
       button.__ovumcyHeldFocus = document.activeElement === button;
     }
     button.disabled = isBusy;

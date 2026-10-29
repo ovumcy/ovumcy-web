@@ -71,6 +71,7 @@
   // one names, in data-focus-after-reload, what the reloaded page should focus;
   // the name outlives the reload in sessionStorage and is spent once.
   var FOCUS_AFTER_RELOAD_KEY = "ovumcy:focus-after-reload";
+  var FOCUS_AFTER_RELOAD_TTL_MS = 15000;
 
   function rememberFocusAfterReload(source) {
     var holder = source && source.closest ? source.closest("[data-focus-after-reload]") : null;
@@ -79,21 +80,25 @@
       return;
     }
     try {
-      window.sessionStorage.setItem(FOCUS_AFTER_RELOAD_KEY, selector);
+      window.sessionStorage.setItem(FOCUS_AFTER_RELOAD_KEY, Date.now() + "|" + selector);
     } catch {
       // Storage refused: the reload lands without a focus target, as before.
     }
   }
 
   function consumeFocusAfterReload() {
-    var selector = "";
+    var stored;
     try {
-      selector = String(window.sessionStorage.getItem(FOCUS_AFTER_RELOAD_KEY) || "");
+      stored = String(window.sessionStorage.getItem(FOCUS_AFTER_RELOAD_KEY) || "");
       window.sessionStorage.removeItem(FOCUS_AFTER_RELOAD_KEY);
     } catch {
       return;
     }
-    if (!selector) {
+    // Written as "<ms>|<selector>": a name left by a reload that never came
+    // (a blocked unload, a navigation elsewhere) must not fire on a later page.
+    var split = stored.indexOf("|");
+    var selector = split > 0 ? stored.slice(split + 1) : "";
+    if (!selector || Date.now() - Number(stored.slice(0, split)) > FOCUS_AFTER_RELOAD_TTL_MS) {
       return;
     }
     // The target may arrive with a fragment the page loads on its own (the
@@ -113,7 +118,7 @@
       return;
     }
     function retry() {
-      if (attempt() || Date.now() > deadline) {
+      if (Date.now() > deadline || attempt()) {
         document.body.removeEventListener("htmx:afterSettle", retry);
       }
     }
