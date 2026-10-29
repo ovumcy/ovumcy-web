@@ -82,6 +82,39 @@ test.describe('Dashboard on small screens', () => {
     await expect(note).toContainText('60');
   });
 
+  test('Escape closes the goal chip and returns focus to it', async ({ page }) => {
+    await registerAndOnboardWithStartDaysAgo(page, 'dash-chip-escape', 10);
+    await page.setViewportSize({ width: 375, height: 700 });
+    await page.goto('/dashboard');
+
+    const chip = page.locator('[data-usage-goal-chip]');
+    await chip.click();
+    const panel = page.locator('[data-usage-goal-quick-switch]');
+    await expect(panel).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(chip).toBeFocused();
+  });
+
+  test('ticking the period day refreshes the status header', async ({ page }) => {
+    await registerAndOnboardWithStartDaysAgo(page, 'dash-hero-refresh', 10);
+    await page.goto('/dashboard');
+
+    const toggle = page.locator('input[name="is_period"]');
+    const label = page.locator('.period-toggle-main');
+    const labelBefore = (await label.textContent())?.trim();
+    const refresh = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        new URL(response.url()).pathname === '/dashboard' &&
+        response.request().resourceType() === 'fetch',
+    );
+    await toggle.setChecked(!(await toggle.isChecked()));
+    await refresh;
+    expect((await label.textContent())?.trim()).toBe(labelBefore);
+  });
+
   test('late-cycle quick links have a 24px hit area', async ({ page }) => {
     const anchor = await registerAndOnboardWithStartDaysAgo(page, 'dash-late-links', 60);
     for (const offset of [-84, -56, -28]) {
