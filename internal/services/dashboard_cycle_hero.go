@@ -29,13 +29,17 @@ const phaseBeyondProjectedCycle = "beyond"
 const phaseFertilityWithheld = "withheld"
 
 type DashboardCycleHero struct {
-	Visible      bool
-	Approximate  bool
-	CurrentDay   int
-	CycleLength  int
-	AxisDays     int
-	CurrentPhase string
-	PhaseCards   []DashboardCycleHeroPhaseCard
+	Visible     bool
+	Approximate bool
+	CurrentDay  int
+	CycleLength int
+	AxisDays    int
+	// AxisTruncated reports that the cycle (or its predicted start window) runs
+	// past dashboardCycleHeroMaxAxisDays, so the ribbon stops at the cap and
+	// today's cell may not be on it.
+	AxisTruncated bool
+	CurrentPhase  string
+	PhaseCards    []DashboardCycleHeroPhaseCard
 	// Days is the ribbon itself: one cell per day of the axis, in order, each
 	// carrying every encoding that day is under. The presentation is a row of
 	// equal-width cells rather than SVG geometry so that no coordinate is
@@ -169,13 +173,14 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	axisDays := dashboardCycleHeroAxisDays(cycleLength, startWindow)
 
 	return DashboardCycleHero{
-		Visible:      true,
-		Approximate:  dashboardCycleHeroApproximate(cycleContext, startWindow),
-		CurrentDay:   currentDay,
-		CycleLength:  cycleLength,
-		AxisDays:     axisDays,
-		CurrentPhase: currentPhase,
-		PhaseCards:   phaseCards,
+		Visible:       true,
+		Approximate:   dashboardCycleHeroApproximate(cycleContext, startWindow),
+		CurrentDay:    currentDay,
+		CycleLength:   cycleLength,
+		AxisDays:      axisDays,
+		AxisTruncated: dashboardCycleHeroUncappedAxisDays(cycleLength, startWindow) > dashboardCycleHeroMaxAxisDays,
+		CurrentPhase:  currentPhase,
+		PhaseCards:    phaseCards,
 		Days: dashboardCycleHeroDays(
 			axisDays,
 			currentDay,
@@ -456,11 +461,16 @@ func dashboardCycleHeroLoggedDays(logs []models.DailyLog, cycleStart time.Time, 
 	return logged
 }
 
-func dashboardCycleHeroAxisDays(cycleLength int, startWindow dashboardCycleHeroDaySpan) int {
+func dashboardCycleHeroUncappedAxisDays(cycleLength int, startWindow dashboardCycleHeroDaySpan) int {
 	axisDays := cycleLength
 	if startWindow.Present && startWindow.EndDay > axisDays {
 		axisDays = startWindow.EndDay
 	}
+	return axisDays
+}
+
+func dashboardCycleHeroAxisDays(cycleLength int, startWindow dashboardCycleHeroDaySpan) int {
+	axisDays := dashboardCycleHeroUncappedAxisDays(cycleLength, startWindow)
 	if axisDays > dashboardCycleHeroMaxAxisDays {
 		axisDays = dashboardCycleHeroMaxAxisDays
 	}

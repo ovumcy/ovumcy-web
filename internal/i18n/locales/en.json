@@ -510,6 +510,7 @@
   "prediction.explainer.awaiting_more_cycles.other": "Fertile details wait for %d completed cycles. Until then there is too little history behind them to show them.",
   "dashboard.median_cycle": "Median cycle",
   "dashboard.fertile_window": "Fertile window",
+  "dashboard.cycle_ribbon_truncated": "The ribbon shows the first %d days of this cycle; days beyond that are not drawn.",
   "dashboard.flow.none": "None",
   "dashboard.flow.unspecified": "Not specified",
   "dashboard.flow.spotting": "Spotting",

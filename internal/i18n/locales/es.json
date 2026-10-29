@@ -510,6 +510,7 @@
   "prediction.explainer.awaiting_more_cycles.other": "Los detalles de fertilidad esperan a %d ciclos completados. Hasta entonces hay muy poco historial detrás para mostrarlos.",
   "dashboard.median_cycle": "Mediana del ciclo",
   "dashboard.fertile_window": "Ventana fértil",
+  "dashboard.cycle_ribbon_truncated": "La cinta muestra los primeros %d días de este ciclo; los días posteriores no se dibujan.",
   "dashboard.flow.none": "Ninguno",
   "dashboard.flow.unspecified": "Sin especificar",
   "dashboard.flow.spotting": "Manchado",

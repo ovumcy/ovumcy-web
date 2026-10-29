@@ -518,6 +518,7 @@
   "prediction.explainer.awaiting_more_cycles.many": "Фертильные детали ждут %d завершённых циклов. До этого за ними слишком мало истории, чтобы их показывать.",
   "dashboard.median_cycle": "Медианный цикл",
   "dashboard.fertile_window": "Фертильное окно",
+  "dashboard.cycle_ribbon_truncated": "Лента показывает первые %d дней этого цикла; последующие дни не отображаются.",
   "dashboard.flow.none": "Нет",
   "dashboard.flow.unspecified": "Не указано",
   "dashboard.flow.spotting": "Мажущие",

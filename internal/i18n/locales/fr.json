@@ -649,6 +649,7 @@
   "prediction.explainer.awaiting_more_cycles.other": "Les détails de fertilité attendent %d cycles terminés. D'ici là, ils reposent sur trop peu d'historique pour être affichés.",
   "dashboard.median_cycle": "Cycle médian",
   "dashboard.fertile_window": "Fenêtre fertile",
+  "dashboard.cycle_ribbon_truncated": "Le ruban montre les %d premiers jours de ce cycle ; les jours suivants ne sont pas représentés.",
   "dashboard.flow.none": "Aucun",
   "dashboard.flow.unspecified": "Non précisé",
   "dashboard.flow.spotting": "Légères pertes",
