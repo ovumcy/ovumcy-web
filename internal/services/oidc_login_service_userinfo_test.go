@@ -187,6 +187,34 @@ func TestOIDCLoginServiceAuthenticateFallsBackToTheIDTokenWithoutUserInfo(t *tes
 	}
 }
 
+// TestOIDCLoginServiceValidateReauthExchangeNeverAsksUserInfo: a step-up is
+// decided by the linked (issuer, subject) and auth_time alone, so an ID token
+// without an email never sends it to UserInfo.
+func TestOIDCLoginServiceValidateReauthExchangeNeverAsksUserInfo(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
+	identities := &stubOIDCIdentityStore{
+		found:    true,
+		identity: models.OIDCIdentity{ID: 10, UserID: 5, Issuer: userInfoTestIssuer, Subject: "stepup-sub"},
+	}
+	exchange := userInfoTestExchange("stepup-sub", "")
+	exchange.Claims.AuthTime = now.Add(-time.Minute)
+	client := &stubOIDCProviderClient{
+		enabled:     true,
+		exchange:    exchange,
+		userInfoErr: errors.New("userinfo must not be asked"),
+	}
+	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
+
+	if err := service.ValidateReauthExchange(context.Background(), "code", "verifier", "nonce", 5, 5*time.Minute, now); err != nil {
+		t.Fatalf("ValidateReauthExchange() error = %v, want nil", err)
+	}
+	if client.userInfoCalls != 0 {
+		t.Fatalf("UserInfoClaims was called %d times for a step-up, want 0", client.userInfoCalls)
+	}
+}
+
 // TestOIDCLoginServiceAuthenticateLinkedIdentityNeverAsksUserInfo: a linked
 // (issuer, subject) signs in on the link alone, so a provider whose ID tokens
 // carry no email keeps signing linked accounts in whatever UserInfo would say.

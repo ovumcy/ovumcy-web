@@ -284,6 +284,9 @@ func TestOIDCUserInfoClaimsRefusesAFailedRequest(t *testing.T) {
 	if err == nil || errors.Is(err, ErrOIDCUserInfoUnavailable) {
 		t.Fatalf("a 401 from UserInfo must fail the call as a request failure, got %v", err)
 	}
+	if err.Error() != "fetch oidc userinfo failed" {
+		t.Fatalf("a failed UserInfo request must not carry the provider's status or body, got %q", err)
+	}
 }
 
 // TestOIDCUserInfoClaimsReportsAnAbsentEndpointWithoutARequest: a provider that
