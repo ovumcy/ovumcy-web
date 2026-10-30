@@ -2,10 +2,13 @@ package api
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 
@@ -14,9 +17,11 @@ import (
 )
 
 type oidcUnlinkedCallbackReply struct {
-	status    int
-	location  string
-	authError string
+	status     int
+	location   string
+	setCookies string
+	body       string
+	authError  string
 }
 
 func runOIDCCallbackWithAuthError(t *testing.T, authErr error, auditLogEnabled bool) oidcUnlinkedCallbackReply {
@@ -45,7 +50,21 @@ func runOIDCCallbackWithAuthError(t *testing.T, authErr error, auditLogEnabled b
 	callbackRequest.Header.Set("Cookie", stateCookie.String())
 
 	response := mustAppResponse(t, app, callbackRequest)
-	reply := oidcUnlinkedCallbackReply{status: response.StatusCode, location: response.Header.Get("Location")}
+	setCookies := make([]string, 0, len(response.Cookies()))
+	for _, cookie := range response.Cookies() {
+		setCookies = append(setCookies, fmt.Sprintf("%s|maxage=%d|empty=%t", cookie.Name, cookie.MaxAge, cookie.Value == ""))
+	}
+	sort.Strings(setCookies)
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read callback body: %v", err)
+	}
+	reply := oidcUnlinkedCallbackReply{
+		status:     response.StatusCode,
+		location:   response.Header.Get("Location"),
+		setCookies: strings.Join(setCookies, ","),
+		body:       string(body),
+	}
 	if flashCookie := responseCookie(response.Cookies(), exemptFlashCookieName); flashCookie != nil && strings.TrimSpace(flashCookie.Value) != "" {
 		reply.authError = decodeExemptFlashCookieForTest(t, flashCookie.Value).AuthError
 	}
