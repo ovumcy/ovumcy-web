@@ -36,7 +36,7 @@ function interfacePage(withFlash, languageUnsaved = false) {
 async function load(withFlash, languageUnsaved = false) {
   return loadDOMWithScript(APP_BUNDLE, {
     html: interfacePage(withFlash, languageUnsaved),
-    url: "https://ovumcy.test/settings#settings-interface",
+    url: "https://ovumcy.test/settings#settings-interface-status",
   });
 }
 
