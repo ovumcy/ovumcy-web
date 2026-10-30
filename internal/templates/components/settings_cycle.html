@@ -162,7 +162,7 @@
           data-usage-goal-summary
           data-usage-goal-label-key="{{.UsageGoalLabelKey}}"
           data-usage-goal-summary-key="{{.UsageGoalSummaryKey}}">
-          <p class="field-label">{{t .Messages "usage_goal.current_mode"}}: {{t .Messages .UsageGoalLabelKey}}</p>
+          <p class="field-label">{{t .Messages "usage_goal.current_mode"}}{{t .Messages "common.colon"}} {{t .Messages .UsageGoalLabelKey}}</p>
           <p class="journal-muted">{{t .Messages .UsageGoalSummaryKey}}</p>
         </div>
         </div>

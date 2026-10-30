@@ -44,7 +44,7 @@
           {{end}}
           {{if .PredictionDisabled}}
           <span class="dashboard-status-separator" aria-hidden="true">·</span>
-          <span class="dashboard-status-item">{{t .Messages "dashboard.next_period"}}: {{t .Messages "dashboard.next_period_unknown"}}</span>
+          <span class="dashboard-status-item">{{t .Messages "dashboard.next_period"}}{{t .Messages "common.colon"}} {{t .Messages "dashboard.next_period_unknown"}}</span>
           <span class="dashboard-status-separator" aria-hidden="true">·</span>
           <span class="dashboard-status-item">{{t .Messages "prediction.explainer.unpredictable_compact"}}</span>
           {{else}}
@@ -61,7 +61,7 @@
             {{if .NextPeriodEstimatePaused}}
             <span class="dashboard-status-item journal-muted" data-dashboard-next-period-paused data-next-period-paused-key="dashboard.next_period_estimate_paused">{{t .Messages "dashboard.next_period_estimate_paused"}}</span>
             {{else}}
-            <span class="dashboard-status-item">{{t .Messages "dashboard.next_period"}}:
+            <span class="dashboard-status-item">{{t .Messages "dashboard.next_period"}}{{t .Messages "common.colon"}}
               <span data-dashboard-next-period>
                 {{if .DisplayNextPeriodUseRange}}
                   {{/* The uncertainty band around the START date — the same
@@ -97,7 +97,7 @@
                  stays an estimate in its own wording, like every day here. */}}
             {{if .ShowOvulationEstimate}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>
-            <span class="dashboard-status-item">{{t .Messages "dashboard.ovulation"}}:
+            <span class="dashboard-status-item">{{t .Messages "dashboard.ovulation"}}{{t .Messages "common.colon"}}
               <span data-dashboard-ovulation>
                 {{if .DisplayOvulationImpossible}}
                   {{t .Messages "dashboard.ovulation_unavailable"}}
@@ -153,7 +153,7 @@
         {{if .IsOwner}}
         <details class="dashboard-goal-chip" data-usage-goal-summary data-usage-goal-label-key="{{.UsageGoalLabelKey}}" data-usage-goal-summary-key="{{.UsageGoalSummaryKey}}">
           <summary class="dashboard-goal-chip-summary" data-usage-goal-chip>
-            <span class="sr-only">{{t .Messages "usage_goal.current_mode"}}: </span>{{t .Messages .UsageGoalLabelKey}}
+            <span class="sr-only">{{t .Messages "usage_goal.current_mode"}}{{t .Messages "common.colon"}} </span>{{t .Messages .UsageGoalLabelKey}}
           </summary>
           <div
             class="dashboard-goal-chip-panel"

@@ -78,7 +78,7 @@ func TestDateI18nPolicyDateLabelJanuary(t *testing.T) {
 		{"ru", "Пн, 5 января"},
 		{"de", "Mo., 5. Jan."},
 		{"es", "lun, 5 ene"},
-		{"fr", "lun 5 jan"},
+		{"fr", "lun 5 janv"},
 		{"en", "Mon, Jan 5"},
 	}
 	for _, tc := range tests {

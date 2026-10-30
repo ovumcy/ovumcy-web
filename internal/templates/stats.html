@@ -68,7 +68,7 @@
     {{end}}
     {{if .ShowPredictionReliability}}
     <div class="card-quiet text-sm space-y-1" data-prediction-reliability="{{.PredictionReliabilityLabelKey}}">
-      <p class="font-semibold text-(--text-primary)">{{t .Messages "stats.prediction_reliability"}}: {{t .Messages .PredictionReliabilityLabelKey}}</p>
+      <p class="font-semibold text-(--text-primary)">{{t .Messages "stats.prediction_reliability"}}{{t .Messages "common.colon"}} {{t .Messages .PredictionReliabilityLabelKey}}</p>
       <p class="journal-muted text-xs">
         {{if .PredictionSampleUsesRecentWindow}}
           {{printf (tn .Messages .Lang "stats.reliability.sample_recent" .PredictionSampleCount) .PredictionSampleCount}}

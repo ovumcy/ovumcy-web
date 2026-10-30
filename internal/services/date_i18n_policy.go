@@ -58,7 +58,7 @@ var dateNames = map[string]localizedDateNames{
 	"fr": {
 		months:        [12]string{"Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"},
 		monthsLong:    [12]string{"janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"},
-		monthsShort:   [12]string{"jan", "fév", "mar", "avr", "mai", "jun", "jul", "aoû", "sep", "oct", "nov", "déc"},
+		monthsShort:   [12]string{"janv", "févr", "mars", "avr", "mai", "juin", "juil", "août", "sept", "oct", "nov", "déc"},
 		weekdaysShort: [7]string{"dim", "lun", "mar", "mer", "jeu", "ven", "sam"},
 		weekdaysLong:  [7]string{"dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"},
 	},
