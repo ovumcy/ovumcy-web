@@ -338,9 +338,54 @@ test("syncs again for a second account in the same tab session", async () => {
     await flushMicrotasks();
     assert.equal(calls.length, 2, "a page rendered for another account must sync for it");
 
+    // The next page renders the zone the sync stored (an empty stored zone
+    // always re-syncs since WEB-368).
+    dom.window.document.body.setAttribute("data-persisted-timezone", "Europe/Belgrade");
     dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
     await flushMicrotasks();
     assert.equal(calls.length, 2, "the second account is marked done once synced");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// WEB-368: a server-side reset (clear-data wipes users.timezone back to the
+// fresh-account empty value) keeps the tab's sessionStorage, so a mark written
+// before the reset must not stop the sync once the server has no zone stored.
+test("re-syncs after a server-side reset emptied the stored zone, despite a surviving session mark", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz("", { binding: "acct-1" }),
+    beforeRun: (window) => {
+      stubTimezone("Asia/Tokyo")(window);
+      window.sessionStorage.setItem("ovumcy_tz_synced", "acct-1 Asia/Tokyo");
+    },
+  });
+  const calls = captureFetch(dom.window);
+  try {
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 1, "an empty stored zone always needs a sync");
+    assert.match(calls[0].options.body, /timezone=Asia%2FTokyo/);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The mark still holds where the server stored a zone that differs from the
+// detected one (an alias the server canonicalised), so loads do not re-post.
+test("keeps honouring the session mark while the server holds a non-empty zone", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz("Asia/Kolkata", { binding: "acct-1" }),
+    beforeRun: (window) => {
+      stubTimezone("Asia/Calcutta")(window);
+      window.sessionStorage.setItem("ovumcy_tz_synced", "acct-1 Asia/Calcutta");
+    },
+  });
+  const calls = captureFetch(dom.window);
+  try {
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 0);
   } finally {
     dom.window.close();
   }
