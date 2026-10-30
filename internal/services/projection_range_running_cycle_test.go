@@ -142,8 +142,10 @@ func TestLatePeriodWindowLeavesOnWebhookAndFeedAsTheHeadersWindow(t *testing.T) 
 				t.Errorf("feed period %s falls in or before the window %s..%s that replaces it", CalendarDayKey(single.date), CalendarDayKey(windowStart), CalendarDayKey(windowEnd))
 			}
 		}
-		if len(singles) != calendarFeedProjectionCycles {
-			t.Errorf("feed carries %d chained period(s) after the window, want %d — a late period must not shorten the horizon", len(singles), calendarFeedProjectionCycles)
+		// The median start inside the window is due today, so nothing is chained
+		// from it (ProjectionChainSuppressed, WEB-376).
+		if len(singles) != 0 {
+			t.Errorf("feed carries %d chained period(s) after the window, want none — they would be rolled from a start already due", len(singles))
 		}
 	})
 }

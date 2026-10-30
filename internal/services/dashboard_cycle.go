@@ -253,17 +253,23 @@ func PredictionsSuppressed(user *models.User, stats CycleStats) bool {
 	return DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) || DashboardAwaitingIrregularHistory(user, stats)
 }
 
-// ProjectionChainSuppressed is the gate on the cycles chained AFTER the running
-// one: the whole-projection gate, or the out-of-date band
-// (DashboardCyclePastReferenceLength). From L+1 the running cycle's next period
+// ProjectionChainSuppressed is the gate on the periods chained AFTER the running
+// cycle's own: the whole-projection gate, or a running cycle past the length its
+// next period was projected from. From that day the running cycle's next period
 // is due today or already behind the owner without a logged start, and the
 // hero, the JSON overview and the webhook keep naming that one date until the
-// overdue gate. A later cycle can only be rolled forward from that missed
+// overdue gate. A later period can only be rolled forward from that missed
 // start — a projection past its own reference range — so the calendar grid and
-// the .ics feed stop at the running cycle in that band instead of drawing a
-// chain the pages beside them never name (WEB-376).
+// the .ics feed stop at the running cycle's period instead of drawing a chain
+// the pages beside them never name (WEB-376).
+//
+// The length is the overdue gate's (dashboardCycleOverdueLength, the shorter of
+// the projection and reference lengths), not the out-of-date band's average:
+// the date is projected median-first, so on a right-skewed history
+// (27/28/28/36) it is missed on cycle day 29 while the average-first band only
+// opens on day 31.
 func ProjectionChainSuppressed(user *models.User, stats CycleStats) bool {
-	return PredictionsSuppressed(user, stats) || DashboardCyclePastReferenceLength(user, stats)
+	return PredictionsSuppressed(user, stats) || DashboardCycleDayLooksStale(stats.CurrentCycleDay, dashboardCycleOverdueLength(user, stats))
 }
 
 // fertilityMinimumCycles is the completed-cycle count every account needs before
@@ -430,16 +436,18 @@ const (
 	SuppressionReasonCycleDataStale     SuppressionReason = "cycle_data_stale"
 )
 
-// PredictionSuppression is the resolved verdict of the two predicates above plus
-// the reasons behind it. The two booleans are the DECISION and are read off the
+// PredictionSuppression is the resolved verdict of the predicates above plus the
+// reasons behind it. The booleans are the DECISION and are read off the
 // predicates, never rebuilt from the signals; Reasons only EXPLAINS a decision
 // already made, which is why a surface gates on the booleans and publishes the
-// reasons.
+// reasons. ProjectionChainSuppressed is not published on the wire and carries no
+// reason of its own: it withholds only periods chained after the one the
+// overview names.
 //
 // The fields carry the predicates' own names on purpose: the recombination sweep
 // recognises a signal by the identifier that names it
 // (prediction_suppression_recombination_barrier_test.go), so a caller that ORs
-// these two back together is flagged exactly as one spelling the disjuncts out
+// them back together is flagged exactly as one spelling the disjuncts out
 // would be.
 type PredictionSuppression struct {
 	PredictionsSuppressed     bool
