@@ -88,7 +88,7 @@ test("an error answered for an element inside the card still lands in the card's
   }
 });
 
-test("an element in no toast surface renders no status anywhere", async () => {
+test("an element in no status surface renders no status anywhere", async () => {
   const dom = await loadDOMWithScript(APP_BUNDLE, { html: PAGE });
   try {
     fire(dom.window, "htmx:responseError", {
