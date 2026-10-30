@@ -43,6 +43,8 @@ Ovumcy is a menstrual cycle tracker you run on your own server. If the thought o
 - **Your storage.** SQLite out of the box; PostgreSQL when you want it.
 - **No strings.** No vendor account, no analytics, no telemetry. CSV and JSON export whenever you like.
 
+> ⭐ **If Ovumcy is useful to you, star the repository.** Ovumcy is free, open source, and under active development; stars are how people looking for a private cycle tracker find it. More ways to help: [Support the Project](#support-the-project).
+
 This README describes the current `main` branch. The latest tagged release is `v1.9.2`.
 
 ## Contents
@@ -53,7 +55,8 @@ This README describes the current `main` branch. The latest tagged release is `v
 - [Reminders & Notifications](#reminders--notifications) · [Supported Languages](#supported-languages)
 - [Privacy and Security](#privacy-and-security) · [Short FAQ](#short-faq)
 - [Architecture](#architecture) · [Operator CLI](#operator-cli) · [Related Projects](#related-projects)
-- [Development](#development) · [Contributing](#contributing) · [Releases](#releases) · [License](#license)
+- [Development](#development) · [Contributing](#contributing) · [Support the Project](#support-the-project)
+- [Releases](#releases) · [License](#license)
 
 ## Quick Start
 
@@ -156,6 +159,8 @@ go run ./cmd/ovumcy
 $env:SECRET_KEY_FILE = "C:\\path\\to\\ovumcy-secret.txt"
 go run ./cmd/ovumcy
 ```
+
+Up and running? A ⭐ on the repository helps others find Ovumcy.
 
 <a id="demo" name="demo"></a>
 <a id="screenshots" name="screenshots"></a>
@@ -451,6 +456,17 @@ the full quality and security approach.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). For bugs and feature requests, open a [GitHub issue](https://github.com/ovumcy/ovumcy-web/issues).
+
+## Support the Project
+
+Ovumcy is free, has no ads or trackers, and keeps growing release by release. If it is useful to you:
+
+- **Star the repository** — the ⭐ button at the top of this page. It is the simplest way to help others find the project.
+- **Report bugs and share ideas** in [GitHub Issues](https://github.com/ovumcy/ovumcy-web/issues).
+- **Help with translations** — see [Supported Languages](#supported-languages) and [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Tell a friend** who wants a cycle tracker that keeps their data at home.
+
+Donation options will be listed on [ovumcy.com](https://ovumcy.com).
 
 <a id="roadmap" name="roadmap"></a>
 ## Releases
