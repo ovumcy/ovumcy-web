@@ -465,6 +465,13 @@
     display: none;
   }
 
+  /* The heading shrinks and wraps inside the row (a long Russian title at 200%
+     text size), leaving the chevron its own column. */
+  & > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
   &::after {
     content: "";
     display: none;
@@ -851,13 +858,13 @@
   gap: 0.34rem;
 
   /* A "Label: value" item keeps its label whole ("Next period:" never splits
-     across lines); only the value wraps. */
+     across lines) by wrapping the VALUE onto its own line rather than shrinking
+     the label. A flex line only shrinks an item that is alone on it, so the
+     label splits at a space only when it cannot fit the row even by itself —
+     200% text size on a phone, where a forced nowrap overflowed the page. */
   &:has(> [data-dashboard-next-period], > [data-dashboard-ovulation]) {
-    white-space: nowrap;
-
-    & > * {
-      white-space: normal;
-    }
+    flex-wrap: wrap;
+    max-width: 100%;
   }
 }
 
@@ -1245,6 +1252,10 @@
   color: var(--text-muted);
   cursor: pointer;
   list-style: none;
+  /* A long mode name at 200% text size must wrap inside the chip, not push the
+     page wider than the phone. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 
   :root[data-theme='dark'] & {
     border-color: rgba(127, 105, 160, 0.5);
@@ -1266,6 +1277,7 @@
 
   & button {
     white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -5381,6 +5393,14 @@
   min-width: 0;
 }
 
+/* The dashboard stack's single implicit grid track sizes to its widest card's
+   min-content, so one long unbreakable run at 200% text size grew every card
+   past a 375px phone. A zero minimum lets each card shrink to the column and
+   wrap its own text. Unlayered, so it outranks the layered `grid` utility. */
+[data-dashboard-editor] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* Forced colours (a Windows contrast theme). The browser repaints every
    foreground, background and border in the reader's two or three system
    colours and drops box-shadows and gradients, so any state carried by a fill,
@@ -5429,6 +5449,32 @@
 
   .period-toggle input:focus-visible {
     outline-color: CanvasText;
+  }
+
+  /* A selected chip and the current page link were told from their siblings by
+     fill alone, which the repaint flattens: every mood, symptom and tab read
+     as unselected. The selected chip gains a Highlight outline (a geometry the
+     repaint keeps, and wider than the 2px focus ring), the current link an
+     underline, and the current tab both, since it has no text weight to lean
+     on. */
+  .choice-input:checked + .chip,
+  .chip-selected.chip {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  .nav-link-active,
+  .mobile-tabbar-link-active,
+  .lang-link-active,
+  .lang-switch .lang-link[aria-current='page'] {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+
+  .mobile-tabbar-link-active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
 
   /* The record marks are solid dots and dashes with no text to recolour. */
