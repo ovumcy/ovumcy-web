@@ -61,6 +61,9 @@ type settingsEgressView struct {
 	FeedActionable bool
 	// FeedTokenPresent chooses rotate+withdraw over create.
 	FeedTokenPresent bool
+	// FeedDetailedTitles pre-checks the rotate form's title opt-in with the
+	// stored link's choice (WEB-379). Always false when no link is stored.
+	FeedDetailedTitles bool
 
 	// ResultPath names the control group the answer's result belongs beside:
 	// egressResultWebhook or egressResultFeed. Empty for a plain page load, where
@@ -131,13 +134,14 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location
 			EvidenceKey:  feedEvidenceKey,
 			EvidenceISO:  feedISO,
 			EvidenceText: feedText,
-			PayloadKeys:  egressFeedPayloadMessageKeys(ledger.Feed.PayloadFields),
+			PayloadKeys:  egressFeedPayloadMessageKeys(ledger.Feed.PayloadFields, ledger.Feed.DetailedTitles),
 			PolledKey:    feedPolledKey,
 			PolledISO:    feedPolledISO,
 			PolledText:   feedPolledText,
 		},
-		FeedActionable:   ledger.Feed.State != services.EgressFeedUnknown,
-		FeedTokenPresent: egressFeedTokenPresent(ledger.Feed.State),
+		FeedActionable:     ledger.Feed.State != services.EgressFeedUnknown,
+		FeedTokenPresent:   egressFeedTokenPresent(ledger.Feed.State),
+		FeedDetailedTitles: ledger.Feed.DetailedTitles,
 	}
 }
 
@@ -274,7 +278,9 @@ func egressWebhookPayloadMessageKeys(fields []services.EgressPayloadField) []str
 }
 
 // egressFeedPayloadMessageKeys names each iCalendar property a feed event carries.
-func egressFeedPayloadMessageKeys(fields []services.EgressPayloadField) []string {
+// The SUMMARY line follows the stored link's title choice (WEB-379), so the
+// ledger says what the feed actually sends.
+func egressFeedPayloadMessageKeys(fields []services.EgressPayloadField, detailedTitles bool) []string {
 	keys := make([]string, 0, len(fields))
 	for _, field := range fields {
 		switch field {
@@ -287,7 +293,11 @@ func egressFeedPayloadMessageKeys(fields []services.EgressPayloadField) []string
 		case "dtend":
 			keys = append(keys, "settings.egress.payload.feed.dtend")
 		case "summary":
-			keys = append(keys, "settings.egress.payload.feed.summary")
+			if detailedTitles {
+				keys = append(keys, "settings.egress.payload.feed.summary_detailed")
+			} else {
+				keys = append(keys, "settings.egress.payload.feed.summary")
+			}
 		case "description":
 			keys = append(keys, "settings.egress.payload.feed.description")
 		case "transp":

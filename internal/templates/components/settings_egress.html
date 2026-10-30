@@ -217,6 +217,7 @@
           data-settings-calendar-feed-rotate>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
+          {{template "settings_calendar_feed_titles_choice" (dict "Messages" .Messages "ID" "calendar-feed-detailed-titles-rotate" "Checked" .Egress.FeedDetailedTitles)}}
           <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.rotate"}}</button>
         </form>
 
@@ -244,6 +245,7 @@
           data-settings-calendar-feed-generate>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
+          {{template "settings_calendar_feed_titles_choice" (dict "Messages" .Messages "ID" "calendar-feed-detailed-titles-generate" "Checked" false)}}
           <button type="submit" class="btn-secondary" {{if eq .Egress.ResultPath "feed"}}data-focus-after-swap aria-describedby="settings-egress-feed-status"{{end}}>{{t .Messages "settings.calendar_feed.generate"}}</button>
         </form>
         {{end}}
@@ -269,6 +271,18 @@
      SECTION. That is fixed by answering with the card. The shape is the one
      httpx.StatusErrorMarkup writes, with no glyph of its own: an interface glyph
      comes from the first-party icon set, never from an emoji literal. */}}
+{{/* WEB-379: the detailed-titles opt-in, chosen per link on generate and
+     rotate. Unchecked submits nothing, which the handler reads as neutral. */}}
+{{define "settings_calendar_feed_titles_choice"}}
+<div class="space-y-1" data-settings-calendar-feed-titles>
+  <label class="inline-flex items-center gap-2 text-sm" for="{{.ID}}">
+    <input type="checkbox" id="{{.ID}}" name="calendar_feed_detailed_titles" value="true" aria-describedby="{{.ID}}-warning" {{if .Checked}}checked{{end}}>
+    {{t .Messages "settings.calendar_feed.detailed_titles.label"}}
+  </label>
+  <p id="{{.ID}}-warning" class="journal-muted text-sm" data-settings-calendar-feed-titles-warning>{{t .Messages "settings.calendar_feed.detailed_titles.warning"}}</p>
+</div>
+{{end}}
+
 {{define "settings_egress_result"}}
   {{if .EgressErrorKey}}
   <div class="status-error" data-flash-key="{{.EgressErrorKey}}" data-flash-status="error">{{t .Messages .EgressErrorKey}}</div>

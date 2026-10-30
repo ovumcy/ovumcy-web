@@ -85,7 +85,9 @@ func (handler *Handler) issueCalendarFeedToken(c fiber.Ctx, mutation healthMutat
 		return handler.failMutation(c, mutation, unauthorizedErrorSpec())
 	}
 
-	token, err := handler.calendarFeedSettings.GenerateFeedToken(c.Context(), user.ID)
+	// Absent means unchecked: the neutral title is the default (WEB-379).
+	detailedTitles := services.ParseBoolLike(c.FormValue("calendar_feed_detailed_titles"))
+	token, err := handler.calendarFeedSettings.GenerateFeedToken(c.Context(), user.ID, detailedTitles)
 	if err != nil {
 		return handler.failMutation(c, mutation, settingsCalendarFeedUpdateErrorSpec())
 	}

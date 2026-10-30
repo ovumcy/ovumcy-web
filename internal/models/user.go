@@ -310,6 +310,11 @@ type User struct {
 	// past the token it was about. Rendered on the settings card and cited by
 	// SECURITY.md's Calendar Feed Subscription rows.
 	CalendarFeedLastPolledOn *time.Time `gorm:"column:calendar_feed_last_polled_on;type:date"`
+	// CalendarFeedDetailedTitles is the owner's opt-in (migration 043, WEB-379)
+	// to name the estimate type in the feed's event titles. False keeps the one
+	// fixed neutral SUMMARY. Written only by SaveCalendarFeedToken, beside the
+	// token the choice was made for.
+	CalendarFeedDetailedTitles bool `gorm:"column:calendar_feed_detailed_titles;not null;default:false"`
 }
 
 // CalendarFeedTokenColumns is the transport-free narrow view of the three stored
@@ -335,4 +340,7 @@ type CalendarFeedTokenColumns struct {
 	// disagree. The verify path builds this struct too and leaves it empty: it
 	// compares the MAC, and the epoch is not part of verification.
 	KeyEpoch string
+	// DetailedTitles is the owner's title choice from the generate/rotate form,
+	// written in the same UPDATE as the token it applies to (WEB-379).
+	DetailedTitles bool
 }

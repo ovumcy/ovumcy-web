@@ -470,6 +470,8 @@ type constFeedDisclaimer struct{}
 
 func (constFeedDisclaimer) Disclaimer(string) string { return "d" }
 
+func (constFeedDisclaimer) Message(string, string) string { return "" }
+
 // TestCalendarFeedReturns500OnInfrastructureError drives the ServeCalendarFeed
 // err != nil branch: when the feed service reports an infrastructure failure
 // (e.g. a DB read error), the client gets the app-wide generic 500 envelope and

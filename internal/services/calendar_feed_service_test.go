@@ -108,9 +108,14 @@ func (s *stubFeedDayReader) FetchLogsForUser(_ context.Context, userID uint, _ t
 	return s.logs, nil
 }
 
-type stubFeedDisclaimer struct{ text string }
+type stubFeedDisclaimer struct {
+	text   string
+	titles map[string]string
+}
 
 func (s stubFeedDisclaimer) Disclaimer(string) string { return s.text }
+
+func (s stubFeedDisclaimer) Message(_ string, key string) string { return s.titles[key] }
 
 // armedFeedUser mints a real token under calendarFeedTestSecretKey and returns the
 // owner row that would resolve it, plus the full token to present. A real

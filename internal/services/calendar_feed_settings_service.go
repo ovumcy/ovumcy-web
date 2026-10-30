@@ -89,11 +89,15 @@ func NewCalendarFeedSettingsService(users CalendarFeedSettingsRepository, secret
 // The returned token is a secret: the caller must reveal it exactly once
 // (sealed one-time cookie) and never render it into an HTML value on a later
 // settings load. This method never logs the token.
-func (service *CalendarFeedSettingsService) GenerateFeedToken(ctx context.Context, userID uint) (string, error) {
+//
+// detailedTitles is the owner's title choice for this link (WEB-379), persisted
+// in the same write as the token.
+func (service *CalendarFeedSettingsService) GenerateFeedToken(ctx context.Context, userID uint, detailedTitles bool) (string, error) {
 	fullToken, columns, err := GenerateCalendarFeedToken(service.secretKey)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenGenerate, err)
 	}
+	columns.DetailedTitles = detailedTitles
 	if err := service.users.SaveCalendarFeedToken(ctx, userID, columns); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenPersist, err)
 	}
@@ -168,6 +172,9 @@ type CalendarFeedStatus struct {
 	LastPolledOn    *time.Time
 	KeyEpoch        string
 	CurrentKeyEpoch string
+	// DetailedTitles is the stored title choice (WEB-379). It describes the
+	// stored link only, so a reader must ignore it when no link is configured.
+	DetailedTitles bool
 }
 
 // BuildFeedStatus derives the render-safe feed projection for an owner, scoped
@@ -199,5 +206,6 @@ func (service *CalendarFeedSettingsService) BuildFeedStatus(ctx context.Context,
 		LastPolledOn:    user.CalendarFeedLastPolledOn,
 		KeyEpoch:        strings.TrimSpace(user.CalendarFeedKeyEpoch),
 		CurrentKeyEpoch: currentEpoch,
+		DetailedTitles:  user.CalendarFeedDetailedTitles,
 	}
 }

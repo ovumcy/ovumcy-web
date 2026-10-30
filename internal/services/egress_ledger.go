@@ -216,8 +216,11 @@ type EgressFeedLedger struct {
 	// LastPolledOn is the owner's calendar day of the most recent successful,
 	// token-verified poll (migration 040, WEB-46) — the one deliberate exception
 	// to "polls are unaudited" the comment above names.
-	LastPolledOn  *time.Time
-	PayloadFields []EgressPayloadField
+	LastPolledOn *time.Time
+	// DetailedTitles reports the stored link's title choice (WEB-379). It is
+	// false whenever no link is stored: there is no feed for it to describe.
+	DetailedTitles bool
+	PayloadFields  []EgressPayloadField
 }
 
 // EgressLedger is the whole owner-scoped account. It is built only for an owner
@@ -312,10 +315,11 @@ func (service *EgressLedgerService) BuildEgressLedger(ctx context.Context, row E
 			PayloadFields:   WebhookPayloadFields(),
 		},
 		Feed: EgressFeedLedger{
-			State:         feedState,
-			RevealedAt:    revealEvidenceForState(feedState, feedStatus.RevealedAt),
-			LastPolledOn:  pollEvidenceForState(feedState, feedStatus.LastPolledOn),
-			PayloadFields: CalendarFeedPayloadFields(),
+			State:          feedState,
+			RevealedAt:     revealEvidenceForState(feedState, feedStatus.RevealedAt),
+			LastPolledOn:   pollEvidenceForState(feedState, feedStatus.LastPolledOn),
+			DetailedTitles: feedStatus.Configured && feedStatus.DetailedTitles,
+			PayloadFields:  CalendarFeedPayloadFields(),
 		},
 	}
 }

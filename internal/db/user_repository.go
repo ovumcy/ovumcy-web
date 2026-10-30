@@ -968,6 +968,9 @@ func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID ui
 		// THIS one yet, and NULL is the "never successfully polled" state
 		// every rearmed feed starts in.
 		"calendar_feed_last_polled_on": nil,
+		// The title choice belongs to this link (WEB-379). Like the epoch it is
+		// written only here, so a revoke needs no clear: no token, no feed.
+		"calendar_feed_detailed_titles": columns.DetailedTitles,
 	}).Error
 }
 
@@ -1682,6 +1685,7 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"calendar_feed_selector",
 			"calendar_feed_revealed_at",
 			"calendar_feed_last_polled_on",
+			"calendar_feed_detailed_titles",
 		).
 		First(&user, userID).Error; err != nil {
 		return models.User{}, err

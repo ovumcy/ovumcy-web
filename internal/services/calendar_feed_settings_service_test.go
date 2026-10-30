@@ -90,7 +90,7 @@ func TestGenerateFeedTokenPersistsHashedTokenAndReturnsFullTokenOnce(t *testing.
 	repo := &stubCalendarFeedSettingsRepo{}
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
-	token, err := service.GenerateFeedToken(context.Background(), 42)
+	token, err := service.GenerateFeedToken(context.Background(), 42, false)
 	if err != nil {
 		t.Fatalf("GenerateFeedToken: %v", err)
 	}
@@ -138,13 +138,13 @@ func TestGenerateFeedTokenRotationInvalidatesOldToken(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{}
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
-	firstToken, err := service.GenerateFeedToken(context.Background(), 7)
+	firstToken, err := service.GenerateFeedToken(context.Background(), 7, false)
 	if err != nil {
 		t.Fatalf("first GenerateFeedToken: %v", err)
 	}
 	firstColumns := *repo.saved
 
-	secondToken, err := service.GenerateFeedToken(context.Background(), 7)
+	secondToken, err := service.GenerateFeedToken(context.Background(), 7, false)
 	if err != nil {
 		t.Fatalf("rotate GenerateFeedToken: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestGenerateFeedTokenPropagatesPersistError(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{saveErr: errors.New("write failed")}
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
-	token, err := service.GenerateFeedToken(context.Background(), 1)
+	token, err := service.GenerateFeedToken(context.Background(), 1, false)
 	if !errors.Is(err, ErrCalendarFeedTokenPersist) {
 		t.Fatalf("expected ErrCalendarFeedTokenPersist, got %v", err)
 	}
@@ -196,7 +196,7 @@ func TestGenerateFeedTokenFailsClosedWithoutSecretKey(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{}
 	service := NewCalendarFeedSettingsService(repo, nil)
 
-	token, err := service.GenerateFeedToken(context.Background(), 1)
+	token, err := service.GenerateFeedToken(context.Background(), 1, false)
 	if !errors.Is(err, ErrCalendarFeedTokenGenerate) {
 		t.Fatalf("expected ErrCalendarFeedTokenGenerate, got %v", err)
 	}
@@ -273,7 +273,7 @@ func TestClaimFeedRevealIsSingleUsePerMintAndOwnerBound(t *testing.T) {
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 	now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
 
-	if _, err := service.GenerateFeedToken(context.Background(), 7); err != nil {
+	if _, err := service.GenerateFeedToken(context.Background(), 7, false); err != nil {
 		t.Fatalf("GenerateFeedToken: %v", err)
 	}
 	claimed, err := service.ClaimFeedReveal(context.Background(), 7, now)
@@ -293,7 +293,7 @@ func TestClaimFeedRevealIsSingleUsePerMintAndOwnerBound(t *testing.T) {
 	}
 
 	// A rotate is a second mint, so it re-arms.
-	if _, err := service.GenerateFeedToken(context.Background(), 7); err != nil {
+	if _, err := service.GenerateFeedToken(context.Background(), 7, false); err != nil {
 		t.Fatalf("GenerateFeedToken rotate: %v", err)
 	}
 	rearmed, err := service.ClaimFeedReveal(context.Background(), 7, now)
