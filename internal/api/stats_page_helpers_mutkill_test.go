@@ -99,6 +99,18 @@ func TestBuildStatsBBTChartSummaryMutKill(t *testing.T) {
 			t.Fatalf("marker branch must use the injected translation, got %q", got)
 		}
 	})
+
+	// The not-assessed branch keeps an English fallback when its key is missing,
+	// and still makes no shift claim (WEB-375).
+	t.Run("not-assessed branch falls back to English without a translation", func(t *testing.T) {
+		got := buildStatsBBTChartSummary(map[string]string{}, "en", services.StatsBBTChartViewData{
+			Values:           []*float64{f(36.4), f(36.6)},
+			ShiftNotAssessed: true,
+		})
+		if got != "2 readings this cycle. A temperature shift is not assessed for this cycle." {
+			t.Fatalf("expected the English not-assessed fallback, got %q", got)
+		}
+	})
 }
 
 type mutkillStatsDayReader struct {
