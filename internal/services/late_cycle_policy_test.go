@@ -69,7 +69,18 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			expectKey:  LateCycleBeyondRangeKey,
 			expectTone: LateCycleToneWarning,
 			expectForm: LateCycleFormCount,
-			expectDays: 5,
+			expectDays: 4,
+		},
+		{
+			// Cycle day max+1 is the day a cycle as long as the recorded maximum
+			// ends: it has run max whole days, so there is no excess to state yet
+			// beside a period still due today (WEB-376).
+			name:       "the day after the recorded maximum's last day states no excess",
+			user:       &models.User{Role: models.RoleOwner, CycleLength: 28},
+			stats:      lateCycleStats(today, 31, 4, 28, 27, 30),
+			expectKey:  LateCycleFertilityPausedKey,
+			expectTone: LateCycleToneNeutral,
+			expectForm: LateCycleFormPlain,
 		},
 		{
 			// Stale, not overdue, past the recorded maximum: the excess branch is
@@ -82,7 +93,7 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			expectKey:  LateCycleBeyondRangeKey,
 			expectTone: LateCycleToneWarning,
 			expectForm: LateCycleFormCount,
-			expectDays: 2,
+			expectDays: 1,
 		},
 		{
 			name:       "first day past the expected range on a thin history claims no range",
@@ -99,7 +110,7 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			expectKey:  LateCycleBeyondRangeKey,
 			expectTone: LateCycleToneWarning,
 			expectForm: LateCycleFormCount,
-			expectDays: 5,
+			expectDays: 4,
 		},
 		{
 			name:       "day 35 on a new account claims no range",
@@ -132,7 +143,7 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			expectKey:  LateCycleBeyondRangeKey,
 			expectTone: LateCycleToneWarning,
 			expectForm: LateCycleFormCount,
-			expectDays: 7,
+			expectDays: 6,
 		},
 		{
 			name:       "irregular mode past the observed range states the excess over it",
@@ -141,7 +152,7 @@ func TestLateCycleNoticeStateMatrix(t *testing.T) {
 			expectKey:  LateCycleBeyondRangeKey,
 			expectTone: LateCycleToneWarning,
 			expectForm: LateCycleFormCount,
-			expectDays: 6,
+			expectDays: 5,
 		},
 		{
 			name:       "irregular mode still inside the recorded maximum states the paused fact, not a comparison",

@@ -107,7 +107,10 @@ func BuildLateCycleNotice(user *models.User, stats CycleStats, cycleDataStale bo
 		}
 	}
 
-	excessDays := stats.CurrentCycleDay - stats.MaxCycleLength
+	// On cycle day N with no new start logged the cycle has run N-1 whole days:
+	// on day L+1 the next period is due that very day, and counting the day
+	// itself called the cycle "1 day longer" beside "Period likely today".
+	excessDays := stats.CurrentCycleDay - 1 - stats.MaxCycleLength
 	if excessDays <= 0 {
 		pausedKey := LateCycleFertilityPausedKey
 		if cycleOverdue {

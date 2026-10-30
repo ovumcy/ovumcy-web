@@ -271,6 +271,12 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// drops off the end.
 	runningStart := CalendarDay(stats.LastPeriodStart, input.Location)
 	cycles := calendarFeedProjectionCycles + max(CalendarDaysBetween(runningStart, today), 0)/cycleLength
+	// In the out-of-date band the running cycle's period is the only one the
+	// pages name; a later cycle would be rolled from a start already due or
+	// missed (ProjectionChainSuppressed).
+	if suppression.ProjectionChainSuppressed {
+		cycles = 1
+	}
 	for cycle := range cycles {
 		anchor := AddCalendarDays(runningStart, cycle*cycleLength, input.Location)
 

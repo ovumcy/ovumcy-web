@@ -173,7 +173,9 @@ func TestRunningCycleNextPeriodStart(t *testing.T) {
 
 // With no spread there is no window to stand in for the late period, so the
 // feed's chain itself must start at the running cycle: cycles of 28, 28 and 28
-// days read on cycle day 29 send the period due today, then the usual horizon.
+// days read on cycle day 29 send the period due today. Nothing after it: cycle
+// day 29 is the out-of-date band, where a later cycle could only be rolled from
+// a start that is due and not logged (ProjectionChainSuppressed, WEB-376).
 func TestFeedChainStartsAtTheRunningCycleForALatePeriod(t *testing.T) {
 	logs := irregularVerdictLogs(0, 28, 56, 84)
 	now := irregularVerdictBase.AddDate(0, 0, 84+28)
@@ -196,10 +198,7 @@ func TestFeedChainStartsAtTheRunningCycleForALatePeriod(t *testing.T) {
 		}
 	}
 	want := []string{CalendarDayKey(today)}
-	for cycle := 1; cycle <= calendarFeedProjectionCycles; cycle++ {
-		want = append(want, CalendarDayKey(AddCalendarDays(today, cycle*28, time.UTC)))
-	}
 	if strings.Join(periods, ",") != strings.Join(want, ",") {
-		t.Fatalf("feed periods %v, want %v — the late period first, then the full horizon", periods, want)
+		t.Fatalf("feed periods %v, want %v — the period due today and no chain after it", periods, want)
 	}
 }

@@ -253,6 +253,19 @@ func PredictionsSuppressed(user *models.User, stats CycleStats) bool {
 	return DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) || DashboardAwaitingIrregularHistory(user, stats)
 }
 
+// ProjectionChainSuppressed is the gate on the cycles chained AFTER the running
+// one: the whole-projection gate, or the out-of-date band
+// (DashboardCyclePastReferenceLength). From L+1 the running cycle's next period
+// is due today or already behind the owner without a logged start, and the
+// hero, the JSON overview and the webhook keep naming that one date until the
+// overdue gate. A later cycle can only be rolled forward from that missed
+// start — a projection past its own reference range — so the calendar grid and
+// the .ics feed stop at the running cycle in that band instead of drawing a
+// chain the pages beside them never name (WEB-376).
+func ProjectionChainSuppressed(user *models.User, stats CycleStats) bool {
+	return PredictionsSuppressed(user, stats) || DashboardCyclePastReferenceLength(user, stats)
+}
+
 // fertilityMinimumCycles is the completed-cycle count every account needs before
 // the fertility half of the projection (ovulation date, fertile window, peak
 // band) is shown: the same number for regular and irregular mode, so the two
@@ -429,9 +442,10 @@ const (
 // these two back together is flagged exactly as one spelling the disjuncts out
 // would be.
 type PredictionSuppression struct {
-	PredictionsSuppressed bool
-	FertilitySuppressed   bool
-	Reasons               []SuppressionReason
+	PredictionsSuppressed     bool
+	FertilitySuppressed       bool
+	ProjectionChainSuppressed bool
+	Reasons                   []SuppressionReason
 }
 
 // ResolvePredictionSuppression answers what a surface may publish and why. It
@@ -449,8 +463,9 @@ type PredictionSuppression struct {
 // TestEverySuppressionSignalHasAPublishedReason fails until it does.
 func ResolvePredictionSuppression(user *models.User, stats CycleStats) PredictionSuppression {
 	verdict := PredictionSuppression{
-		PredictionsSuppressed: PredictionsSuppressed(user, stats),
-		FertilitySuppressed:   FertilityProjectionSuppressed(user, stats),
+		PredictionsSuppressed:     PredictionsSuppressed(user, stats),
+		FertilitySuppressed:       FertilityProjectionSuppressed(user, stats),
+		ProjectionChainSuppressed: ProjectionChainSuppressed(user, stats),
 	}
 
 	if DashboardPredictionDisabled(user) {

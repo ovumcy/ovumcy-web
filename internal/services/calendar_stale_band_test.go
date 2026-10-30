@@ -15,16 +15,19 @@ import (
 // DECISION: between the account's reference cycle length and the overdue gate
 // (a further week) the fertility half of the projection is withheld on every
 // surface — the out-of-date band is a fertility suppression signal
-// (DashboardCyclePastReferenceLength) — while the projected period days stay,
-// on the grid as on the other pages, until the overdue gate withholds them too.
-// An ovulation drawn here would belong to a cycle chained from a start nobody
-// logged, beside the late-cycle notice the same pages show from that day.
+// (DashboardCyclePastReferenceLength) — while the running cycle's own next
+// period stays, on the grid as on the other pages, until the overdue gate
+// withholds it too. An ovulation drawn here would belong to a cycle chained from
+// a start nobody logged, beside the late-cycle notice the same pages show from
+// that day — and so would every chained period (WEB-376,
+// ProjectionChainSuppressed): the hero and the overview name only the running
+// cycle's date.
 //
 // The history is three 28-day cycles and a running one from 2026-03-26, so the
 // reference length is 28 and cycle day 30 (2026-04-24) is out of date yet short of
-// the overdue gate (day 36). The next period was due on 2026-04-23, and the
-// cycle chained after it starts on 2026-05-21 — a day still AHEAD of today, which
-// is the one a suppression that spared only the past would withhold.
+// the overdue gate (day 36). The next period was due on 2026-04-23 and stays
+// drawn; the cycle the grid used to chain after it, from 2026-05-21, is a day
+// still AHEAD of today, which a suppression that spared only the past would miss.
 func TestCalendarGridKeepsTheNextPeriodButNoFertileDayInTheOutOfDateBand(t *testing.T) {
 	user := dayFeedbackParityUser(64)
 	logs := cycleStartLogs(t, "2026-01-01", "2026-01-29", "2026-02-26", "2026-03-26")
@@ -69,10 +72,11 @@ func TestCalendarGridKeepsTheNextPeriodButNoFertileDayInTheOutOfDateBand(t *test
 				}
 			}
 		}
-		for _, want := range []string{"2026-04-23", "2026-05-21"} {
-			if !predicted[want] {
-				t.Fatalf("the grid keeps drawing the projected period start %s while the data is out of date; predicted days: %v", want, predicted)
-			}
+		if !predicted["2026-04-23"] {
+			t.Fatalf("the grid keeps drawing the running cycle's next period 2026-04-23 the hero names; predicted days: %v", predicted)
+		}
+		if predicted["2026-05-21"] {
+			t.Fatalf("the grid chains a cycle from the missed 2026-04-23 start; predicted days: %v", predicted)
 		}
 		if ovulation != 0 || fertile != 0 {
 			t.Fatalf("the grid drew %d projected ovulation and %d fertile day(s) ahead of today while the data is out of date", ovulation, fertile)
