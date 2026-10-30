@@ -1850,7 +1850,6 @@
     // rather than searching the document is what keeps a webhook error out of
     // the symptoms card: the settings page carries several islands and a bare
     // descendant search would return whichever came first.
-    //
     var surface =
       target.hasAttribute && target.hasAttribute("data-status-island-host")
         ? target
@@ -2835,8 +2834,6 @@
         return;
       }
 
-      // The month grid refresh is the save response's HX-Trigger header; a
-      // client trigger here as well fetched the grid twice per save.
       clearFieldsOfCompletedForm(target, successNode);
       scheduleClearSuccessStatus(target);
     });
