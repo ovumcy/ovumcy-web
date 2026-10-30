@@ -333,14 +333,14 @@ test("syncs again for a second account in the same tab session", async () => {
     await flushMicrotasks();
     assert.equal(calls.length, 1, "the first account must sync");
 
+    // A non-empty stored zone other than the detected one, so only the marks
+    // decide (an empty one always re-syncs).
+    dom.window.document.body.setAttribute("data-persisted-timezone", "Europe/Paris");
     dom.window.document.body.setAttribute("data-account-binding", "acct-b");
     dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
     await flushMicrotasks();
     assert.equal(calls.length, 2, "a page rendered for another account must sync for it");
 
-    // A non-empty stored zone other than the detected one, so only the second
-    // account's own mark stops the repeat (an empty one always re-syncs).
-    dom.window.document.body.setAttribute("data-persisted-timezone", "Europe/Paris");
     dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
     await flushMicrotasks();
     assert.equal(calls.length, 2, "the second account is marked done once synced");
