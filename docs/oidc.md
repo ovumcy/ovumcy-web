@@ -93,6 +93,8 @@ Notes:
    `sub` equals the ID token's; an answer for another `sub`, issuer or client, or a failed request, fails the sign-in. An ID token that
    already carries a verified email is used as is and UserInfo is never asked. A provider with no usable `userinfo_endpoint` whose ID token
    carries no verified email can sign in only through an identity already linked (step 5).
+   The ID token's `email_verified` must be a JSON boolean or exactly the string `"true"` or `"false"` (AWS Cognito sends the string form);
+   an absent claim means unverified, and any other value — `null`, a number, `"TRUE"`, `"1"`, `"yes"` — fails the sign-in.
 5. If the `(issuer, subject)` identity link already exists, the linked local account is used immediately.
 6. Otherwise, if a verified email claim matches an existing local account, Ovumcy **neither links the two nor signs the user in**. It redirects to `/login` with the same message a sign-in with no matching account gets, so the reply does not reveal whether the email holds an account. The message tells an existing account holder to sign in as usual and link the provider from Settings.
    There is no unauthenticated way to complete this link — the public `/auth/oidc/link-confirm` route that used to accept a password on this page was removed for good (WEB-77). Without this gate, any provider able to assert an existing user's email address could take over their account.
