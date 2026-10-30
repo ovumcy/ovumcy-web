@@ -33,8 +33,8 @@ func exchangeWithIDTokenEmailVerified(t *testing.T, emailVerified any, present b
 
 // TestExchangeCodeReadsIDTokenEmailVerifiedAsBooleanOrExactString: the ID
 // token's email_verified is a JSON boolean, or exactly the string "true" or
-// "false" that some providers (AWS Cognito) send (WEB-366). An absent claim is
-// unverified.
+// "false" that some providers (AWS Cognito) send (WEB-366). An absent or null
+// claim is unverified.
 func TestExchangeCodeReadsIDTokenEmailVerifiedAsBooleanOrExactString(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		value   any
@@ -46,6 +46,7 @@ func TestExchangeCodeReadsIDTokenEmailVerifiedAsBooleanOrExactString(t *testing.
 		"string true":   {value: "true", present: true, want: true},
 		"string false":  {value: "false", present: true, want: false},
 		"absent":        {present: false, want: false},
+		"null":          {value: nil, present: true, want: false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			result, err := exchangeWithIDTokenEmailVerified(t, testCase.value, testCase.present)
@@ -69,7 +70,6 @@ func TestExchangeCodeRefusesAnyOtherIDTokenEmailVerified(t *testing.T) {
 		"string yes":        "yes",
 		"padded string":     " true",
 		"empty string":      "",
-		"null":              nil,
 		"number one":        1,
 		"number zero":       0,
 		"object":            map[string]any{"value": true},
