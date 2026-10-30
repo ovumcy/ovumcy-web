@@ -110,4 +110,10 @@ func TestOIDCCallbackUnlinkedAuditLinesKeepTheCausesDistinct(t *testing.T) {
 	if !strings.Contains(accountUnavailable.String(), "account_unavailable") {
 		t.Fatalf("expected account_unavailable cause in audit line, got %q", accountUnavailable.String())
 	}
+	if strings.Contains(linkRequired.String(), "account_unavailable") {
+		t.Fatalf("link-required audit line must not carry account_unavailable: %q", linkRequired.String())
+	}
+	if strings.Contains(accountUnavailable.String(), "link_required") {
+		t.Fatalf("account-unavailable audit line must not carry link_required: %q", accountUnavailable.String())
+	}
 }
