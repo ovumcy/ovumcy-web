@@ -28,8 +28,16 @@ test.describe('Phone chrome geometry', () => {
 
     const status = page.locator('#settings-interface-status .status-ok');
     await expect(status).toBeVisible();
-    // Let the anchor jump and any scroll restoration settle.
-    await page.waitForTimeout(300);
+    // The anchor jump has landed once the page has scrolled and stopped.
+    let last = -1;
+    await expect
+      .poll(async () => {
+        const y = await page.evaluate(() => window.scrollY);
+        const settled = y > 0 && y === last;
+        last = y;
+        return settled;
+      })
+      .toBe(true);
 
     const geometry = await page.evaluate(() => {
       const header = document.querySelector('header')!.getBoundingClientRect();
