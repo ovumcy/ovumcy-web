@@ -130,6 +130,9 @@
       if (pageMeta) {
         pageMeta.setAttribute("content", token);
       }
+      document.querySelectorAll('input[type="hidden"][name="csrf_token"]').forEach(function (input) {
+        input.value = token;
+      });
     } catch {
       // The refusal copy already says to reload if a retry is refused again.
     }
