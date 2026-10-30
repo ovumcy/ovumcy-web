@@ -1628,6 +1628,18 @@ components:
           description: When true, clears the stored endpoint and forces delivery off. Takes precedence over webhook_url.
       additionalProperties: false
 
+    CalendarFeedIssueForm:
+      type: object
+      properties:
+        csrf_token: { type: string }
+        calendar_feed_detailed_titles:
+          type: string
+          description: |
+            Owner opt-in for the minted link only: a truthy value (`true`) makes
+            each event title name its estimate type ("Period (estimate)" /
+            "Ovulation (estimate)", in the owner's interface language). Absent or
+            any other value keeps the fixed neutral title. Read from the form only,
+            so a rotate that omits it returns the new link to the neutral title.
     CalendarFeedRevealResponse:
       type: object
       description: |
@@ -3444,6 +3456,10 @@ paths:
         credential). The read-only feed page itself, `GET /calendar/feed/{token}.ics`,
         is a non-`/api/v1` page route authenticated by the path token alone and is
         intentionally out of scope for this OpenAPI document.
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: '#/components/schemas/CalendarFeedIssueForm' }
       responses:
         '200':
           description: Feed enabled. JSON clients follow `next_path` to the one-time reveal of the subscribe URL (shown exactly once).
@@ -3535,6 +3551,10 @@ paths:
         the body, a query string, a redirect, or a log — it is sealed into the
         one-time `ovumcy_calendar_feed` cookie and revealed exactly once on
         `next_path`. Does NOT bump `auth_session_version`.
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema: { $ref: '#/components/schemas/CalendarFeedIssueForm' }
       responses:
         '200':
           description: Feed rotated. JSON clients follow `next_path` to the one-time reveal of the new subscribe URL (shown exactly once).
