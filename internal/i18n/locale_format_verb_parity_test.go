@@ -190,6 +190,15 @@ var localizedFormatContracts = []localizedFormatContract{
 	{
 		file:          "internal/api/stats_page_helpers.go",
 		function:      "buildStatsBBTChartSummary",
+		keys:          []string{"stats.bbt_chart_summary_not_assessed"},
+		verbs:         []string{"%d"},
+		argumentTypes: []string{"int"},
+		fallbacks:     []string{"%d readings this cycle. A temperature shift is not assessed for this cycle."},
+		note:          "readingsCount",
+	},
+	{
+		file:          "internal/api/stats_page_helpers.go",
+		function:      "buildStatsBBTChartSummary",
 		keys:          []string{"stats.bbt_chart_summary_with_marker"},
 		verbs:         []string{"%d", "%s", "%s", "%s"},
 		argumentTypes: []string{"int", "string", "string", "string"},

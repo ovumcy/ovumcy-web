@@ -166,6 +166,29 @@ func TestCalendarDisabledNextIsADisabledLink(t *testing.T) {
 	}
 }
 
+// WEB-374: the future clamp explains its disabled Next the way WEB-230's
+// history limit explains Prev, and only there.
+func TestCalendarFutureClampExplainsTheDisabledNext(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-future-limit@example.com", "StrongPass1", true)
+	cookie := issueAuthCookieForUser(t, user)
+
+	html := mustGetCalendarHTML(t, app, cookie, "/calendar?month=9999-12")
+	if !strings.Contains(html, `id="calendar-future-limit"`) || !strings.Contains(html, `data-calendar-future-limit`) {
+		t.Fatalf("expected the future-limit hint at the upper bound, got:\n%s", html)
+	}
+	if !strings.Contains(html, `role="link" aria-disabled="true" aria-describedby="calendar-future-limit"`) {
+		t.Fatalf("expected the disabled Next to be described by the hint, got:\n%s", html)
+	}
+
+	html = mustGetCalendarHTML(t, app, cookie, "/calendar")
+	if strings.Contains(html, `data-calendar-future-limit`) {
+		t.Fatalf("the future-limit hint must render only where Next is disabled, got:\n%s", html)
+	}
+}
+
 func mustGetCalendarHTML(t *testing.T, app *fiber.App, cookie string, target string) string {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodGet, target, nil)

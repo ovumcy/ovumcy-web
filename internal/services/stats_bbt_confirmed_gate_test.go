@@ -80,3 +80,19 @@ func TestStatsBBTChartInterpretsTheShiftOnlyWhereTheConfirmedDayIsNamed(t *testi
 		})
 	}
 }
+
+// WEB-375: where the verdict is withheld the shift is not assessed at all, so
+// the chart must not read as "no shift detected" over readings that show one.
+func TestStatsBBTChartMarksTheShiftNotAssessedWhereTheVerdictIsWithheld(t *testing.T) {
+	for _, testCase := range confirmedVerdictRows() {
+		t.Run(confirmedVerdictRowName(testCase.signal), func(t *testing.T) {
+			user, logs, stats, today := projectedWindowFixture(t)
+			testCase.suppress(user, &stats, &today)
+
+			chart := statsPageBBTChart(t, user, logs, stats, today)
+			if chart.ShiftNotAssessed == testCase.wantKept {
+				t.Fatalf("ShiftNotAssessed = %t, want %t", chart.ShiftNotAssessed, !testCase.wantKept)
+			}
+		})
+	}
+}
