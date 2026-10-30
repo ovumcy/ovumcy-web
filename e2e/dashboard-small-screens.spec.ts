@@ -159,7 +159,7 @@ test.describe('Dashboard on small screens', () => {
       .toBe(false);
   });
 
-  test('late-cycle quick links have a 24px hit area',async ({ page }) => {
+  test('late-cycle quick links have a 24px hit area', async ({ page }) => {
     const anchor = await registerAndOnboardWithStartDaysAgo(page, 'dash-late-links', 60);
     for (const offset of [-84, -56, -28]) {
       await markCycleStartViaAPI(page, shiftISODate(anchor, offset));
