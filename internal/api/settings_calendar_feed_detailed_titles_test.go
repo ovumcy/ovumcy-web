@@ -31,6 +31,11 @@ func TestCalendarFeedGenerateIsNeutralUnlessTheOwnerOptsIn(t *testing.T) {
 	if !strings.Contains(page, neutralFeedLedgerCopy) || strings.Contains(page, detailedFeedLedgerCopy) {
 		t.Fatal("the egress ledger does not describe the neutral title of a neutral link")
 	}
+	for _, hook := range []string{"data-settings-calendar-feed-titles", "data-settings-calendar-feed-titles-warning"} {
+		if !strings.Contains(page, hook+">") && !strings.Contains(page, hook+" ") {
+			t.Fatalf("the settings card renders no %s", hook)
+		}
+	}
 	if !strings.Contains(page, "will see them") {
 		t.Fatal("the settings card does not warn who sees detailed titles")
 	}
