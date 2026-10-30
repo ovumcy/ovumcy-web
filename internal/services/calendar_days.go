@@ -253,7 +253,14 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 		appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, currentStats.FertilityWindowStart, currentStats.FertilityWindowEnd, currentStats.OvulationDate)
 		appendCalendarSingleDate(ovulationMap, currentStats.OvulationDate)
 	}
-	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, !fertilitySuppressed)
+	// In the out-of-date band only the running cycle's own period is drawn — the
+	// date the hero and the overview name — never a chain rolled forward from a
+	// start that is due or already missed (ProjectionChainSuppressed).
+	projectedCycles := maxProjectedCyclesInGrid
+	if ProjectionChainSuppressed(user, stats) {
+		projectedCycles = 1
+	}
+	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, !fertilitySuppressed, projectedCycles)
 	appendPredictedStartRange(maps.predictedStartRange, user, stats, DateAtLocation(now, location), location)
 	appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, BoundaryContextFor(user, DateAtLocation(now, location)), location)
 	if !fertilitySuppressed {
@@ -441,7 +448,8 @@ func projectedCycleWindow(cycleStart time.Time, cycleLength int, lutealPhase int
 // includeFertility is false in the first-cycle tier: the chained period days
 // still descend from a recorded anchor, while the window inside each of them
 // would be the onboarding slider projected forward one cycle at a time.
-func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, stats CycleStats, gridEnd time.Time, location *time.Location, includeFertility bool) {
+// maxCycles bounds the chain, the running cycle's next period counting as one.
+func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, stats CycleStats, gridEnd time.Time, location *time.Location, includeFertility bool, maxCycles int) {
 	if stats.NextPeriodStart.IsZero() {
 		return
 	}
@@ -471,7 +479,7 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	// cycle falling exactly on the last grid day reads as past the grid and its
 	// markers are never painted.
 	cycleStart := CalendarDay(stats.NextPeriodStart, location)
-	for cycles := 0; cycles < maxProjectedCyclesInGrid && CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycles++ {
+	for cycles := 0; cycles < min(maxCycles, maxProjectedCyclesInGrid) && CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycles++ {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
 		if includeFertility {
 			appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase, location)

@@ -62,7 +62,7 @@ type dayPanelProjectionBand struct {
 }
 
 var dayPanelProjectionBands = []dayPanelProjectionBand{
-	{name: "out of date", now: time.Date(2026, time.April, 24, 12, 0, 0, 0, time.UTC), cycleDay: 30, dashboardCopyKey: "dashboard.late_cycle.beyond_range.other"},
+	{name: "out of date", now: time.Date(2026, time.April, 24, 12, 0, 0, 0, time.UTC), cycleDay: 30, dashboardCopyKey: "dashboard.late_cycle.beyond_range.one"},
 	{name: "overdue", now: time.Date(2026, time.May, 4, 12, 0, 0, 0, time.UTC), cycleDay: 40, wantOverdue: true, dashboardCopyKey: "dashboard.late_cycle.beyond_range.other"},
 }
 
@@ -465,10 +465,13 @@ func TestCalendarDayPanelRendersNoProjectionSignal(t *testing.T) {
 			}
 
 			if !band.wantOverdue {
+				// The running cycle's start is drawn; the cycle chained after it is
+				// not (WEB-376, ProjectionChainSuppressed).
 				for month, start := range map[string]time.Time{"2026-04": projected.NextPeriodStart, "2026-05": projected.NextPeriodStart.AddDate(0, 0, 28)} {
 					cell := regexp.MustCompile(`data-day="` + start.Format("2006-01-02") + `"\s+data-calendar-state="predicted-period`)
-					if !cell.MatchString(get("/calendar?month=" + month)) {
-						t.Fatalf("anchor: the out-of-date grid must draw %s as a predicted period start", start.Format("2006-01-02"))
+					drawn := cell.MatchString(get("/calendar?month=" + month))
+					if wantDrawn := month == "2026-04"; drawn != wantDrawn {
+						t.Fatalf("anchor: the out-of-date grid draws %s as a predicted period start = %v, want %v", start.Format("2006-01-02"), drawn, wantDrawn)
 					}
 				}
 			}

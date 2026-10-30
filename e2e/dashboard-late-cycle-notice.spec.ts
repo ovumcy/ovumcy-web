@@ -102,7 +102,8 @@ test.describe('Dashboard late-cycle notice', () => {
     await expect(notice).toHaveAttribute('data-late-cycle-key', BEYOND_RANGE_KEY);
     await expect(notice).toHaveAttribute('data-late-cycle-tone', 'warning');
 
-    const excessDays = cycleDayFor(anchorISO) - 28;
+    // Cycle day N has run N-1 whole days, so the excess over 28 is N-1-28.
+    const excessDays = cycleDayFor(anchorISO) - 1 - 28;
     expect(excessDays, 'the seeded baseline must run past the recorded 28-day maximum')
       .toBeGreaterThan(0);
     await expect(notice).toHaveText(
