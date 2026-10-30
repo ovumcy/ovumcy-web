@@ -466,12 +466,13 @@ func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVer
 
 // parseIDTokenEmailVerified reads the ID token's email_verified: a JSON
 // boolean, or exactly the string "true" or "false" that some providers (AWS
-// Cognito) send. An absent claim is unverified. Anything else, null included,
-// fails the exchange rather than being guessed at, so the email-verification
-// gate stays fail-closed (WEB-366).
+// Cognito) send. An absent or null claim is unverified: refusing null would
+// fail every sign-in, linked ones included, on a provider that emits it.
+// Anything else fails the exchange rather than being guessed at, so the
+// email-verification gate stays fail-closed (WEB-366).
 func parseIDTokenEmailVerified(raw json.RawMessage) (bool, error) {
 	switch string(raw) {
-	case "":
+	case "", "null":
 		return false, nil
 	case "true", `"true"`:
 		return true, nil
