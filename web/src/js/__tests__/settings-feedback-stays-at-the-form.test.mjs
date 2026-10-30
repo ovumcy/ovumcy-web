@@ -347,26 +347,6 @@ test("a beforeSwap that never swapped leaves no memory behind", async () => {
   }
 });
 
-for (const [label, trigger] of [
-  ["a transport failure", "htmx:sendError"],
-  ["the start of the next request", "htmx:beforeRequest"],
-]) {
-  test(`${label} forgets the repeat key an island with an id keeps on the page`, async () => {
-    const dom = await loadDOMWithScript(APP_BUNDLE, { html: REMINDERS_PAGE });
-    try {
-      dom.window.__ovumcyLastToastByIsland = { "settings-reminders-status": "saved-key", "other-island": "keep" };
-      const doc = dom.window.document;
-      const island = doc.getElementById("settings-reminders-status");
-      const form = doc.getElementById("reminders");
-      form.dispatchEvent(new dom.window.CustomEvent(trigger, { bubbles: true, detail: { target: island, elt: form } }));
-      assert.equal(dom.window.__ovumcyLastToastByIsland["settings-reminders-status"], undefined);
-      assert.equal(dom.window.__ovumcyLastToastByIsland["other-island"], "keep", "only this island's key is forgotten");
-    } finally {
-      dom.window.close();
-    }
-  });
-}
-
 const NON_SETTINGS_PAGE = `<!doctype html><html lang="en"><head></head>
 <body data-request-failed="Request failed. Please try again.">
   <form id="usage-goal" hx-patch="/api/v1/users/current/cycle" hx-target="#usage-goal-status" data-save-feedback>

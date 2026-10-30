@@ -130,6 +130,10 @@ func TestSettingsPageRecoveryAndPasswordFormsAnswerInPlace(t *testing.T) {
 	if htmlHasAttr(island, "data-success-toast") {
 		t.Error("the password island must not also toast")
 	}
+	profile := firstNodeWithID(t, root, "settings-profile-status")
+	if htmlHasAttr(profile, "data-success-toast") {
+		t.Error("the profile island must not also toast")
+	}
 }
 
 func TestPasswordChangeSuccessForHTMXDeclaresItClearsTheFieldsAndEchoesNothing(t *testing.T) {
