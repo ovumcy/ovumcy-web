@@ -18,6 +18,7 @@ const logoutMode = process.env.OIDC_LOGOUT_MODE ?? 'local';
 const autoProvisionEnabled = process.env.OIDC_AUTO_PROVISION === 'true';
 const providerEmail = process.env.OIDC_TEST_PROVIDER_EMAIL ?? 'oidc-browser@example.com';
 const providerIssuer = process.env.OIDC_ISSUER_URL ?? '';
+const providerEmailFromUserInfo = process.env.OIDC_TEST_PROVIDER_EMAIL_CLAIMS === 'userinfo';
 
 // `requireLocalPasswordSetup` is what separates the two callers, and it is a
 // parameter rather than a plain `if` because the difference is not incidental:
@@ -300,6 +301,43 @@ test.describe('Auth: OIDC login entry', () => {
       ),
     ).toBeVisible();
     expect(await cookieByName(context, 'ovumcy_auth')).toBeFalsy();
+  });
+
+  // Runs before the oidc_only tests below: it is the one that provisions the
+  // provider account, so its sign-in is the first-time, unlinked one.
+  test('first-time SSO sign-in reads the email from UserInfo when the ID token has none', async ({
+    page,
+    context,
+  }) => {
+    test.skip(
+      !localOIDCProvider || !autoProvisionEnabled || !providerEmailFromUserInfo,
+      'Requires local OIDC provider, auto-provision, and OIDC_TEST_PROVIDER_EMAIL_CLAIMS=userinfo',
+    );
+
+    const appURLs: string[] = [];
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame() && (!providerIssuer || !frame.url().startsWith(providerIssuer))) {
+        appURLs.push(frame.url());
+      }
+    });
+
+    await page.goto('/login');
+    await page.locator('[data-auth-sso-cta]').click();
+    await completeOnboardingIfPresent(page);
+    await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+    expect(await cookieByName(context, 'ovumcy_auth')).toBeTruthy();
+
+    const emailForms = [providerEmail, encodeURIComponent(providerEmail)].map((form) => form.toLowerCase());
+    for (const url of appURLs) {
+      for (const form of emailForms) {
+        expect(url.toLowerCase()).not.toContain(form);
+      }
+      // A query-mode callback carries code and state by design; every other
+      // app URL must carry no auth parameter at all.
+      if (new URL(url).pathname !== '/auth/oidc/callback') {
+        expectNoSensitiveAuthParams(url);
+      }
+    }
   });
 
   test('oidc_only auto-provision enables a local password', async ({ page }) => {
