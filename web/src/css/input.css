@@ -432,6 +432,17 @@
   }
 }
 
+/* The Interface save reloads to this island (the flash cookie renders its
+   confirmation here), so the jump must leave it clear of the sticky header
+   instead of aligning it to the page's top edge underneath. */
+@utility settings-status-anchor {
+  scroll-margin-top: calc(var(--sticky-header-clearance) + 0.75rem);
+
+  @media (min-width: 640px) {
+    scroll-margin-top: calc(var(--sticky-header-clearance) + var(--settings-section-nav-height) + 0.75rem);
+  }
+}
+
 @utility settings-section-summary {
   /* Each settings card is a <details> the server renders OPEN, so this summary
      is a plain heading row everywhere by default and becomes a control only
@@ -894,6 +905,16 @@
     position: sticky;
     bottom: var(--mobile-tabbar-clearance);
     z-index: 30;
+
+    /* A sticky box is clamped to its containing block, and the form starts
+       wherever the cards above it end. Grown to the positive-test outcome (the
+       paused-predictions line plus the bleeding/pain safety sentence), the bar
+       was taller than the room between that top edge and the tab bar and ran
+       under the tab bar. Dropping the form's own box makes the page column the
+       containing block; the children still lay out and submit as before. */
+    form:has(> &) {
+      display: contents;
+    }
 
     &:has([data-autosave-state]:not([data-autosave-state='idle'])) {
       border-radius: var(--radius-card);
@@ -4459,6 +4480,16 @@
   min-width: 0;
   line-height: 1.15;
   overflow-wrap: anywhere;
+
+  /* A 320px phone gives each of the four cells ~66px, one pixel short of a
+     bold Russian "Календарь": the anywhere-wrap then splits it mid-word. Trim
+     the tracking and the cell padding so the word fits; the wrap stays as the
+     last resort for text zoom. */
+  @media (width < 22.5rem) {
+    letter-spacing: 0;
+    padding-inline: 0.12rem;
+    font-size: 0.65rem;
+  }
 }
 
 @utility mobile-tabbar-link-active {

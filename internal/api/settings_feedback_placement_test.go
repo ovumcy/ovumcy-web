@@ -58,7 +58,7 @@ func TestSettingsInterfaceSaveWithChangedLanguageReloadsAtTheCard(t *testing.T) 
 		interfaceSaveForm("de"), map[string]string{"HX-Request": "true", "Accept-Language": "en"})
 	defer func() { _ = response.Body.Close() }()
 	assertStatusCode(t, response, http.StatusOK)
-	if got := response.Header.Get("HX-Redirect"); got != "/settings#settings-interface" {
+	if got := response.Header.Get("HX-Redirect"); got != "/settings#settings-interface-status" {
 		t.Fatalf("expected HX-Redirect to the Interface card, got %q", got)
 	}
 	// From /settings the redirect is hash-only, which reloads nothing; htmx

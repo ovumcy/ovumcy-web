@@ -80,5 +80,6 @@ func (handler *Handler) UpdateInterfaceSettings(c fiber.Ctx) error {
 	return redirectOrJSON(c, "/settings"+interfaceCardFragment)
 }
 
-// interfaceCardFragment is the fragment of the Interface settings card.
-const interfaceCardFragment = "#settings-interface"
+// interfaceCardFragment targets the Interface card's confirmation island, not
+// the card: a jump to the card left its status below the fold or under a bar.
+const interfaceCardFragment = "#settings-interface-status"

@@ -23,7 +23,7 @@ func assertSettingsFlashSuccessScenario(t *testing.T, method string, path string
 	wantLocation := "/settings"
 	if successKey == "settings.success.interface_updated" {
 		// A language change reloads the page and lands on the Interface card.
-		wantLocation = "/settings#settings-interface"
+		wantLocation = "/settings#settings-interface-status"
 	}
 	if location := response.Header.Get("Location"); location != wantLocation {
 		t.Fatalf("expected redirect %q, got %q", wantLocation, location)

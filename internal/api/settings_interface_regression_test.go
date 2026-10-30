@@ -19,7 +19,7 @@ func TestSettingsInterfaceUpdateSetsLanguageCookieAndLocalizedFlash(t *testing.T
 	}, nil)
 	assertStatusCode(t, response, http.StatusSeeOther)
 
-	if location := response.Header.Get("Location"); location != "/settings#settings-interface" {
+	if location := response.Header.Get("Location"); location != "/settings#settings-interface-status" {
 		t.Fatalf("expected redirect to the Interface card, got %q", location)
 	}
 
