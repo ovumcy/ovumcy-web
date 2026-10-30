@@ -143,6 +143,14 @@ func buildStatsBBTChartSummary(messages map[string]string, language string, char
 		return translateMessage(messages, "stats.no_cycle_data")
 	}
 
+	if chart.ShiftNotAssessed {
+		pattern, translated := lookupMessage(messages, "stats.bbt_chart_summary_not_assessed")
+		if !translated {
+			pattern = "%d readings this cycle. A temperature shift is not assessed for this cycle."
+		}
+		return fmt.Sprintf(pattern, readingsCount)
+	}
+
 	if !chart.HasBaseline {
 		pattern, translated := lookupMessage(messages, "stats.bbt_chart_summary_no_shift")
 		if !translated {

@@ -28,6 +28,10 @@ type StatsBBTChartViewData struct {
 	// instead of dropping the panel without a word.
 	ReadingCount     int
 	ReadingsRequired int
+	// ShiftNotAssessed is set while ConfirmedOvulationWithheld holds: the shift
+	// is not evaluated then, so the text may claim neither a shift nor its
+	// absence (WEB-375).
+	ShiftNotAssessed bool
 	// TemperatureUnit is the unit every number above is expressed in. The zero
 	// value is storage's Celsius; inTemperatureUnit is the only way to another.
 	TemperatureUnit string
@@ -295,6 +299,7 @@ func buildOwnerCurrentCycleBBTChart(user *models.User, language string, stats Cy
 	if !TrackingVisibilityForUser(user).ShowBBTField {
 		chart.ReadingCount, chart.ReadingsRequired = 0, 0
 	}
+	chart.ShiftNotAssessed = ConfirmedOvulationWithheld(user, stats)
 	if _, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location); !confirmed {
 		chart.Baseline, chart.HasBaseline = 0, false
 		chart.MarkerIndex, chart.HasMarker, chart.MarkerDate = 0, false, ""

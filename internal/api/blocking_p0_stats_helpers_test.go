@@ -290,4 +290,19 @@ func TestBuildStatsBBTChartSummary(t *testing.T) {
 			t.Fatalf("a zero coverline must never be announced, got %q", got)
 		}
 	})
+
+	// WEB-375: a withheld verdict claims neither a shift nor its absence.
+	t.Run("an unassessed shift makes no shift claim", func(t *testing.T) {
+		t.Parallel()
+		got := buildStatsBBTChartSummary(mustLocaleMessages(t, "en"), "en", services.StatsBBTChartViewData{
+			Values:           []*float64{f(36.4), f(36.6)},
+			ShiftNotAssessed: true,
+		})
+		if !strings.Contains(got, "2 readings") || !strings.Contains(got, "not assessed") {
+			t.Fatalf("expected the not-assessed summary with 2 readings, got %q", got)
+		}
+		if strings.Contains(got, "No temperature shift") {
+			t.Fatalf("an unassessed shift must not be announced as absent, got %q", got)
+		}
+	})
 }
