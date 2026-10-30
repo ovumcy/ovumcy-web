@@ -159,6 +159,9 @@ export async function startLocalOIDCProvider({
   testName,
   emailVerified,
   responseMode = "form_post",
+  // "id_token" puts email/email_verified in the ID token; "userinfo" leaves
+  // them out of it and serves them only from /userinfo, as Authelia does.
+  emailClaimsSource = "id_token",
 }) {
   const [cert, key] = await Promise.all([
     readFile(certPath, "utf8"),
@@ -169,6 +172,7 @@ export async function startLocalOIDCProvider({
   const keyID = "ovumcy-e2e-oidc";
   const authCodes = new Map();
   const callbackPosts = new Map();
+  const accessTokens = new Map();
   const redirectOrigin = new URL(redirectURL).origin;
 
   const jwksPayload = {
@@ -187,6 +191,7 @@ export async function startLocalOIDCProvider({
     authorization_endpoint: `${issuerURL}/authorize`,
     token_endpoint: `${issuerURL}/token`,
     jwks_uri: `${issuerURL}/keys`,
+    userinfo_endpoint: `${issuerURL}/userinfo`,
     end_session_endpoint: `${issuerURL}/logout`,
     response_types_supported: ["code"],
     subject_types_supported: ["public"],
@@ -349,28 +354,54 @@ export async function startLocalOIDCProvider({
 
         authCodes.delete(code);
         const issuedAt = Math.floor(Date.now() / 1000);
-        const idToken = signJWT(
-          privateKey,
-          { alg: "RS256", typ: "JWT", kid: keyID },
-          {
-            iss: issuerURL,
-            sub: record.sub,
-            aud: clientID,
-            exp: issuedAt + 300,
-            iat: issuedAt,
-            auth_time: record.authTime,
-            nonce: record.nonce,
-            email: record.email,
-            email_verified: record.emailVerified,
-            name: record.name,
-          },
-        );
+        const idTokenClaims = {
+          iss: issuerURL,
+          sub: record.sub,
+          aud: clientID,
+          exp: issuedAt + 300,
+          iat: issuedAt,
+          auth_time: record.authTime,
+          nonce: record.nonce,
+          name: record.name,
+        };
+        if (emailClaimsSource !== "userinfo") {
+          idTokenClaims.email = record.email;
+          idTokenClaims.email_verified = record.emailVerified;
+        }
+        const idToken = signJWT(privateKey, { alg: "RS256", typ: "JWT", kid: keyID }, idTokenClaims);
+        const accessToken = randomBytes(24).toString("hex");
+        accessTokens.set(accessToken, {
+          sub: record.sub,
+          email: record.email,
+          emailVerified: record.emailVerified,
+          name: record.name,
+          expiresAt: issuedAt + 300,
+        });
 
         sendJSON(response, 200, {
-          access_token: randomBytes(24).toString("hex"),
+          access_token: accessToken,
           token_type: "Bearer",
           expires_in: 300,
           id_token: idToken,
+        });
+        return;
+      }
+
+      if ((request.method === "GET" || request.method === "POST") && url.pathname === "/userinfo") {
+        const authorization = String(request.headers.authorization ?? "");
+        const grant = authorization.startsWith("Bearer ")
+          ? accessTokens.get(authorization.slice("Bearer ".length))
+          : undefined;
+        if (!grant || grant.expiresAt < Math.floor(Date.now() / 1000)) {
+          response.writeHead(401, { "www-authenticate": 'Bearer error="invalid_token"' });
+          response.end();
+          return;
+        }
+        sendJSON(response, 200, {
+          sub: grant.sub,
+          email: grant.email,
+          email_verified: grant.emailVerified,
+          name: grant.name,
         });
         return;
       }

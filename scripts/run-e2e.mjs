@@ -625,6 +625,10 @@ async function main() {
             String(process.env.OIDC_TEST_PROVIDER_EMAIL_VERIFIED ?? "true").trim().toLowerCase() !==
             "false",
           responseMode: oidcResponseMode,
+          emailClaimsSource:
+            String(process.env.OIDC_TEST_PROVIDER_EMAIL_CLAIMS ?? "").trim().toLowerCase() === "userinfo"
+              ? "userinfo"
+              : "id_token",
         })
       : null;
 
