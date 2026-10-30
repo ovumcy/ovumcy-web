@@ -6052,12 +6052,24 @@
   function promoteDaySaveBase(event) {
     var form = dayEditorFormFromEvent(event);
     var detail = event ? event.detail : null;
+    var sentState;
+    var previousState;
     if (!form || !form.__ovumcyDayPatchSentEntries) {
       return;
     }
     form.__ovumcyDayPatchAnswerStale = isStaleDaySaveAnswer(form, form.__ovumcyDayPatchSentSequence);
     if (detail && detail.successful && acceptDaySaveSequence(form, form.__ovumcyDayPatchSentSequence)) {
+      sentState = { entries: form.__ovumcyDayPatchSentEntries };
+      previousState = isDashboardSaveForm(form) ? { entries: dayFormBaseEntries(form) } : null;
       setDayFormBase(form, form.__ovumcyDayPatchSentEntries, false);
+      // The Save button moves the cycle day, ribbon and phase line just as the
+      // autosave does.
+      if (previousState && (
+        dashboardStateValue(sentState, "pregnancy_test") !== dashboardStateValue(previousState, "pregnancy_test") ||
+        dashboardStateValue(sentState, "is_period") !== dashboardStateValue(previousState, "is_period")
+      )) {
+        refreshDashboardStatusHeader();
+      }
     }
     form.__ovumcyDayPatchSentEntries = null;
     form.__ovumcyDayPatchSentSequence = 0;
