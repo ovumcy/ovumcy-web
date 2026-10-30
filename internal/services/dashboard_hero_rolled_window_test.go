@@ -9,19 +9,19 @@ import (
 )
 
 // On a rolled day the hero header follows MovedWindow.CurrentPhase, and the phase
-// card marked current is the card that header names — here none, since the
-// overview's "unknown" has no card in the running cycle's breakdown. The ribbon
-// keeps the running cycle's geometry, so today's cell sits in the luteal card,
-// which is not the one flagged current: the accepted split, rendered end to end by
-// TestDashboardHeaderNamesTheOverviewPhaseWhileTheRibbonKeepsTheRunningCycle.
-// Cycles of 24, 24, 24, 40 and 40 days, luteal phase 14, on cycle day 29.
+// card marked current is the card that header names, while the ribbon keeps the
+// running cycle's geometry. The rolled window can only cover today after the
+// median start is due, and from that day the fertility half is withheld
+// (WEB-378), so a rolled day with a published window is one where it is still
+// ahead: cycles of 24, 24, 24, 40 and 40 days, luteal phase 14, on cycle day 20,
+// where the overview names "luteal" and today's cell sits in the luteal card.
 func TestRolledWindowHeaderNamesTheOverviewPhaseAndMarksNoOtherCardCurrent(t *testing.T) {
 	fixture := buildRolledWindowDashboard(t)
 	view, user := fixture.view, fixture.user
 	published, _, _ := PublishedOverviewStats(user, fixture.logs, fixture.stats, fixture.today, time.UTC)
 	hero := view.CycleHero
-	if !hero.Visible || hero.CurrentDay != 29 || published.CurrentPhase != "unknown" {
-		t.Fatalf("fixture: hero visible %t on day %d, overview phase %q; want a visible hero on day 29 and %q", hero.Visible, hero.CurrentDay, published.CurrentPhase, "unknown")
+	if !hero.Visible || hero.CurrentDay != 20 || published.CurrentPhase != "luteal" {
+		t.Fatalf("fixture: hero visible %t on day %d, overview phase %q; want a visible hero on day 20 and %q", hero.Visible, hero.CurrentDay, published.CurrentPhase, "luteal")
 	}
 
 	if hero.CurrentPhase != published.CurrentPhase {
@@ -51,8 +51,8 @@ func TestRolledWindowHeaderNamesTheOverviewPhaseAndMarksNoOtherCardCurrent(t *te
 func TestDashboardContextCarriesTheOverviewsMovedWindowVerdictOnARolledDay(t *testing.T) {
 	fixture := buildRolledWindowDashboard(t)
 	_, _, want := ConfirmedAndOverviewStats(fixture.user, fixture.logs, fixture.stats, fixture.today, time.UTC)
-	if !want.Reconciled || want.CurrentPhase != "unknown" {
-		t.Fatalf("fixture: overview verdict = %+v, want a reconciled verdict naming %q on the rolled day", want, "unknown")
+	if !want.Reconciled || want.CurrentPhase != "luteal" {
+		t.Fatalf("fixture: overview verdict = %+v, want a reconciled verdict naming %q on the rolled day", want, "luteal")
 	}
 	if got := fixture.view.CycleContext.MovedWindow; got != want {
 		t.Errorf("dashboard context MovedWindow = %+v, want the overview's verdict %+v", got, want)
@@ -68,15 +68,15 @@ type rolledWindowDashboard struct {
 }
 
 // buildRolledWindowDashboard builds the dashboard for cycles of 24, 24, 24, 40
-// and 40 days, luteal phase 14, on cycle day 29 — the day the median cycle's
-// ovulation has rolled to a window that covers today.
+// and 40 days, luteal phase 14, on cycle day 20 — the running ovulation is
+// behind today and the projection has rolled to a window still ahead of it.
 func buildRolledWindowDashboard(t *testing.T) rolledWindowDashboard {
 	t.Helper()
 
 	user := &models.User{ID: 53, Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14}
 	today := time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC)
 	logs := make([]models.DailyLog, 0, 6)
-	for _, back := range []int{180, 156, 132, 108, 68, 28} {
+	for _, back := range []int{171, 147, 123, 99, 59, 19} {
 		logs = append(logs, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -back), IsPeriod: true, Flow: models.FlowMedium, CycleStart: true})
 	}
 	now := localNoon(today, time.UTC)

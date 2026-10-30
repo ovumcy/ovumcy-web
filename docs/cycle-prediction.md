@@ -405,6 +405,17 @@ overdue gate below withholds it, and the plain-words late-cycle notice stands fr
 the same day on the dashboard, the calendar and the statistics page. Neither applies
 in unpredictable-cycle mode or a pregnancy pause, which already withhold everything.
 
+Dates are projected from the median-first length, so on a right-skewed history the
+next period is due before the average-first reference length is reached (cycles of
+27, 28, 28 and 36 days: due on cycle day 29, out of date from day 31). On those days
+the ovulation would again sit in a cycle anchored on a start nobody logged, so the
+fertility half is withheld there too, with the wire reason
+`cycle_past_projection_length`. The `cycle_data_stale` flag, the out-of-date banner
+and the phase keep measuring the reference length; the late-cycle notice stands
+from the first withheld day. Irregular range mode is not affected: its ovulation
+range is placed from the recorded start across the shortest and longest observed
+cycles. Calendar and feed stop chaining further periods from the same day.
+
 Three further signals withhold **every** projected date, the next period included,
 on every one of those surfaces: unpredictable-cycle mode (the settings toggle
 "My cycle is unpredictable"), a pregnancy pause, and a cycle overdue past its own

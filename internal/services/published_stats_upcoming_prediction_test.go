@@ -254,16 +254,16 @@ func TestPublishedOverviewDropsAPassedOvulationWhoseRollFallsPastTheYear(t *test
 	assertPublishedStatusAndPhase(t, published, FertilityStatusUnknown, "", "unknown")
 }
 
-// TestPublishedOverviewReadsTheStatusAgainstTheRolledWindow: completed cycles
+// TestPublishedOverviewWithholdsAWindowRolledFromAMissedStart: completed cycles
 // of 24, 24, 24, 40 and 40 days (median 24, mean about 30), the running cycle
 // from 06-02, today 06-30, cycle day 29 — before the 30-day reference length,
 // so the data is not out of date. The running ovulation (06-11) is behind
-// today, and the pages roll it to 07-05 with the window 06-30..07-05, which
-// covers today. The status published beside that window is "fertile" against
-// it, not "outside_estimated_window" against the running cycle's 06-06..06-11,
-// and no phase is named: "luteal" would deny the ovulation the same response
-// places five days ahead.
-func TestPublishedOverviewReadsTheStatusAgainstTheRolledWindow(t *testing.T) {
+// today, and the projection rolls it to 07-05 with the window 06-30..07-05 —
+// a cycle anchored on the median start, 06-26, which was due and never logged.
+// The fertility half is withheld (cycle_past_projection_length, WEB-378): no
+// ovulation, no window, an unknown status and phase, and no shaded day on the
+// calendar; cycle_data_stale stays false.
+func TestPublishedOverviewWithholdsAWindowRolledFromAMissedStart(t *testing.T) {
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14, UsageGoal: models.UsageGoalTrying}
 	logs := cycleStartLogs(t, "2026-01-01", "2026-01-25", "2026-02-18", "2026-03-14", "2026-04-23", "2026-06-02")
 	now := localNoon(mustParseDay(t, "2026-06-30"), time.UTC)
@@ -274,16 +274,17 @@ func TestPublishedOverviewReadsTheStatusAgainstTheRolledWindow(t *testing.T) {
 	}
 
 	published, suppression, confirmed := PublishedOverviewStats(user, logs, stats, today, time.UTC)
-	if suppression.PredictionsSuppressed || suppression.FertilitySuppressed || confirmed || published.CycleDataStale {
-		t.Fatalf("fixture: suppression %+v confirmed %v stale %v, want a published, current projection", suppression, confirmed, published.CycleDataStale)
+	if suppression.PredictionsSuppressed || confirmed || published.CycleDataStale {
+		t.Fatalf("fixture: suppression %+v confirmed %v stale %v, want the next period published and the data current", suppression, confirmed, published.CycleDataStale)
 	}
-	if got := CalendarDayKey(published.OvulationDate); got != "2026-07-05" {
-		t.Fatalf("ovulation_date = %s, want the rolled 2026-07-05", got)
+	if !suppression.FertilitySuppressed || !slices.Contains(suppression.Reasons, SuppressionReasonCyclePastProjectionLength) {
+		t.Fatalf("suppression %+v, want the fertility half withheld as cycle_past_projection_length", suppression)
 	}
-	if start, end := CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd); start != "2026-06-30" || end != "2026-07-05" {
-		t.Fatalf("window = %s..%s, want 2026-06-30..2026-07-05", start, end)
+	if !published.OvulationDate.IsZero() || !published.FertilityWindowStart.IsZero() || !published.FertilityWindowEnd.IsZero() {
+		t.Fatalf("overview publishes ovulation %s and window %s..%s rolled from a missed start",
+			CalendarDayKey(published.OvulationDate), CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd))
 	}
-	assertPublishedStatusAndPhase(t, published, FertilityStatusFertile, FertilityBasisProjection, "unknown")
+	assertPublishedStatusAndPhase(t, published, FertilityStatusUnknown, "", "unknown")
 	assertCalendarShadesExactlyThePublishedWindow(t, user, logs, stats, published, now, time.UTC)
 }
 

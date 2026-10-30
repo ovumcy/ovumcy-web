@@ -80,6 +80,10 @@ func publishedStatsCases() []publishedStatsCase {
 	outOfDate := publishedStatsBase()
 	outOfDate.CurrentCycleDay = 29
 
+	pastProjection := publishedStatsBase()
+	pastProjection.CurrentCycleDay = 29
+	pastProjection.AverageCycleLength = 30
+
 	paused := publishedStatsBase()
 	paused.PregnancyPaused = true
 
@@ -166,6 +170,18 @@ func publishedStatsCases() []publishedStatsCase {
 			reason:            SuppressionReasonCycleDataStale,
 			user:              &models.User{},
 			stats:             outOfDate,
+			wantPredictions:   false,
+			wantFertility:     true,
+			wantNextPeriodSet: true,
+		},
+		{
+			// A right-skewed history (median 28, average 30) on cycle day 29: the
+			// median-first next period is due, the out-of-date band is not open.
+			name:              "running cycle past its projection length, before the out-of-date band",
+			signal:            "DashboardCyclePastProjectionLength",
+			reason:            SuppressionReasonCyclePastProjectionLength,
+			user:              &models.User{},
+			stats:             pastProjection,
 			wantPredictions:   false,
 			wantFertility:     true,
 			wantNextPeriodSet: true,

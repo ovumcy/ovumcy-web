@@ -269,7 +269,29 @@ func PredictionsSuppressed(user *models.User, stats CycleStats) bool {
 // (27/28/28/36) it is missed on cycle day 29 while the average-first band only
 // opens on day 31.
 func ProjectionChainSuppressed(user *models.User, stats CycleStats) bool {
-	return PredictionsSuppressed(user, stats) || DashboardCycleDayLooksStale(stats.CurrentCycleDay, dashboardCycleOverdueLength(user, stats))
+	return PredictionsSuppressed(user, stats) || DashboardCyclePastReferenceLength(user, stats) || DashboardCyclePastProjectionLength(user, stats)
+}
+
+// DashboardCyclePastProjectionLength is the fertility signal for the days the
+// out-of-date band does not reach yet: the running cycle is past the overdue
+// gate's length (dashboardCycleOverdueLength, the shorter of the median-first
+// projection and the average-first reference) but not past the reference. On a
+// right-skewed history (27/28/28/36, median 28, average 30) that is cycle days
+// 29 and 30: the next period was due without a logged start, and the ovulation
+// the projection rolls to belongs to a cycle anchored on that missed start, so
+// it is withheld like the out-of-date band withholds it (WEB-378). It answers
+// false from reference+1 on and once the overdue gate has withheld everything,
+// so one late day publishes one reason, and false where
+// DashboardCyclePastReferenceLength does: a pause or unpredictable-cycle mode
+// publishes no projection to be late against. Irregular range mode is not in
+// it: its ovulation range is placed from the recorded start across min..max
+// (DashboardOvulationRange), not rolled from the median's missed one.
+func DashboardCyclePastProjectionLength(user *models.User, stats CycleStats) bool {
+	if stats.PregnancyPaused || DashboardPredictionDisabled(user) || DashboardCyclePastReferenceLength(user, stats) ||
+		DashboardCycleOverdue(user, stats) || dashboardIrregularPredictionRangeEnabled(user, stats) {
+		return false
+	}
+	return DashboardCycleDayLooksStale(stats.CurrentCycleDay, dashboardCycleOverdueLength(user, stats))
 }
 
 // fertilityMinimumCycles is the completed-cycle count every account needs before
@@ -316,9 +338,11 @@ func DashboardAwaitingIrregularHistory(user *models.User, stats CycleStats) bool
 // (DashboardCyclePastReferenceLength): from L+1 the running cycle is past the
 // length the projection was built from, and the ovulation the model then names
 // belongs to a NEXT cycle anchored on a start nobody logged. The next-period
-// estimate stays there too, until the overdue gate withholds it.
+// estimate stays there too, until the overdue gate withholds it. The fourth,
+// DashboardCyclePastProjectionLength, covers the days before that band on a
+// history whose median-first projection length is shorter than its average.
 func FertilityProjectionSuppressed(user *models.User, stats CycleStats) bool {
-	return PredictionsSuppressed(user, stats) || DashboardAwaitingFirstCycle(stats) || DashboardAwaitingMoreCycles(user, stats) || DashboardCyclePastReferenceLength(user, stats)
+	return PredictionsSuppressed(user, stats) || DashboardAwaitingFirstCycle(stats) || DashboardAwaitingMoreCycles(user, stats) || DashboardCyclePastReferenceLength(user, stats) || DashboardCyclePastProjectionLength(user, stats)
 }
 
 // DashboardCyclePastReferenceLength is the out-of-date verdict
@@ -434,6 +458,8 @@ const (
 	SuppressionReasonIrregularNeedsData SuppressionReason = "irregular_needs_more_cycles"
 	SuppressionReasonAwaitingMoreCycles SuppressionReason = "awaiting_more_cycles"
 	SuppressionReasonCycleDataStale     SuppressionReason = "cycle_data_stale"
+
+	SuppressionReasonCyclePastProjectionLength SuppressionReason = "cycle_past_projection_length"
 )
 
 // PredictionSuppression is the resolved verdict of the predicates above plus the
@@ -457,16 +483,16 @@ type PredictionSuppression struct {
 }
 
 // ResolvePredictionSuppression answers what a surface may publish and why. It
-// lives in this file because it is the only place the six signals may be named
-// together: everywhere else they are read through the two predicates.
+// lives in this file because it is the only place the signals may be named
+// together: everywhere else they are read through the predicates.
 //
 // Reasons is ordered by the predicate the signal belongs to — the four
-// whole-projection signals first, the three fertility-only signals last — so a payload
+// whole-projection signals first, the four fertility-only signals last — so a payload
 // diffed between two releases moves only when the state does. A verdict may
 // carry no reason at all: neither predicate is suppressing, which is the
 // ordinary case.
 //
-// A seventh signal added to either predicate MUST get its reason here, or the
+// A new signal added to either predicate MUST get its reason here, or the
 // payload says "suppressed" with nothing naming why.
 // TestEverySuppressionSignalHasAPublishedReason fails until it does.
 func ResolvePredictionSuppression(user *models.User, stats CycleStats) PredictionSuppression {
@@ -496,6 +522,9 @@ func ResolvePredictionSuppression(user *models.User, stats CycleStats) Predictio
 	}
 	if DashboardCyclePastReferenceLength(user, stats) {
 		verdict.Reasons = append(verdict.Reasons, SuppressionReasonCycleDataStale)
+	}
+	if DashboardCyclePastProjectionLength(user, stats) {
+		verdict.Reasons = append(verdict.Reasons, SuppressionReasonCyclePastProjectionLength)
 	}
 	return verdict
 }
@@ -780,7 +809,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 	return DashboardCycleContext{
 		CycleDayReference:           cycleDayReference,
 		CycleDayWarning:             cycleDayWarning,
-		LateCycle:                   BuildLateCycleNotice(user, stats, cycleDataStale, cycleDayWarning),
+		LateCycle:                   BuildLateCycleNotice(user, stats, cycleDataStale || DashboardCyclePastProjectionLength(user, stats), cycleDayWarning),
 		CycleDataStale:              cycleDataStale,
 		PredictionDisabled:          false,
 		DisplayNextPeriodStart:      display.nextPeriodStart,

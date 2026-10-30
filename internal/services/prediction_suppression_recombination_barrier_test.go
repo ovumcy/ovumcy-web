@@ -44,20 +44,21 @@ import (
 // spell a second disjunct, and the day one is handed over is the day this sweep
 // stops covering the surface that reads it.
 var predictionSuppressionSignals = map[string]string{
-	"PredictionDisabled":                "unpredictable-cycle mode",
-	"DashboardPredictionDisabled":       "unpredictable-cycle mode",
-	"PregnancyPaused":                   "pregnancy pause",
-	"DashboardCycleOverdue":             "cycle overdue past its own cycle length",
-	"AwaitingFirstCycle":                "the zero-completed-cycle floor",
-	"DashboardAwaitingFirstCycle":       "the zero-completed-cycle floor",
-	"AwaitingMoreCycles":                "the one-or-two-completed-cycles floor",
-	"DashboardAwaitingMoreCycles":       "the one-or-two-completed-cycles floor",
-	"DashboardAwaitingIrregularHistory": "irregular mode with fewer than three completed cycles",
-	"DashboardCyclePastReferenceLength": "running cycle past its reference length (out-of-date band)",
-	"PredictionsSuppressed":             "the whole-projection gate",
-	"FertilitySuppressed":               "the fertility gate",
-	"FertilityProjectionSuppressed":     "the fertility gate",
-	"ProjectionChainSuppressed":         "the chained-period gate",
+	"PredictionDisabled":                 "unpredictable-cycle mode",
+	"DashboardPredictionDisabled":        "unpredictable-cycle mode",
+	"PregnancyPaused":                    "pregnancy pause",
+	"DashboardCycleOverdue":              "cycle overdue past its own cycle length",
+	"AwaitingFirstCycle":                 "the zero-completed-cycle floor",
+	"DashboardAwaitingFirstCycle":        "the zero-completed-cycle floor",
+	"AwaitingMoreCycles":                 "the one-or-two-completed-cycles floor",
+	"DashboardAwaitingMoreCycles":        "the one-or-two-completed-cycles floor",
+	"DashboardAwaitingIrregularHistory":  "irregular mode with fewer than three completed cycles",
+	"DashboardCyclePastReferenceLength":  "running cycle past its reference length (out-of-date band)",
+	"PredictionsSuppressed":              "the whole-projection gate",
+	"FertilitySuppressed":                "the fertility gate",
+	"FertilityProjectionSuppressed":      "the fertility gate",
+	"ProjectionChainSuppressed":          "the chained-period gate",
+	"DashboardCyclePastProjectionLength": "running cycle past its projection length, before the out-of-date band",
 }
 
 // predictionSuppressionPredicateFile declares the predicates, so it is the one
