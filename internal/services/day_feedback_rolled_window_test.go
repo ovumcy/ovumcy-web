@@ -10,10 +10,11 @@ import (
 
 // Cycles of 24, 24, 24, 40 and 40 days, luteal phase 14, saved on cycle day 29:
 // the running cycle's window (days 6-11) is long behind, and the window the
-// overview, the calendar and the dashboard roll to (days 29-34) covers today. The
-// save message read the running window and answered neutral beside a dashboard
-// header calling today fertile.
-func TestDayFeedbackCallsTodayFertileInsideTheRolledWindowLikeTheDashboard(t *testing.T) {
+// projection rolls to (days 29-34) covers today — but it belongs to a cycle
+// anchored on the median start, due on day 25 and never logged. The fertility
+// half is withheld there (DashboardCyclePastProjectionLength, WEB-378), so the
+// dashboard shows no status and the save message stays neutral beside it.
+func TestDayFeedbackStaysNeutralInAWindowRolledFromAMissedStart(t *testing.T) {
 	user := &models.User{ID: 51, Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14}
 	today := time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC)
 	logs := make([]models.DailyLog, 0, 6)
@@ -31,20 +32,22 @@ func TestDayFeedbackCallsTodayFertileInsideTheRolledWindowLikeTheDashboard(t *te
 	if err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
 	}
-	if view.Stats.CurrentCycleDay != 29 || !view.ShowFertilityStatus {
-		t.Fatalf("fixture: cycle day %d, fertility shown %t; want day 29 with the status shown", view.Stats.CurrentCycleDay, view.ShowFertilityStatus)
+	if view.Stats.CurrentCycleDay != 29 {
+		t.Fatalf("fixture: cycle day %d, want 29", view.Stats.CurrentCycleDay)
 	}
-	if view.Stats.CurrentFertility != FertilityStatusFertile {
-		t.Fatalf("dashboard fertility = %q, want %q off the rolled window", view.Stats.CurrentFertility, FertilityStatusFertile)
+	if view.ShowFertilityStatus || view.Stats.CurrentFertility == FertilityStatusFertile || !view.Stats.FertilityWindowStart.IsZero() {
+		t.Fatalf("dashboard shows status %t (%q) and window from %s off a window rolled from a missed start",
+			view.ShowFertilityStatus, view.Stats.CurrentFertility, CalendarDayKey(view.Stats.FertilityWindowStart))
 	}
 
-	if got := dayFeedbackKeyOn(t, user, logs, time.UTC, today, today); got != daySaveMessageFertile {
-		t.Fatalf("save message on cycle day 29 = %q, want %q, as the dashboard header says", got, daySaveMessageFertile)
+	if got := dayFeedbackKeyOn(t, user, logs, time.UTC, today, today); got != daySaveMessageNeutral {
+		t.Fatalf("save message on cycle day 29 = %q, want %q, as the dashboard withholds the window", got, daySaveMessageNeutral)
 	}
 }
 
-// The same history on cycle day 25: the ovulation has rolled to cycle day 34,
-// so the window the overview publishes (days 29-34) is still AHEAD of today.
+// The same history on cycle day 20, before the median start is due: the
+// ovulation has rolled to cycle day 34, so the window the overview publishes
+// (days 29-34) is still AHEAD of today.
 // The dashboard publishes that window with the status read against it, never
 // the running cycle's window (days 6-11) beside a status that is not about it,
 // and the save message agrees.
@@ -52,7 +55,7 @@ func TestRolledWindowAheadOfTodayKeepsTheDashboardAndTheSaveMessageOnTheOverview
 	user := &models.User{ID: 52, Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14}
 	today := time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC)
 	logs := make([]models.DailyLog, 0, 6)
-	for _, back := range []int{176, 152, 128, 104, 64, 24} {
+	for _, back := range []int{171, 147, 123, 99, 59, 19} {
 		logs = append(logs, models.DailyLog{UserID: user.ID, Date: today.AddDate(0, 0, -back), IsPeriod: true, Flow: models.FlowMedium, CycleStart: true})
 	}
 	now := localNoon(today, time.UTC)
@@ -70,13 +73,13 @@ func TestRolledWindowAheadOfTodayKeepsTheDashboardAndTheSaveMessageOnTheOverview
 	}
 
 	view := rolledWindowDashboardView(t, user, logs, now)
-	if view.Stats.CurrentCycleDay != 25 {
-		t.Fatalf("fixture: cycle day %d, want 25", view.Stats.CurrentCycleDay)
+	if view.Stats.CurrentCycleDay != 20 {
+		t.Fatalf("fixture: cycle day %d, want 20", view.Stats.CurrentCycleDay)
 	}
 	assertDashboardStatsOnTheOverview(t, view.Stats, published)
 
 	if got := dayFeedbackKeyOn(t, user, logs, time.UTC, today, today); got != daySaveMessageNeutral {
-		t.Fatalf("save message on cycle day 25 = %q, want %q ahead of the rolled window", got, daySaveMessageNeutral)
+		t.Fatalf("save message on cycle day 20 = %q, want %q ahead of the rolled window", got, daySaveMessageNeutral)
 	}
 }
 

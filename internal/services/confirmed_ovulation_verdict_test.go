@@ -62,6 +62,13 @@ func confirmedVerdictRows() []confirmedVerdictRow {
 			*today = AddCalendarDays(*today, 15, time.UTC)
 			*stats = atToday(*stats, *today)
 		}},
+		{signal: "DashboardCyclePastProjectionLength", wantKept: true, suppress: func(_ *models.User, stats *CycleStats, today *time.Time) {
+			// Cycle day 29 of a median-28 model whose average is 30: past the
+			// projection, short of the out-of-date band.
+			*today = AddCalendarDays(*today, 15, time.UTC)
+			*stats = atToday(*stats, *today)
+			stats.AverageCycleLength = 30
+		}},
 	}
 }
 

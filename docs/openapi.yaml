@@ -1310,11 +1310,16 @@ components:
               - awaiting_first_cycle
               - awaiting_more_cycles
               - cycle_data_stale
+              - cycle_past_projection_length
           # awaiting_first_cycle: no completed cycle yet. awaiting_more_cycles:
           # a regular-mode account with one or two completed cycles.
           # cycle_data_stale: the running cycle is past its reference length
-          # (the cycle_data_stale flag), before the overdue cut-off. All three
-          # withhold the fertility half only; the next-period estimate stays.
+          # (the cycle_data_stale flag), before the overdue cut-off.
+          # cycle_past_projection_length: the running cycle is past the length
+          # its next period was projected from (median-first) but not yet past
+          # the reference length, so cycle_data_stale is still false; never in
+          # irregular range mode. All four withhold the fertility half only;
+          # the next-period estimate stays.
       additionalProperties: false
 
     ExportJSONEntry:
