@@ -69,11 +69,6 @@
     // the symptoms card: the settings page carries several islands and a bare
     // descendant search would return whichever came first.
     //
-    // The host attribute is deliberately not data-success-toast. That one is an
-    // opt-in to a toast, declared on the island itself; a card borrowing it to
-    // be findable made one name mean two things, and the borrowed meaning was
-    // the silent one — the card declared "toast me" and no toast could fire,
-    // because the resolved island did not carry the attribute the toast reads.
     var surface =
       target.hasAttribute && target.hasAttribute("data-status-island-host")
         ? target
@@ -331,73 +326,6 @@
       successNode = target.querySelector(".status-ok");
     }
     clearStatusTargetIfEmpty(target);
-  }
-
-  // The message each island last raised, remembered by the island's id. The node
-  // is not stable: a card that replaces itself brings a NEW island element on
-  // every swap, so a key stored on the element resets exactly when the repeat it
-  // exists to suppress arrives. An island with no id keeps the per-node key,
-  // which is all that can be said about an element nothing can address twice.
-  //
-  // The registry hangs off window rather than off this closure so that it is one
-  // registry per page, not one per evaluation of this bundle.
-  function lastToastRegistry() {
-    if (!window.__ovumcyLastToastByIsland) {
-      window.__ovumcyLastToastByIsland = {};
-    }
-    return window.__ovumcyLastToastByIsland;
-  }
-
-  function lastToastFor(island) {
-    return island.id ? lastToastRegistry()[island.id] : island.dataset.toastShown;
-  }
-
-  function rememberToastFor(island, identity) {
-    if (island.id) {
-      lastToastRegistry()[island.id] = identity;
-      return;
-    }
-    island.dataset.toastShown = identity;
-  }
-
-  // The inverse of rememberToastFor, for BOTH keys: a request that starts, or
-  // fails without an answer, ends the run of repeats, so the next success must
-  // be allowed its toast. Clearing only the per-node key left an island with an
-  // id suppressing the retry's toast as a repeat of the one before the failure.
-  function forgetToastFor(island) {
-    if (island.id) {
-      delete lastToastRegistry()[island.id];
-    }
-    delete island.dataset.toastShown;
-  }
-
-  // What the repeat is judged by. The flash key names the message the server
-  // chose and survives everything done to the rendered node afterwards — the
-  // dismiss button appended below is already enough to change the node's text,
-  // so text alone identifies a message only until something decorates it.
-  function toastIdentity(successNode, message) {
-    return successNode.getAttribute("data-flash-key") || message;
-  }
-
-  function maybeShowSuccessToast(target) {
-    var successNode;
-    var message;
-    if (!target || target.getAttribute("data-success-toast") !== "true" || typeof window.showToast !== "function") {
-      return;
-    }
-
-    successNode = target.querySelector(".status-ok");
-    if (!successNode) {
-      return;
-    }
-
-    message = String(successNode.textContent || "").trim();
-    if (!message || lastToastFor(target) === toastIdentity(successNode, message)) {
-      return;
-    }
-
-    rememberToastFor(target, toastIdentity(successNode, message));
-    window.showToast(message, "ok");
   }
 
   // A success status that declares data-status-kind="clears-fields" says the
@@ -966,7 +894,6 @@
     }
     var fallback = document.body.getAttribute("data-request-failed") || "Request failed. Please try again.";
     renderErrorStatus(island, fallback);
-    forgetToastFor(island);
     setSaveButtonState(form, false);
   }
 
@@ -1078,9 +1005,6 @@
 
     document.body.addEventListener("htmx:beforeRequest", function (event) {
       var statusTarget = statusContainerFor(event && event.detail ? event.detail.target : null, requestSourceFromEvent(event));
-      if (statusTarget) {
-        forgetToastFor(statusTarget);
-      }
       // A day save sent through htmx (the calendar's Save and its retry) is the
       // start the dashboard runner marks by clearing its notice.
       releaseAccountChangedNotice(dayEditorFormFromEvent(event));
@@ -1131,7 +1055,6 @@
 
       // The month grid refresh is the save response's HX-Trigger header; a
       // client trigger here as well fetched the grid twice per save.
-      maybeShowSuccessToast(target);
       clearFieldsOfCompletedForm(target, successNode);
       scheduleClearSuccessStatus(target);
     });

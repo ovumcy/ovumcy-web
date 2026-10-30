@@ -88,68 +88,6 @@ test("an error answered for an element inside the card still lands in the card's
   }
 });
 
-// The card declares that it HOSTS an island; the island declares whether a
-// success there also raises a toast. One attribute carrying both meanings is
-// what these two pin against: the card wore the toast opt-in only to be
-// findable, and the toast it named could never fire, because the attribute is
-// read off the resolved island and the island did not carry it.
-test("the host attribute resolves the island and the island's own opt-in raises the toast", async () => {
-  const dom = await loadDOMWithScript(APP_BUNDLE, { html: PAGE });
-  try {
-    const { document } = dom.window;
-    const island = document.getElementById("settings-egress-status");
-    island.setAttribute("data-success-toast", "true");
-    island.innerHTML = '<div class="status-ok">Webhook saved.</div>';
-
-    fire(dom.window, "htmx:afterSwap", { target: document.getElementById("settings-egress") });
-
-    const messages = [...document.querySelectorAll(".toast-stack .toast-message")].map(
-      (node) => node.textContent
-    );
-    assert.ok(
-      messages.includes("Webhook saved."),
-      "the island inside the host card raised its own toast"
-    );
-  } finally {
-    dom.window.close();
-  }
-});
-
-test("a repeat message is suppressed even when the swap replaced the island node", async () => {
-  const dom = await loadDOMWithScript(APP_BUNDLE, { html: PAGE });
-  try {
-    const { document } = dom.window;
-    const card = document.getElementById("settings-egress");
-    const islandMarkup =
-      '<div id="settings-egress-status" class="save-status" data-success-toast="true" aria-live="polite">' +
-      '<div class="status-ok" data-flash-key="settings.egress.webhook_removed">Webhook saved.</div></div>';
-
-    const swap = () => {
-      document.getElementById("settings-egress-status").remove();
-      card.insertAdjacentHTML("beforeend", islandMarkup);
-      fire(dom.window, "htmx:afterSwap", { target: card });
-      return document.querySelectorAll(".toast-stack .toast-message").length;
-    };
-
-    // What a self-replacing card actually does: the island that raised the first
-    // toast is gone, and an identical one stands in its place. A dedup key held
-    // on the node resets here, which is precisely when the repeat arrives — so
-    // the assertion is that the SECOND swap adds nothing, whatever the first
-    // raised.
-    const afterFirst = swap();
-    const afterRepeat = swap();
-
-    assert.ok(afterFirst > 0, "the first save is announced");
-    assert.equal(
-      afterRepeat,
-      afterFirst,
-      "the same message must not be announced again because the island was replaced"
-    );
-  } finally {
-    dom.window.close();
-  }
-});
-
 test("an element in no toast surface renders no status anywhere", async () => {
   const dom = await loadDOMWithScript(APP_BUNDLE, { html: PAGE });
   try {
