@@ -8221,7 +8221,8 @@
     }
 
     try {
-      var content = "Ovumcy recovery code\n\n" + code + "\n\nStore this code offline and private.";
+      var content = recoveryMessage(root, "fileTitle", "Ovumcy recovery code") + "\n\n" + code + "\n\n" +
+        recoveryMessage(root, "fileFooter", "Store this code offline and private.");
       var blob = new Blob([content], { type: "text/plain;charset=utf-8" });
       var objectURL = URL.createObjectURL(blob);
       var link = document.createElement("a");
