@@ -1730,8 +1730,13 @@
       return;
     }
 
+    // The mark only stops re-posting while the server holds a zone that differs
+    // from the detected one (an alias it canonicalised). An empty stored zone is
+    // what every server-side reset leaves (clear-data, a fresh account), and the
+    // tab's sessionStorage outlives it, so an empty zone always syncs.
+    var persisted = persistedTimezone();
     var mark = timezoneSyncMark(detected);
-    if (detected === persistedTimezone() || alreadySyncedThisSession(mark)) {
+    if (detected === persisted || (persisted !== "" && alreadySyncedThisSession(mark))) {
       return;
     }
 
