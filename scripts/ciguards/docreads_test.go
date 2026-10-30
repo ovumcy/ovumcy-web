@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -229,6 +230,7 @@ func firstGlobSegment(segments []string) int {
 func docReadProbes(t *testing.T, root string, references map[string][]string, joined map[string]bool) map[string][]string {
 	t.Helper()
 
+	diffable := diffablePaths(t, root)
 	probes := map[string][]string{}
 	for reference, sources := range references {
 		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(reference)))
@@ -236,7 +238,7 @@ func docReadProbes(t *testing.T, root string, references map[string][]string, jo
 			continue
 		}
 		if !info.IsDir() {
-			if filepath.Ext(reference) != ".go" {
+			if filepath.Ext(reference) != ".go" && diffable[reference] {
 				probes[reference] = sources
 			}
 			continue
@@ -269,7 +271,7 @@ func docReadProbes(t *testing.T, root string, references map[string][]string, jo
 			}
 			rel = filepath.ToSlash(rel)
 			ext := filepath.Ext(rel)
-			if ext == ".go" {
+			if ext == ".go" || !diffable[rel] {
 				return nil
 			}
 			if _, seen := perExtension[ext]; !seen {
@@ -285,6 +287,32 @@ func docReadProbes(t *testing.T, root string, references map[string][]string, jo
 		}
 	}
 	return probes
+}
+
+// diffablePaths lists, repo-relative, every file under root a pull request can
+// carry: tracked, or untracked and not ignored. An ignored artifact (an e2e
+// run's logs under .tmp) exists only on the machine that made it, so probing it
+// would judge a diff no runner ever sees.
+func diffablePaths(t *testing.T, root string) map[string]bool {
+	t.Helper()
+	cmd := exec.Command("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	cmd.Dir = root
+	cmd.Env = hermeticGitEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		var stderr []byte
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr = exitErr.Stderr
+		}
+		t.Fatalf("list the files git does not ignore under %s: %v\n%s", root, err, stderr)
+	}
+	paths := map[string]bool{}
+	for name := range strings.SplitSeq(string(out), "\x00") {
+		if name != "" {
+			paths[name] = true
+		}
+	}
+	return paths
 }
 
 // TestDocReadDerivationSeesGlobsDirectoriesAndDotRoots holds the derivation to
@@ -305,6 +333,7 @@ func TestDocReadDerivationSeesGlobsDirectoriesAndDotRoots(t *testing.T) {
 			t.Fatalf("write %s: %v", rel, err)
 		}
 	}
+	initScratchRepo(t, root)
 	write("docs/a.md", "x")
 	write("pages/b.md", "x")
 	write(".sandbox/notes.md", "x")
@@ -345,6 +374,62 @@ func blind(unknown string) {
 `)
 	if _, _, unresolved = testPathReferences(t, root); len(unresolved) != 1 {
 		t.Errorf("a glob with no literal directory must be reported exactly once, got %v", unresolved)
+	}
+}
+
+// TestDocReadDerivationSkipsWhatGitIgnores holds the probe set to what a pull
+// request can carry: an ignored artifact left under a directory a test reads (an
+// e2e run's `.log`) is never in a diff, so probing it only inflates the budget
+// on the one machine that holds it.
+func TestDocReadDerivationSkipsWhatGitIgnores(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("create the directory of %s: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	initScratchRepo(t, root)
+	// The repository's own exclude file, not a .gitignore: this package's test
+	// literals are themselves derived, and the real .gitignore is a tracked file.
+	write(".git/info/exclude", "*.log\nscratch.txt\n")
+	write("docs/a.md", "x")
+	write("docs/run.log", "x")
+	write("scratch.txt", "x")
+	write("pkg/reader_test.go", `package pkg
+
+import "path/filepath"
+
+func reads(root string) {
+	_ = filepath.Join(root, "docs")
+	_ = filepath.Join(root, "scratch.txt")
+}
+`)
+
+	references, joined, _ := testPathReferences(t, root)
+	probes := docReadProbes(t, root, references, joined)
+	if _, ok := probes["docs/a.md"]; !ok {
+		t.Errorf("the derivation does not probe the untracked, unignored docs/a.md (probes: %v): a document not yet committed would go unjudged", probes)
+	}
+	for _, ignored := range []string{"docs/run.log", "scratch.txt"} {
+		if _, ok := probes[ignored]; ok {
+			t.Errorf("%s is git-ignored, so no diff can carry it, yet it is probed: %v", ignored, probes)
+		}
+	}
+}
+
+// initScratchRepo makes dir a git repository, so the derivation's listing of
+// what git does not ignore runs over a scratch tree as over the real one.
+func initScratchRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git", "init", "-q", dir)
+	cmd.Env = hermeticGitEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init %s: %v\n%s", dir, err, out)
 	}
 }
 
