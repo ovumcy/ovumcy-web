@@ -117,7 +117,7 @@
   "auth.error.too_many_register_attempts": "Demasiados intentos de registro. Espera y vuelve a intentarlo.",
   "auth.error.sso_temporarily_unavailable": "El acceso con SSO no está disponible ahora mismo. Usa el acceso local o inténtalo más tarde.",
   "auth.error.sso_authentication_failed": "No se pudo completar la autenticación con SSO. Inténtalo de nuevo.",
-  "auth.error.sso_sign_in_unavailable": "Esta cuenta SSO todavía no puede iniciar sesión. Usa el acceso local o contacta al operador.",
+  "auth.error.sso_sign_in_unavailable": "Esta cuenta SSO todavía no puede iniciar sesión. Si ya tienes una cuenta aquí, inicia sesión con tu método habitual y vincula este proveedor en Ajustes. Si no, contacta al operador.",
   "auth.error.sso_link_confirmation_unavailable": "Esta cuenta no puede vincular una nueva identidad OIDC. Inicia sesión con tu método existente o contacta al operador.",
   "auth.error.local_sign_in_unavailable": "El acceso local está desactivado para esta instalación. Usa SSO.",
   "auth.error.web_sign_in_unavailable": "Esta cuenta no está disponible en Ovumcy Web.",
