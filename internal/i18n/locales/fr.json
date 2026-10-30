@@ -552,11 +552,11 @@
   "prediction.explainer.details_link": "Voir les détails",
 
   "dashboard.high_fertility_badge": "Fertilité élevée",
-  "dashboard.fertility_badge_warning": "Période fertile",
+  "dashboard.fertility_badge_warning": "Fenêtre fertile",
   "dashboard.fertile_window_after_first_cycle": "Votre fenêtre fertile apparaîtra après votre premier cycle terminé",
   "dashboard.fertile_window_after_cycle_floor.one": "Votre fenêtre fertile apparaîtra après %d cycle terminé",
   "dashboard.fertile_window_after_cycle_floor.other": "Votre fenêtre fertile apparaîtra après vos %d premiers cycles terminés",
-  "dashboard.fertility_badge_positive": "Période fertile, meilleur moment",
+  "dashboard.fertility_badge_positive": "Fenêtre fertile, meilleur moment",
   "dashboard.ovulation": "Ovulation",
   "dashboard.ovulation_range": "%s — %s",
   "dashboard.ovulation_estimate": "vers le %s",
