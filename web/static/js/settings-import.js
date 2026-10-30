@@ -82,6 +82,59 @@
     }
   }
 
+  // The CSRF check refuses under a key of its own; a 403 with no key at all is a
+  // proxy's page in front of the app, behind which the token may be stale all
+  // the same. Every other 403 is one a fresh token cannot fix.
+  function isCSRFRefusal(status, key) {
+    return status === 403 && (!key || key === "csrf_refused");
+  }
+
+  // The token is re-read from /privacy, never from this page: it is public,
+  // carries the csrf-token meta and sets no cookie but the CSRF one
+  // (TestPrivacyPageIsASideEffectFreeCSRFTokenSource). The rules match
+  // refreshCSRFToken in the app bundle, which this page's bundle cannot reach.
+  var CSRF_REFRESH_PAGE_URL = "/privacy";
+  var CSRF_TOKEN_SHAPE = /^[A-Za-z0-9._~+/=-]{8,512}$/;
+
+  function responseIsSameOrigin(response) {
+    if (!response || !response.url) {
+      return false;
+    }
+    try {
+      return new URL(response.url, window.location.href).origin === window.location.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  async function refreshCSRFToken(context) {
+    try {
+      var response = await fetch(CSRF_REFRESH_PAGE_URL, {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { Accept: "text/html" }
+      });
+      if (!response || !response.ok || !responseIsSameOrigin(response) || typeof response.text !== "function") {
+        return;
+      }
+      var text = await response.text();
+      var meta = new DOMParser().parseFromString(text, "text/html").querySelector('meta[name="csrf-token"]');
+      var token = meta ? String(meta.getAttribute("content") || "").trim() : "";
+      if (!CSRF_TOKEN_SHAPE.test(token)) {
+        return;
+      }
+      context.token = token;
+      context.section.setAttribute("data-import-csrf", token);
+      var pageMeta = document.querySelector('meta[name="csrf-token"]');
+      if (pageMeta) {
+        pageMeta.setAttribute("content", token);
+      }
+    } catch {
+      // The refusal copy already says to reload if a retry is refused again.
+    }
+  }
+
   function createImportHandler(context) {
     return async function handleImport(event) {
       event.preventDefault();
@@ -124,8 +177,19 @@
         }
 
         if (!response.ok) {
+          var key = errorKeyFromPayload(payload);
+          var message = messageForErrorKey(context, key);
+          var csrfRefused = isCSRFRefusal(response.status, key);
+          if (csrfRefused) {
+            message = context.csrfRefusedMessage;
+          } else if (response.status === 401) {
+            message = context.unauthorizedMessage;
+          }
           if (typeof window.showToast === "function") {
-            window.showToast(messageForErrorKey(context, errorKeyFromPayload(payload)), "error");
+            window.showToast(message, "error");
+          }
+          if (csrfRefused) {
+            await refreshCSRFToken(context);
           }
           return;
         }
@@ -167,6 +231,7 @@
   }
 
   var context = {
+    section: section,
     form: form,
     fileInput: fileInput,
     submitButton: submitButton,
@@ -181,7 +246,13 @@
       section,
       "data-import-account-changed",
       "You're now signed in to a different account. This change was not saved. Reload the page."
-    )
+    ),
+    csrfRefusedMessage: readTextAttribute(
+      section,
+      "data-import-csrf-refused",
+      "That action was refused. Please try again; if it is refused again, reload the page."
+    ),
+    unauthorizedMessage: readTextAttribute(section, "data-import-unauthorized", "You are not signed in. Please sign in and try again.")
   };
 
   form.addEventListener("submit", createImportHandler(context));
