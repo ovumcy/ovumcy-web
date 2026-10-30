@@ -82,7 +82,6 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	"sso temporarily unavailable":       "auth.error.sso_temporarily_unavailable",
 	"sso authentication failed":         "auth.error.sso_authentication_failed",
 	"sso sign-in unavailable":           "auth.error.sso_sign_in_unavailable",
-	"sso link confirmation unavailable": "auth.error.sso_link_confirmation_unavailable",
 	"web sign-in unavailable":           "auth.error.web_sign_in_unavailable",
 	"local sign-in unavailable":         "auth.error.local_sign_in_unavailable",
 	"local recovery unavailable":        "auth.error.local_recovery_unavailable",
