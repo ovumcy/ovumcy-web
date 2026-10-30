@@ -26,9 +26,15 @@ import (
 type CalendarFeedService struct {
 	users      CalendarFeedUserStore
 	days       CalendarFeedDayReader
-	disclaimer DisclaimerProvider
+	disclaimer NotifyCopyProvider
 	secretKey  []byte
 }
+
+// Catalogue keys of the detailed-titles opt-in (WEB-379).
+const (
+	calendarFeedPeriodTitleKey    = "calendar_feed.event.period"
+	calendarFeedOvulationTitleKey = "calendar_feed.event.ovulation"
+)
 
 // CalendarFeedUserStore resolves the single owner whose calendar_feed_selector
 // equals selector, and writes the keyed verifier MAC into a row that predates
@@ -63,7 +69,7 @@ type CalendarFeedDayReader interface {
 // the localized-disclaimer provider (the same seam the webhook notify pass uses),
 // and the application secret that keys verifier MACs. All are required in
 // production; tests may pass stubs.
-func NewCalendarFeedService(users CalendarFeedUserStore, days CalendarFeedDayReader, disclaimer DisclaimerProvider, secretKey []byte) *CalendarFeedService {
+func NewCalendarFeedService(users CalendarFeedUserStore, days CalendarFeedDayReader, disclaimer NotifyCopyProvider, secretKey []byte) *CalendarFeedService {
 	return &CalendarFeedService{
 		users:      users,
 		days:       days,
@@ -188,6 +194,13 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 		// empty or unknown target, so "" still yields the server-default copy.
 		disclaimer = service.disclaimer.Disclaimer(user.InterfaceLanguage)
 	}
+	var titles CalendarFeedTitles
+	if user.CalendarFeedDetailedTitles && service.disclaimer != nil {
+		titles = CalendarFeedTitles{
+			Period:    service.disclaimer.Message(user.InterfaceLanguage, calendarFeedPeriodTitleKey),
+			Ovulation: service.disclaimer.Message(user.InterfaceLanguage, calendarFeedOvulationTitleKey),
+		}
+	}
 
 	feedUser := user
 	feed := BuildCalendarFeedICS(CalendarFeedICSInput{
@@ -197,6 +210,7 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 		Location:   feedLocation,
 		Disclaimer: disclaimer,
 		SecretKey:  service.secretKey,
+		Titles:     titles,
 	})
 	// The build succeeded: this is a successful, token-verified poll. Record
 	// the coarse day mark (WEB-46) synchronously, AFTER the body the caller

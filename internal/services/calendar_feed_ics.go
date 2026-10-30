@@ -45,8 +45,10 @@ import (
 // symptom appears in the SUMMARY, so a lock-screen preview or a shared calendar
 // reveals nothing about the owner's health. The concrete date lives only in the
 // DTSTART/DTEND all-day fields a calendar client needs to place the event; the
-// disclaimer lives in the DESCRIPTION. (A detailed-event opt-in is a later
-// slice; the default here is always neutral.)
+// disclaimer lives in the DESCRIPTION. The one exception is the owner's opt-in
+// (User.CalendarFeedDetailedTitles, WEB-379, chosen when the link is generated or
+// rotated): titles then name the estimate type in the owner's language, still
+// with the estimate qualifier, over exactly the same set of events.
 
 const (
 	// calendarFeedNeutralSummary is the single, contentless SUMMARY used for
@@ -90,6 +92,37 @@ type CalendarFeedICSInput struct {
 	Location   *time.Location
 	Disclaimer string
 	SecretKey  []byte
+	// Titles is the owner-localized pair used only when the owner opted into
+	// detailed titles (User.CalendarFeedDetailedTitles, WEB-379).
+	Titles CalendarFeedTitles
+}
+
+// CalendarFeedTitles is the per-type SUMMARY pair of the detailed-titles opt-in.
+// Each carries the estimate qualifier in its locale. If either is empty, the
+// whole feed falls back to calendarFeedNeutralSummary: a half-detailed feed
+// would name one type by elimination.
+type CalendarFeedTitles struct {
+	Period    string
+	Ovulation string
+}
+
+func (titles CalendarFeedTitles) complete() bool {
+	return strings.TrimSpace(titles.Period) != "" && strings.TrimSpace(titles.Ovulation) != ""
+}
+
+// calendarFeedSummary picks an event's SUMMARY. detailed is nil for the neutral
+// default, which every event then shares byte-for-byte.
+func calendarFeedSummary(kind string, detailed *CalendarFeedTitles) string {
+	if detailed == nil {
+		return calendarFeedNeutralSummary
+	}
+	switch kind {
+	case calendarFeedKindPeriod, calendarFeedKindPeriodWindow:
+		return detailed.Period
+	case calendarFeedKindOvulation, calendarFeedKindOvulationWindow:
+		return detailed.Ovulation
+	}
+	return calendarFeedNeutralSummary
 }
 
 const (
@@ -147,13 +180,18 @@ type calendarFeedEvent struct {
 func BuildCalendarFeedICS(input CalendarFeedICSInput) []byte {
 	var events []calendarFeedEvent
 	var uids *security.CalendarFeedEventUIDs
+	var detailed *CalendarFeedTitles
 	if input.User != nil {
 		var err error
 		if uids, err = security.NewCalendarFeedEventUIDs(input.SecretKey, input.User.ID); err == nil {
 			events = calendarFeedEvents(input)
 		}
+		if input.User.CalendarFeedDetailedTitles && input.Titles.complete() {
+			titles := input.Titles
+			detailed = &titles
+		}
 	}
-	return renderCalendarFeedICS(events, uids, input.Disclaimer, input.Now)
+	return renderCalendarFeedICS(events, uids, input.Disclaimer, detailed, input.Now)
 }
 
 // calendarFeedEvents resolves the neutral, all-day events for the feed: the
@@ -320,9 +358,9 @@ func calendarDayWithin(day time.Time, first time.Time, last time.Time) bool {
 // renderCalendarFeedICS assembles the RFC 5545 VCALENDAR text. Every line is
 // CRLF-terminated (RFC 5545 §3.1). DTSTAMP is the injected now in UTC. Each
 // VEVENT is an all-day event (VALUE=DATE DTSTART, exclusive next-day DTEND per
-// RFC 5545 §3.6.1), carries the fixed neutral SUMMARY, and puts the disclaimer
-// in DESCRIPTION.
-func renderCalendarFeedICS(events []calendarFeedEvent, uids *security.CalendarFeedEventUIDs, disclaimer string, now time.Time) []byte {
+// RFC 5545 §3.6.1), carries the fixed neutral SUMMARY (or, under the owner's
+// opt-in, its type's estimate title), and puts the disclaimer in DESCRIPTION.
+func renderCalendarFeedICS(events []calendarFeedEvent, uids *security.CalendarFeedEventUIDs, disclaimer string, detailed *CalendarFeedTitles, now time.Time) []byte {
 	stamp := now.UTC().Format(calendarFeedTimestampLayout)
 
 	var b strings.Builder
@@ -334,14 +372,14 @@ func renderCalendarFeedICS(events []calendarFeedEvent, uids *security.CalendarFe
 	// No UID key, no events: an event is never written without an opaque UID.
 	if uids != nil {
 		for _, event := range events {
-			writeCalendarFeedEvent(&b, event, uids, stamp, disclaimer)
+			writeCalendarFeedEvent(&b, event, uids, stamp, disclaimer, calendarFeedSummary(event.kind, detailed))
 		}
 	}
 	writeICSLine(&b, "END:VCALENDAR")
 	return []byte(b.String())
 }
 
-func writeCalendarFeedEvent(b *strings.Builder, event calendarFeedEvent, uids *security.CalendarFeedEventUIDs, stamp string, disclaimer string) {
+func writeCalendarFeedEvent(b *strings.Builder, event calendarFeedEvent, uids *security.CalendarFeedEventUIDs, stamp string, disclaimer string, summary string) {
 	start := event.date.Format(calendarFeedDateLayout)
 	lastDay := event.date
 	if !event.end.IsZero() {
@@ -358,7 +396,7 @@ func writeCalendarFeedEvent(b *strings.Builder, event calendarFeedEvent, uids *s
 	writeICSLine(b, "DTSTAMP:"+stamp)
 	writeICSLine(b, "DTSTART;VALUE=DATE:"+start)
 	writeICSLine(b, "DTEND;VALUE=DATE:"+end)
-	writeICSLine(b, "SUMMARY:"+escapeICSText(calendarFeedNeutralSummary))
+	writeICSLine(b, "SUMMARY:"+escapeICSText(summary))
 	writeICSLine(b, "DESCRIPTION:"+escapeICSText(disclaimer))
 	writeICSLine(b, "TRANSP:TRANSPARENT")
 	writeICSLine(b, "END:VEVENT")

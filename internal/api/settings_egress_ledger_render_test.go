@@ -431,13 +431,13 @@ func TestEgressLedgerViewModelNamesAKeyForEveryState(t *testing.T) {
 	for _, key := range egressWebhookPayloadMessageKeys(services.WebhookPayloadFields()) {
 		assertMessageKeyResolves(t, messages, key, key)
 	}
-	for _, key := range egressFeedPayloadMessageKeys(services.CalendarFeedPayloadFields()) {
+	for _, key := range egressFeedPayloadMessageKeys(services.CalendarFeedPayloadFields(), false) {
 		assertMessageKeyResolves(t, messages, key, key)
 	}
 	if got, want := len(egressWebhookPayloadMessageKeys(services.WebhookPayloadFields())), len(services.WebhookPayloadFields()); got != want {
 		t.Fatalf("webhook payload inventory lost a field in projection: %d keys for %d fields", got, want)
 	}
-	if got, want := len(egressFeedPayloadMessageKeys(services.CalendarFeedPayloadFields())), len(services.CalendarFeedPayloadFields()); got != want {
+	if got, want := len(egressFeedPayloadMessageKeys(services.CalendarFeedPayloadFields(), false)), len(services.CalendarFeedPayloadFields()); got != want {
 		t.Fatalf("feed payload inventory lost a field in projection: %d keys for %d fields", got, want)
 	}
 }
