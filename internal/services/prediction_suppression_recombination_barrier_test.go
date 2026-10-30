@@ -57,6 +57,7 @@ var predictionSuppressionSignals = map[string]string{
 	"PredictionsSuppressed":             "the whole-projection gate",
 	"FertilitySuppressed":               "the fertility gate",
 	"FertilityProjectionSuppressed":     "the fertility gate",
+	"ProjectionChainSuppressed":         "the chained-period gate",
 }
 
 // predictionSuppressionPredicateFile declares the predicates, so it is the one

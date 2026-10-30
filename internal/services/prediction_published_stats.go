@@ -70,7 +70,9 @@ import (
 // close. The verdict is the pages' own — dashboardCycleDataStale, the one helper
 // the dashboard context and the stats page flags also call — and it is NOT a
 // suppression signal: the two suppression bits also decide what the webhook
-// pass and the .ics feed send, and staleness withholds no date. CycleDataStale
+// pass and the .ics feed send, and staleness withholds no date this copy
+// publishes. The periods chained after the running one are a separate gate
+// (ProjectionChainSuppressed) the grid and the feed read. CycleDataStale
 // carries the verdict on the published copy.
 func PublishedStats(user *models.User, stats CycleStats, logs []models.DailyLog, today time.Time, location *time.Location) (CycleStats, PredictionSuppression) {
 	// The verdict is read off the UNCLEARED stats, so the fertility gate cannot
