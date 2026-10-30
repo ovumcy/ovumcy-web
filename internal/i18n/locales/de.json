@@ -117,7 +117,7 @@
   "auth.error.too_many_register_attempts": "Zu viele Registrierungsversuche. Bitte warten Sie und versuchen Sie es erneut.",
   "auth.error.sso_temporarily_unavailable": "Die SSO-Anmeldung ist derzeit nicht verfügbar. Nutzen Sie die lokale Anmeldung oder versuchen Sie es später erneut.",
   "auth.error.sso_authentication_failed": "Die SSO-Anmeldung konnte nicht abgeschlossen werden. Bitte versuchen Sie es erneut.",
-  "auth.error.sso_sign_in_unavailable": "Dieses SSO-Konto kann sich noch nicht anmelden. Nutzen Sie die lokale Anmeldung oder kontaktieren Sie den Betreiber.",
+  "auth.error.sso_sign_in_unavailable": "Dieses SSO-Konto kann sich noch nicht anmelden. Wenn Sie hier bereits ein Konto haben, melden Sie sich mit Ihrer bisherigen Methode an und verknüpfen Sie diesen Anbieter in den Einstellungen. Andernfalls kontaktieren Sie den Betreiber.",
   "auth.error.sso_link_confirmation_unavailable": "Für dieses Konto kann keine neue OIDC-Identität verknüpft werden. Melden Sie sich mit Ihrer bestehenden Methode an oder kontaktieren Sie den Betreiber.",
   "auth.error.local_sign_in_unavailable": "Die lokale Anmeldung ist für diese Installation deaktiviert. Bitte nutzen Sie SSO.",
   "auth.error.web_sign_in_unavailable": "Dieses Konto ist in Ovumcy Web nicht verfügbar.",

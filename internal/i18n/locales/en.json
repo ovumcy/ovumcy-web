@@ -117,7 +117,7 @@
   "auth.error.too_many_register_attempts": "Too many registration attempts. Please wait and try again.",
   "auth.error.sso_temporarily_unavailable": "SSO sign-in is currently unavailable. Use local login or try again later.",
   "auth.error.sso_authentication_failed": "SSO authentication could not be completed. Please try again.",
-  "auth.error.sso_sign_in_unavailable": "This SSO account cannot sign in yet. Use local login or contact the operator.",
+  "auth.error.sso_sign_in_unavailable": "This SSO account cannot sign in yet. If you already have an account here, sign in with your existing method and link this provider in Settings. Otherwise, contact the operator.",
   "auth.error.sso_link_confirmation_unavailable": "This account cannot link a new OIDC identity. Sign in with your existing method or contact the operator.",
   "auth.error.local_sign_in_unavailable": "Local sign-in is disabled for this deployment. Use SSO instead.",
   "auth.error.web_sign_in_unavailable": "This account is not available in Ovumcy Web.",
