@@ -421,13 +421,17 @@ func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVer
 	}
 
 	var claims struct {
-		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified"`
-		IssuedAt      int64  `json:"iat"`
-		AuthTime      int64  `json:"auth_time"`
+		Email         string          `json:"email"`
+		EmailVerified json.RawMessage `json:"email_verified"`
+		IssuedAt      int64           `json:"iat"`
+		AuthTime      int64           `json:"auth_time"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		return OIDCExchangeResult{}, fmt.Errorf("decode oidc id_token claims: %w", err)
+	}
+	emailVerified, err := parseIDTokenEmailVerified(claims.EmailVerified)
+	if err != nil {
+		return OIDCExchangeResult{}, err
 	}
 
 	var issuedAt time.Time
@@ -444,7 +448,7 @@ func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVer
 			Issuer:        strings.TrimSpace(idToken.Issuer),
 			Subject:       strings.TrimSpace(idToken.Subject),
 			Email:         strings.TrimSpace(claims.Email),
-			EmailVerified: claims.EmailVerified,
+			EmailVerified: emailVerified,
 			IssuedAt:      issuedAt,
 			AuthTime:      authTime,
 		},
@@ -458,6 +462,23 @@ func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVer
 			subject:     idToken.Subject,
 		},
 	}, nil
+}
+
+// parseIDTokenEmailVerified reads the ID token's email_verified: a JSON
+// boolean, or exactly the string "true" or "false" that some providers (AWS
+// Cognito) send. An absent claim is unverified. Anything else, null included,
+// fails the exchange rather than being guessed at, so the email-verification
+// gate stays fail-closed (WEB-366).
+func parseIDTokenEmailVerified(raw json.RawMessage) (bool, error) {
+	switch string(raw) {
+	case "":
+		return false, nil
+	case "true", `"true"`:
+		return true, nil
+	case "false", `"false"`:
+		return false, nil
+	}
+	return false, errors.New("oidc id_token email_verified is neither a boolean nor \"true\"/\"false\"")
 }
 
 // UserInfoClaims asks the provider's UserInfo endpoint for the email claims of
