@@ -246,16 +246,9 @@ func authOIDCAuthenticationFailedErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "sso authentication failed")
 }
 
+// authOIDCAccountUnavailableErrorSpec is also the reply to
+// ErrOIDCLinkRequiresConfirmation: an unlinked identity gets one answer
+// whether or not a local account holds its email (WEB-360).
 func authOIDCAccountUnavailableErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "sso sign-in unavailable")
-}
-
-// authOIDCLinkConfirmUnavailableErrorSpec answers CompleteOIDCLogin's
-// ErrOIDCLinkRequiresConfirmation handoff (handlers_auth_oidc.go): a fresh
-// (issuer, subject) resolved to a pre-existing local user by email, but the
-// pair has never been linked, and this repo mints no pending-link cookie for
-// that case in any configuration (#701) — the only two ways to complete a
-// link are the authenticated Settings step-up and the operator CLI.
-func authOIDCLinkConfirmUnavailableErrorSpec() APIErrorSpec {
-	return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "sso link confirmation unavailable")
 }

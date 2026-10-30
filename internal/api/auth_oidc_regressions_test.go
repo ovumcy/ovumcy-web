@@ -1206,8 +1206,6 @@ func TestOIDCCallbackPendingLinkNeverMintsPendingCookieAndRedirectsToLogin(t *te
 		t.Fatal("expected exempt-channel flash cookie explaining the refusal")
 	}
 	payload := decodeExemptFlashCookieForTest(t, flashCookie.Value)
-	// The flash is the one an address without an account gets, so the reply does
-	// not reveal that this email holds an account (WEB-360).
 	if payload.AuthError != authOIDCAccountUnavailableErrorSpec().Key {
 		t.Fatalf("expected flash auth_error %q, got %q", authOIDCAccountUnavailableErrorSpec().Key, payload.AuthError)
 	}

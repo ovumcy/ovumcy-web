@@ -136,17 +136,22 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		// (StartOIDCIdentityLinkStepup/completeOIDCIdentityLinkStepup) and the
 		// operator command `ovumcy link-oidc-identity`.
 		//
-		// The audit keeps the link-confirm outcome, but the owner-facing flash is
-		// the one an address with no account gets: two different flashes would
-		// tell anyone able to assert a verified email at the issuer whether that
-		// email holds an account here.
-		handler.logSecurityError(c, "auth.oidc_callback", authOIDCLinkConfirmUnavailableErrorSpec())
-		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: authOIDCAccountUnavailableErrorSpec().Key})
+		// The reply is the ErrOIDCAccountUnavailable one, byte for byte: a
+		// distinct reply would tell any user of the configured IdP whether a
+		// local account holds the asserted email (WEB-360). Only the audit
+		// line, which the operator alone reads, names the cause.
+		spec := authOIDCAccountUnavailableErrorSpec()
+		handler.logSecurityError(c, "auth.oidc_callback", spec, securityEventField("cause", "link_required"))
+		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	if err != nil {
 		spec := mapAuthOIDCError(err)
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
+		var fields []SecurityEventField
+		if errors.Is(err, services.ErrOIDCAccountUnavailable) {
+			fields = append(fields, securityEventField("cause", "account_unavailable"))
+		}
+		handler.logSecurityError(c, "auth.oidc_callback", spec, fields...)
 		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
