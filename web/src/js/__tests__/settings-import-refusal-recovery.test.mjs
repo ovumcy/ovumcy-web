@@ -32,6 +32,7 @@ function importPage() {
       data-import-failed="${COPY.failed}"
       data-import-csrf-refused="${COPY.csrfRefused}"
       data-import-unauthorized="${COPY.unauthorized}">
+      <form data-other-form><input type="hidden" name="csrf_token" value="${STALE_TOKEN}"></form>
       <form data-import-form>
         <input type="file" data-import-file>
         <button type="submit" data-import-submit>Restore</button>
@@ -98,6 +99,7 @@ async function restoreScenario({ refusal, privacy = { url: `${ORIGIN}/privacy`, 
     toast: toasts[0],
     sectionToken: section.getAttribute("data-import-csrf"),
     metaToken: window.document.querySelector('meta[name="csrf-token"]').getAttribute("content"),
+    hiddenToken: window.document.querySelector('input[name="csrf_token"]').value,
     privacyReads: calls.filter((call) => call.url === "/privacy").length,
   };
   await submitAndSettle(2);
@@ -117,6 +119,7 @@ test("a CSRF refusal shows the refusal copy and the retry sends a fresh token", 
   assert.equal(result.afterRefusal.privacyReads, 1, "the token is re-read once, from /privacy");
   assert.equal(result.afterRefusal.sectionToken, FRESH_TOKEN);
   assert.equal(result.afterRefusal.metaToken, FRESH_TOKEN);
+  assert.equal(result.afterRefusal.hiddenToken, FRESH_TOKEN, "other forms on the page carry the fresh token too");
   assert.equal(result.retryToken, FRESH_TOKEN);
 });
 
