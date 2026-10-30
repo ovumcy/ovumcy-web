@@ -242,10 +242,12 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	sessionID, err := handler.setAuthCookie(c, &result.User, false)
 	if err != nil {
 		spec := authSessionCreateErrorSpec()
+		var fields []SecurityEventField
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
 			spec = authOIDCAccountUnavailableErrorSpec()
+			fields = append(fields, securityEventField("cause", "unsupported_role"))
 		}
-		handler.logSecurityError(c, "auth.oidc_callback", spec)
+		handler.logSecurityError(c, "auth.oidc_callback", spec, fields...)
 		handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
