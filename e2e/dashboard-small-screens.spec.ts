@@ -133,7 +133,33 @@ test.describe('Dashboard on small screens', () => {
     expect((await label.textContent())?.trim()).toBe(labelBefore);
   });
 
-  test('late-cycle quick links have a 24px hit area', async ({ page }) => {
+  test('an htmx Save of the dashboard form refreshes the status header', async ({ page }) => {
+    await registerAndOnboardWithStartDaysAgo(page, 'dash-save-refresh', 10);
+    await page.goto('/dashboard');
+
+    await page.locator('[data-dashboard-cycle-day]').evaluate((node) => {
+      (node as HTMLElement & { staleMark?: boolean }).staleMark = true;
+    });
+    const save = page.waitForResponse(
+      (response) => response.request().method() === 'PATCH' || response.request().method() === 'PUT',
+    );
+    // Tick and submit in one task, before the autosave timer can take the change.
+    await page.locator('[data-dashboard-save-form]').evaluate((form) => {
+      const toggle = form.querySelector<HTMLInputElement>('input[name="is_period"]')!;
+      toggle.checked = !toggle.checked;
+      (form as HTMLFormElement).requestSubmit();
+    });
+    await save;
+    await expect
+      .poll(() =>
+        page
+          .locator('[data-dashboard-cycle-day]')
+          .evaluate((node) => (node as HTMLElement & { staleMark?: boolean }).staleMark === true),
+      )
+      .toBe(false);
+  });
+
+  test('late-cycle quick links have a 24px hit area',async ({ page }) => {
     const anchor = await registerAndOnboardWithStartDaysAgo(page, 'dash-late-links', 60);
     for (const offset of [-84, -56, -28]) {
       await markCycleStartViaAPI(page, shiftISODate(anchor, offset));
