@@ -81,7 +81,7 @@
              arrives here (flash cookie), focused so a keyboard or screen-reader
              user is not dropped onto BODY. An ordinary load has no flash and
              steals no focus. */}}
-        <div id="settings-interface-status" class="save-status text-sm" aria-live="polite">
+        <div id="settings-interface-status" class="save-status settings-status-anchor text-sm" aria-live="polite">
           {{if eq .SuccessKey "settings.success.interface_updated"}}
           <div class="status-ok" role="status" tabindex="-1" data-settings-flash-focus data-flash-key="{{.SuccessKey}}" data-flash-status="success">
             <span class="toast-message-wrap">
