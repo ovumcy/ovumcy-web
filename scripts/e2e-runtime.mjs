@@ -173,6 +173,7 @@ export async function startLocalOIDCProvider({
   const authCodes = new Map();
   const callbackPosts = new Map();
   const accessTokens = new Map();
+  let userInfoAnswers = 0;
   const redirectOrigin = new URL(redirectURL).origin;
 
   const jwksPayload = {
@@ -397,12 +398,20 @@ export async function startLocalOIDCProvider({
           response.end();
           return;
         }
+        userInfoAnswers += 1;
         sendJSON(response, 200, {
           sub: grant.sub,
           email: grant.email,
           email_verified: grant.emailVerified,
           name: grant.name,
         });
+        return;
+      }
+
+      // Lets a spec prove the app asked UserInfo during one sign-in, not just
+      // that the sign-in succeeded.
+      if (request.method === "GET" && url.pathname === "/__e2e/userinfo-answers") {
+        sendJSON(response, 200, { count: userInfoAnswers });
         return;
       }
 

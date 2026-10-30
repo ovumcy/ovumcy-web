@@ -321,11 +321,19 @@ test.describe('Auth: OIDC login entry', () => {
       }
     });
 
+    // A retry after an attempt that already provisioned the account signs in
+    // as a linked identity, which never asks UserInfo; the count keeps that
+    // from passing.
+    const userInfoAnswers = async () =>
+      ((await (await page.request.get(`${providerIssuer}/__e2e/userinfo-answers`)).json()) as { count: number }).count;
+    const answersBefore = await userInfoAnswers();
+
     await page.goto('/login');
     await page.locator('[data-auth-sso-cta]').click();
     await completeOnboardingIfPresent(page);
     await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
     expect(await cookieByName(context, 'ovumcy_auth')).toBeTruthy();
+    expect(await userInfoAnswers()).toBe(answersBefore + 1);
 
     const emailForms = [providerEmail, encodeURIComponent(providerEmail)].map((form) => form.toLowerCase());
     for (const url of appURLs) {
