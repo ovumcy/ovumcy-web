@@ -338,9 +338,9 @@ test("syncs again for a second account in the same tab session", async () => {
     await flushMicrotasks();
     assert.equal(calls.length, 2, "a page rendered for another account must sync for it");
 
-    // The next page renders the zone the sync stored (an empty stored zone
-    // always re-syncs since WEB-368).
-    dom.window.document.body.setAttribute("data-persisted-timezone", "Europe/Belgrade");
+    // A non-empty stored zone other than the detected one, so only the second
+    // account's own mark stops the repeat (an empty one always re-syncs).
+    dom.window.document.body.setAttribute("data-persisted-timezone", "Europe/Paris");
     dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
     await flushMicrotasks();
     assert.equal(calls.length, 2, "the second account is marked done once synced");

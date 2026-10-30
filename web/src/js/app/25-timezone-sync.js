@@ -73,7 +73,8 @@
 
   // syncClientTimezone POSTs the browser-detected IANA timezone to the dedicated
   // owner endpoint, but only when it is safe, differs from the value the server
-  // already persisted, and has not already been synced this session. It attaches
+  // already persisted, and has not already been synced this session (an empty
+  // stored zone always syncs: see the mark check below). It attaches
   // the CSRF token via the X-CSRF-Token header (the ovumcy_csrf cookie is
   // HttpOnly and unreadable from JS; the token is mirrored into the csrf-token
   // meta tag — the same source the htmx CSRF hook uses). It fails silently: a
