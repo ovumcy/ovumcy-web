@@ -89,7 +89,7 @@ func TestEverySurfaceNamesOneNextPeriodAcrossTheOverdueBand(t *testing.T) {
 				heroOnGrid := false
 				for _, month := range []time.Month{time.October, time.November, time.December} {
 					for _, day := range BuildCalendarDayStates(user, time.Date(2026, month, 1, 0, 0, 0, 0, location), logs, stats, now, location) {
-						if !day.InMonth || !(day.IsPredicted || day.IsPredictedStartWindow) {
+						if !day.InMonth || (!day.IsPredicted && !day.IsPredictedStartWindow) {
 							continue
 						}
 						if day.DateString == tc.wantHero {
