@@ -165,7 +165,11 @@ example, with cron:
 
 Adjust `DB_DRIVER`/`DB_PATH` (or `DATABASE_URL` for Postgres) and the secret
 source to match your deployment's actual environment; the same environment
-variables apply regardless of which scheduler invokes the command.
+variables apply regardless of which scheduler invokes the command. Give the
+scheduler the server's `REGISTRATION_MODE` (or an explicit
+`WEBHOOK_BLOCK_PRIVATE_ADDRESSES`) too: the private-address block's default
+follows it, and an unset `REGISTRATION_MODE` is `open`, so a pass started
+without it refuses the LAN targets a closed server would deliver to.
 
 Redirecting the output into a log file, as above, is safe for the scheduled
 pass and for a plain `--dry-run`: neither prints a reminder type or an
@@ -360,7 +364,8 @@ Operator-relevant summary (the full, test-backed claim list lives in
   `http`/`https` schemes only.
 - **Cloud metadata is always refused.** Whatever the setting below, a delivery
   whose host is or resolves to `169.254.0.0/16` (the instance metadata service
-  on AWS, GCP, Azure and most other clouds) or `fd00:ec2::254` (AWS IMDS over
+  on AWS, GCP, Azure and most other clouds), `fd20:ce::254` (GCE over IPv6) or
+  `fd00:ec2::254` (AWS IMDS over
   IPv6) is refused before any connection, and the connection goes to the
   validated IP.
 - **Private-address block.** `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` (default: on

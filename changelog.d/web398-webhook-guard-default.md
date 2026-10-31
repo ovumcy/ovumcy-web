@@ -6,13 +6,15 @@
   loopback, RFC 1918 or `169.254.169.254`, and read the 2xx back from settings as a liveness and
   port oracle for the operator's network. Unset, the guard now follows the registration mode: on
   under `open`, off under `closed`, where household owners target their LAN. An explicit value
-  still wins. Whatever it says, `169.254.0.0/16` and `fd00:ec2::254` are refused, literal or
-  resolved, through the same resolve-and-pin dialer. The server boot and `ovumcy notify` resolve
-  the gate through one function.
+  still wins. Whatever it says, `169.254.0.0/16`, `fd00:ec2::254` and `fd20:ce::254` are
+  refused, literal or resolved, through the same resolve-and-pin dialer, which now tries IPv4
+  records first. The server boot and `ovumcy notify` resolve the gate through one function.
 
   **Upgrading to 2.0.0:** an open-registration instance whose owners deliver to LAN ntfy, Gotify
   or Home Assistant stops reaching those targets until you set
   `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=false` (the startup warning then names the exposure) or close
-  registration. A closed instance with more than one owner should set it to `true`. Webhook
+  registration. A closed instance with more than one owner should set it to `true`. An externally
+  scheduled `ovumcy notify` reads `REGISTRATION_MODE` from its own environment, and unset means
+  `open`: give the cron or systemd job the server's value, or its pass refuses the LAN. Webhook
   delivery ignores `HTTPS_PROXY`; delivering through an egress-only proxy is unsupported and now
   documented as such.
