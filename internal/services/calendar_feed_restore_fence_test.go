@@ -82,6 +82,14 @@ type stubFenceUserStore struct {
 	disarmErr error
 	callCount int
 	journal   *[]string
+	// revoked, revokeErr and revokeCalls drive the session and webhook
+	// revocation (WEB-399). It stays out of journal so the disarm/file/row
+	// orderings the older tests pin are unchanged; revokeAfterDisarm records
+	// the order the two bulk writes ran in.
+	revoked           models.RestoreRevocationCounts
+	revokeErr         error
+	revokeCalls       int
+	revokeAfterDisarm bool
 }
 
 func (s *stubFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) (int64, error) {
@@ -93,6 +101,15 @@ func (s *stubFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) (int
 		return 0, s.disarmErr
 	}
 	return s.disarmed, nil
+}
+
+func (s *stubFenceUserStore) RevokeAllSessionsAndWebhookEndpoints(_ context.Context) (models.RestoreRevocationCounts, error) {
+	s.revokeCalls++
+	s.revokeAfterDisarm = s.callCount > 0
+	if s.revokeErr != nil {
+		return models.RestoreRevocationCounts{}, s.revokeErr
+	}
+	return s.revoked, nil
 }
 
 type stubFenceAnchor struct {
@@ -699,6 +716,10 @@ func (s *countingFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) 
 	}
 	s.calls++
 	return count, nil
+}
+
+func (s *countingFenceUserStore) RevokeAllSessionsAndWebhookEndpoints(_ context.Context) (models.RestoreRevocationCounts, error) {
+	return models.RestoreRevocationCounts{}, nil
 }
 
 // TestCalendarFeedRestoreFenceEnforceFailsTheBootWhenTheMarkerCannotBeStored

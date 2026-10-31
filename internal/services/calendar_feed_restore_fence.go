@@ -20,10 +20,13 @@ type calendarFeedRestoreFenceAppState interface {
 	Delete(ctx context.Context, key string) error
 }
 
-// calendarFeedRestoreFenceUserStore is the single bulk write the fence performs
-// when it cannot prove the database is the one this instance last ran with.
+// calendarFeedRestoreFenceUserStore is the bulk writes the fence performs when
+// it cannot prove the database is the one this instance last ran with: the
+// feed disarm on every such boot, and the session and webhook revocation on a
+// boot that sees a restore (ContinuityBroken).
 type calendarFeedRestoreFenceUserStore interface {
 	DisarmAllCalendarFeedTokens(ctx context.Context) (int64, error)
+	RevokeAllSessionsAndWebhookEndpoints(ctx context.Context) (models.RestoreRevocationCounts, error)
 }
 
 // calendarFeedRestoreFenceAnchor is the half of the fence that lives outside
@@ -80,6 +83,13 @@ type CalendarFeedRestoreFenceOutcome struct {
 	UnanchoredHistory bool
 	// DisarmedFeeds counts the armed rows this pass cleared.
 	DisarmedFeeds int64
+	// Revoked counts what a ContinuityBroken pass revoked beside the feeds
+	// (WEB-399): every account's sessions, and every stored webhook endpoint.
+	// Both live in columns a restore rolls back — auth_session_version and the
+	// webhook revocation epoch — so a restore would otherwise validate every
+	// cookie minted before its backup point again and deliver to endpoints the
+	// owners removed after it. Zero on every other outcome.
+	Revoked models.RestoreRevocationCounts
 }
 
 // CalendarFeedRestoreFence closes the gap the key-epoch sentinel structurally
@@ -186,15 +196,7 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 		if !unanchoredHistory {
 			return fence.record(ctx, CalendarFeedRestoreFenceOutcome{FirstBoot: true}, 0)
 		}
-		disarmed, err := fence.users.DisarmAllCalendarFeedTokens(ctx)
-		if err != nil {
-			return CalendarFeedRestoreFenceOutcome{ContinuityBroken: true, UnanchoredHistory: true}, err
-		}
-		return fence.record(ctx, CalendarFeedRestoreFenceOutcome{
-			ContinuityBroken:  true,
-			UnanchoredHistory: true,
-			DisarmedFeeds:     disarmed,
-		}, disarmed)
+		return fence.revokeRestored(ctx, CalendarFeedRestoreFenceOutcome{ContinuityBroken: true, UnanchoredHistory: true})
 	}
 	// Equality is the only proof of continuity, and it needs both halves: a
 	// database carrying no token at all is a database this fence never wrote,
@@ -202,12 +204,34 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 	if continuityHolds(anchorFound, storedFound, anchored, stored) {
 		return CalendarFeedRestoreFenceOutcome{}, nil
 	}
+	return fence.revokeRestored(ctx, CalendarFeedRestoreFenceOutcome{ContinuityBroken: true})
+}
 
+// revokeRestored is every ContinuityBroken boot's answer: disarm every armed
+// feed, then revoke every session and clear every webhook endpoint, and only
+// then record the new token. Feeds are not the only revocation a restore rolls
+// back (WEB-399): a sign-out, password change, operator reset or account
+// deletion is recorded in auth_session_version or in the row itself, and a
+// webhook removal in webhook_config_version, all inside the dump. Nothing in
+// the restored rows says which of those happened after the backup point, so
+// all of them are revoked, as all feeds are.
+//
+// The same ordering as the feed disarm alone: both writes precede the record,
+// so a crash in between re-runs the pass on the next boot. A re-run bumps
+// every session version once more and clears endpoints already cleared, which
+// costs nothing a first run did not already cost.
+func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outcome CalendarFeedRestoreFenceOutcome) (CalendarFeedRestoreFenceOutcome, error) {
 	disarmed, err := fence.users.DisarmAllCalendarFeedTokens(ctx)
 	if err != nil {
-		return CalendarFeedRestoreFenceOutcome{ContinuityBroken: true}, err
+		return outcome, err
 	}
-	return fence.record(ctx, CalendarFeedRestoreFenceOutcome{ContinuityBroken: true, DisarmedFeeds: disarmed}, disarmed)
+	outcome.DisarmedFeeds = disarmed
+	revoked, err := fence.users.RevokeAllSessionsAndWebhookEndpoints(ctx)
+	if err != nil {
+		return outcome, err
+	}
+	outcome.Revoked = revoked
+	return fence.record(ctx, outcome, disarmed)
 }
 
 // Advance records that the set of armed calendar feeds just changed, in both
