@@ -72,8 +72,9 @@ func TestClearAllDataKeepsNoDayInsertedConcurrentlyOnPostgres(t *testing.T) {
 			break
 		}
 		var waiting int64
-		if err := database.Raw(`SELECT count(*) FROM pg_locks WHERE NOT granted`).Scan(&waiting).Error; err != nil {
-			t.Fatalf("read pg_locks: %v", err)
+		if err := database.Raw(`SELECT count(*) FROM pg_stat_activity
+			WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%FOR UPDATE%'`).Scan(&waiting).Error; err != nil {
+			t.Fatalf("read pg_stat_activity: %v", err)
 		}
 		if waiting > 0 {
 			break
