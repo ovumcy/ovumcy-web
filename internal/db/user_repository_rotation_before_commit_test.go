@@ -14,8 +14,8 @@ import (
 // TestRecoveryCodeRotationSurfacesAFailedStatementAndWritesNothing covers the
 // two statements a rotation runs before its hook: the UPDATE itself and the
 // re-read of the version it stored. Either failing must come back as the
-// rotation's error, with the hook never called, the row as it was and the
-// calendar-feed fence untouched. The database refuses the statement through a
+// rotation's error, with the hook never called and the row as it was; the
+// calendar-feed fence was already advanced ahead of the write (WEB-397). The database refuses the statement through a
 // gorm callback, the one way to fail it while the connection still answers.
 func TestRecoveryCodeRotationSurfacesAFailedStatementAndWritesNothing(t *testing.T) {
 	t.Parallel()
@@ -68,9 +68,7 @@ func TestRecoveryCodeRotationSurfacesAFailedStatementAndWritesNothing(t *testing
 				if after := reloadUserForRevealMarkTest(t, repo, before.ID); !reflect.DeepEqual(before, after) {
 					t.Fatalf("a rotation whose statement failed changed the row:\nbefore %+v\nafter  %+v", before, after)
 				}
-				if fence.calls != 0 {
-					t.Fatalf("a failed rotation advanced the calendar-feed fence %d time(s)", fence.calls)
-				}
+				assertRotationAdvancedTheFenceAhead(t, rotation, fence)
 			})
 		}
 	}
@@ -79,8 +77,8 @@ func TestRecoveryCodeRotationSurfacesAFailedStatementAndWritesNothing(t *testing
 // The three recovery-code rotations run their caller's delivery hook inside
 // the write's transaction, before it commits (WEB-58). A hook that fails must
 // leave the users row exactly as it was — the old code, the old password, the
-// old session version, the calendar feed and its reveal marks — and must not
-// advance the calendar-feed fence for a revocation that never happened. A hook
+// old session version, the calendar feed and its reveal marks. The fence was
+// advanced ahead of the write and stays advanced, which is harmless. A hook
 // that succeeds must see the version the row now holds, re-read from it.
 
 type recoveryRotationUnderTest struct {
@@ -162,10 +160,25 @@ func TestRecoveryCodeRotationWritesNothingWhenItsDeliveryFails(t *testing.T) {
 			if !reflect.DeepEqual(before, after) {
 				t.Fatalf("a rotation whose delivery failed changed the row:\nbefore %+v\nafter  %+v", before, after)
 			}
-			if fence.calls != 0 {
-				t.Fatalf("a rolled-back rotation advanced the calendar-feed fence %d time(s)", fence.calls)
-			}
+			assertRotationAdvancedTheFenceAhead(t, rotation, fence)
 		})
+	}
+}
+
+// assertRotationAdvancedTheFenceAhead pins WEB-397's ordering on a write that
+// did not commit: a rotation that clears the feed advances the fence BEFORE its
+// write, so it has advanced exactly once even though the write rolled back. An
+// advance with no revocation behind it is harmless — both halves agree on the
+// new token — while one placed after the commit leaves a crash window a restore
+// crosses. A rotation that never touches the feed never advances.
+func assertRotationAdvancedTheFenceAhead(t *testing.T, rotation recoveryRotationUnderTest, fence *refusingCalendarFeedFence) {
+	t.Helper()
+	want := 0
+	if rotation.advancesFence {
+		want = 1
+	}
+	if fence.calls != want {
+		t.Fatalf("%s advanced the calendar-feed fence %d time(s) ahead of a write that did not commit, want %d", rotation.name, fence.calls, want)
 	}
 }
 
@@ -201,7 +214,7 @@ func TestRecoveryCodeRotationHandsItsHookTheStoredSessionVersion(t *testing.T) {
 				wantFence = 1
 			}
 			if fence.calls != wantFence {
-				t.Fatalf("expected %d fence advance(s) after the commit, got %d", wantFence, fence.calls)
+				t.Fatalf("expected %d fence advance(s) for the committed rotation, got %d", wantFence, fence.calls)
 			}
 		})
 	}
