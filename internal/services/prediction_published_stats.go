@@ -352,6 +352,13 @@ func followUpcomingPrediction(published *CycleStats, user *models.User, resolved
 // suppresses the fertility half before any roll — so the check is a backstop
 // against the two verdicts drifting apart, not a live branch.
 //
+// The "fertile" reading is a backstop too since WEB-378: a rolled window covers
+// today only once the running cycle is past its projection length, where a
+// regular account has the fertility half withheld before the roll, and
+// irregular range mode, which keeps that half, never rolls (above). Kept so the
+// status and the phase stay one answer if those gates drift; regression:
+// TestNoRolledWindowCoversTodayInAnyMode.
+//
 // The phase keeps the running cycle's answer while a day is published: the roll
 // only happens once that cycle's ovulation is behind today, and "luteal" is the
 // phase the dashboard names for it, the rolled day ahead notwithstanding. Two
