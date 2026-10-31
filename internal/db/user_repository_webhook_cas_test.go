@@ -60,6 +60,23 @@ func TestSaveWebhookSettingsRefusesARowAnotherWriterMovedOn(t *testing.T) {
 	}
 }
 
+// TestSaveWebhookSettingsSurfacesAWriteFailureAsItself: a failed UPDATE is a
+// storage error, never reported as a lost pin the caller would retry.
+func TestSaveWebhookSettingsSurfacesAWriteFailureAsItself(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-cas-write-fails@example.com")
+	sqlDB, err := repo.database.DB()
+	if err != nil {
+		t.Fatalf("database handle: %v", err)
+	}
+	_ = sqlDB.Close()
+
+	err = repo.SaveWebhookSettings(context.Background(), user.ID, models.WebhookSettingsColumns{ReminderLeadDays: 3})
+	if err == nil || errors.Is(err, models.ErrWebhookConfigVersionChanged) {
+		t.Fatalf("expected the storage error itself, got %v", err)
+	}
+}
+
 // TestSaveWebhookSettingsRefusesAMissingOwner keeps the pin from reading a
 // zero-row UPDATE as success.
 func TestSaveWebhookSettingsRefusesAMissingOwner(t *testing.T) {

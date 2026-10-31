@@ -33,8 +33,8 @@ import {
 
 const EGRESS_CARD = '#settings-egress';
 const WEBHOOK_ENDPOINT = 'https://hooks.example.com/ovumcy/e2e-endpoint';
-// The ledger shows host[:port] and a masked path, never the whole endpoint.
-const WEBHOOK_HOST = 'hooks.example.com/ovumcy/…/oint';
+// The ledger shows host[:port] only, never any part of the path.
+const WEBHOOK_HOST = 'hooks.example.com';
 
 async function registerOwnerAndOpenSettings(page: Page, prefix: string): Promise<void> {
   const credentials = createCredentials(prefix);
