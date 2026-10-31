@@ -269,7 +269,10 @@ func PredictionsSuppressed(user *models.User, stats CycleStats) bool {
 // (27/28/28/36) it is missed on cycle day 29 while the average-first band only
 // opens on day 31.
 func ProjectionChainSuppressed(user *models.User, stats CycleStats) bool {
-	return PredictionsSuppressed(user, stats) || DashboardCyclePastReferenceLength(user, stats) || DashboardCyclePastProjectionLength(user, stats)
+	// Measured directly, not through DashboardCyclePastProjectionLength: that
+	// fertility signal leaves out irregular range mode, whose chained periods
+	// are still rolled from the missed median start.
+	return PredictionsSuppressed(user, stats) || DashboardCycleDayLooksStale(stats.CurrentCycleDay, dashboardCycleOverdueLength(user, stats))
 }
 
 // DashboardCyclePastProjectionLength is the fertility signal for the days the

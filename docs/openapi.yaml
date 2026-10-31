@@ -1087,7 +1087,9 @@ components:
             `ovulation_impossible` is true; and when the window would end after
             `9999-12-31`. The last two leave `suppression.fertility` false. Also
             `unknown` while `cycle_data_stale` is true, with the dates still
-            reported unless a suppression signal withholds them.
+            reported unless a suppression signal withholds them, and under
+            `cycle_past_projection_length`, where `cycle_data_stale` is still
+            false.
         fertility_basis:
           type: [string, "null"]
           enum: [projection, confirmed, null]
