@@ -39,6 +39,46 @@ func TestIsStalePostgresContainerTouchesOnlyOldLabelledContainers(t *testing.T) 
 	}
 }
 
+// TestStaleSweepAgainstARealDaemon starts three idle containers from the
+// already-pulled image: a labelled one backdated past the age, a freshly
+// labelled one and an unlabelled one. After the sweep only the backdated one
+// may be gone.
+func TestStaleSweepAgainstARealDaemon(t *testing.T) {
+	requireDockerBinary(t)
+	ensurePostgresImageAvailable(t)
+
+	start := func(args ...string) string {
+		full := append([]string{"run", "-d", "--rm", "--entrypoint", "sleep"}, args...)
+		full = append(full, postgresTestImage, "600")
+		id := runDockerCommand(t, full...)
+		t.Cleanup(func() { _ = runDockerCommandAllowFailure("rm", "-f", "-v", id) })
+		return id
+	}
+	label := func(createdAt time.Time) []string {
+		return []string{"--label", fmt.Sprintf("%s=%d", PostgresContainerLabel, createdAt.UnixNano())}
+	}
+	running := func(id string) bool {
+		out, err := runDockerCommandWithError("ps", "-q", "--no-trunc", "--filter", "id="+id)
+		return err == nil && strings.TrimSpace(out) != ""
+	}
+
+	backdated := start(label(time.Now().Add(-2 * staleContainerAge))...)
+	fresh := start(label(time.Now())...)
+	unlabelled := start()
+
+	removeStalePostgresContainers()
+
+	if running(backdated) {
+		t.Fatalf("the backdated labelled container %s survived the sweep", backdated)
+	}
+	if !running(fresh) {
+		t.Fatalf("the freshly labelled container %s was removed", fresh)
+	}
+	if !running(unlabelled) {
+		t.Fatalf("the unlabelled container %s was removed", unlabelled)
+	}
+}
+
 // TestRemoveStalePostgresContainersRemovesOnlyStaleListedIDs drives the sweep
 // through the injected docker runner: only a stale labelled row is removed,
 // with -f -v, and a malformed row is skipped.
