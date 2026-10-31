@@ -942,6 +942,37 @@ func TestGuardedDialContext(t *testing.T) {
 		}
 	})
 
+	t.Run("failed IPv4 falls back to IPv6 within a split budget", func(t *testing.T) {
+		client, server := net.Pipe()
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+		var dialed []string
+		var budgets []time.Duration
+		dial := func(attemptCtx context.Context, _ string, addr string) (net.Conn, error) {
+			dialed = append(dialed, addr)
+			deadline, ok := attemptCtx.Deadline()
+			if !ok {
+				t.Fatal("each dial attempt must carry its own deadline")
+			}
+			budgets = append(budgets, time.Until(deadline))
+			if addr == "8.8.8.8:443" {
+				return nil, errors.New("connect: no route to host")
+			}
+			return client, nil
+		}
+		dialFn := guardedDialContext(dial, resolverFor("ntfy.example.io", "2001:4860:4860::8888", "8.8.8.8"), isMetadataIP)
+
+		if _, err := dialFn(ctx, "tcp", "ntfy.example.io:443"); err != nil {
+			t.Fatalf("expected the IPv6 record to connect after the IPv4 one failed, got %v", err)
+		}
+		if len(dialed) != 2 || dialed[0] != "8.8.8.8:443" || dialed[1] != "[2001:4860:4860::8888]:443" {
+			t.Fatalf("expected IPv4 then IPv6, got %v", dialed)
+		}
+		if budgets[0] > webhookPhaseTimeout/2 {
+			t.Fatalf("the first of two attempts must get at most half the phase budget, got %v", budgets[0])
+		}
+	})
+
 	t.Run("resolver error propagates without dialing", func(t *testing.T) {
 		stub := &stubDial{}
 		dialFn := guardedDialContext(stub.dial, fakeResolver{}, isPrivateIP) // empty map → unknown host errors

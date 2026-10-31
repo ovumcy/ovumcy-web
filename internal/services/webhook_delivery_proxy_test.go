@@ -20,3 +20,17 @@ func TestWebhookHTTPClientIgnoresProxyEnvironment(t *testing.T) {
 		t.Fatal("the delivery transport must not consult a proxy")
 	}
 }
+
+// TestWebhookDialAttemptTimeoutSplitsThePhaseBudget pins the per-record share
+// of the dial phase and its floor.
+func TestWebhookDialAttemptTimeoutSplitsThePhaseBudget(t *testing.T) {
+	if got := webhookDialAttemptTimeout(1); got != webhookPhaseTimeout {
+		t.Fatalf("the last attempt gets the whole phase budget, got %v", got)
+	}
+	if got := webhookDialAttemptTimeout(2); got != webhookPhaseTimeout/2 {
+		t.Fatalf("the first of two attempts gets half, got %v", got)
+	}
+	if got := webhookDialAttemptTimeout(8); got != webhookDialAttemptMinimum {
+		t.Fatalf("a share below the floor is raised to %v, got %v", webhookDialAttemptMinimum, got)
+	}
+}

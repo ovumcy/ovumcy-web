@@ -271,16 +271,19 @@ func guardedDialContext(dial dialFunc, resolver ipResolver, denied deniedAddress
 			}
 		}
 
-		// Dial a validated IP directly, trying each until one connects. IPv4
-		// first: the attempts are sequential, each with the full phase timeout,
-		// so a blackholed AAAA tried first would eat half the delivery budget —
-		// the race the stock dialer's Happy Eyeballs used to run for us.
+		// Dial a validated IP directly, trying each until one connects. The
+		// attempts are sequential, so IPv4 goes first (a blackholed AAAA is the
+		// common broken record) and the phase budget is split across the
+		// records the way net.Dialer splits it: one dead record must not eat
+		// the time the next one needed.
 		sort.SliceStable(ips, func(i, j int) bool {
 			return ips[i].To4() != nil && ips[j].To4() == nil
 		})
 		var lastErr error
-		for _, ip := range ips {
-			conn, err := dial(ctx, network, net.JoinHostPort(ip.String(), port))
+		for i, ip := range ips {
+			attemptCtx, cancel := context.WithTimeout(ctx, webhookDialAttemptTimeout(len(ips)-i))
+			conn, err := dial(attemptCtx, network, net.JoinHostPort(ip.String(), port))
+			cancel()
 			if err == nil {
 				return conn, nil
 			}
@@ -288,6 +291,20 @@ func guardedDialContext(dial dialFunc, resolver ipResolver, denied deniedAddress
 		}
 		return nil, lastErr
 	}
+}
+
+// webhookDialAttemptMinimum is net.Dialer's floor for a split dial deadline:
+// below it a slow but healthy connect is cut off for nothing.
+const webhookDialAttemptMinimum = 2 * time.Second
+
+// webhookDialAttemptTimeout is one attempt's share of webhookPhaseTimeout when
+// remaining records are still to be tried, floored at webhookDialAttemptMinimum.
+func webhookDialAttemptTimeout(remaining int) time.Duration {
+	share := webhookPhaseTimeout / time.Duration(remaining)
+	if share < webhookDialAttemptMinimum {
+		return webhookDialAttemptMinimum
+	}
+	return share
 }
 
 // Deliver POSTs the payload to decryptedURL under the hardened envelope, in
