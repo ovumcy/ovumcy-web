@@ -54,10 +54,10 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 | `github.com/remyoudompheng/bigfft` | BSD-3-Clause | [license text](https://github.com/remyoudompheng/bigfft/blob/24d4a6f8daec/LICENSE) |
 | `github.com/tinylib/msgp/msgp` | MIT | [license text](https://github.com/tinylib/msgp/blob/v1.6.5/LICENSE) |
 | `github.com/valyala/bytebufferpool` | MIT | [license text](https://github.com/valyala/bytebufferpool/blob/v1.0.0/LICENSE) |
-| `github.com/valyala/fasthttp/reuseport` | MIT | [license text](https://github.com/valyala/fasthttp/blob/v1.76.0/reuseport/LICENSE) |
-| `github.com/valyala/fasthttp` | MIT | [license text](https://github.com/valyala/fasthttp/blob/v1.76.0/LICENSE) |
+| `github.com/valyala/fasthttp/reuseport` | MIT | [license text](https://github.com/valyala/fasthttp/blob/v1.77.0/reuseport/LICENSE) |
+| `github.com/valyala/fasthttp` | MIT | [license text](https://github.com/valyala/fasthttp/blob/v1.77.0/LICENSE) |
 | `golang.org/x/crypto` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/crypto/+/v0.58.0:LICENSE) |
-| `golang.org/x/net/idna` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/net/+/v0.61.0:LICENSE) |
+| `golang.org/x/net/idna` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/net/+/v0.62.0:LICENSE) |
 | `golang.org/x/oauth2` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/oauth2/+/v0.37.0:LICENSE) |
 | `golang.org/x/sync/semaphore` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/sync/+/v0.24.0:LICENSE) |
 | `golang.org/x/sys` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/sys/+/v0.49.0:LICENSE) |
