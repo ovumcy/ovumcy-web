@@ -86,7 +86,7 @@
         <span class="legend-item"><span class="legend-swatch legend-swatch-start-window" aria-hidden="true"></span>{{t .Messages "calendar.legend.start_window"}}</span>
         {{end}}
         {{if .CalendarLegend.Fertility}}
-        <span class="legend-item"><span class="legend-swatch legend-swatch-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.fertility"}}</span>
+        <span class="legend-item" data-legend-key="calendar.legend.fertility"><span class="legend-swatch legend-swatch-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.fertility"}}</span>
         {{end}}
         {{if .CalendarLegend.PredictedPeriodInFertility}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-overlap-period-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period_in_fertility"}}</span>

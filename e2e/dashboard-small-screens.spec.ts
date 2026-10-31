@@ -66,7 +66,7 @@ test.describe('Dashboard on small screens', () => {
     const today = page.locator('[data-cycle-ribbon-day][data-today="true"]');
     await expect(today).toHaveAttribute('aria-label', new RegExp(localeText('en', 'nav.today')));
     const fertile = page.locator('[data-cycle-ribbon-day][data-fertile="true"]').first();
-    await expect(fertile).toHaveAttribute('aria-label', new RegExp(localeText('en', 'dashboard.fertile_window')));
+    await expect(fertile).toHaveAttribute('aria-label', new RegExp(localeText('en', 'dashboard.fertile_window').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   });
 
   test('a cycle past the 60-day ribbon says it is cut off', async ({ page }) => {

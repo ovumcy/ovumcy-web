@@ -68,7 +68,7 @@
                        quantity the calendar legend calls the predicted start
                        window, and a different quantity from the period days
                        below, so each carries its own string. */}}
-                  {{printf (t .Messages "dashboard.next_period_start_window") (formatLocalizedDate .Lang .DisplayNextPeriodRangeStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodRangeEnd "display")}}
+                  <span data-next-period-key="dashboard.next_period_start_window">{{printf (t .Messages "dashboard.next_period_start_window") (formatLocalizedDate .Lang .DisplayNextPeriodRangeStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodRangeEnd "display")}}</span>
                 {{else if .DisplayNextPeriodNeedsData}}
                   {{/* No date: the irregular thin-history tier is withheld on
                        every surface, and a caption beside a date is not a
@@ -81,7 +81,7 @@
                 {{else}}
                   {{/* First to last predicted period day — the calendar legend's
                        predicted period days. */}}
-                  {{printf (t .Messages "dashboard.next_period_days") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodEnd "display")}}
+                  <span data-next-period-key="dashboard.next_period_days">{{printf (t .Messages "dashboard.next_period_days") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodEnd "display")}}</span>
                 {{end}}
               </span>
             </span>

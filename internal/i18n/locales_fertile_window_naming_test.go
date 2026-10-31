@@ -28,6 +28,45 @@ func TestFertileWindowSurfacesShareTheCanonicalName(t *testing.T) {
 	}
 }
 
+// A prediction is an estimate on every surface, whatever the data confidence:
+// the fertility chips, the legend and the next-period days carry the qualifier
+// in their own wording, not only beside an Approximate cycle hero.
+func TestPredictionSurfacesCarryAnEstimateQualifier(t *testing.T) {
+	qualifiers := map[string]*regexp.Regexp{
+		LangEN: regexp.MustCompile(`(?i)\bestimate`),
+		LangRU: regexp.MustCompile(`(?i)оценк|ориентировочн`),
+		LangDE: regexp.MustCompile(`(?i)geschätzt|schätzung`),
+		LangES: regexp.MustCompile(`(?i)estimad|estimación`),
+		LangFR: regexp.MustCompile(`(?i)estimé|estimation`),
+		LangIT: regexp.MustCompile(`(?i)stimat|stima\b`),
+	}
+	keys := []string{
+		"dashboard.high_fertility_badge",
+		"dashboard.fertility_badge_warning",
+		"dashboard.fertility_badge_positive",
+		"dashboard.fertile_window",
+		"calendar.legend.fertility",
+		"calendar.fertility_estimate",
+		"dashboard.next_period_days",
+		"dashboard.next_period_start_window",
+	}
+	all := mustLoadAllLocaleMessages(t)
+	if len(all) != len(qualifiers) {
+		t.Fatalf("loaded %d locales, the qualifier table covers %d", len(all), len(qualifiers))
+	}
+	for language, messages := range all {
+		qualifier := qualifiers[language]
+		if qualifier == nil {
+			t.Fatalf("no estimate qualifier pattern for locale %s", language)
+		}
+		for _, key := range keys {
+			if !qualifier.MatchString(messages[key]) {
+				t.Errorf("%s %s = %q carries no estimate qualifier", language, key, messages[key])
+			}
+		}
+	}
+}
+
 // The product addresses the owner without a gendered form; feminine wording is
 // reserved for copy about the cycle itself.
 func TestItalianDirectAddressIsNotGendered(t *testing.T) {
