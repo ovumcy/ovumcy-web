@@ -43,7 +43,7 @@ WORKDIR /app
 # bump both together with the base image digest above. The runtime stage is
 # `scratch` and carries no package database, so the image scan cannot report
 # these two packages' versions; the pin is the only record of them.
-RUN apk add --no-cache tzdata=2026d-r0 ca-certificates=20260909-r0 \
+RUN apk add --no-cache tzdata=2026e-r0 ca-certificates=20261020-r0 \
     && addgroup -S -g 10001 ovumcy \
     && adduser -S -D -H -u 10001 -G ovumcy -h /app ovumcy \
     && mkdir -p /app/data /app/fence
