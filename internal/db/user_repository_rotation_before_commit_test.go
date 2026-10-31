@@ -15,8 +15,9 @@ import (
 // two statements a rotation runs before its hook: the UPDATE itself and the
 // re-read of the version it stored. Either failing must come back as the
 // rotation's error, with the hook never called and the row as it was; the
-// calendar-feed fence was already advanced ahead of the write (WEB-397). The database refuses the statement through a
-// gorm callback, the one way to fail it while the connection still answers.
+// calendar-feed fence was already advanced ahead of the write (WEB-397). The
+// database refuses the statement through a gorm callback, the one way to fail
+// it while the connection still answers.
 func TestRecoveryCodeRotationSurfacesAFailedStatementAndWritesNothing(t *testing.T) {
 	t.Parallel()
 

@@ -1414,6 +1414,9 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 // re-generates a fresh feed afterward. Because the clear rides the same CAS
 // UPDATE, a replayed/concurrent redeem that loses the race (RowsAffected == 0)
 // neither rotates the credential nor clears the feed — both stay consistent.
+// The restore fence is advanced ahead of the CAS (WEB-397), so a losing redeem
+// still leaves it advanced; that is harmless, because both halves agree on the
+// new token and the feed stays armed.
 //
 // recovery_code_revealed_at rides that CAS as well, NULLed because the fresh
 // code arms its own one-time reveal (migration 036) — and for the same

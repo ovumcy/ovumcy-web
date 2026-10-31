@@ -186,10 +186,14 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 	// that advances after leaves a crash window in which the row is revoked and
 	// the fence is not, and a restore of a backup taken before the revocation
 	// then compares equal and revives the feed.
-	ordered := sortedNamesOf(writers)
-	for name := range alwaysAdvancingWriters {
-		ordered = append(ordered, name)
+	mustAdvanceFirst := make(map[string]bool, len(writers)+len(alwaysAdvancingWriters))
+	for name := range writers {
+		mustAdvanceFirst[name] = true
 	}
+	for name := range alwaysAdvancingWriters {
+		mustAdvanceFirst[name] = true
+	}
+	ordered := sortedNamesOf(mustAdvanceFirst)
 	for _, name := range ordered {
 		if _, exempt := exemptCalendarFeedWriters[name]; exempt {
 			continue
