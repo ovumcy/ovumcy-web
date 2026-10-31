@@ -117,6 +117,7 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	"recovery code unavailable":                       "settings.error.recovery_code_unavailable",
 	"invalid webhook url":                             "settings.error.invalid_webhook_url",
 	"webhook url unreadable":                          "settings.error.webhook_url_unreadable",
+	"webhook settings changed elsewhere":              "settings.error.webhook_save_conflict",
 	"failed to update webhook settings":               "settings.error.webhook_update_failed",
 	"failed to update calendar feed":                  "settings.error.calendar_feed_update_failed",
 	"invalid symptom name":                            "settings.symptoms.error.name_required",

@@ -234,7 +234,7 @@ An operator with local shell access to the instance can also inspect or set an
 owner's webhook configuration directly, without going through the browser:
 
 ```
-usage: ovumcy webhook <show|set> <email> [--enabled=<bool>] [--notify-period=<bool>] [--notify-ovulation=<bool>] [--reminder-lead-days=<0-14>] [--url-stdin] [--clear-url] [--dry-run]
+usage: ovumcy webhook <show|set> <email> [--enabled=<bool>] [--notify-period=<bool>] [--notify-ovulation=<bool>] [--reminder-lead-days=<0-14>] [--url-env | --url-stdin | --clear-url] [--dry-run]
 ```
 
 - `ovumcy webhook show <email>` prints the owner's current settings: whether
@@ -246,19 +246,22 @@ usage: ovumcy webhook <show|set> <email> [--enabled=<bool>] [--notify-period=<bo
 - The webhook URL is a **secret** (it can embed an ntfy/Gotify access token)
   and is deliberately **never accepted as a command-line argument** — argv
   leaks into shell history and process listings on a shared host. Supply it
-  instead via the `OVUMCY_WEBHOOK_URL` environment variable for the single
-  invocation, or interactively with `--url-stdin` (a no-echo terminal prompt,
+  instead via the `OVUMCY_WEBHOOK_URL` environment variable together with
+  `--url-env`, or interactively with `--url-stdin` (a no-echo terminal prompt,
   or the first line of piped stdin). It is never echoed back.
-- Those two sources are **mutually exclusive**: supplying both is refused with
-  an error naming each of them, and nothing is written. A left-over export — an
-  operator profile, an earlier invocation, a compose `env_file` inherited by
-  `docker compose run` — would otherwise silently outrank the URL you just
-  piped in and arm that owner's reminders at the wrong endpoint. Unset the
-  variable, or drop the flag. (`--clear-url` is unaffected: it removes any
-  stored endpoint, so it cannot arm the wrong one, and it still works with the
-  variable exported.)
-- `--clear-url` removes any stored endpoint; `--dry-run` validates and prints
-  the result without writing anything.
+- The variable is read **only** when `--url-env` asks for it. A left-over
+  export — an operator profile, an earlier invocation, a compose `env_file`
+  inherited by `docker compose run` — is otherwise ignored, so a toggle-only
+  edit keeps the stored endpoint. `--url-env`, `--url-stdin` and `--clear-url`
+  are mutually exclusive; naming more than one is refused and nothing is
+  written. `--url-env` with the variable empty is refused too.
+- `--clear-url` removes any stored endpoint and turns delivery off in the same
+  write (adding `--enabled=true` is refused: a webhook with no endpoint cannot
+  be armed). `--dry-run` validates and prints the result without writing
+  anything.
+- A `set` that finds the owner's webhook settings changed between its read and
+  its write — the owner saved or removed the endpoint in the browser meanwhile
+  — writes nothing and says so; run it again.
 
 This CLI path and the Settings-page form write to the exact same columns —
 either is fine for a self-hosted single-owner setup, and the CLI is

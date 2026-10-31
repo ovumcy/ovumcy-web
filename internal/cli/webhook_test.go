@@ -455,7 +455,8 @@ func TestRunWebhookCommandClearURLDisablesEndpoint(t *testing.T) {
 }
 
 // TestRunWebhookCommandURLFromEnv proves the endpoint can be supplied via the
-// OVUMCY_WEBHOOK_URL env var (never argv) and is stored as ciphertext.
+// OVUMCY_WEBHOOK_URL env var named by --url-env (never argv) and is stored as
+// ciphertext.
 func TestRunWebhookCommandURLFromEnv(t *testing.T) {
 	// Not parallel: mutates process env.
 	databasePath := createCLIWebhookDatabase(t)
@@ -467,7 +468,7 @@ func TestRunWebhookCommandURLFromEnv(t *testing.T) {
 	if err := runWebhookCommand(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
-		[]string{"set", "owner@example.com", "--enabled=true"},
+		[]string{"set", "owner@example.com", "--enabled=true", "--url-env"},
 		strings.NewReader(""),
 		&output,
 	); err != nil {
@@ -490,14 +491,77 @@ func TestRunWebhookCommandURLFromEnv(t *testing.T) {
 // fixture, so a test can tell which of the two sources a save actually used.
 const testWebhookURLFromStdin = "https://gotify.example/message?token=tk_STDINVALUE456"
 
-// TestRunWebhookCommandEnvAndStdinRejected is the precedence guard: when the
-// endpoint arrives from BOTH the OVUMCY_WEBHOOK_URL environment variable and
-// --url-stdin, the command refuses instead of silently picking one. A stale
-// exported value (an operator profile, a prior invocation, a compose env_file
-// inherited by `docker compose run`) would otherwise arm this owner's reminders
-// at an endpoint the operator never typed — on a household instance plausibly
-// another owner's topic. The refusal happens before the database is opened, so
-// neither URL is persisted.
+// TestRunWebhookCommandAmbientEnvIsIgnoredWithoutURLEnv is the L8 guard: an
+// exported OVUMCY_WEBHOOK_URL (an operator profile, a prior invocation, a
+// compose env_file inherited by `docker compose run`) must not re-point an
+// owner's reminders on a flag-only edit. The variable is read only when
+// --url-env names it as the source.
+func TestRunWebhookCommandAmbientEnvIsIgnoredWithoutURLEnv(t *testing.T) {
+	// Not parallel: mutates process env.
+	databasePath := createCLIWebhookDatabase(t)
+	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
+
+	t.Setenv(webhookURLEnv, "")
+	var armed bytes.Buffer
+	if err := runWebhookCommand(
+		sqliteConfig(databasePath),
+		testWebhookSecretKey,
+		[]string{"set", "owner@example.com", "--enabled=true", "--url-stdin"},
+		strings.NewReader(testWebhookURLFromStdin+"\n"),
+		&armed,
+	); err != nil {
+		t.Fatalf("runWebhookCommand(arm via stdin) returned error: %v", err)
+	}
+
+	t.Setenv(webhookURLEnv, testWebhookURLWithToken)
+	var edited bytes.Buffer
+	if err := runWebhookCommand(
+		sqliteConfig(databasePath),
+		testWebhookSecretKey,
+		[]string{"set", "owner@example.com", "--notify-ovulation=true"},
+		strings.NewReader(""),
+		&edited,
+	); err != nil {
+		t.Fatalf("runWebhookCommand(flag-only edit) returned error: %v", err)
+	}
+
+	row := loadWebhookRow(t, databasePath, owner.ID)
+	svc := services.NewWebhookSettingsService(nil, []byte(testWebhookSecretKey))
+	plaintext, err := svc.DecryptWebhookURL(owner.ID, row.WebhookURL)
+	if err != nil {
+		t.Fatalf("DecryptWebhookURL: %v", err)
+	}
+	if plaintext != testWebhookURLFromStdin {
+		t.Fatal("a flag-only edit re-pointed the endpoint at an ambient environment variable")
+	}
+}
+
+// TestRunWebhookCommandURLEnvRefusesAnEmptyVariable keeps --url-env from
+// meaning "clear" or "keep" when the variable it names is unset.
+func TestRunWebhookCommandURLEnvRefusesAnEmptyVariable(t *testing.T) {
+	// Not parallel: mutates process env.
+	databasePath := createCLIWebhookDatabase(t)
+	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
+
+	t.Setenv(webhookURLEnv, "  ")
+	var output bytes.Buffer
+	err := runWebhookCommand(
+		sqliteConfig(databasePath),
+		testWebhookSecretKey,
+		[]string{"set", "owner@example.com", "--enabled=true", "--url-env"},
+		strings.NewReader(""),
+		&output,
+	)
+	if err == nil || !strings.Contains(err.Error(), webhookURLEnv) {
+		t.Fatalf("expected --url-env with an empty %s refused naming it, got %v", webhookURLEnv, err)
+	}
+	if row := loadWebhookRow(t, databasePath, owner.ID); row.WebhookURL != "" || row.WebhookEnabled {
+		t.Fatal("a refused --url-env wrote settings")
+	}
+}
+
+// TestRunWebhookCommandEnvAndStdinRejected: naming two URL sources is refused
+// before the database is opened, so neither URL is persisted.
 func TestRunWebhookCommandEnvAndStdinRejected(t *testing.T) {
 	// Not parallel: mutates process env.
 	databasePath := createCLIWebhookDatabase(t)
@@ -509,15 +573,15 @@ func TestRunWebhookCommandEnvAndStdinRejected(t *testing.T) {
 	err := runWebhookCommand(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
-		[]string{"set", "owner@example.com", "--enabled=true", "--url-stdin"},
+		[]string{"set", "owner@example.com", "--enabled=true", "--url-env", "--url-stdin"},
 		strings.NewReader(testWebhookURLFromStdin+"\n"),
 		&output,
 	)
 	if err == nil {
-		t.Fatal("supplying the endpoint from both the environment and --url-stdin must be refused")
+		t.Fatal("naming both --url-env and --url-stdin must be refused")
 	}
 	// The refusal names both sources so the operator knows what to remove.
-	for _, want := range []string{webhookURLEnv, "--url-stdin"} {
+	for _, want := range []string{"--url-env", "--url-stdin"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("ambiguity error should name %q, got %q", want, err.Error())
 		}
@@ -570,48 +634,83 @@ func TestRunWebhookCommandStdinAloneStillReadsStdin(t *testing.T) {
 	}
 }
 
-// TestRunWebhookCommandClearURLWinsOverEnv pins the deliberate carve-out from the
-// guard above: --clear-url removes any stored endpoint even with
-// OVUMCY_WEBHOOK_URL exported. Clearing cannot arm the wrong endpoint, so a stale
-// environment variable must not stand between an operator and disarming a
-// webhook.
-func TestRunWebhookCommandClearURLWinsOverEnv(t *testing.T) {
+// TestRunWebhookCommandClearURLDisarmsInOneStep: --clear-url on an armed owner
+// is a revocation and must not need a separate --enabled=false first, nor be
+// blocked by an exported OVUMCY_WEBHOOK_URL.
+func TestRunWebhookCommandClearURLDisarmsInOneStep(t *testing.T) {
 	// Not parallel: mutates process env.
 	databasePath := createCLIWebhookDatabase(t)
 	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
 	t.Setenv(webhookURLEnv, testWebhookURLWithToken)
 
-	// Arm the endpoint first (env-only path), then clear it with the same variable
-	// still exported.
 	var armed bytes.Buffer
 	if err := runWebhookCommand(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
-		[]string{"set", "owner@example.com", "--enabled=true"},
+		[]string{"set", "owner@example.com", "--enabled=true", "--url-env"},
 		strings.NewReader(""),
 		&armed,
 	); err != nil {
 		t.Fatalf("runWebhookCommand(arm) returned error: %v", err)
 	}
-	if loadWebhookRow(t, databasePath, owner.ID).WebhookURL == "" {
-		t.Fatal("setup failed: expected an endpoint stored before the clear")
+	if row := loadWebhookRow(t, databasePath, owner.ID); row.WebhookURL == "" || !row.WebhookEnabled {
+		t.Fatal("setup failed: expected an armed endpoint before the clear")
 	}
 
 	var cleared bytes.Buffer
 	if err := runWebhookCommand(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
-		[]string{"set", "owner@example.com", "--enabled=false", "--clear-url"},
+		[]string{"set", "owner@example.com", "--clear-url"},
 		strings.NewReader(""),
 		&cleared,
 	); err != nil {
-		t.Fatalf("runWebhookCommand(clear with env set) returned error: %v", err)
+		t.Fatalf("runWebhookCommand(clear while enabled) returned error: %v", err)
 	}
 
 	row := loadWebhookRow(t, databasePath, owner.ID)
 	if row.WebhookURL != "" {
-		t.Fatalf("--clear-url must win over an exported %s, got %q", webhookURLEnv, row.WebhookURL)
+		t.Fatalf("--clear-url left the endpoint stored: %q", row.WebhookURL)
+	}
+	if row.WebhookEnabled {
+		t.Fatal("--clear-url left delivery armed with no endpoint")
+	}
+}
+
+// TestRunWebhookCommandClearURLWithExplicitEnableIsRefused: an operator asking
+// to clear the endpoint AND arm delivery has asked for a webhook with no
+// target; that stays refused and writes nothing.
+func TestRunWebhookCommandClearURLWithExplicitEnableIsRefused(t *testing.T) {
+	// Not parallel: mutates process env.
+	databasePath := createCLIWebhookDatabase(t)
+	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
+
+	t.Setenv(webhookURLEnv, testWebhookURLWithToken)
+	var armed bytes.Buffer
+	if err := runWebhookCommand(
+		sqliteConfig(databasePath),
+		testWebhookSecretKey,
+		[]string{"set", "owner@example.com", "--enabled=true", "--url-env"},
+		strings.NewReader(""),
+		&armed,
+	); err != nil {
+		t.Fatalf("runWebhookCommand(arm) returned error: %v", err)
+	}
+
+	var output bytes.Buffer
+	err := runWebhookCommand(
+		sqliteConfig(databasePath),
+		testWebhookSecretKey,
+		[]string{"set", "owner@example.com", "--enabled=true", "--clear-url"},
+		strings.NewReader(""),
+		&output,
+	)
+	if err == nil {
+		t.Fatal("--clear-url with --enabled=true must be refused")
+	}
+	if loadWebhookRow(t, databasePath, owner.ID).WebhookURL == "" {
+		t.Fatal("a refused clear still removed the endpoint")
 	}
 }
 

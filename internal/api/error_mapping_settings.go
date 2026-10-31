@@ -188,7 +188,18 @@ func mapSettingsWebhookSaveError(err error) APIErrorSpec {
 	if errors.Is(err, services.ErrWebhookURLUnreadable) {
 		return settingsWebhookUnreadableURLErrorSpec()
 	}
+	if errors.Is(err, services.ErrWebhookConfigVersionChanged) {
+		return settingsWebhookConflictErrorSpec()
+	}
 	return settingsWebhookUpdateErrorSpec()
+}
+
+// settingsWebhookConflictErrorSpec answers a save that lost its pin: another
+// device, the CLI or the remove control changed the delivery configuration
+// after this form was decided, and nothing was written. The rebuilt card shows
+// the state that won.
+func settingsWebhookConflictErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "webhook settings changed elsewhere")
 }
 
 // settingsCalendarFeedUpdateErrorSpec is the internal-failure spec for the .ics

@@ -17,21 +17,20 @@ import (
 // webhook endpoint out-of-band. The endpoint is a SECRET (it can embed an
 // ntfy/Gotify token), so it must never be passed as an argv argument — argv
 // leaks into shell history, `ps`, and process listings. It is read either from
-// this env var or interactively from stdin (--url-stdin) — never both at once
-// (buildWebhookPatch refuses the pair) — and it is never printed back, only its
-// host.
+// this env var, only when --url-env names it as the source, or interactively
+// from stdin (--url-stdin) — and it is never printed back, only its host.
 const webhookURLEnv = "OVUMCY_WEBHOOK_URL"
 
 // webhookUsage is the single usage string returned for every argument error so
 // the contract is stable and testable. It is a single line without trailing
 // punctuation (staticcheck ST1005), mirroring notifyUsage. The endpoint URL is
 // a secret and is NEVER an argv argument: it is supplied via the
-// OVUMCY_WEBHOOK_URL environment variable or --url-stdin (see the flag reference
-// in the RunWebhookCommand doc comment).
+// OVUMCY_WEBHOOK_URL environment variable with --url-env, or --url-stdin (see
+// the flag reference in the RunWebhookCommand doc comment).
 const webhookUsage = "usage: ovumcy webhook <show|set> <email> " +
 	"[--enabled=<bool>] [--notify-period=<bool>] [--notify-ovulation=<bool>] " +
-	"[--reminder-lead-days=<0-14>] [--url-stdin] [--clear-url] [--dry-run] " +
-	"(URL via " + webhookURLEnv + " env or --url-stdin, never argv)"
+	"[--reminder-lead-days=<0-14>] [--url-env | --url-stdin | --clear-url] [--dry-run] " +
+	"(URL via " + webhookURLEnv + " with --url-env, or --url-stdin, never argv)"
 
 // webhookSetOptions holds the parsed `webhook set` flags. The tri-state pointer
 // fields distinguish "flag not given" (nil, leave as-is) from an explicit
@@ -43,6 +42,7 @@ type webhookSetOptions struct {
 	notifyOvulation  *bool
 	reminderLeadDays *int
 	readURLFromStdin bool
+	readURLFromEnv   bool
 	clearURL         bool
 	dryRun           bool
 }
@@ -63,17 +63,20 @@ type webhookSetOptions struct {
 //	                 --notify-period=<true|false>    upcoming-period reminders
 //	                 --notify-ovulation=<true|false> upcoming-ovulation reminders
 //	                 --reminder-lead-days=<0-14>     shared lead window (clamped)
+//	                 --url-env                       read the endpoint from OVUMCY_WEBHOOK_URL
 //	                 --url-stdin                     read the endpoint from stdin
-//	                 --clear-url                     remove any stored endpoint
+//	                 --clear-url                     remove any stored endpoint (and
+//	                                                 turn delivery off unless --enabled is given)
 //	                 --dry-run                       validate + print, write nothing
 //
 // SECURITY: the endpoint URL is a secret (it can embed an ntfy/Gotify token) and
 // is NEVER accepted as an argv argument (argv leaks into shell history, `ps`, and
 // process listings). Supply it out-of-band via the OVUMCY_WEBHOOK_URL environment
-// variable or interactively via --url-stdin (a no-echo prompt on a TTY, or the
-// first line of a piped stdin) — exactly one of the two, never both, so an
-// ambient environment variable can never quietly decide which endpoint an owner's
-// reminders are armed against. The URL is never echoed back — only its host.
+// variable named by --url-env, or interactively via --url-stdin (a no-echo
+// prompt on a TTY, or the first line of a piped stdin). The variable is read
+// only when --url-env asks for it, so an ambient export can never quietly decide
+// which endpoint an owner's reminders are armed against. The URL is never echoed
+// back — only its host.
 func RunWebhookCommand(databaseConfig db.Config, secretKey string, args []string) error {
 	return runWebhookCommand(databaseConfig, secretKey, args, os.Stdin, os.Stdout)
 }
@@ -214,18 +217,14 @@ func webhookEndpointStatus(view services.WebhookSettingsView) string {
 
 // buildWebhookPatch turns the parsed set options into a service patch, reading
 // the endpoint URL securely when the operator is setting one. The URL is read
-// from the OVUMCY_WEBHOOK_URL env var or from stdin (--url-stdin) — NEVER argv.
+// from the OVUMCY_WEBHOOK_URL env var (--url-env) or from stdin (--url-stdin) —
+// NEVER argv. parseWebhookSetArgs has already refused more than one of
+// --url-env, --url-stdin and --clear-url.
 //
-// The two URL sources are mutually exclusive, like --clear-url and --url-stdin:
-// an ambient OVUMCY_WEBHOOK_URL (an operator profile, a prior invocation, a
-// compose env_file inherited by `docker compose run`) must never quietly win over
-// a URL the operator piped in on purpose, because the difference is which
-// endpoint an owner's reminders are armed against. Supplying both is refused
-// before the database is opened, so nothing is written either way.
-//
-// --clear-url still takes precedence and needs no URL input: it removes any
-// stored endpoint, so it cannot arm the wrong one, and a stale environment
-// variable must not stand between an operator and disarming a webhook.
+// The variable is read only under --url-env. An ambient OVUMCY_WEBHOOK_URL (an
+// operator profile, a prior invocation, a compose env_file inherited by `docker
+// compose run`) is otherwise ignored: a flag-only edit keeps the stored endpoint
+// rather than re-pointing an owner's reminders at whatever the shell exported.
 func buildWebhookPatch(opts webhookSetOptions, input io.Reader) (services.WebhookSettingsPatch, error) {
 	patch := services.WebhookSettingsPatch{
 		Enabled:          opts.enabled,
@@ -239,12 +238,11 @@ func buildWebhookPatch(opts webhookSetOptions, input io.Reader) (services.Webhoo
 		return patch, nil
 	}
 
-	envURL := strings.TrimSpace(os.Getenv(webhookURLEnv))
-	if envURL != "" && opts.readURLFromStdin {
-		return services.WebhookSettingsPatch{}, fmt.Errorf("%s and --url-stdin are mutually exclusive: unset %s or drop --url-stdin", webhookURLEnv, webhookURLEnv)
-	}
-
-	if envURL != "" {
+	if opts.readURLFromEnv {
+		envURL := strings.TrimSpace(os.Getenv(webhookURLEnv))
+		if envURL == "" {
+			return services.WebhookSettingsPatch{}, fmt.Errorf("--url-env given but %s is empty", webhookURLEnv)
+		}
 		patch.SetURL(envURL)
 		return patch, nil
 	}
@@ -340,8 +338,14 @@ func parseWebhookSetArgs(args []string) (webhookSetOptions, error) {
 	if opts.email == "" {
 		return webhookSetOptions{}, errors.New(webhookUsage)
 	}
-	if opts.clearURL && opts.readURLFromStdin {
-		return webhookSetOptions{}, errors.New("--clear-url and --url-stdin are mutually exclusive")
+	sources := 0
+	for _, given := range []bool{opts.readURLFromEnv, opts.readURLFromStdin, opts.clearURL} {
+		if given {
+			sources++
+		}
+	}
+	if sources > 1 {
+		return webhookSetOptions{}, errors.New("--url-env, --url-stdin and --clear-url are mutually exclusive")
 	}
 	return opts, nil
 }
@@ -355,6 +359,8 @@ func applyWebhookSetArg(opts *webhookSetOptions, value string) error {
 		return nil
 	case value == "--url-stdin":
 		opts.readURLFromStdin = true
+	case value == "--url-env":
+		opts.readURLFromEnv = true
 	case value == "--clear-url":
 		opts.clearURL = true
 	case value == "--dry-run":
@@ -431,6 +437,8 @@ func mapWebhookError(err error, email string) error {
 		return errors.New("invalid email address")
 	case errors.Is(err, services.ErrWebhookURLInvalid):
 		return errors.New("webhook url invalid: must be an absolute http or https URL")
+	case errors.Is(err, services.ErrWebhookConfigVersionChanged):
+		return errors.New("webhook settings changed while this command ran: nothing was written, run it again")
 	default:
 		return fmt.Errorf("configure webhook: %w", err)
 	}

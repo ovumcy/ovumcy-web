@@ -544,7 +544,18 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 	if err != nil {
 		return err
 	}
-	return query.Updates(updates).Error
+	// Pinned to the epoch the caller read: every delivery-configuration writer
+	// advances it, so a match proves no removal or other save landed between the
+	// caller's read and this write. Regression:
+	// TestSaveWebhookSettingsRefusesARowAnotherWriterMovedOn.
+	result := query.Where("webhook_config_version = ?", settings.ExpectedConfigVersion).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return models.ErrWebhookConfigVersionChanged
+	}
+	return nil
 }
 
 // RemoveWebhookDestination withdraws this owner's delivery endpoint and nothing
@@ -1666,6 +1677,9 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"webhook_url",
 			"webhook_notify_period",
 			"webhook_notify_ovulation",
+			// The revocation epoch a webhook save pins its UPDATE to, so a save
+			// decided from this read cannot land over a later removal.
+			"webhook_config_version",
 			// The two marks migration 039 added. They are here and the two
 			// *_last_sent_cycle_start watermarks are deliberately NOT: a watermark
 			// is a claim taken before a POST and would be read as a delivery time

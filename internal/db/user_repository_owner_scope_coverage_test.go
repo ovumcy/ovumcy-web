@@ -209,6 +209,8 @@ func TestUserRepositoryRemainingScopedWritersPersist(t *testing.T) {
 	if err := repo.SaveWebhookSettings(ctx, user.ID, models.WebhookSettingsColumns{
 		Enabled:      true,
 		EncryptedURL: "ciphertext",
+		// UpdateReminderLeadDays above advanced the epoch once.
+		ExpectedConfigVersion: 1,
 	}); err != nil {
 		t.Fatalf("SaveWebhookSettings: %v", err)
 	}

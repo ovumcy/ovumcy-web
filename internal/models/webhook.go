@@ -51,6 +51,12 @@ type WebhookSettingsColumns struct {
 	// keeps the column has nothing to put in it. Regression:
 	// TestSaveWebhookSettingsKeepsAnUnreadableEndpointAndStillSavesTheToggles.
 	KeepEncryptedURL bool
+	// ExpectedConfigVersion is the webhook_config_version of the row the caller
+	// decided this save from. The UPDATE is pinned to it, so a save whose "keep
+	// the stored endpoint" was read before a removal cannot re-store that
+	// endpoint after it. Zero is a real epoch (a row never written), not "skip
+	// the pin": there is no unpinned save.
+	ExpectedConfigVersion int
 }
 
 // WebhookNotifyRecord is the read projection returned by ListAllForNotify: the

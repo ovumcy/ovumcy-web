@@ -185,9 +185,9 @@ var claimAnchors = []claimAnchor{
 		mirror: []string{"--show-health-details"},
 	},
 	{
-		name:   "endpoint reaches the CLI from one source",
-		row:    "exactly one out-of-band source",
-		mirror: []string{"--url-stdin"},
+		name:   "endpoint reaches the CLI only from a named source",
+		row:    "only from a source the operator names",
+		mirror: []string{"read only under `--url-env`"},
 	},
 }
 

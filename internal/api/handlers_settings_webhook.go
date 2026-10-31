@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -42,8 +43,10 @@ func (handler *Handler) UpdateWebhookSettings(c fiber.Ctx) error {
 		NotifyPeriod:    input.NotifyPeriod,
 		NotifyOvulation: input.NotifyOvulation,
 		URL:             input.URL,
-		URLProvided:     input.URL != "",
-		RemoveURL:       input.RemoveURL,
+		// Trimmed as the service trims: a whitespace-only field is the blank
+		// "keep" field, never a replacement that stores no endpoint.
+		URLProvided: strings.TrimSpace(input.URL) != "",
+		RemoveURL:   input.RemoveURL,
 	}
 	if err := handler.webhookSettingsSvc.SaveWebhookSettingsFromForm(c.Context(), user.ID, form); err != nil {
 		// The typed URL is handed back only when the service refused it as a URL,
