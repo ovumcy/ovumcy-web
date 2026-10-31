@@ -49,6 +49,8 @@ func TestPredictionSurfacesCarryAnEstimateQualifier(t *testing.T) {
 		"calendar.fertility_estimate",
 		"dashboard.next_period_days",
 		"dashboard.next_period_start_window",
+		"dashboard.ovulation_range",
+		"phases.ovulation",
 	}
 	all := mustLoadAllLocaleMessages(t)
 	if len(all) != len(qualifiers) {

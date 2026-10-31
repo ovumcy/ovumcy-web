@@ -564,7 +564,7 @@
   "dashboard.fertile_window_after_cycle_floor.other": "Votre fenêtre fertile apparaîtra après vos %d premiers cycles terminés",
   "dashboard.fertility_badge_positive": "Meilleur moment : fenêtre fertile (estimation)",
   "dashboard.ovulation": "Ovulation",
-  "dashboard.ovulation_range": "%s — %s",
+  "dashboard.ovulation_range": "%s — %s (estimation)",
   "dashboard.ovulation_estimate": "vers le %s",
   "dashboard.ovulation_need_cycles.one": "%d cycle terminé est nécessaire avant qu'Ovumcy affiche une plage d'ovulation",
   "dashboard.ovulation_need_cycles.other": "%d cycles terminés sont nécessaires avant qu'Ovumcy affiche une plage d'ovulation",
@@ -918,7 +918,7 @@
   "phases.withheld": "Détails de fertilité non affichés",
   "phases.menstrual": "Menstruelle",
   "phases.follicular": "Folliculaire",
-  "phases.ovulation": "Ovulation",  "phases.luteal": "Lutéale",
+  "phases.ovulation": "Ovulation (estimation)",  "phases.luteal": "Lutéale",
 
 
   "symptoms.acne": "Acné",

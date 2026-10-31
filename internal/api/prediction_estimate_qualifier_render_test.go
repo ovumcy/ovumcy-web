@@ -11,8 +11,8 @@ import (
 
 // TestPredictionSurfacesRenderTheirQualifiedKeys pins WEB-390 at the render
 // layer: on a history steady enough that no Approximate caption renders, the
-// calendar's fertile-window legend entry and the dashboard's next-period days
-// still render from the catalogue keys that
+// calendar's fertile-window legend entry, the dashboard's fertility badge and
+// its next-period days still render from the catalogue keys that
 // TestPredictionSurfacesCarryAnEstimateQualifier proves qualified in every locale.
 func TestPredictionSurfacesRenderTheirQualifiedKeys(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
@@ -27,12 +27,17 @@ func TestPredictionSurfacesRenderTheirQualifiedKeys(t *testing.T) {
 	}
 	for _, cycleStart := range []time.Time{periodStart.AddDate(0, 0, -84), periodStart.AddDate(0, 0, -56), periodStart.AddDate(0, 0, -28), periodStart} {
 		for offset := range 5 {
-			if err := database.Create(&models.DailyLog{
+			entry := models.DailyLog{
 				UserID:   user.ID,
 				Date:     cycleStart.AddDate(0, 0, offset),
 				IsPeriod: true,
 				Flow:     models.FlowMedium,
-			}).Error; err != nil {
+			}
+			if cycleStart.Equal(periodStart) && offset == 4 {
+				// Today's egg-white observation is what raises the fertility badge.
+				entry.CervicalMucus = models.CervicalMucusEggWhite
+			}
+			if err := database.Create(&entry).Error; err != nil {
 				t.Fatalf("create period log: %v", err)
 			}
 		}
@@ -60,6 +65,9 @@ func TestPredictionSurfacesRenderTheirQualifiedKeys(t *testing.T) {
 	}
 	if dates := htmlFindElement(nextPeriod, htmlNodeHasAttr("data-next-period-key")); dates == nil || htmlAttr(dates, "data-next-period-key") != "dashboard.next_period_days" {
 		t.Fatal("expected the next-period days rendered from dashboard.next_period_days")
+	}
+	if badge := htmlFindElement(dashboard, htmlNodeHasAttr("data-fertility-badge")); badge == nil || htmlAttr(badge, "data-fertility-badge-key") != "dashboard.high_fertility_badge" {
+		t.Fatal("expected the fertility badge rendered from dashboard.high_fertility_badge")
 	}
 	if htmlFindElement(dashboard, htmlNodeHasAttr("data-dashboard-estimate-qualifier")) != nil {
 		t.Fatal("expected a steady history to render no Approximate caption, so the inline qualifier is the only one")
