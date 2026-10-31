@@ -476,6 +476,13 @@ async function pullDockerImage(image) {
   }
 }
 
+// removePostgresContainer tears the container down with its anonymous volumes.
+// An explicit `rm -f` lands before the daemon's own `--rm` auto-remove, and
+// without `-v` the anonymous data volume survives it, one per run.
+async function removePostgresContainer(containerID) {
+  await runDockerCapture(["rm", "-f", "-v", containerID]).catch(() => {});
+}
+
 async function startPostgresRuntime(runID) {
   const databaseName = createPostgresDatabaseName(runID);
   const user = process.env.E2E_POSTGRES_USER ?? "ovumcy";
@@ -484,11 +491,16 @@ async function startPostgresRuntime(runID) {
 
   await pullDockerImage(image);
 
+  // A tmpfs on the image's VOLUME path keeps the daemon from creating an
+  // anonymous data volume per start; the `rm -f -v` below covers an
+  // E2E_POSTGRES_IMAGE whose VOLUME path differs (postgres:18 moved it).
   const result = await runDockerCapture([
     "run",
     "-d",
     "--rm",
     "-P",
+    "--tmpfs",
+    "/var/lib/postgresql/data",
     "-e",
     `POSTGRES_USER=${user}`,
     "-e",
@@ -512,7 +524,7 @@ async function startPostgresRuntime(runID) {
       dsn: `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@127.0.0.1:${port}/${databaseName}?sslmode=disable`,
     };
   } catch (error) {
-    await runDockerCapture(["rm", "-f", containerID]).catch(() => {});
+    await removePostgresContainer(containerID);
     throw error;
   }
 }
@@ -754,7 +766,7 @@ async function main() {
       await httpsProxy.close().catch(() => {});
     }
     if (postgresRuntime?.containerID) {
-      await runDockerCapture(["rm", "-f", postgresRuntime.containerID]).catch(() => {});
+      await removePostgresContainer(postgresRuntime.containerID);
     }
   }
 
