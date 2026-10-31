@@ -32,8 +32,8 @@ var calendarFeedAccessColumns = []string{
 // exemption without one is how this guard would quietly become an allowlist for
 // whatever was easiest to skip.
 var exemptCalendarFeedWriters = map[string]string{
-	"DisarmAllCalendarFeedTokens":        "the restore fence's own bulk disarm: the fence records a fresh token in both halves immediately after it, so advancing here would mint two tokens for one event",
-	"DisarmCalendarFeedTokensWithoutMAC": "the key-rotation sentinel's bulk disarm: its trigger is a changed SECRET_KEY, and the epoch that detects that is derived from the key rather than from stored progress, so a restore cannot roll it back into agreement",
+	"DisarmAllCalendarFeedTokens":        "the bulk disarm of the restore fence and of the key-rotation sentinel: the fence records a fresh token in both halves immediately after its own call, so advancing here would mint two tokens for one event; the sentinel's trigger is a changed SECRET_KEY, and the epoch that detects that is derived from the key rather than from stored progress, so a restore cannot roll it back into agreement",
+	"DisarmCalendarFeedTokensWithoutMAC": "the key-rotation sentinel's first-boot disarm of MAC-less legacy rows: the absent-epoch boot is detected from app_state, which a restore returns together with the feed columns, so the fence's own pass covers the restore case and an advance here would mint a second token for one event",
 	"BackfillCalendarFeedVerifierMAC":    "neither grants nor removes access: it fills a derived column for a token that already verified, on the read path every first poll takes",
 }
 

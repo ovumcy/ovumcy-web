@@ -39,6 +39,10 @@ import (
 // bcrypt), kept distinct from the persistence error so the handler can map each.
 var ErrCalendarFeedTokenGenerate = errors.New("calendar feed token generate")
 
+// ErrCalendarFeedTokenDeliver wraps a failure of the delivery hook that runs
+// between the mint and the save; nothing was stored when it is returned.
+var ErrCalendarFeedTokenDeliver = errors.New("calendar feed token deliver")
+
 // ErrCalendarFeedTokenPersist wraps a repository write/clear failure.
 var ErrCalendarFeedTokenPersist = errors.New("calendar feed token persist")
 
@@ -60,7 +64,10 @@ type CalendarFeedSettingsRepository interface {
 	// the subscribe URL, returning true only for the call that consumed it.
 	// SaveCalendarFeedToken re-arms it in the same statement that mints a token
 	// (migration 036).
-	ClaimCalendarFeedReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error)
+	// The claim names the selector the reveal was minted for and matches only
+	// while the row still carries it, so a reveal cookie from before a rotation
+	// cannot consume the new link's mark.
+	ClaimCalendarFeedReveal(ctx context.Context, userID uint, selector string, revealedAt time.Time) (bool, error)
 }
 
 // CalendarFeedSettingsService is the write-side seam for the feed lifecycle.
@@ -92,12 +99,25 @@ func NewCalendarFeedSettingsService(users CalendarFeedSettingsRepository, secret
 //
 // detailedTitles is the owner's title choice for this link (WEB-379), persisted
 // in the same write as the token.
-func (service *CalendarFeedSettingsService) GenerateFeedToken(ctx context.Context, userID uint, detailedTitles bool) (string, error) {
+//
+// deliver, when non-nil, hands the minted token and its selector to the one
+// place that can show it (the sealed reveal cookie) AFTER the mint and BEFORE
+// the save. The order is the point: a save that committed first and a delivery
+// that then failed would kill the previous URL and never show the new one. A
+// delivery error stops the call with nothing saved, so the previous token keeps
+// serving; a save error after a delivery leaves the delivered value naming a
+// selector that was never stored, which the caller retracts.
+func (service *CalendarFeedSettingsService) GenerateFeedToken(ctx context.Context, userID uint, detailedTitles bool, deliver func(token, selector string) error) (string, error) {
 	fullToken, columns, err := GenerateCalendarFeedToken(service.secretKey)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenGenerate, err)
 	}
 	columns.DetailedTitles = detailedTitles
+	if deliver != nil {
+		if err := deliver(fullToken, columns.Selector); err != nil {
+			return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenDeliver, err)
+		}
+	}
 	if err := service.users.SaveCalendarFeedToken(ctx, userID, columns); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenPersist, err)
 	}
@@ -128,11 +148,18 @@ func (service *CalendarFeedSettingsService) RevokeFeedToken(ctx context.Context,
 // owner id is invalid input, not a claim that applies to whichever row comes
 // first. The compare-and-set below would match no row either — the guard makes
 // the refusal explicit rather than resting on that.
-func (service *CalendarFeedSettingsService) ClaimFeedReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error) {
+//
+// selector is the one the sealed reveal was minted for: an empty one is refused
+// here as a zero owner id is, and the repository matches it against the row, so
+// a reveal minted for an earlier link claims nothing after a rotation.
+func (service *CalendarFeedSettingsService) ClaimFeedReveal(ctx context.Context, userID uint, selector string, revealedAt time.Time) (bool, error) {
 	if userID == 0 {
 		return false, fmt.Errorf("%w: calendar feed reveal requires an owner id", ErrCalendarFeedTokenPersist)
 	}
-	claimed, err := service.users.ClaimCalendarFeedReveal(ctx, userID, revealedAt)
+	if selector == "" {
+		return false, fmt.Errorf("%w: calendar feed reveal requires a selector", ErrCalendarFeedTokenPersist)
+	}
+	claimed, err := service.users.ClaimCalendarFeedReveal(ctx, userID, selector, revealedAt)
 	if err != nil {
 		return false, fmt.Errorf("%w: %v", ErrCalendarFeedTokenPersist, err)
 	}

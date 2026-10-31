@@ -58,7 +58,7 @@ func TestCalendarFeedKeyEpochGoldenPinsLabelSet(t *testing.T) {
 		t.Fatalf("CalendarFeedKeyEpoch: %v", err)
 	}
 	if epoch != goldenEpoch {
-		t.Fatalf("epoch derivation changed for the pinned key.\n got:    %s\n golden: %s\nIf this is a deliberate label change, update the golden AND release-note the consequence: every stored epoch mismatches on next boot, so the sentinel disarms all legacy calendar feeds once.", epoch, goldenEpoch)
+		t.Fatalf("epoch derivation changed for the pinned key.\n got:    %s\n golden: %s\nIf this is a deliberate label change, update the golden AND release-note the consequence: every stored epoch mismatches on next boot, so the sentinel disarms every armed calendar feed once.", epoch, goldenEpoch)
 	}
 }
 

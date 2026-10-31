@@ -614,7 +614,7 @@ func (failingCalendarFeedRepo) ClearCalendarFeedToken(context.Context, uint) err
 func (failingCalendarFeedRepo) LoadSettingsByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
 }
-func (failingCalendarFeedRepo) ClaimCalendarFeedReveal(context.Context, uint, time.Time) (bool, error) {
+func (failingCalendarFeedRepo) ClaimCalendarFeedReveal(context.Context, uint, string, time.Time) (bool, error) {
 	return false, errors.New("claim failed")
 }
 
@@ -653,8 +653,84 @@ func (savingCalendarFeedRepo) ClearCalendarFeedToken(context.Context, uint) erro
 func (savingCalendarFeedRepo) LoadSettingsByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
 }
-func (savingCalendarFeedRepo) ClaimCalendarFeedReveal(context.Context, uint, time.Time) (bool, error) {
+func (savingCalendarFeedRepo) ClaimCalendarFeedReveal(context.Context, uint, string, time.Time) (bool, error) {
 	return true, nil
+}
+
+// countingCalendarFeedRepo is savingCalendarFeedRepo that also counts the saves
+// it was asked for, so a test can state that nothing was stored.
+type countingCalendarFeedRepo struct {
+	savingCalendarFeedRepo
+	saves *int
+}
+
+func (repo countingCalendarFeedRepo) SaveCalendarFeedToken(context.Context, uint, models.CalendarFeedTokenColumns) error {
+	*repo.saves++
+	return nil
+}
+
+// TestCalendarFeedSealFailureStoresNoTokenSoThePreviousURLKeepsServing is the
+// delivery-order regression: when sealing the reveal cookie fails (empty
+// sealed-cookie key), the token must not have been saved. Saved first, the old
+// URL would be dead and the new one never shown.
+func TestCalendarFeedSealFailureStoresNoTokenSoThePreviousURLKeepsServing(t *testing.T) {
+	saves := 0
+	handler := &Handler{
+		secretKey:            []byte(""),
+		calendarFeedSettings: services.NewCalendarFeedSettingsService(countingCalendarFeedRepo{saves: &saves}, []byte("0123456789abcdef0123456789abcdef")),
+	}
+	app := fiber.New()
+	app.Use(func(c fiber.Ctx) error {
+		c.Locals(contextUserKey, &models.User{ID: 1, Role: models.RoleOwner})
+		return c.Next()
+	})
+	app.Post("/api/v1/users/current/calendar-feed/rotate", handler.RotateCalendarFeed)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/calendar-feed/rotate", strings.NewReader(""))
+	request.Header.Set("Accept", "application/json")
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when the reveal cookie cannot be sealed, got %d", response.StatusCode)
+	}
+	if saves != 0 {
+		t.Fatalf("a failed seal must store nothing, the token was saved %d time(s)", saves)
+	}
+}
+
+// TestCalendarFeedRevealCookieOfARotatedAwayLinkIsRefused is the selector-bound
+// regression: a reveal cookie minted for link A, presented after a rotation to
+// link B, renders nothing and leaves B's reveal mark unclaimed, so B's own
+// cookie still shows B once. Unbound, A's cookie would spend B's mark and show
+// A's dead URL, and B's owner would be refused.
+func TestCalendarFeedRevealCookieOfARotatedAwayLinkIsRefused(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "feed-reveal-selector-bound@example.com")
+
+	generated := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
+	assertStatusCode(t, generated, http.StatusSeeOther)
+	cookieA := responseCookie(generated.Cookies(), calendarFeedRevealCookieName)
+
+	rotated := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed/rotate", url.Values{}, nil)
+	assertStatusCode(t, rotated, http.StatusSeeOther)
+	cookieB := responseCookie(rotated.Cookies(), calendarFeedRevealCookieName)
+
+	owner := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID)
+	if owner.CalendarFeedRevealedAt != nil {
+		t.Fatal("the rotated link must arrive with its reveal unclaimed")
+	}
+
+	assertCalendarFeedRevealRefused(t, ctx, cookieA, "unknown-token-sentinel")
+	if reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID).CalendarFeedRevealedAt != nil {
+		t.Fatal("a reveal cookie minted for the replaced link must not claim the new link's mark")
+	}
+
+	shown := assertCalendarFeedRevealShowsURL(t, ctx, cookieB)
+	if !strings.Contains(shown, owner.CalendarFeedSelector) {
+		t.Fatalf("the surviving reveal must show the stored link (selector %q), got %q", owner.CalendarFeedSelector, shown)
+	}
 }
 
 // TestCalendarFeedGenerateRevealCookieSealFailureMapsTo500 covers the tail where

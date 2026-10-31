@@ -46,6 +46,11 @@ const calendarFeedRevealCookieTTL = 20 * time.Minute
 type calendarFeedRevealPayload struct {
 	UserID  uint   `json:"uid"`
 	FeedURL string `json:"feed_url"`
+	// Selector is the non-secret id of the link this reveal was minted for. The
+	// reveal claim matches it against the stored row, so a cookie from before a
+	// rotation cannot consume the mark of the link that replaced it. A payload
+	// without one is invalid input, never a claim that matches any selector.
+	Selector string `json:"selector"`
 	// Rotated distinguishes a rotate reveal from a first-time generate reveal so
 	// the page can show the right heading/copy. It carries no secret.
 	Rotated bool `json:"rotated,omitempty"`
@@ -60,8 +65,9 @@ type calendarFeedRevealPayload struct {
 }
 
 type calendarFeedRevealState struct {
-	FeedURL string
-	Rotated bool
+	FeedURL  string
+	Selector string
+	Rotated  bool
 }
 
 var calendarFeedRevealCookieSpec = sealedCookieSpec{name: calendarFeedRevealCookieName, path: "/"}
@@ -73,7 +79,7 @@ var calendarFeedRevealCookieSpec = sealedCookieSpec{name: calendarFeedRevealCook
 // prior cookie instead of sealing an unattributed or blank payload. Refusing
 // the zero id here is what keeps the reveal scoped structurally: the read path
 // has no owner to compare against once such a payload exists.
-func (handler *Handler) setCalendarFeedRevealCookie(c fiber.Ctx, userID uint, feedURL string, rotated bool) error {
+func (handler *Handler) setCalendarFeedRevealCookie(c fiber.Ctx, userID uint, selector string, feedURL string, rotated bool) error {
 	if userID == 0 {
 		handler.clearCalendarFeedRevealCookie(c)
 		return errors.New("calendar feed reveal requires an owner id")
@@ -83,9 +89,13 @@ func (handler *Handler) setCalendarFeedRevealCookie(c fiber.Ctx, userID uint, fe
 		handler.clearCalendarFeedRevealCookie(c)
 		return errors.New("calendar feed url is required")
 	}
+	if selector == "" {
+		handler.clearCalendarFeedRevealCookie(c)
+		return errors.New("calendar feed reveal requires a selector")
+	}
 	expiresAt := time.Now().Add(calendarFeedRevealCookieTTL)
 
-	payload := calendarFeedRevealPayload{UserID: userID, FeedURL: url, Rotated: rotated, ExpiresAt: expiresAt}
+	payload := calendarFeedRevealPayload{UserID: userID, FeedURL: url, Selector: selector, Rotated: rotated, ExpiresAt: expiresAt}
 	serialized, err := json.Marshal(payload)
 	if err != nil {
 		return err // codecov:ignore -- json.Marshal of a fixed struct does not fail
@@ -128,6 +138,10 @@ func (handler *Handler) readCalendarFeedRevealState(c fiber.Ctx, userID uint) ca
 		handler.clearCalendarFeedRevealCookie(c)
 		return calendarFeedRevealState{}
 	}
+	if payload.Selector == "" {
+		handler.clearCalendarFeedRevealCookie(c)
+		return calendarFeedRevealState{}
+	}
 	// Refusing here takes away the display, never the feed: the page already
 	// resolved an authenticated session, so the owner lands on /settings — where
 	// an absent cookie lands — with the feed itself untouched, and rotates to
@@ -137,7 +151,7 @@ func (handler *Handler) readCalendarFeedRevealState(c fiber.Ctx, userID uint) ca
 		return calendarFeedRevealState{}
 	}
 
-	return calendarFeedRevealState{FeedURL: url, Rotated: payload.Rotated}
+	return calendarFeedRevealState{FeedURL: url, Selector: payload.Selector, Rotated: payload.Rotated}
 }
 
 func (handler *Handler) clearCalendarFeedRevealCookie(c fiber.Ctx) {

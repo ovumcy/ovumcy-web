@@ -7,6 +7,7 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -62,11 +63,11 @@ func TestCalendarFeedRotationStartupMessage(t *testing.T) {
 		t.Fatalf("unexpected first-boot disarm message: %q", upgraded)
 	}
 	rotatedNone := calendarFeedRotationStartupMessage(services.CalendarFeedRotationOutcome{RotationDetected: true})
-	if rotatedNone != "SECRET_KEY rotation detected: no legacy calendar feeds to disarm (armed feeds with a keyed MAC stop verifying on their own)" {
+	if rotatedNone != "SECRET_KEY rotation detected: no armed calendar feeds to disarm" {
 		t.Fatalf("unexpected zero-disarm rotation message: %q", rotatedNone)
 	}
 	rotatedSome := calendarFeedRotationStartupMessage(services.CalendarFeedRotationOutcome{RotationDetected: true, DisarmedFeeds: 2})
-	if rotatedSome != "SECRET_KEY rotation detected: 2 legacy calendar feed(s) disarmed; owners re-generate subscribe URLs from settings" {
+	if rotatedSome != "SECRET_KEY rotation detected: 2 armed calendar feed(s) disarmed; owners re-generate subscribe URLs from settings" {
 		t.Fatalf("unexpected disarm rotation message: %q", rotatedSome)
 	}
 }
@@ -119,5 +120,59 @@ func TestFirstBootAfterAnUpgradeDisarmsTheLegacyFeedItInherits(t *testing.T) {
 	}
 	if _, found, err := repositories.AppState.Get(context.Background(), models.AppStateKeyCalendarFeedKeyEpoch); err != nil || !found {
 		t.Fatalf("the epoch must be recorded after the disarm (found=%v, err=%v)", found, err)
+	}
+}
+
+// TestReturningToAnOlderKeyDoesNotReviveAFeedARotationRefused is the K1 to K2 to
+// K1 regression: a MAC row minted under K1 is refused while K2 runs, but a
+// refusal is not a revocation, so the old key coming back would verify the
+// leaked URL again. The K2 boot must remove the row itself.
+func TestReturningToAnOlderKeyDoesNotReviveAFeedARotationRefused(t *testing.T) {
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "rotation-return-boot.db")})
+	if err != nil {
+		t.Fatalf("OpenDatabase: %v", err)
+	}
+	t.Cleanup(func() { closeDatabase(database) })
+	repositories := db.NewRepositories(database)
+	ctx := context.Background()
+
+	keyOne := []byte("boot-drill-secret-key-A-0123456789")
+	keyTwo := []byte("boot-drill-secret-key-B-0123456789")
+	const selector = "SELECTOR16CHARSXX"
+	const verifier = "verifier-of-the-leaked-subscribe-url"
+
+	mustEnforceCalendarFeedKeyRotation(repositories, keyOne)
+
+	mac, err := security.CalendarFeedVerifierMAC(keyOne, selector, verifier)
+	if err != nil {
+		t.Fatalf("CalendarFeedVerifierMAC: %v", err)
+	}
+	if err := database.Exec(
+		`INSERT INTO users (email, password_hash, role, created_at, calendar_feed_selector, calendar_feed_verifier_hash, calendar_feed_verifier_mac)
+		 VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
+		"mac-feed@example.com", "hash", models.RoleOwner, selector, "bcrypt-hash", mac,
+	).Error; err != nil {
+		t.Fatalf("seed a MAC feed row armed under the first key: %v", err)
+	}
+	armed := func() (bool, string) {
+		t.Helper()
+		user, found, err := repositories.Users.FindByCalendarFeedSelector(ctx, selector)
+		if err != nil {
+			t.Fatalf("FindByCalendarFeedSelector: %v", err)
+		}
+		return found, user.CalendarFeedVerifierMAC
+	}
+	if found, stored := armed(); !found || !security.VerifyCalendarFeedVerifierMAC(keyOne, selector, verifier, stored) {
+		t.Fatal("the seeded feed must verify under the first key, or the checks below prove nothing")
+	}
+
+	mustEnforceCalendarFeedKeyRotation(repositories, keyTwo)
+	if found, _ := armed(); found {
+		t.Fatal("the rotation boot must remove the MAC feed row, not merely refuse it")
+	}
+
+	mustEnforceCalendarFeedKeyRotation(repositories, keyOne)
+	if found, _ := armed(); found {
+		t.Fatal("returning to the first key revived a feed the rotation had refused")
 	}
 }

@@ -87,13 +87,18 @@ func (handler *Handler) issueCalendarFeedToken(c fiber.Ctx, mutation healthMutat
 
 	// Absent means unchecked: the neutral title is the default (WEB-379).
 	detailedTitles := services.ParseBoolLike(c.FormValue("calendar_feed_detailed_titles"))
-	token, err := handler.calendarFeedSettings.GenerateFeedToken(c.Context(), user.ID, detailedTitles)
+	// The reveal cookie is sealed BEFORE the token is saved, inside the service's
+	// delivery hook: a seal that fails then stores nothing and the previous URL
+	// keeps serving, instead of the old URL dying with the new one never shown.
+	// The cookie names the minted selector, so it opens only the link it was
+	// sealed for.
+	_, err := handler.calendarFeedSettings.GenerateFeedToken(c.Context(), user.ID, detailedTitles, func(token, selector string) error {
+		return handler.setCalendarFeedRevealCookie(c, user.ID, selector, calendarFeedSubscribeURL(c, token), rotated)
+	})
 	if err != nil {
-		return handler.failMutation(c, mutation, settingsCalendarFeedUpdateErrorSpec())
-	}
-
-	feedURL := calendarFeedSubscribeURL(c, token)
-	if err := handler.setCalendarFeedRevealCookie(c, user.ID, feedURL, rotated); err != nil {
+		// A save that failed after the seal leaves a cookie naming a selector
+		// that was never stored; retract it. Harmless when the seal itself failed.
+		handler.clearCalendarFeedRevealCookie(c)
 		return handler.failMutation(c, mutation, settingsCalendarFeedUpdateErrorSpec())
 	}
 
@@ -163,7 +168,10 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 	// cookie lands. A claim that errors is refused for the same reason: the mark
 	// is what makes the reveal single-use, and a reveal that cannot record itself
 	// is not single-use. The cost of refusing is one rotation from settings.
-	claimed, err := handler.calendarFeedSettings.ClaimFeedReveal(c.Context(), user.ID, time.Now())
+	// The claim is bound to the selector the cookie was sealed for: after a
+	// rotation the stored selector differs, the claim matches no row, and the
+	// stale cookie neither renders its dead URL nor spends the new link's mark.
+	claimed, err := handler.calendarFeedSettings.ClaimFeedReveal(c.Context(), user.ID, state.Selector, time.Now())
 	if err != nil || !claimed {
 		// Audited on the same action data.export audits its own refusals on. An
 		// operator counting disclosures counts outcome="success"; one asking

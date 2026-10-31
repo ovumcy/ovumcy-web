@@ -983,9 +983,18 @@ func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID ui
 // it can present it again. A replay and a concurrent second reveal both find the
 // column already set, affect zero rows, and get false. Shaped after ClaimTOTPStep,
 // which claims a TOTP step the same way and for the same reason.
-func (repo *UserRepository) ClaimCalendarFeedReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error) {
+//
+// The claim also names the selector the reveal was minted for and matches only
+// while the row still carries it: a reveal cookie from before a rotation then
+// claims nothing, and the new link's mark stays unclaimed for its own cookie.
+// An empty selector claims nothing — a missing operand must not disable the
+// comparison.
+func (repo *UserRepository) ClaimCalendarFeedReveal(ctx context.Context, userID uint, selector string, revealedAt time.Time) (bool, error) {
+	if selector == "" {
+		return false, nil
+	}
 	result := repo.database.WithContext(ctx).Model(&models.User{}).
-		Where("id = ? AND calendar_feed_revealed_at IS NULL", userID).
+		Where("id = ? AND calendar_feed_selector = ? AND calendar_feed_revealed_at IS NULL", userID, selector).
 		Update("calendar_feed_revealed_at", revealedAt.UTC())
 	if result.Error != nil {
 		return false, result.Error
@@ -1110,19 +1119,14 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 // DisarmCalendarFeedTokensWithoutMAC clears the feed-token columns of every row
 // that is armed (non-empty selector) but carries NO verifier MAC — the rows
 // minted before migration 032, whose bcrypt hash verifies independently of
-// SECRET_KEY. The boot-time rotation sentinel calls it on two boots: one where
-// the calendar-feed key epoch changed, and one where no epoch is stored yet.
-// After a rotation the rotated key already turns MAC verification into a hard
-// refusal for every other armed row, so this narrow predicate is exactly the
-// set that would otherwise SURVIVE it — and be silently re-armed under the new
-// key by the first successful bcrypt poll's MAC backfill. On the absent-epoch
-// boot no key changed and that inference is unavailable: the same rows are
-// cleared because nothing records which key minted them.
+// SECRET_KEY. The boot-time rotation sentinel calls it only on the boot where
+// no calendar-feed key epoch is stored yet (a first start, or an upgrade past
+// the sentinel): nothing records which key minted those rows, so the legacy
+// ones, which a MAC backfill under today's key would re-arm, are cleared. A
+// detected rotation uses DisarmAllCalendarFeedTokens instead.
 //
-// Rows that do carry a MAC are deliberately left in place: they fail closed on
-// their own, and the narrow predicate keeps the blast radius of a boot with a
-// mistyped SECRET_KEY as small as the revocation rule allows (only legacy rows
-// are irreversibly disarmed; the operator runbook calls this out).
+// Rows that do carry a MAC are left in place here: on the absent-epoch boot the
+// running key is the only key there is evidence of, and they verify under it.
 //
 // Like every feed-token write it does not bump auth_session_version: a feed
 // capability is not a login credential. The row count feeds the startup log.
@@ -1142,15 +1146,16 @@ func (repo *UserRepository) DisarmCalendarFeedTokensWithoutMAC(ctx context.Conte
 // DisarmAllCalendarFeedTokens clears the feed-token columns of EVERY armed row,
 // whatever its verifier generation. The boot-time restore fence calls it when
 // the database turns out not to be the one this instance last ran with — a
-// backup restore, or a fence that was recreated.
+// backup restore, or a fence that was recreated — and so does the key-rotation
+// sentinel when the stored key epoch differs from the running key's.
 //
-// The wider predicate is what the trigger demands, and is the one difference
-// from DisarmCalendarFeedTokensWithoutMAC above. That sentinel narrows to
-// MAC-less rows because its trigger IS a changed SECRET_KEY, which already
-// turns every MAC-bearing row into a hard refusal. A restore changes no key:
+// The wider predicate is what both triggers demand, and is the one difference
+// from DisarmCalendarFeedTokensWithoutMAC above. A restore changes no key:
 // selector, bcrypt hash and MAC all come back valid together, and every armed
-// row — legacy or current — would serve its old subscribe URL again. Narrowing
-// here would leave exactly the rows the finding is about.
+// row, legacy or current, would serve its old subscribe URL again. A rotation
+// only makes a MAC row refuse while the new key runs; returning to the old key
+// (K1 to K2 to K1) would make it verify again, so the row itself is cleared.
+// Narrowing here would leave exactly the rows the findings are about.
 //
 // calendar_feed_revealed_at is deliberately left standing, as in every other
 // disarm: whether the owner has already been shown a URL is a separate fact

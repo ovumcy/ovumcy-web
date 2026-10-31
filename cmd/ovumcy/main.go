@@ -246,12 +246,13 @@ func calendarFeedFenceRefusal(cause error) error {
 }
 
 // mustEnforceCalendarFeedKeyRotation runs the boot-time calendar-feed
-// key-rotation sentinel. It disarms the legacy pre-032 feed rows, whose
-// key-independent bcrypt hashes would otherwise keep a leaked subscribe URL
-// alive, on either of two boots: one where SECRET_KEY (or the feed-MAC label
-// set) changed since the previous boot, and one where no epoch is stored at
-// all — an upgrade past the sentinel arrives holding exactly those rows and no
-// record of the key that minted them. The decision logic lives (tested) in
+// key-rotation sentinel. On a boot where SECRET_KEY (or the feed-MAC label set)
+// changed since the previous one it clears EVERY armed feed row, so returning to
+// an older key cannot revive a leaked subscribe URL; on a boot where no epoch is
+// stored at all — an upgrade past the sentinel arrives holding legacy pre-032
+// rows and no record of the key that minted them — it clears the MAC-less
+// rows, whose key-independent bcrypt hashes would otherwise keep a leaked
+// subscribe URL alive. The decision logic lives (tested) in
 // services.CalendarFeedRotationSentinel; this wrapper only wires repositories,
 // fails the boot hard on an error, and prints the operator-facing line.
 func mustEnforceCalendarFeedKeyRotation(repositories *db.Repositories, secretKey []byte) {
@@ -352,9 +353,9 @@ func calendarFeedRotationStartupMessage(outcome services.CalendarFeedRotationOut
 		return ""
 	}
 	if outcome.DisarmedFeeds == 0 {
-		return "SECRET_KEY rotation detected: no legacy calendar feeds to disarm (armed feeds with a keyed MAC stop verifying on their own)"
+		return "SECRET_KEY rotation detected: no armed calendar feeds to disarm"
 	}
-	return fmt.Sprintf("SECRET_KEY rotation detected: %d legacy calendar feed(s) disarmed; owners re-generate subscribe URLs from settings", outcome.DisarmedFeeds)
+	return fmt.Sprintf("SECRET_KEY rotation detected: %d armed calendar feed(s) disarmed; owners re-generate subscribe URLs from settings", outcome.DisarmedFeeds)
 }
 
 // authEmailRenormalizeStartupMessage renders the operator-facing startup line

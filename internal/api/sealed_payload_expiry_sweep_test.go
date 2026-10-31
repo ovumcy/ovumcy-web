@@ -199,7 +199,7 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 	calendarFeedRevealCookieName: {
 		mint: func(handler *Handler, c fiber.Ctx) error {
 			return handler.setCalendarFeedRevealCookie(
-				c, sealedExpirySweepUserID, "https://ovumcy.example.test/calendar/feed/AAAAAAAAAAAAAAAA.ics", false)
+				c, sealedExpirySweepUserID, "AAAAAAAAAAAAAAAA", "https://ovumcy.example.test/calendar/feed/AAAAAAAAAAAAAAAA.ics", false)
 		},
 		honours: func(handler *Handler, c fiber.Ctx) bool {
 			return strings.TrimSpace(handler.readCalendarFeedRevealState(c, sealedExpirySweepUserID).FeedURL) != ""

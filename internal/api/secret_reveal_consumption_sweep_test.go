@@ -119,7 +119,7 @@ func assertRevealClaimSweepAnswersBothWays(t *testing.T) {
 
 	claiming := parseFunctionBodyForTest(t, `
 		state := handler.readCalendarFeedRevealState(c, user.ID)
-		claimed, err := handler.calendarFeedSettings.ClaimFeedReveal(c.Context(), user.ID, time.Now())
+		claimed, err := handler.calendarFeedSettings.ClaimFeedReveal(c.Context(), user.ID, state.Selector, time.Now())
 		_, _, _ = state, claimed, err
 	`)
 	if names := calledFunctionNames(claiming); !names["readCalendarFeedRevealState"] || !names["ClaimFeedReveal"] {
