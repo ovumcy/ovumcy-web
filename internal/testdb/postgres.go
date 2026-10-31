@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +27,14 @@ const (
 	// cleanup covers an image whose VOLUME path moved — postgres:18 declares
 	// /var/lib/postgresql instead.
 	postgresDataDir = "/var/lib/postgresql/data"
+
+	// PostgresContainerLabel marks every throwaway Postgres container the test
+	// harnesses start (this package and scripts/run-e2e.mjs); its value is the
+	// creation time in unix nanos. A `go test` or e2e run killed mid-flight runs
+	// no cleanup, and nothing else removes a `--rm` container that is still
+	// running, so the next run sweeps labelled ones older than staleContainerAge.
+	PostgresContainerLabel = "ovumcy.test.postgres"
+	staleContainerAge      = time.Hour
 
 	dockerCommandTimeout          = 30 * time.Second
 	dockerImagePullTimeout        = 3 * time.Minute
@@ -61,8 +71,10 @@ func StartPostgres(t *testing.T, databaseName string) (dsn string, containerID s
 	}
 
 	ensurePostgresImageAvailable(t)
+	staleContainerSweep.Do(removeStalePostgresContainers)
 
 	containerID = runDockerCommand(t, "run", "-d", "--rm", "-P",
+		"--label", fmt.Sprintf("%s=%d", PostgresContainerLabel, time.Now().UnixNano()),
 		"--tmpfs", postgresDataDir,
 		"-e", "POSTGRES_USER="+postgresTestUser,
 		"-e", "POSTGRES_PASSWORD="+postgresTestPassword,
@@ -90,6 +102,43 @@ func StartPostgres(t *testing.T, databaseName string) (dsn string, containerID s
 	waitForHostSQLReadiness(t, dsn)
 
 	return dsn, containerID
+}
+
+// staleContainerSweep runs removeStalePostgresContainers once per test process:
+// the leftovers it looks for predate the process.
+var staleContainerSweep sync.Once
+
+// removeStalePostgresContainers removes labelled containers an earlier killed
+// run left running. A container without the label, or with a label value
+// isStalePostgresContainer refuses, is never touched. Every error is ignored:
+// this is housekeeping, and the start that follows fails loudly on a daemon
+// that cannot answer.
+func removeStalePostgresContainers() {
+	listed, err := runDockerCommandWithError("ps", "--filter", "label="+PostgresContainerLabel,
+		"--format", `{{.ID}} {{.Label "`+PostgresContainerLabel+`"}}`)
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	for _, line := range strings.Split(listed, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || !isStalePostgresContainer(fields[1], now) {
+			continue
+		}
+		_ = runDockerCommandAllowFailure("rm", "-f", "-v", fields[0])
+	}
+}
+
+// isStalePostgresContainer reports whether a container's label value, the unix
+// nanos of its creation, lies at least staleContainerAge before now. Any other
+// shape — empty, signed, non-numeric — is never stale: this is the only thing
+// standing between the sweep and a container it does not own.
+func isStalePostgresContainer(labelValue string, now time.Time) bool {
+	nanos, err := strconv.ParseUint(labelValue, 10, 63)
+	if err != nil {
+		return false
+	}
+	return now.Sub(time.Unix(0, int64(nanos))) >= staleContainerAge
 }
 
 func waitForPostgresReadiness(t *testing.T, containerID string, databaseName string) {

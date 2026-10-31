@@ -483,6 +483,44 @@ async function removePostgresContainer(containerID) {
   await runDockerCapture(["rm", "-f", "-v", containerID]).catch(() => {});
 }
 
+// Same key and value shape as internal/testdb (PostgresContainerLabel), so either
+// harness sweeps what the other left behind.
+const POSTGRES_CONTAINER_LABEL = "ovumcy.test.postgres";
+const STALE_CONTAINER_AGE_MS = 60 * 60 * 1000;
+
+// isStalePostgresContainer: the label value is the creation time in unix nanos.
+// Any other shape (empty, signed, fractional, non-numeric) is never stale.
+function isStalePostgresContainer(labelValue, nowMs) {
+  if (!/^\d+$/.test(labelValue)) {
+    return false;
+  }
+  return nowMs - Number(BigInt(labelValue) / 1_000_000n) >= STALE_CONTAINER_AGE_MS;
+}
+
+// removeStalePostgresContainers removes labelled containers a killed run left
+// running (a killed runner executes no finally block). Housekeeping: every
+// error is ignored, and an unlabelled container is never listed.
+async function removeStalePostgresContainers() {
+  try {
+    const listed = await runDockerCapture([
+      "ps",
+      "--filter",
+      `label=${POSTGRES_CONTAINER_LABEL}`,
+      "--format",
+      `{{.ID}} {{.Label "${POSTGRES_CONTAINER_LABEL}"}}`,
+    ]);
+    const now = Date.now();
+    for (const line of listed.stdout.split("\n")) {
+      const [id, value, ...rest] = line.trim().split(/\s+/);
+      if (id && value && rest.length === 0 && isStalePostgresContainer(value, now)) {
+        await removePostgresContainer(id);
+      }
+    }
+  } catch {
+    // housekeeping only
+  }
+}
+
 async function startPostgresRuntime(runID) {
   const databaseName = createPostgresDatabaseName(runID);
   const user = process.env.E2E_POSTGRES_USER ?? "ovumcy";
@@ -490,6 +528,7 @@ async function startPostgresRuntime(runID) {
   const image = process.env.E2E_POSTGRES_IMAGE ?? "postgres:17-alpine";
 
   await pullDockerImage(image);
+  await removeStalePostgresContainers();
 
   // A tmpfs on the image's VOLUME path keeps the daemon from creating an
   // anonymous data volume per start; the `rm -f -v` below covers an
@@ -499,6 +538,8 @@ async function startPostgresRuntime(runID) {
     "-d",
     "--rm",
     "-P",
+    "--label",
+    `${POSTGRES_CONTAINER_LABEL}=${BigInt(Date.now()) * 1_000_000n}`,
     "--tmpfs",
     "/var/lib/postgresql/data",
     "-e",
