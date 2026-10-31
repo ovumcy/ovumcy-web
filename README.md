@@ -43,7 +43,7 @@ Ovumcy is a menstrual cycle tracker you run on your own server. If the thought o
 - **Your storage.** SQLite out of the box; PostgreSQL when you want it.
 - **No strings.** No vendor account, no analytics, no telemetry. CSV and JSON export whenever you like.
 
-> ⭐ **If Ovumcy is useful to you, star the repository.** Ovumcy is free, open source, and under active development; stars are how people looking for a private cycle tracker find it. More ways to help: [Support the Project](#support-the-project).
+> ⭐ **If Ovumcy is useful to you, [star the repository](https://github.com/ovumcy/ovumcy-web).** Ovumcy is under active development, and stars are how people looking for a private cycle tracker find it. More ways to help: [Support the Project](#support-the-project).
 
 This README describes the current `main` branch. The latest tagged release is `v1.9.2`.
 
@@ -160,7 +160,7 @@ $env:SECRET_KEY_FILE = "C:\\path\\to\\ovumcy-secret.txt"
 go run ./cmd/ovumcy
 ```
 
-Up and running? A ⭐ on the repository helps others find Ovumcy.
+Up and running? A [⭐ on the repository](https://github.com/ovumcy/ovumcy-web) helps others find Ovumcy.
 
 <a id="demo" name="demo"></a>
 <a id="screenshots" name="screenshots"></a>
@@ -461,12 +461,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). For bugs and feature requests, open a [G
 
 Ovumcy is free, has no ads or trackers, and keeps growing release by release. If it is useful to you:
 
-- **Star the repository** — the ⭐ button at the top of this page. It is the simplest way to help others find the project.
+- **[Star the repository](https://github.com/ovumcy/ovumcy-web)** ⭐ — it is the simplest way to help others find the project.
 - **Report bugs and share ideas** in [GitHub Issues](https://github.com/ovumcy/ovumcy-web/issues).
 - **Help with translations** — see [Supported Languages](#supported-languages) and [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Tell a friend** who wants a cycle tracker that keeps their data at home.
 
-Donation options will be listed on [ovumcy.com](https://ovumcy.com).
+Want to support Ovumcy with a donation? Donation options are on the way; until then, write to [contact@ovumcy.com](mailto:contact@ovumcy.com).
 
 <a id="roadmap" name="roadmap"></a>
 ## Releases
