@@ -10,9 +10,9 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/pquerna/otp v1.5.0
-	github.com/valyala/fasthttp v1.76.0
+	github.com/valyala/fasthttp v1.77.0
 	golang.org/x/crypto v0.58.0
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/tools v0.52.0
