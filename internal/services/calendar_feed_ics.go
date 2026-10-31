@@ -172,8 +172,7 @@ type calendarFeedEvent struct {
 //     projection + window helpers, and emit a predicted-next-period event and an
 //     ovulation event per projected cycle when each is calculable and not in the
 //     past. Once the running cycle's next period is due or missed
-//     (ProjectionChainSuppressed) no period after it is sent, and no ovulation
-//     past the one in the cycle that period opens.
+//     (ProjectionChainSuppressed) nothing from the cycles after it is sent.
 //
 // No UID key (no SecretKey, or a user with no id) renders zero events: an event
 // that cannot carry an opaque UID is withheld, never named by its kind.
@@ -312,18 +311,20 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	runningStart := CalendarDay(stats.LastPeriodStart, input.Location)
 	cycles := calendarFeedProjectionCycles + max(CalendarDaysBetween(runningStart, today), 0)/cycleLength
 	// Once the running cycle's next period is due or missed, it is the only
-	// period the pages name, and the ovulation the hero names is the one in the
-	// cycle it opens (cycle 1's window here); anything later is rolled from that
-	// missed start (ProjectionChainSuppressed). The grid stops at the same pair.
+	// period the pages name, and every cycle after it is rolled from that missed
+	// start (ProjectionChainSuppressed): no period and no ovulation of theirs is
+	// sent. Outside irregular range mode the fertility half is already withheld
+	// by then; in range mode the pages name only the range placed from the
+	// recorded start (WEB-385). The grid stops at the same period.
 	chainSuppressed := suppression.ProjectionChainSuppressed
 	if chainSuppressed {
-		cycles = min(cycles, 2)
+		cycles = 1
 	}
 	for cycle := range cycles {
 		anchor := AddCalendarDays(runningStart, cycle*cycleLength, input.Location)
 
 		nextPeriodStart := AddCalendarDays(anchor, cycleLength, input.Location)
-		if (!chainSuppressed || cycle == 0) && !nextPeriodStart.Before(today) &&
+		if !nextPeriodStart.Before(today) &&
 			(!periodWindow || !calendarDayWithin(nextPeriodStart, ranges.NextPeriodStart, ranges.NextPeriodEnd)) {
 			appendEvent(calendarFeedKindPeriod, nextPeriodStart)
 		}

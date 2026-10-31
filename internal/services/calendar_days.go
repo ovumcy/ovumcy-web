@@ -255,12 +255,18 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	}
 	// In the out-of-date band only the running cycle's own period is drawn — the
 	// date the hero and the overview name — never a chain rolled forward from a
-	// start that is due or already missed (ProjectionChainSuppressed).
+	// start that is due or already missed (ProjectionChainSuppressed). The cycle
+	// that period opens is anchored on that missed start too, so it carries no
+	// fertility marker; in irregular range mode, where the fertility half is not
+	// otherwise withheld by then, the pages name only the range placed from the
+	// recorded start (WEB-385).
 	projectedCycles := maxProjectedCyclesInGrid
+	projectedFertility := !fertilitySuppressed
 	if ProjectionChainSuppressed(user, stats) {
 		projectedCycles = 1
+		projectedFertility = false
 	}
-	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, !fertilitySuppressed, projectedCycles)
+	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, projectedFertility, projectedCycles)
 	appendPredictedStartRange(maps.predictedStartRange, user, stats, DateAtLocation(now, location), location)
 	appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, BoundaryContextFor(user, DateAtLocation(now, location)), location)
 	if !fertilitySuppressed {
