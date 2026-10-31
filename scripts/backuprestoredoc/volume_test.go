@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -499,20 +500,25 @@ func ephemeralVolume(t *testing.T) string {
 		t.Fatalf("the ephemeral volume name %q contains %q, which would defeat the check that keeps this guard away from a real deployment", name, dataVolumeName)
 	}
 
-	removeStaleEphemeralVolumes()
+	staleSweep.Do(removeStaleEphemeralVolumes)
 	runDocker(t, nil, "volume", "create", name)
 	t.Cleanup(func() { removeEphemeralVolume(t, name) })
 	return name
 }
 
+// staleSweep runs removeStaleEphemeralVolumes once per test process: the
+// leftovers it looks for predate the process, so every call after the first
+// would list the same daemon and find nothing.
+var staleSweep sync.Once
+
 // removeStaleEphemeralVolumes removes what an earlier run of this guard created
 // and never got to remove: a `go test` killed by its own timeout or by the
 // developer runs no t.Cleanup, and nothing else ever deletes a named volume.
-// Only this guard's own naming pattern is touched, and only a volume older than
-// staleEphemeralVolumeAge by the nanos in its name, so a run in a neighbouring
-// checkout keeps its volume. No -f: a volume still in use is left where it is.
-// Every error is ignored — this is housekeeping, and the create that follows
-// fails loudly on a daemon that cannot answer.
+// Only this guard's own naming pattern is touched, and only a volume
+// isStaleEphemeralVolume accepts, so a run in a neighbouring checkout keeps its
+// volume. No -f: a volume still in use is left where it is. Every error is
+// ignored — this is housekeeping, and the create that follows fails loudly on
+// a daemon that cannot answer.
 func removeStaleEphemeralVolumes() {
 	ctx, cancel := context.WithTimeout(context.Background(), dockerCommandTimeout)
 	defer cancel()
@@ -521,16 +527,28 @@ func removeStaleEphemeralVolumes() {
 	if err != nil {
 		return
 	}
+	now := time.Now()
 	for _, name := range strings.Fields(string(listed)) {
-		if !strings.HasPrefix(name, ephemeralVolumePrefix) || !strings.HasSuffix(name, ephemeralVolumeSuffix) {
-			continue
+		if isStaleEphemeralVolume(name, now) {
+			_ = exec.CommandContext(ctx, "docker", "volume", "rm", name).Run()
 		}
-		nanos, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(name, ephemeralVolumePrefix), ephemeralVolumeSuffix), 10, 64)
-		if err != nil || time.Since(time.Unix(0, nanos)) < staleEphemeralVolumeAge {
-			continue
-		}
-		_ = exec.CommandContext(ctx, "docker", "volume", "rm", name).Run()
 	}
+}
+
+// isStaleEphemeralVolume reports whether name is one of this guard's ephemeral
+// volumes whose creation, read from the unix nanos in the name, lies more than
+// staleEphemeralVolumeAge before now. A name of any other shape is never
+// stale: this is the only thing standing between the sweep and a volume it
+// does not own.
+func isStaleEphemeralVolume(name string, now time.Time) bool {
+	if !strings.HasPrefix(name, ephemeralVolumePrefix) || !strings.HasSuffix(name, ephemeralVolumeSuffix) {
+		return false
+	}
+	nanos, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(name, ephemeralVolumePrefix), ephemeralVolumeSuffix), 10, 64)
+	if err != nil {
+		return false
+	}
+	return now.Sub(time.Unix(0, nanos)) >= staleEphemeralVolumeAge
 }
 
 // removeEphemeralVolume removes the volume, retrying while it is still in use.
