@@ -312,8 +312,11 @@ type User struct {
 	CalendarFeedLastPolledOn *time.Time `gorm:"column:calendar_feed_last_polled_on;type:date"`
 	// CalendarFeedDetailedTitles is the owner's opt-in (migration 043, WEB-379)
 	// to name the estimate type in the feed's event titles. False keeps the one
-	// fixed neutral SUMMARY. Written only by SaveCalendarFeedToken, beside the
-	// token the choice was made for.
+	// fixed neutral SUMMARY. Set by SaveCalendarFeedToken, beside the token the
+	// choice was made for, and reset to false by every disarm in the same
+	// statement (WEB-389): a pre-v2 binary mints without writing it, so a flag
+	// left on a revoked row would carry over to that link. Pinned by
+	// calendar_feed_disarm_clears_titles_guard_test.go.
 	CalendarFeedDetailedTitles bool `gorm:"column:calendar_feed_detailed_titles;not null;default:false"`
 }
 
