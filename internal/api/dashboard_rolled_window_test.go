@@ -31,16 +31,18 @@ func TestDashboardAndStatsPageReadTodayAgainstTheRolledWindowLikeTheOverview(t *
 	}{
 		{
 			// Cycles of 24, 24, 24, 40 and 40 days, luteal phase 14, on cycle day
-			// 29: the median of 24 rolls the ovulation to cycle day 34, and its
-			// window (days 29-34) covers today.
-			name: "24-24-24-40-40 on cycle day 29",
+			// 20: the running ovulation (day 10) is behind today, the median of 24
+			// rolls it to cycle day 34, and its window (days 29-34) is still ahead.
+			// A window that already covers today only exists after the median
+			// start is due, where the fertility half is withheld (WEB-378).
+			name: "24-24-24-40-40 on cycle day 20",
 			now:  time.Date(2026, time.June, 15, 12, 0, 0, 0, time.UTC),
 			seed: func(t *testing.T, database *gorm.DB, user models.User, today time.Time) {
 				updateStatsOverviewUser(t, database, user, map[string]any{"luteal_phase": 14})
-				seedStatsOverviewCycleHistory(t, database, user, today, 180, 156, 132, 108, 68, 28)
+				seedStatsOverviewCycleHistory(t, database, user, today, 171, 147, 123, 99, 59, 19)
 			},
-			wantPhase:     "unknown",
-			wantFertility: services.FertilityStatusFertile,
+			wantPhase:     "luteal",
+			wantFertility: services.FertilityStatusOutsideEstimatedWindow,
 		},
 		{
 			// Three 28-day cycles, the running one from 9999-12-10: its ovulation
@@ -99,23 +101,23 @@ func TestDashboardAndStatsPageReadTodayAgainstTheRolledWindowLikeTheOverview(t *
 // On a rolled day the hero header names the phase the overview publishes
 // (MovedWindow.CurrentPhase), so the dashboard and the JSON overview speak of one
 // phase, while the ribbon's day cells keep mapping the RUNNING cycle: the
-// 24-24-24-40-40 history on cycle day 29 prints "unknown" in the header and
-// "luteal" on today's cell, which sits in the running cycle's luteal span. That
-// split is accepted — the ribbon draws the cycle that is running, the header
-// answers the day. Which phase card is marked current follows the header, and is
-// pinned beside the card breakdown (TestRolledWindowHeaderNamesTheOverviewPhaseAndMarksNoOtherCardCurrent).
+// 24-24-24-40-40 history on cycle day 20 — rolled, the window still ahead —
+// prints "luteal" in the header and on today's cell, which sits in the running
+// cycle's luteal span. Which phase card is marked current follows the header, and
+// is pinned beside the card breakdown
+// (TestRolledWindowHeaderNamesTheOverviewPhaseAndMarksNoOtherCardCurrent).
 func TestDashboardHeaderNamesTheOverviewPhaseWhileTheRibbonKeepsTheRunningCycle(t *testing.T) {
 	now := time.Date(2026, time.June, 15, 12, 0, 0, 0, time.UTC)
 	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return now }})
 	user := createOnboardingTestUserAt(t, database, "rolled-window-ribbon@example.com", "StrongPass1", true, now.AddDate(-1, 0, 0))
 	today := services.DateAtLocation(now, time.UTC)
 	updateStatsOverviewUser(t, database, user, map[string]any{"luteal_phase": 14})
-	seedStatsOverviewCycleHistory(t, database, user, today, 180, 156, 132, 108, 68, 28)
+	seedStatsOverviewCycleHistory(t, database, user, today, 171, 147, 123, 99, 59, 19)
 	authCookie := issueAuthCookieForUser(t, user)
 
 	_, payload := fetchStatsOverview(t, app, authCookie)
-	if payload.CurrentPhase != "unknown" {
-		t.Fatalf("fixture: overview current_phase = %q, want %q on a rolled day", payload.CurrentPhase, "unknown")
+	if payload.CurrentPhase != "luteal" {
+		t.Fatalf("fixture: overview current_phase = %q, want %q on a rolled day", payload.CurrentPhase, "luteal")
 	}
 
 	document := fetchStatsOverviewDashboardDocument(t, app, authCookie)
@@ -136,8 +138,8 @@ func TestDashboardHeaderNamesTheOverviewPhaseWhileTheRibbonKeepsTheRunningCycle(
 	if todayCell == nil {
 		t.Fatal("the dashboard ribbon rendered no cell for today")
 	}
-	if day := htmlAttr(todayCell, "data-cycle-ribbon-day"); day != "29" {
-		t.Errorf("today's ribbon cell is day %q, want 29", day)
+	if day := htmlAttr(todayCell, "data-cycle-ribbon-day"); day != "20" {
+		t.Errorf("today's ribbon cell is day %q, want 20", day)
 	}
 	if rendered := htmlAttr(todayCell, "data-phase"); rendered != "luteal" {
 		t.Errorf("today's ribbon cell phase = %q, want %q: the ribbon maps the running cycle", rendered, "luteal")
