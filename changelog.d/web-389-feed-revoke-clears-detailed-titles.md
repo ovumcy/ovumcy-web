@@ -6,5 +6,5 @@
   mints a link without touching that setting, so after a downgrade, a new link there and an
   upgrade back, the new link sent "Period (estimate)" and "Ovulation (estimate)" titles the owner
   never chose for it. Every disarm now resets the choice to neutral titles. A link an older
-  release rotates in place still keeps it; `docs/self-hosted.md → Downgrade Caveats` names the
-  rotation that closes that case.
+  release rotates in place stops working after the upgrade back instead, and the owner generates
+  a new one; `docs/self-hosted.md → Downgrade Caveats` describes both cases.
