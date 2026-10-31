@@ -1170,6 +1170,42 @@ func (repo *UserRepository) DisarmAllCalendarFeedTokens(ctx context.Context) (in
 	return result.RowsAffected, result.Error
 }
 
+// RevokeAllSessionsAndWebhookEndpoints is the restore fence's second bulk write
+// (WEB-399), run after DisarmAllCalendarFeedTokens on a boot that saw a
+// restore. It bumps auth_session_version on EVERY account, so no cookie minted
+// before the boot validates, and clears every stored webhook endpoint with its
+// delivery mark, advancing webhook_config_version so a claim snapshotted
+// against the restored row cannot complete. The per-kind opt-ins and the lead
+// window stay: they are preferences, not a destination. Both statements run in
+// one transaction, so a failure leaves neither half and the boot retries.
+func (repo *UserRepository) RevokeAllSessionsAndWebhookEndpoints(ctx context.Context) (models.RestoreRevocationCounts, error) {
+	var counts models.RestoreRevocationCounts
+	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		sessions := tx.Model(&models.User{}).Where("id > 0").
+			UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1"))
+		if sessions.Error != nil {
+			return sessions.Error
+		}
+		webhooks := tx.Model(&models.User{}).
+			Where("webhook_url != '' OR webhook_enabled = ?", true).
+			Updates(map[string]any{
+				"webhook_enabled":           false,
+				"webhook_url":               "",
+				"webhook_last_delivered_at": nil,
+				"webhook_config_version":    gorm.Expr("webhook_config_version + 1"),
+			})
+		if webhooks.Error != nil {
+			return webhooks.Error
+		}
+		counts = models.RestoreRevocationCounts{Sessions: sessions.RowsAffected, WebhookEndpoints: webhooks.RowsAffected}
+		return nil
+	})
+	if err != nil {
+		return models.RestoreRevocationCounts{}, err
+	}
+	return counts, nil
+}
+
 // FindByCalendarFeedSelector resolves the single owner whose calendar_feed_selector
 // equals selector, for the by-selector feed lookup (a later slice). It returns
 // (user, true, nil) on a hit and (zero, false, nil) when no row matches — the

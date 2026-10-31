@@ -151,6 +151,10 @@ func (fakeConfirmFenceUsers) DisarmAllCalendarFeedTokens(_ context.Context) (int
 	return 0, nil
 }
 
+func (fakeConfirmFenceUsers) RevokeAllSessionsAndWebhookEndpoints(_ context.Context) (models.RestoreRevocationCounts, error) {
+	return models.RestoreRevocationCounts{}, nil
+}
+
 const confirmFenceTestToken = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 // TestConfirmOperatorFeedRevocationSucceedsAndAdvancesWhenTheHalvesAgree is
