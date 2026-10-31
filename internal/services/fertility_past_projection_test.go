@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
 // TestEverySurfaceWithholdsTheFertilityHalfPastTheProjectionLength pins WEB-378:
@@ -17,6 +19,27 @@ import (
 // History: cycles 27/28/28/36 (median 28, average 30), the running one from
 // 2026-09-30. Cycle day 28 is the control; days 29 and 30 are the gap; day 31
 // opens the out-of-date band, whose own reason replaces the new one.
+// TestIrregularRangeModeKeepsItsWindowButNotTheChain: irregular range mode is
+// outside the fertility signal (its range is placed from the recorded start), yet
+// its chained periods are rolled from the median start like any other, so the
+// chain gate still fires on the day after the median.
+func TestIrregularRangeModeKeepsItsWindowButNotTheChain(t *testing.T) {
+	user := &models.User{IrregularCycle: true}
+	stats := publishedStatsBase()
+	stats.CurrentCycleDay = 29
+	stats.AverageCycleLength = 30
+	stats.MinCycleLength, stats.MaxCycleLength = 24, 36
+	if !dashboardIrregularPredictionRangeEnabled(user, stats) {
+		t.Fatal("fixture: irregular range mode must be on")
+	}
+	if DashboardCyclePastProjectionLength(user, stats) || FertilityProjectionSuppressed(user, stats) {
+		t.Error("irregular range mode withholds its fertility range on the day after the median")
+	}
+	if !ProjectionChainSuppressed(user, stats) {
+		t.Error("irregular range mode chains periods from the missed median start")
+	}
+}
+
 func TestEverySurfaceWithholdsTheFertilityHalfPastTheProjectionLength(t *testing.T) {
 	user := dayFeedbackParityUser(378)
 	logs := cycleStartLogs(t, "2026-06-03", "2026-06-30", "2026-07-28", "2026-08-25", "2026-09-30")
