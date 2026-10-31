@@ -296,6 +296,7 @@
   "settings.import_failed": "Ripristino fallito. Riprova.",
   "settings.import_invalid_file": "Questo file non è un'esportazione Ovumcy valida.",
   "settings.import_too_large": "Quel file è troppo grande per l'importazione.",
+  "settings.import_future_day": "Questo file registra un ciclo o un test di gravidanza a più di due giorni nel futuro, quindi non è stato ripristinato nulla.",
   "settings.data.title": "I tuoi dati",
   "settings.clear_data.title": "Cancella tutti i dati di tracciamento",
   "settings.clear_data.subtitle": "Cancellare i dati elimina o reimposta tutto quanto segue:",

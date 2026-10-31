@@ -296,6 +296,7 @@
   "settings.import_failed": "Wiederherstellung fehlgeschlagen. Bitte versuchen Sie es erneut.",
   "settings.import_invalid_file": "Diese Datei ist kein gültiger Ovumcy-Export.",
   "settings.import_too_large": "Diese Datei ist zu groß zum Importieren.",
+  "settings.import_future_day": "Diese Datei enthält eine Periode oder einen Schwangerschaftstest mehr als zwei Tage in der Zukunft, daher wurde nichts wiederhergestellt.",
   "settings.data.title": "Ihre Daten",
   "settings.clear_data.title": "Alle Tracking-Daten löschen",
   "settings.clear_data.subtitle": "Beim Löschen der Daten wird Folgendes gelöscht oder zurückgesetzt:",

@@ -75,6 +75,8 @@
       case "import file too large":
       case "request_too_large":
         return context.tooLargeMessage;
+      case "import file records a future day":
+        return context.futureDayMessage;
       case "settings form account changed":
         return context.accountChangedMessage;
       default:
@@ -245,6 +247,11 @@
     failedMessage: readTextAttribute(section, "data-import-failed", "Restore failed. Please try again."),
     invalidFileMessage: readTextAttribute(section, "data-import-invalid-file", "This file isn't a valid Ovumcy export."),
     tooLargeMessage: readTextAttribute(section, "data-import-too-large", "That file is too large to import."),
+    futureDayMessage: readTextAttribute(
+      section,
+      "data-import-future-day",
+      "This file records a period or a pregnancy test more than two days ahead, so nothing was restored."
+    ),
     accountChangedMessage: readTextAttribute(
       section,
       "data-import-account-changed",

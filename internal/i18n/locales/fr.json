@@ -318,6 +318,7 @@
   "settings.import_failed": "Échec de la restauration. Veuillez réessayer.",
   "settings.import_invalid_file": "Ce fichier n'est pas un export Ovumcy valide.",
   "settings.import_too_large": "Ce fichier est trop volumineux pour être importé.",
+  "settings.import_future_day": "Ce fichier enregistre des règles ou un test de grossesse plus de deux jours à l'avance ; rien n'a donc été restauré.",
 
   "settings.data.title": "Vos données",
   "settings.data.storage_copy": "Vos enregistrements restent dans la base SQLite ou PostgreSQL sur ce serveur. Les exports CSV et JSON vous donnent une copie quand vous en avez besoin.",

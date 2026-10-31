@@ -296,6 +296,7 @@
   "settings.import_failed": "Restore failed. Please try again.",
   "settings.import_invalid_file": "This file isn't a valid Ovumcy export.",
   "settings.import_too_large": "That file is too large to import.",
+  "settings.import_future_day": "This file records a period or a pregnancy test more than two days ahead, so nothing was restored.",
   "settings.data.title": "Your data",
   "settings.clear_data.title": "Clear all tracking data",
   "settings.clear_data.subtitle": "Clearing data erases or resets all of the following:",

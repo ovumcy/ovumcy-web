@@ -152,6 +152,7 @@ func TestMapImportErrorCoversAllBranches(t *testing.T) {
 	}{
 		{services.ErrImportMalformed, http.StatusBadRequest, "invalid import file"},
 		{services.ErrImportTooLarge, http.StatusRequestEntityTooLarge, "import file too large"},
+		{services.ErrImportFutureObservation, http.StatusBadRequest, "import file records a future day"},
 		{services.ErrImportWriteFailed, http.StatusInternalServerError, "failed to import data"},
 		{errors.New("unexpected"), http.StatusInternalServerError, "failed to import data"},
 	}
