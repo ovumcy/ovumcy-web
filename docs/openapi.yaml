@@ -3379,6 +3379,17 @@ paths:
               example:
                 error: "csrf_refused"
                 error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
+        '409':
+          description: |
+            `webhook settings changed elsewhere`: another write to the delivery configuration
+            (a removal, a save from another device, the operator CLI) landed after the settings
+            this save was decided from were read. Nothing was written; re-read and retry.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "webhook settings changed elsewhere"
+                error_detail: { key: "webhook settings changed elsewhere", category: "conflict", target: "settings_form" }
         '429': { $ref: '#/components/responses/RateLimited' }
         '500':
           description: |
