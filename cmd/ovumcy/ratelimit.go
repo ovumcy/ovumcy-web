@@ -108,18 +108,16 @@ func rateLimitKeyGenerator(proxy proxySettings) func(fiber.Ctx) string {
 }
 
 // proxyHeaderRateLimitWarning returns a non-empty operator note when trust-proxy
-// is enabled but PROXY_HEADER resolves to X-Forwarded-For. The edge rate limiters
-// no longer trust that header blindly — rateLimitKeyGenerator keys on the
-// rightmost untrusted X-Forwarded-For hop, so a spoofed prefix cannot defeat
-// them. The residual is that fiber's c.IP() still returns the client-supplied
-// leftmost token; c.IP() only feeds the secondary per-client auth-attempt
-// buckets in internal/services, which sit behind spoof-proof per-identity
-// buckets, so brute-force protection holds. PROXY_HEADER should still name a
-// header the proxy overwrites with the real client IP (for example X-Real-IP)
-// for spoof-proof c.IP() values.
+// is enabled but PROXY_HEADER resolves to X-Forwarded-For. Neither the edge rate
+// limiters nor the per-client auth-attempt buckets trust that header blindly —
+// both key on rateLimitKeyGenerator's rightmost untrusted hop (the buckets via
+// api.ClientKeyMiddleware). The residual is that fiber's c.IP() still returns
+// the client-supplied leftmost token wherever else it is read, so PROXY_HEADER
+// should still name a header the proxy overwrites with the real client IP (for
+// example X-Real-IP).
 func proxyHeaderRateLimitWarning(proxy proxySettings) string {
 	if proxy.Enabled && strings.EqualFold(strings.TrimSpace(proxy.Header), fiber.HeaderXForwardedFor) {
-		return "NOTE: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the rate limiters now key on the rightmost untrusted X-Forwarded-For hop and are not spoofable, but fiber's c.IP() still returns the client-supplied leftmost entry. c.IP() only feeds the secondary per-client auth-attempt buckets (the per-identity buckets that actually cap brute force are unaffected). Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP) for spoof-proof c.IP() values."
+		return "NOTE: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the rate limiters and the per-client auth-attempt buckets key on the rightmost untrusted X-Forwarded-For hop and are not spoofable, but fiber's c.IP() still returns the client-supplied leftmost entry. Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP) for spoof-proof c.IP() values."
 	}
 	return ""
 }

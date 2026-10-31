@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -93,7 +94,11 @@ func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKe
 		return "", ErrPasswordRecoveryCodeInvalid
 	}
 
-	user, err := service.auth.FindUserByEmailRecoveryCodeAndPassword(ctx, normalizedEmail, code, password)
+	// The same input policy every password write and the sign-in compare apply
+	// (NormalizeCredentialsInput, NormalizeResetPasswordInput): a stored hash is
+	// of the trimmed value, so the untrimmed one would refuse the owner's own
+	// password whenever it was typed with the padding sign-in forgives.
+	user, err := service.auth.FindUserByEmailRecoveryCodeAndPassword(ctx, normalizedEmail, code, strings.TrimSpace(password))
 	if err != nil {
 		if errors.Is(err, ErrRecoveryCodeNotFound) {
 			return "", ErrPasswordRecoveryCodeInvalid

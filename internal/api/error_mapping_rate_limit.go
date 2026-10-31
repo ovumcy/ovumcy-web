@@ -98,6 +98,15 @@ func (handler *Handler) respondRateLimitedMappedError(c fiber.Ctx, spec APIError
 // targets that write a page-slot cookie at all. A global-target spec never
 // writes flash (apiError does not touch either cookie), so it needs no
 // exempt twin.
+//
+// Two arms answer something other than 429, by choice. A plain browser form
+// on an auth or settings target gets the 303 to its page with the refusal
+// flashed, because a form post that answered 429 would paint a bare error
+// document in place of the page that renders the copy; a settings HTMX form
+// gets the 200 status fragment every settings refusal answers with, since that
+// is the response its swap renders. JSON, auth-form HTMX and every global
+// target answer 429. Chosen over a uniform 429 (WEB-395 L10): what the uniform status would
+// buy is a signal no browser flow acts on, at the cost of the refusal copy.
 func (handler *Handler) respondRateLimitedFormError(c fiber.Ctx, spec APIErrorSpec) error {
 	switch spec.Target {
 	case APIErrorTargetAuthForm:

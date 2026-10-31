@@ -42,7 +42,7 @@ func (handler *Handler) ForgotPassword(c fiber.Ctx) error {
 	token, err := handler.passwordResetSvc.StartRecovery(
 		c.Context(),
 		handler.secretKey,
-		c.IP(),
+		requestClientKey(c),
 		input.Email,
 		input.RecoveryCode,
 		input.Password,

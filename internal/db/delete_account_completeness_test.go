@@ -111,23 +111,41 @@ func userScopedTablesFromSchema(t *testing.T, database *gorm.DB) []string {
 // container helper, which skips when docker is absent. The SQLite arm is what
 // keeps the guard non-vacuous on a host without docker.
 func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
-	t.Run("sqlite", func(t *testing.T) {
-		dir := t.TempDir()
-		database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(dir, "erasure.db")))
-		requireNoErr(t, err, "open sqlite")
-		t.Cleanup(func() {
-			if sqlDB, err := database.DB(); err == nil {
-				_ = sqlDB.Close()
-			}
+	// Both erasures share deleteAccountChildRowsTx, but each deletes the users
+	// row itself, so each is swept: a table threaded through one transaction
+	// only would leave the other's rows behind.
+	for name, erase := range accountErasuresUnderTest() {
+		t.Run("sqlite/"+name, func(t *testing.T) {
+			dir := t.TempDir()
+			database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(dir, "erasure.db")))
+			requireNoErr(t, err, "open sqlite")
+			t.Cleanup(func() {
+				if sqlDB, err := database.DB(); err == nil {
+					_ = sqlDB.Close()
+				}
+			})
+			assertAccountErasureLeavesNoUserScopedRows(t, database, erase)
 		})
-		assertAccountErasureLeavesNoUserScopedRows(t, database)
-	})
+	}
 
 	t.Run("postgres", func(t *testing.T) {
 		// startPostgresTestConfig skips the subtest when docker is unavailable;
 		// the sqlite arm above still runs, so the guard never goes vacuous.
-		assertAccountErasureLeavesNoUserScopedRows(t, openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t)))
+		assertAccountErasureLeavesNoUserScopedRows(t, openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t)), accountErasuresUnderTest()["operator"])
 	})
+}
+
+type accountErasure func(repos *Repositories, user *models.User) error
+
+func accountErasuresUnderTest() map[string]accountErasure {
+	return map[string]accountErasure{
+		"operator": func(repos *Repositories, user *models.User) error {
+			return repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID)
+		},
+		"owner": func(repos *Repositories, user *models.User) error {
+			return repos.Users.DeleteAccountFromAuthSessionVersion(context.Background(), user.ID, user.AuthSessionVersion)
+		},
+	}
 }
 
 // assertAccountErasureLeavesNoUserScopedRows runs the whole erasure scenario —
@@ -136,7 +154,7 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 // assertions bind on every dialect the repository ships migrations for.
 // It is deliberately NOT a t.Helper: marking it one would report every failure
 // at the two call sites above, hiding which of the scenario's assertions broke.
-func assertAccountErasureLeavesNoUserScopedRows(t *testing.T, database *gorm.DB) {
+func assertAccountErasureLeavesNoUserScopedRows(t *testing.T, database *gorm.DB, erase accountErasure) {
 	repos := NewRepositories(database)
 
 	user := &models.User{
@@ -191,7 +209,9 @@ func assertAccountErasureLeavesNoUserScopedRows(t *testing.T, database *gorm.DB)
 		}
 	}
 
-	requireNoErr(t, repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID), "delete account")
+	stored, err := repos.Users.FindByID(context.Background(), user.ID)
+	requireNoErr(t, err, "load account")
+	requireNoErr(t, erase(repos, &stored), "delete account")
 
 	if usersLeft := countWhere(t, database, &models.User{}, "id = ?", user.ID); usersLeft != 0 {
 		t.Fatalf("users still has %d row(s) for the deleted account", usersLeft)
@@ -232,6 +252,8 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 		name      string
 		dropTable string
 	}{
+		{name: "daily_logs delete fails", dropTable: "daily_logs"},
+		{name: "symptom_types delete fails", dropTable: "symptom_types"},
 		{name: "register_pickup_tokens delete fails", dropTable: "register_pickup_tokens"},
 		{name: "oidc_identities delete fails", dropTable: "oidc_identities"},
 		{name: "oidc_logout_states delete fails", dropTable: "oidc_logout_states"},

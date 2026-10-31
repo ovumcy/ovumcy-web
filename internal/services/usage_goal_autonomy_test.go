@@ -65,7 +65,7 @@ func (repo *usageGoalRecordingRepo) ClearAllDataAndResetSettings(context.Context
 	return nil
 }
 
-func (repo *usageGoalRecordingRepo) DeleteAccountAndRelatedData(context.Context, uint) error {
+func (repo *usageGoalRecordingRepo) DeleteAccountFromAuthSessionVersion(context.Context, uint, int) error {
 	return nil
 }
 

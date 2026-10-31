@@ -45,6 +45,20 @@ const (
 	clearDataAppliedSignedOut
 )
 
+// deleteAccountOutcome is applyDeleteAccount's verdict, typed for the same
+// reason as clearDataOutcome.
+type deleteAccountOutcome int
+
+const (
+	deleteAccountApplied deleteAccountOutcome = iota
+	// deleteAccountRefused: nothing was erased and this device's session is
+	// intact.
+	deleteAccountRefused
+	// deleteAccountRefusedSignedOut: a revocation that committed after the
+	// re-auth refused the erasure and this device's auth cookie is cleared.
+	deleteAccountRefusedSignedOut
+)
+
 // erasureStepupFlow binds one erasure operation to the audit identities it logs
 // under, so neither the start nor the completion handler re-derives which
 // mutation it is performing from anything except the sealed state.
@@ -224,7 +238,11 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 		handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "data_cleared"})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	default:
-		if spec, ok := handler.applyDeleteAccount(c, user); !ok {
+		spec, outcome := handler.applyDeleteAccount(c, user)
+		switch outcome {
+		case deleteAccountRefusedSignedOut:
+			return handler.redirectSignedOutRefusal(c, spec)
+		case deleteAccountRefused:
 			return handler.redirectSettingsRefusal(c, spec)
 		}
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
@@ -275,16 +293,19 @@ func (handler *Handler) applyClearData(c fiber.Ctx, user *models.User) (APIError
 // applyDeleteAccount removes the account and retracts this device's session.
 // Shared by the password-gated handler and the step-up callback for the same
 // reason as applyClearData.
-func (handler *Handler) applyDeleteAccount(c fiber.Ctx, user *models.User) (APIErrorSpec, bool) {
-	if err := handler.settingsService.DeleteAccount(c.Context(), user.ID); err != nil {
+func (handler *Handler) applyDeleteAccount(c fiber.Ctx, user *models.User) (APIErrorSpec, deleteAccountOutcome) {
+	if err := handler.settingsService.DeleteAccount(c.Context(), user.ID, user.AuthSessionVersion); err != nil {
+		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+			return handler.refuseSessionRevokedDuring(c, deleteAccountMutation.action, "delete_account"), deleteAccountRefusedSignedOut
+		}
 		spec := settingsDeleteAccountErrorSpec()
 		handler.logMutationError(c, deleteAccountMutation, spec)
-		return spec, false
+		return spec, deleteAccountRefused
 	}
 
 	// The account the language cache mirrored no longer exists, so the cache is
 	// retracted with the session rather than left on the browser.
 	handler.clearSessionEndCookies(c)
 	handler.logMutationSuccess(c, deleteAccountMutation)
-	return APIErrorSpec{}, true
+	return APIErrorSpec{}, deleteAccountApplied
 }

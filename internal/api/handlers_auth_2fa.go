@@ -96,7 +96,7 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	// error after the code proved correct, a correct code — gives the slot back,
 	// so only a failed compare or an unanswered lookup draws the budget while a
 	// burst of concurrent submissions cannot all pass the same count.
-	reservation, err := handler.totpService.ReserveAttempt(handler.secretKey, c.IP(), userID, time.Now())
+	reservation, err := handler.totpService.ReserveAttempt(handler.secretKey, requestClientKey(c), userID, time.Now())
 	if err != nil {
 		// Invalidate the pending session so an exhausted (or stolen) cookie
 		// cannot be reused; the user must re-authenticate with their password
@@ -207,7 +207,7 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	// minted and its provider-logout state has followed it: a correct code
 	// whose session could not be issued proved nothing lasting, so a refusal
 	// above keeps the count it found.
-	handler.totpService.ResetAttempts(handler.secretKey, c.IP(), userID)
+	handler.totpService.ResetAttempts(handler.secretKey, requestClientKey(c), userID)
 	handler.logSecurityEvent(c, "auth.2fa", "success")
 	return redirectOrJSON(c, "/")
 }

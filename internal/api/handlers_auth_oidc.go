@@ -36,15 +36,23 @@ func (handler *Handler) StartOIDCLogin(c fiber.Ctx) error {
 	// state matches, so a step-up the owner abandoned at the provider takes
 	// every sign-in return for its own and refuses it — for the cookie's whole
 	// ten minutes, on a flash channel /login does not render.
-	handler.clearOIDCStepupCookie(c)
-
+	//
 	// The hand-off parked by a cross-site return goes with it. It cannot take
 	// this callback — it is scoped to the continue route — but it carries the
 	// same owner and an unspent code, and a session that lapsed rather than
 	// being signed out never passed through clearSessionEndCookies. Without
 	// this, signing in again is enough to finish a step-up the previous session
 	// abandoned.
-	handler.clearOIDCStepupContinuationCookie(c)
+	//
+	// Only a first-party start may drop them. This GET is a safe method the
+	// CSRF middleware never validates, so any site can navigate the owner here;
+	// clearing on that request would let a stranger cancel the step-up the
+	// callback refuses to let it cancel. A step-up the owner abandoned still
+	// lapses on its own ten-minute bound.
+	if _, firstParty := firstPartyRequestRefusal(c); firstParty {
+		handler.clearOIDCStepupCookie(c)
+		handler.clearOIDCStepupContinuationCookie(c)
+	}
 
 	ctx, cancel := oidcRequestContext(c)
 	defer cancel()

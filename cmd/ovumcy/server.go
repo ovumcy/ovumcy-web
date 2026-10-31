@@ -233,6 +233,9 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	keyGen := rateLimitKeyGenerator(config.Proxy)
 	app.Use(securityHeadersMiddleware(config.HSTSEnabled))
 	app.Use(recover.New())
+	// The per-client auth-attempt buckets behind the handlers key on the same
+	// value, so a spoofed prefix cannot spend a victim address's budget either.
+	app.Use(api.ClientKeyMiddleware(keyGen))
 	app.Use(newRequestLogger(nil))
 	app.Use(compress.New())
 	// Ahead of every limiter and CSRF, behind only app-wide Use middleware: both

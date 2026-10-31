@@ -87,7 +87,7 @@ type SettingsUserRepository interface {
 	UpdateByID(ctx context.Context, userID uint, updates map[string]any) error
 	LoadSettingsByID(ctx context.Context, userID uint) (models.User, error)
 	ClearAllDataAndResetSettings(ctx context.Context, userID uint, expectedSessionVersion int) error
-	DeleteAccountAndRelatedData(ctx context.Context, userID uint) error
+	DeleteAccountFromAuthSessionVersion(ctx context.Context, userID uint, expectedSessionVersion int) error
 }
 
 type CycleSettingsUpdate struct {
@@ -616,6 +616,9 @@ func (service *SettingsService) ClearAllData(ctx context.Context, userID uint, e
 	return service.users.ClearAllDataAndResetSettings(ctx, userID, NormalizeAuthSessionVersion(expectedSessionVersion))
 }
 
-func (service *SettingsService) DeleteAccount(ctx context.Context, userID uint) error {
-	return service.users.DeleteAccountAndRelatedData(ctx, userID)
+// DeleteAccount erases the account only from expectedSessionVersion, under the
+// same rule as ClearAllData: a revocation that committed after the erasure
+// re-auth leaves the account in place and answers ErrAuthSessionVersionChanged.
+func (service *SettingsService) DeleteAccount(ctx context.Context, userID uint, expectedSessionVersion int) error {
+	return service.users.DeleteAccountFromAuthSessionVersion(ctx, userID, NormalizeAuthSessionVersion(expectedSessionVersion))
 }

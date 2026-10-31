@@ -366,7 +366,7 @@ func (stub *stubSettingsUserRepo) ClearAllDataAndResetSettings(context.Context, 
 	return nil
 }
 
-func (stub *stubSettingsUserRepo) DeleteAccountAndRelatedData(context.Context, uint) error {
+func (stub *stubSettingsUserRepo) DeleteAccountFromAuthSessionVersion(context.Context, uint, int) error {
 	return nil
 }
 

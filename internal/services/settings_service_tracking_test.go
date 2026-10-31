@@ -175,6 +175,6 @@ func (stub *stubSettingsTrackingUserRepo) ClearAllDataAndResetSettings(context.C
 	return nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) DeleteAccountAndRelatedData(context.Context, uint) error {
+func (stub *stubSettingsTrackingUserRepo) DeleteAccountFromAuthSessionVersion(context.Context, uint, int) error {
 	return nil
 }

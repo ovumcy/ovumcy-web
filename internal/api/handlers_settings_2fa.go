@@ -141,7 +141,7 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 	// refuses before the code is checked, the correct code included. A code
 	// that verifies yields the step it matched, which EnableTOTP records as
 	// consumed, so this code cannot also pass the next sign-in challenge.
-	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
+	attempt := services.ReauthAttempt{ClientKey: requestClientKey(c), UserID: user.ID, Now: time.Now()}
 	enrollBudget := handler.totpService.EnrollCodeBudget(handler.secretKey)
 	enrollmentStep, err := handler.totpService.VerifyEnrollmentCode(enrollBudget, attempt, rawSecret, code)
 	if err != nil {
@@ -256,7 +256,7 @@ func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 	// the disable draws the account's one password re-auth budget, so its
 	// failures and the settings actions' fill one bucket. Only the refusal's
 	// response differs: this route answers a spent budget with its own 429.
-	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
+	attempt := services.ReauthAttempt{ClientKey: requestClientKey(c), UserID: user.ID, Now: time.Now()}
 	disableBudget := handler.settingsService.SettingsReauthBudget()
 	if err := handler.settingsService.VerifyReauth(disableBudget, attempt, user, password); err != nil {
 		if errors.Is(err, services.ErrSettingsReauthRateLimited) {

@@ -1311,7 +1311,7 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 		return err
 	}
 	repo.advanceCalendarFeedFenceBestEffort(ctx)
-	return query.Updates(map[string]any{
+	result := query.Updates(map[string]any{
 		"password_hash":                 passwordHash,
 		"must_change_password":          true,
 		"local_auth_enabled":            true,
@@ -1321,7 +1321,16 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 		"calendar_feed_detailed_titles": false,
 		"calendar_feed_last_polled_on":  nil,
 		"auth_session_version":          gorm.Expr("auth_session_version + 1"),
-	}).Error
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	// An account erased between the operator's lookup and this write must not
+	// be reported as reset.
+	if result.RowsAffected == 0 {
+		return ErrUserOwnerRequired
+	}
+	return nil
 }
 
 // UpgradePasswordHashCAS is the transparent bcrypt-cost upgrade the auth
@@ -1857,6 +1866,10 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 	})
 }
 
+// DeleteAccountAndRelatedData is the operator's erasure (the CLI
+// `ovumcy users delete` path): no session stands behind it, so it erases whatever
+// session version the row holds. The owner's own erasure goes through
+// DeleteAccountFromAuthSessionVersion.
 func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, userID uint) error {
 	// A zero id erases nothing, and the fence advance below would then record
 	// a removal no owner caused.
@@ -1868,30 +1881,7 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	// back with it. See advanceCalendarFeedFenceBestEffort.
 	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ?", userID).Delete(&models.SymptomType{}).Error; err != nil {
-			return err
-		}
-		// register_pickup_tokens carries no foreign key, and oidc_identities
-		// relies on ON DELETE CASCADE. Delete both explicitly so account
-		// erasure stays complete (no orphaned auth-linkage rows) and does not
-		// depend on foreign_keys being enforced — GDPR erasure must hold even
-		// if the FK pragma is ever disabled.
-		if err := tx.Where("user_id = ?", userID).Delete(&models.RegisterPickupToken{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error; err != nil {
-			return err
-		}
-		// oidc_logout_states rows carry the owner's user_id (migration 031), so
-		// erase them explicitly here alongside the other user-scoped tables. The
-		// rows written before 031 had a NULL user_id that this predicate could
-		// never match, leaving an id_token_hint behind for up to the state TTL
-		// after erasure — migration 033 deleted them, so every row in the table is
-		// now attributable and this delete covers all of them.
-		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCLogoutState{}).Error; err != nil {
+		if err := deleteAccountChildRowsTx(tx, userID); err != nil {
 			return err
 		}
 		return tx.Delete(&models.User{}, userID).Error
@@ -1899,15 +1889,83 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	if err != nil {
 		return err
 	}
-	// Best-effort housekeeping after the erasure has committed: purge all
-	// globally expired logout-state rows so the table does not accumulate
-	// stale data. This must NOT run inside the erasure transaction — on
-	// Postgres any errored statement poisons the transaction (SQLSTATE
-	// 25P02), so an "ignored" purge failure would abort the erasure itself.
-	// The error is intentionally dropped here: a purge failure must not turn
-	// a completed erasure into a reported failure.
-	_ = repo.database.WithContext(ctx).Where("expires_at <= ?", time.Now().UTC()).Delete(&models.OIDCLogoutState{}).Error
+	repo.purgeExpiredOIDCLogoutStatesBestEffort(ctx)
 	return nil
+}
+
+// DeleteAccountFromAuthSessionVersion is the owner's erasure: it runs only
+// while the account is still at expectedSessionVersion, the version the
+// session that passed the erasure re-auth carries — the same compare-and-set
+// ClearAllDataAndResetSettings applies. A revocation that committed after the
+// re-auth (a password change, a sign-out everywhere from another device)
+// leaves the account untouched and the result is
+// models.ErrAuthSessionVersionChanged.
+func (repo *UserRepository) DeleteAccountFromAuthSessionVersion(ctx context.Context, userID uint, expectedSessionVersion int) error {
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
+	}
+	// Ahead of the write for the reason DeleteAccountAndRelatedData gives; a
+	// refused erasure costs one spare advance, never a revival.
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// The claim comes first so the row lock it takes holds every
+		// concurrent revocation off until the erasure commits or rolls back.
+		if _, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, nil); err != nil {
+			return err
+		}
+		if err := deleteAccountChildRowsTx(tx, userID); err != nil {
+			return err
+		}
+		return tx.Delete(&models.User{}, userID).Error
+	})
+	if err != nil {
+		return err
+	}
+	repo.purgeExpiredOIDCLogoutStatesBestEffort(ctx)
+	return nil
+}
+
+// deleteAccountChildRowsTx erases every row an account owns outside the users
+// table; each erasure deletes the users row itself right after it.
+func deleteAccountChildRowsTx(tx *gorm.DB, userID uint) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&models.SymptomType{}).Error; err != nil {
+		return err
+	}
+	// register_pickup_tokens carries no foreign key, and oidc_identities
+	// relies on ON DELETE CASCADE. Delete both explicitly so account
+	// erasure stays complete (no orphaned auth-linkage rows) and does not
+	// depend on foreign_keys being enforced — GDPR erasure must hold even
+	// if the FK pragma is ever disabled.
+	if err := tx.Where("user_id = ?", userID).Delete(&models.RegisterPickupToken{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error; err != nil {
+		return err
+	}
+	// oidc_logout_states rows carry the owner's user_id (migration 031), so
+	// erase them explicitly here alongside the other user-scoped tables. The
+	// rows written before 031 had a NULL user_id that this predicate could
+	// never match, leaving an id_token_hint behind for up to the state TTL
+	// after erasure — migration 033 deleted them, so every row in the table is
+	// now attributable and this delete covers all of them.
+	if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCLogoutState{}).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+// purgeExpiredOIDCLogoutStatesBestEffort is housekeeping after an erasure has
+// committed: purge all globally expired logout-state rows so the table does
+// not accumulate stale data. It must NOT run inside the erasure transaction —
+// on Postgres any errored statement poisons the transaction (SQLSTATE 25P02),
+// so an "ignored" purge failure would abort the erasure itself. The error is
+// intentionally dropped: a purge failure must not turn a completed erasure
+// into a reported failure.
+func (repo *UserRepository) purgeExpiredOIDCLogoutStatesBestEffort(ctx context.Context) {
+	_ = repo.database.WithContext(ctx).Where("expires_at <= ?", time.Now().UTC()).Delete(&models.OIDCLogoutState{}).Error
 }
 
 // CompleteOnboarding records the onboarding baseline and, when autoPeriodFill
