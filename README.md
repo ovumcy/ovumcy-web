@@ -466,7 +466,7 @@ Ovumcy is free, has no ads or trackers, and keeps growing release by release. If
 - **Help with translations** — see [Supported Languages](#supported-languages) and [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Tell a friend** who wants a cycle tracker that keeps their data at home.
 
-Want to support Ovumcy with a donation? Donation options are on the way; until then, write to [contact@ovumcy.com](mailto:contact@ovumcy.com).
+Want to support Ovumcy with a donation? Crypto options (Bitcoin, Monero, USDT, Ethereum) are on [ovumcy.com/support](https://ovumcy.com/support). If none of them works for you, write to [contact@ovumcy.com](mailto:contact@ovumcy.com).
 
 <a id="roadmap" name="roadmap"></a>
 ## Releases
