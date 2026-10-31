@@ -9,8 +9,8 @@
   every surface, with the late-cycle notice explaining why; the next-period estimate and the
   out-of-date notice are unchanged. Irregular range mode is not affected.
 
-### API
+### Changed
 
-- `GET /api/v1/stats/overview`: `suppression.reasons` can carry a new value,
+- **API:** `GET /api/v1/stats/overview`: `suppression.reasons` can carry a new value,
   `cycle_past_projection_length`, on the days described above (`cycle_data_stale` stays false there).
   Clients that reject unknown enum values need to accept it.
