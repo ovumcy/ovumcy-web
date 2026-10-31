@@ -107,16 +107,26 @@ func TestAZeroOwnerRevocationNeverAdvancesTheFence(t *testing.T) {
 	if err := repo.ClearAllDataAndResetSettings(ctx, 0, 1); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("ClearAllDataAndResetSettings must refuse a zero owner, got %v", err)
 	}
+	// The three credential rotations advance ahead of their write as well.
+	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, 0, 1, "recovery-hash", nil); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("UpdateRecoveryCodeHashAndRevokeSessions must refuse a zero owner, got %v", err)
+	}
+	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, 0, "password-hash"); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("ForceResetPasswordAndRevokeSessions must refuse a zero owner, got %v", err)
+	}
+	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, 0, "hash", 1, "new-password-hash", "new-recovery-hash", nil); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("UpdatePasswordRecoveryCodeAndRevokeSessionsCAS must refuse a zero owner, got %v", err)
+	}
 	if fence.calls != 0 {
 		t.Fatalf("a refused zero-owner revocation must not touch the fence, got %d call(s)", fence.calls)
 	}
 }
 
 // TestACredentialRotationSurfacesItsOwnWriteFailure covers the arm the fence
-// changes did NOT alter and could have. Both rotations grew an error check so
-// the advance could follow their write; that check has to keep reporting the
-// write's own failure, or a rotation that never happened would be reported as
-// done and the account would answer to a password nobody set.
+// changes did NOT alter and could have. A best-effort advance runs ahead of
+// both rotations; the rotation still has to report its own write's failure, or
+// a rotation that never happened would be reported as done and the account
+// would answer to a password nobody set.
 func TestACredentialRotationSurfacesItsOwnWriteFailure(t *testing.T) {
 	repo := openCalendarFeedRepoForTest(t)
 	ctx := context.Background()
@@ -140,22 +150,15 @@ func TestACredentialRotationSurfacesItsOwnWriteFailure(t *testing.T) {
 	}
 }
 
-// TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite covers the
-// three callers that advance the fence AFTER their own Updates() has already
-// committed: UpdateRecoveryCodeHashAndRevokeSessions,
-// ForceResetPasswordAndRevokeSessions, and
-// UpdatePasswordRecoveryCodeAndRevokeSessionsCAS. Unlike
-// TestARevocationIsRefusedWhenTheFenceCannotRecordIt above — whose two
-// methods advance BEFORE their write and must refuse when the fence cannot
-// keep up — these three must report SUCCESS once their own write has landed,
-// because undoing the report at that point would not undo the write: a
-// caller told "reset password: app_state is unavailable" after the new hash
-// is already stored would retry a reset that had already happened, or an
-// operator would tell an owner their forced reset failed when the account
-// already answers to the new password. The fence's own failure is bounded
-// elsewhere — Enforce disarms every armed feed on the next boot — never by
-// silently pretending the credential write did not happen.
-func TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite(t *testing.T) {
+// TestASideEffectFenceFailureNeverRefusesTheWrite covers the writers whose feed
+// clear is a side effect and which advance the fence best-effort ahead of their
+// write (WEB-397). Unlike TestARevocationIsRefusedWhenTheFenceCannotRecordIt
+// above — whose two methods must refuse when the fence cannot keep up — these
+// proceed and report SUCCESS: refusing a password reset, a recovery-code
+// rotation, a clear-data wipe or an erasure over a calendar-feed marker would
+// trade a credential or an erasure for a feed record. The fence's own failure
+// is bounded elsewhere — Enforce disarms every armed feed on the next boot.
+func TestASideEffectFenceFailureNeverRefusesTheWrite(t *testing.T) {
 	repo := openCalendarFeedRepoForTest(t)
 	ctx := context.Background()
 	refused := errors.New("app_state is unavailable")
@@ -185,6 +188,18 @@ func TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite(t *testing.T
 				return repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, userID, "hash", 1, "new-password-hash", "new-recovery-hash", nil)
 			},
 		},
+		{
+			name: "ClearAllDataAndResetSettings",
+			run: func(userID uint) error {
+				return repo.ClearAllDataAndResetSettings(ctx, userID, storedSessionVersionForTest(t, repo, userID))
+			},
+		},
+		{
+			name: "DeleteAccountAndRelatedData",
+			run: func(userID uint) error {
+				return repo.DeleteAccountAndRelatedData(ctx, userID)
+			},
+		},
 	}
 
 	for _, testCase := range cases {
@@ -194,7 +209,7 @@ func TestPostOperationFenceFailureNeverFailsAnAlreadyCommittedWrite(t *testing.T
 			before := fence.calls
 
 			if err := testCase.run(user.ID); err != nil {
-				t.Fatalf("%s must report success once its own write has committed, got %v", testCase.name, err)
+				t.Fatalf("%s must proceed past a failed fence advance, got %v", testCase.name, err)
 			}
 			if fence.calls != before+1 {
 				t.Fatalf("expected the fence to be consulted exactly once, got %d call(s)", fence.calls-before)
