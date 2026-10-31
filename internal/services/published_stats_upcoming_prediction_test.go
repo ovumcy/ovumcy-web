@@ -285,7 +285,11 @@ func TestPublishedOverviewWithholdsAWindowRolledFromAMissedStart(t *testing.T) {
 			CalendarDayKey(published.OvulationDate), CalendarDayKey(published.FertilityWindowStart), CalendarDayKey(published.FertilityWindowEnd))
 	}
 	assertPublishedStatusAndPhase(t, published, FertilityStatusUnknown, "", "unknown")
-	assertCalendarShadesExactlyThePublishedWindow(t, user, logs, stats, published, now, time.UTC)
+	maps := buildCalendarPredictionMaps(user, logs, stats, AddCalendarDays(today, 60, time.UTC), now, time.UTC)
+	if len(maps.fertilityEdge)+len(maps.fertilityPeak)+len(maps.ovulation)+len(maps.preFertile) != 0 {
+		t.Errorf("the calendar shades a fertility projection the overview withholds: edge %v peak %v ovulation %v pre-fertile %v",
+			maps.fertilityEdge, maps.fertilityPeak, maps.ovulation, maps.preFertile)
+	}
 }
 
 // assertPublishedStatusAndPhase checks the three fields read against the
