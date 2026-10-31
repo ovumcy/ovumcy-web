@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -206,7 +207,6 @@ func newWebhookHTTPClient(denied deniedAddress, resolver ipResolver) *http.Clien
 	return &http.Client{
 		Timeout: webhookDeliveryTimeout,
 		Transport: &http.Transport{
-			Proxy:             nil,
 			DisableKeepAlives: true,
 			DialContext:       guardedDialContext(baseDialer.DialContext, resolver, denied),
 			// The response body is capped at webhookResponseReadLimit, but headers
@@ -271,7 +271,13 @@ func guardedDialContext(dial dialFunc, resolver ipResolver, denied deniedAddress
 			}
 		}
 
-		// Dial a validated IP directly, trying each until one connects.
+		// Dial a validated IP directly, trying each until one connects. IPv4
+		// first: the attempts are sequential, each with the full phase timeout,
+		// so a blackholed AAAA tried first would eat half the delivery budget —
+		// the race the stock dialer's Happy Eyeballs used to run for us.
+		sort.SliceStable(ips, func(i, j int) bool {
+			return ips[i].To4() != nil && ips[j].To4() == nil
+		})
 		var lastErr error
 		for _, ip := range ips {
 			conn, err := dial(ctx, network, net.JoinHostPort(ip.String(), port))
@@ -455,16 +461,22 @@ func isRedirectRefusal(err error) bool {
 // 100.100.100.200 sits in CGNAT space and is refused only with the gate on.
 var metadataV4Net = mustParseWebhookCIDR("169.254.0.0/16")
 
-// metadataV6IP is the AWS IMDS IPv6 endpoint (Nitro instances).
-var metadataV6IP = net.ParseIP("fd00:ec2::254")
+// metadataV6IPs are the IPv6 instance-metadata endpoints: AWS IMDS (Nitro) and
+// the GCE metadata server.
+var metadataV6IPs = []net.IP{net.ParseIP("fd00:ec2::254"), net.ParseIP("fd20:ce::254")}
 
 // isMetadataIP is the classifier used when the private-address gate is off: it
 // denies cloud metadata only, so LAN targets keep working on a household
 // instance. An IPv6 transition form wrapping a metadata IPv4 (NAT64, 6to4,
 // IPv4-compatible) is denied like the address it routes to.
 func isMetadataIP(ip net.IP) bool {
-	if metadataV4Net.Contains(ip) || metadataV6IP.Equal(ip) {
+	if metadataV4Net.Contains(ip) {
 		return true
+	}
+	for _, endpoint := range metadataV6IPs {
+		if endpoint.Equal(ip) {
+			return true
+		}
 	}
 	for _, embedded := range embeddedIPv4s(ip) {
 		if metadataV4Net.Contains(embedded) {

@@ -559,6 +559,7 @@ func TestWebhookAddressClassifiers(t *testing.T) {
 		{"::ffff:169.254.169.254", true, true}, // IPv4-mapped form of the metadata endpoint
 		{"64:ff9b::a9fe:a9fe", true, true},     // NAT64 wrapping 169.254.169.254
 		{"fd00:ec2::254", true, true},          // AWS IMDS over IPv6
+		{"fd20:ce::254", true, true},           // GCE metadata server over IPv6
 		{"fd00:ec2::253", true, false},         // a ULA neighbour: LAN, not metadata
 		{"fe80::1", true, false},
 		{"::1", true, false},
@@ -923,6 +924,21 @@ func TestGuardedDialContext(t *testing.T) {
 		}
 		if stub.lastAddr != "8.8.8.8:443" {
 			t.Fatalf("expected the resolved IP to be dialed, got %q", stub.lastAddr)
+		}
+	})
+
+	t.Run("dual-stack answer dials IPv4 first", func(t *testing.T) {
+		client, server := net.Pipe()
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+		stub := &stubDial{conn: client}
+		dialFn := guardedDialContext(stub.dial, resolverFor("ntfy.example.io", "2001:4860:4860::8888", "8.8.8.8"), isMetadataIP)
+
+		if _, err := dialFn(ctx, "tcp", "ntfy.example.io:443"); err != nil {
+			t.Fatalf("expected the dual-stack host to dial, got %v", err)
+		}
+		if stub.calls != 1 || stub.lastAddr != "8.8.8.8:443" {
+			t.Fatalf("expected one dial to the IPv4 record, got %d dial(s), last %q", stub.calls, stub.lastAddr)
 		}
 	})
 
