@@ -37,9 +37,9 @@ type runtimeConfig struct {
 	// default for a bare binary; the image sets it) means no fence, which fails
 	// closed: every armed calendar feed is disarmed on every boot.
 	CalendarFeedFencePath string
-	// WebhookBlockPrivate mirrors the off-by-default WEBHOOK_BLOCK_PRIVATE_ADDRESSES
-	// egress gate the notify CLI reads, so the built-in scheduler wires the same
-	// deliverer hardening.
+	// WebhookBlockPrivate mirrors the WEBHOOK_BLOCK_PRIVATE_ADDRESSES egress gate
+	// the notify CLI reads (resolveWebhookBlockPrivate), so the built-in
+	// scheduler wires the same deliverer hardening.
 	WebhookBlockPrivate bool
 	ReminderScheduler   reminderSchedulerSettings
 }
@@ -267,7 +267,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	if err != nil {
 		return runtimeConfig{}, err
 	}
-	webhookBlockPrivate, err := getEnvBoolStrict("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false)
+	webhookBlockPrivate, err := resolveWebhookBlockPrivate(registrationMode)
 	if err != nil {
 		return runtimeConfig{}, err
 	}
@@ -363,6 +363,17 @@ func resolveRegistrationMode() (services.RegistrationMode, error) {
 		return "", err
 	}
 	return mode, nil
+}
+
+// resolveWebhookBlockPrivate reads WEBHOOK_BLOCK_PRIVATE_ADDRESSES as a
+// tri-state. Unset follows the registration mode: on under open registration,
+// where strangers hold accounts and an unguarded webhook is a blind probe into
+// the operator's network; off under closed, where household owners
+// legitimately target LAN ntfy / Home Assistant. An explicit value always wins.
+// The server boot and the notify CLI both read it here, so the two delivery
+// paths cannot land on different postures for one env file.
+func resolveWebhookBlockPrivate(mode services.RegistrationMode) (bool, error) {
+	return getEnvBoolStrict("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", mode == services.RegistrationModeOpen)
 }
 
 // resolveCalendarFeedFencePath reads CALENDAR_FEED_FENCE_PATH for the boot-time

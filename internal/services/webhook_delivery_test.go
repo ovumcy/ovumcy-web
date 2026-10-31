@@ -324,6 +324,7 @@ func TestWebhookDeliveryResponseBodyReadIsCappedAtTheConstant(t *testing.T) {
 
 	var bytesRead int64
 	client := &webhookDeliveryClient{
+		denied: isMetadataIP,
 		httpClient: &http.Client{
 			Timeout:       webhookDeliveryTimeout,
 			Transport:     &bodyCountingTransport{base: http.DefaultTransport, read: &bytesRead},
@@ -377,6 +378,7 @@ func TestWebhookDeliveryReleasedByCallerContextCancellationNotClientTimeout(t *t
 		observedCtxErr: make(chan error, 1),
 	}
 	client := &webhookDeliveryClient{
+		denied: isMetadataIP,
 		httpClient: &http.Client{
 			Timeout:       time.Hour, // far larger than this test's own deadline: irrelevant to the result
 			Transport:     transport,
@@ -449,6 +451,7 @@ func TestWebhookDeliveryHonorsContextTimeout(t *testing.T) {
 func deliverWithClientTimeout(t *testing.T, ctx context.Context, target string) error {
 	t.Helper()
 	client := &webhookDeliveryClient{
+		denied: isMetadataIP,
 		httpClient: &http.Client{
 			Timeout: 200 * time.Millisecond,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -494,10 +497,11 @@ func TestWebhookDeliveryLogsHostOnly(t *testing.T) {
 	}
 }
 
-// TestWebhookDeliveryBlocksPrivateWhenGated proves the off-by-default
-// private-address gate: with the gate ON, a loopback literal is refused before
-// any request; with the gate OFF (default), the same target is allowed (LAN
-// self-hosting is legitimate).
+// TestWebhookDeliveryBlocksPrivateWhenGated proves the private-address gate (on
+// by default under open registration): with the gate ON, a loopback literal is
+// refused before any request; with the gate OFF (closed/invite default, or an
+// explicit false), the same target is allowed (LAN self-hosting is legitimate)
+// while a cloud-metadata literal is still refused.
 func TestWebhookDeliveryBlocksPrivateWhenGated(t *testing.T) {
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -523,30 +527,59 @@ func TestWebhookDeliveryBlocksPrivateWhenGated(t *testing.T) {
 	if hits.Load() != 1 {
 		t.Fatalf("expected exactly one request when gate is off, got %d", hits.Load())
 	}
+
+	// Gate OFF still refuses cloud metadata, before any dial.
+	for _, metadataURL := range []string{"http://169.254.169.254/latest/meta-data/", "http://[fd00:ec2::254]/latest/meta-data/"} {
+		output := captureLogOutput(t, func() {
+			if err := open.Deliver(context.Background(), metadataURL, samplePayload()); err == nil {
+				t.Fatalf("expected %s to be refused with the gate off", metadataURL)
+			}
+		})
+		if !strings.Contains(output, "reason=private_address_blocked") {
+			t.Fatalf("expected the metadata refusal to log private_address_blocked, got %q", output)
+		}
+	}
 }
 
-// TestIsPrivateHost pins the private-address classifier used by the gate.
-func TestIsPrivateHost(t *testing.T) {
-	cases := map[string]bool{
-		"127.0.0.1":       true,
-		"10.0.0.5":        true,
-		"192.168.1.10":    true,
-		"172.16.0.1":      true,
-		"169.254.0.1":     true,
-		"::1":             true,
-		"0.0.0.0":         true,
-		"8.8.8.8":         false,
-		"93.184.216.34":   false,
-		"example.test":    false, // a hostname, not an IP literal
-		"ntfy.example.io": false,
-		"100.64.0.1":      true,  // RFC 6598 CGNAT literal (net.IP.IsPrivate omits it)
-		"64:ff9b::a00:1":  true,  // RFC 6052 NAT64 literal wrapping 10.0.0.1
-		"203.0.113.10":    true,  // TEST-NET-3: documentation space is not globally reachable
-		"192.31.196.1":    false, // AS112-v4 anycast: special-purpose but globally reachable (over-block guard)
+// TestWebhookAddressClassifiers pins both deny sets: isPrivateIP (gate on) and
+// isMetadataIP (gate off). Every metadata address must also be private, so
+// turning the gate on never re-allows one.
+func TestWebhookAddressClassifiers(t *testing.T) {
+	cases := []struct {
+		literal  string
+		private  bool
+		metadata bool
+	}{
+		{"127.0.0.1", true, false},
+		{"10.0.0.5", true, false},
+		{"192.168.1.10", true, false},
+		{"172.16.0.1", true, false},
+		{"169.254.0.1", true, true},
+		{"169.254.169.254", true, true},
+		{"::ffff:169.254.169.254", true, true}, // IPv4-mapped form of the metadata endpoint
+		{"64:ff9b::a9fe:a9fe", true, true},     // NAT64 wrapping 169.254.169.254
+		{"fd00:ec2::254", true, true},          // AWS IMDS over IPv6
+		{"fd00:ec2::253", true, false},         // a ULA neighbour: LAN, not metadata
+		{"fe80::1", true, false},
+		{"::1", true, false},
+		{"0.0.0.0", true, false},
+		{"8.8.8.8", false, false},
+		{"93.184.216.34", false, false},
+		{"100.64.0.1", true, false},     // RFC 6598 CGNAT literal (net.IP.IsPrivate omits it)
+		{"64:ff9b::a00:1", true, false}, // RFC 6052 NAT64 literal wrapping 10.0.0.1
+		{"203.0.113.10", true, false},   // TEST-NET-3: documentation space is not globally reachable
+		{"192.31.196.1", false, false},  // AS112-v4 anycast: special-purpose but globally reachable (over-block guard)
 	}
-	for host, want := range cases {
-		if got := isPrivateHost(host); got != want {
-			t.Errorf("isPrivateHost(%q) = %v, want %v", host, got, want)
+	for _, tc := range cases {
+		ip := net.ParseIP(tc.literal)
+		if ip == nil {
+			t.Fatalf("test literal %q does not parse", tc.literal)
+		}
+		if got := isPrivateIP(ip); got != tc.private {
+			t.Errorf("isPrivateIP(%q) = %v, want %v", tc.literal, got, tc.private)
+		}
+		if got := isMetadataIP(ip); got != tc.metadata {
+			t.Errorf("isMetadataIP(%q) = %v, want %v", tc.literal, got, tc.metadata)
 		}
 	}
 }
@@ -851,7 +884,7 @@ func TestGuardedDialContext(t *testing.T) {
 		defer func() { _ = client.Close() }()
 		defer func() { _ = server.Close() }()
 		stub := &stubDial{conn: client}
-		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+		dialFn := guardedDialContext(stub.dial, fakeResolver{}, isPrivateIP)
 
 		conn, err := dialFn(ctx, "tcp", "8.8.8.8:443")
 		if err != nil {
@@ -867,7 +900,7 @@ func TestGuardedDialContext(t *testing.T) {
 
 	t.Run("private literal is refused before dialing", func(t *testing.T) {
 		stub := &stubDial{}
-		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+		dialFn := guardedDialContext(stub.dial, fakeResolver{}, isPrivateIP)
 
 		_, err := dialFn(ctx, "tcp", "127.0.0.1:443")
 		if !errors.Is(err, errWebhookPrivateAddress) {
@@ -883,7 +916,7 @@ func TestGuardedDialContext(t *testing.T) {
 		defer func() { _ = client.Close() }()
 		defer func() { _ = server.Close() }()
 		stub := &stubDial{conn: client}
-		dialFn := guardedDialContext(stub.dial, resolverFor("ntfy.example.io", "8.8.8.8"))
+		dialFn := guardedDialContext(stub.dial, resolverFor("ntfy.example.io", "8.8.8.8"), isPrivateIP)
 
 		if _, err := dialFn(ctx, "tcp", "ntfy.example.io:443"); err != nil {
 			t.Fatalf("expected resolved public host to dial, got %v", err)
@@ -895,7 +928,7 @@ func TestGuardedDialContext(t *testing.T) {
 
 	t.Run("resolver error propagates without dialing", func(t *testing.T) {
 		stub := &stubDial{}
-		dialFn := guardedDialContext(stub.dial, fakeResolver{}) // empty map → unknown host errors
+		dialFn := guardedDialContext(stub.dial, fakeResolver{}, isPrivateIP) // empty map → unknown host errors
 
 		if _, err := dialFn(ctx, "tcp", "unknown.example:443"); err == nil {
 			t.Fatal("expected the resolver error to surface")
@@ -907,7 +940,7 @@ func TestGuardedDialContext(t *testing.T) {
 
 	t.Run("empty resolver answer is refused", func(t *testing.T) {
 		stub := &stubDial{}
-		dialFn := guardedDialContext(stub.dial, resolverFor("empty.example")) // no IPs
+		dialFn := guardedDialContext(stub.dial, resolverFor("empty.example"), isPrivateIP) // no IPs
 
 		if _, err := dialFn(ctx, "tcp", "empty.example:443"); err == nil {
 			t.Fatal("expected an empty answer to be refused")
@@ -920,7 +953,7 @@ func TestGuardedDialContext(t *testing.T) {
 	t.Run("dial failure surfaces the dial error", func(t *testing.T) {
 		wantErr := errors.New("connection refused")
 		stub := &stubDial{err: wantErr}
-		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+		dialFn := guardedDialContext(stub.dial, fakeResolver{}, isPrivateIP)
 
 		if _, err := dialFn(ctx, "tcp", "8.8.8.8:443"); !errors.Is(err, wantErr) {
 			t.Fatalf("expected the dial error to surface, got %v", err)
@@ -929,7 +962,7 @@ func TestGuardedDialContext(t *testing.T) {
 
 	t.Run("malformed address surfaces the split error", func(t *testing.T) {
 		stub := &stubDial{}
-		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+		dialFn := guardedDialContext(stub.dial, fakeResolver{}, isPrivateIP)
 
 		if _, err := dialFn(ctx, "tcp", "no-port-here"); err == nil {
 			t.Fatal("expected SplitHostPort to reject a portless address")
@@ -940,13 +973,14 @@ func TestGuardedDialContext(t *testing.T) {
 	})
 }
 
-// TestWebhookDeliveryGateOffLeavesStockPathForHostname pins the default path: with
-// WEBHOOK_BLOCK_PRIVATE_ADDRESSES off, the resolve-and-check dialer is never
-// installed, so a hostname target dials straight through the stock dialer and the
-// private-address guard never runs. Non-vacuous: the deliverer is handed a resolver
-// that knows no hosts at all, so if the gate-off path ever started consulting it,
-// the lookup would fail and the delivery would never reach the server.
-func TestWebhookDeliveryGateOffLeavesStockPathForHostname(t *testing.T) {
+// TestWebhookDeliveryGateOffGuardsHostnameForMetadataOnly pins the gate-off path:
+// WEBHOOK_BLOCK_PRIVATE_ADDRESSES off still installs the resolve-and-check dialer,
+// in metadata-only mode. A hostname resolving to a LAN address (the loopback test
+// server stands in for it) is delivered through the validated IP; a hostname
+// resolving to the metadata endpoint is refused before any dial. Both go through
+// the injected resolver, so a gate-off path that fell back to the stock dialer
+// would resolve "lan.example" through real DNS and fail the first half.
+func TestWebhookDeliveryGateOffGuardsHostnameForMetadataOnly(t *testing.T) {
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
@@ -954,22 +988,30 @@ func TestWebhookDeliveryGateOffLeavesStockPathForHostname(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// "localhost" resolves through the real stack to the loopback address the test
-	// server listens on, which is exactly the private target the gate would refuse
-	// when on — that contrast is the point of this regression.
-	target := hostnameTargetFor(t, server.URL, "localhost")
-	deliverer := newWebhookDelivererWithResolver(false, fakeResolver{})
+	const lanHost = "lan.example"
+	deliverer := newWebhookDelivererWithResolver(false, resolverFor(lanHost, "127.0.0.1"))
+	if err := deliverer.Deliver(context.Background(), hostnameTargetFor(t, server.URL, lanHost), samplePayload()); err != nil {
+		t.Fatalf("gate-off delivery to a LAN hostname must succeed, got %v", err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("expected exactly one delivery to the LAN hostname, got %d", hits.Load())
+	}
 
+	const metadataHost = "metadata.example"
+	rebinding := newWebhookDelivererWithResolver(false, resolverFor(metadataHost, webhookExternalSentinelIP, "169.254.169.254"))
 	output := captureLogOutput(t, func() {
-		if err := deliverer.Deliver(context.Background(), target, samplePayload()); err != nil {
-			t.Fatalf("gate-off delivery to a hostname must succeed through the stock dialer, got %v", err)
+		if err := rebinding.Deliver(context.Background(), hostnameTargetFor(t, server.URL, metadataHost), samplePayload()); err == nil {
+			t.Fatal("gate-off delivery to a hostname with a metadata record must be refused")
 		}
 	})
 	if hits.Load() != 1 {
-		t.Fatalf("expected exactly one delivery through the stock dialer, got %d", hits.Load())
+		t.Fatalf("metadata-resolving delivery reached the server; hits=%d", hits.Load())
 	}
-	if strings.Contains(output, "private_address_blocked") {
-		t.Fatalf("gate-off path must not run the private-address guard: %q", output)
+	if !strings.Contains(output, "reason=private_address_blocked") {
+		t.Fatalf("expected private_address_blocked reason, got: %q", output)
+	}
+	if strings.Contains(output, "169.254.169.254") {
+		t.Fatalf("log leaked the resolved IP: %q", output)
 	}
 }
 

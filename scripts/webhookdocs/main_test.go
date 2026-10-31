@@ -125,10 +125,18 @@ var claimAnchors = []claimAnchor{
 		name: "private-address gate: resolve, refuse, dial the validated IP",
 		row:  "gate on, a hostname that resolves",
 		mirror: []string{
-			"off-by-default private-address block",
+			"private-address block",
 			gateEnv,
 			"every IPv6 transition form that embeds an IPv4",
 			"validated IP",
+		},
+	},
+	{
+		name: "gate default follows registration; metadata refused with the gate off",
+		row:  "follows the registration mode",
+		mirror: []string{
+			"on-by-default under open registration",
+			"cloud metadata",
 		},
 	},
 	{
@@ -337,11 +345,16 @@ func TestOperatorDocsStateTheGateAndTheCodeDefault(t *testing.T) {
 	root := repoRoot(t)
 	codeDefault := gateDefaultFromCode(t, root)
 
-	stated, contradicted := `default:? .?false`, `default:? .?true`
-	posture := "off-by-default"
-	if codeDefault {
-		stated, contradicted = contradicted, stated
-		posture = "on-by-default"
+	var stated, contradicted, posture string
+	switch codeDefault {
+	case "false":
+		stated, contradicted, posture = `default:? .?false`, `default:? .?true`, "off-by-default"
+	case "true":
+		stated, contradicted, posture = `default:? .?true`, `default:? .?false`, "on-by-default"
+	default:
+		stated = `default:? on under open registration`
+		contradicted = `default:? .?(true|false)\b`
+		posture = "on-by-default under open registration"
 	}
 
 	// Both policy documents state the posture in prose rather than as a
@@ -354,7 +367,7 @@ func TestOperatorDocsStateTheGateAndTheCodeDefault(t *testing.T) {
 			continue
 		}
 		if !strings.Contains(text, posture) {
-			t.Errorf("%s names %s but no longer calls it %q, which is what the code does (%s default %t)", doc, gateEnv, posture, gateParseGlob, codeDefault)
+			t.Errorf("%s names %s but no longer calls it %q, which is what the code does (%s default %s)", doc, gateEnv, posture, gateParseGlob, codeDefault)
 		}
 	}
 
@@ -372,11 +385,11 @@ func TestOperatorDocsStateTheGateAndTheCodeDefault(t *testing.T) {
 				agrees = true
 			}
 			if matchesPattern(t, contradicted, window) {
-				t.Errorf("%s states a default for %s that contradicts the code (%s parses default %t):\n  …%s…", doc, gateEnv, gateParseGlob, codeDefault, truncate(window))
+				t.Errorf("%s states a default for %s that contradicts the code (%s parses default %s):\n  …%s…", doc, gateEnv, gateParseGlob, codeDefault, truncate(window))
 			}
 		}
 		if !agrees {
-			t.Errorf("%s mentions %s but never states its default; the code parses default %t, so the document owes %q near the mention", doc, gateEnv, codeDefault, stated)
+			t.Errorf("%s mentions %s but never states its default; the code parses default %s, so the document owes %q near the mention", doc, gateEnv, codeDefault, stated)
 		}
 	}
 }
@@ -386,7 +399,10 @@ func TestOperatorDocsStateTheGateAndTheCodeDefault(t *testing.T) {
 // path and the CLI path parse it separately, and a default that drifts between
 // them is its own defect. Both getters count: they differ in what they do with
 // an unparseable value, not in the default an unset value falls back to.
-func gateDefaultFromCode(t *testing.T, root string) bool {
+//
+// It returns "true", "false", or "open" — the last for the registration-keyed
+// default (on iff REGISTRATION_MODE=open, WEB-398).
+func gateDefaultFromCode(t *testing.T, root string) string {
 	t.Helper()
 
 	paths, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(gateParseGlob)))
@@ -394,7 +410,7 @@ func gateDefaultFromCode(t *testing.T, root string) bool {
 		t.Fatalf("glob %s: %v", gateParseGlob, err)
 	}
 
-	call := regexp.MustCompile(`getEnvBool(?:Strict)?\("` + gateEnv + `", (true|false)\)`)
+	call := regexp.MustCompile(`getEnvBool(?:Strict)?\("` + gateEnv + `", (true|false|\w+ == services\.RegistrationModeOpen)\)`)
 	defaults := map[string]string{}
 	for _, path := range paths {
 		if strings.HasSuffix(path, "_test.go") {
@@ -405,20 +421,24 @@ func gateDefaultFromCode(t *testing.T, root string) bool {
 			t.Fatalf("read %s: %v", path, err)
 		}
 		for _, match := range call.FindAllStringSubmatch(string(content), -1) {
-			defaults[match[1]] = filepath.Base(path)
+			value := match[1]
+			if value != "true" && value != "false" {
+				value = "open"
+			}
+			defaults[value] = filepath.Base(path)
 		}
 	}
 
 	switch len(defaults) {
 	case 1:
 		for value := range defaults {
-			return value == "true"
+			return value
 		}
 	case 0:
 		t.Fatalf("no getEnvBool/getEnvBoolStrict(%q, …) call found in %s: this guard reads the documented default out of the code and now reads nothing", gateEnv, gateParseGlob)
 	}
 	t.Fatalf("%s is parsed with more than one default (%v): the server and CLI paths must agree before any document can state one", gateEnv, defaults)
-	return false
+	return ""
 }
 
 // webhookMatrixRows returns the claim/enforced-by cells of the matrix's

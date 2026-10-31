@@ -2237,26 +2237,32 @@ func TestTryRunCLICommandWithHandlersNotifyParsesWebhookBlockPrivateAddresses(t 
 	// Verify that the notify CLI path accepts yes/on values for
 	// WEBHOOK_BLOCK_PRIVATE_ADDRESSES, fixing the inconsistency with the server path
 	// which uses getEnvBool (accepts 1/true/yes/on).
+	// WEB-398: unset follows REGISTRATION_MODE (on iff open, the mode's own
+	// default), and an explicit value wins in every mode.
 	cases := []struct {
-		name  string
-		value string
-		want  bool
+		name         string
+		registration string
+		value        string
+		want         bool
 	}{
-		{name: "true", value: "true", want: true},
-		{name: "1", value: "1", want: true},
-		{name: "yes", value: "yes", want: true},
-		{name: "on", value: "on", want: true},
-		{name: "false", value: "false", want: false},
-		{name: "0", value: "0", want: false},
-		{name: "no", value: "no", want: false},
-		{name: "off", value: "off", want: false},
-		{name: "unset", value: "", want: false},
+		{name: "true", registration: "closed", value: "true", want: true},
+		{name: "1", registration: "closed", value: "1", want: true},
+		{name: "yes", registration: "closed", value: "yes", want: true},
+		{name: "on", registration: "closed", value: "on", want: true},
+		{name: "false", registration: "open", value: "false", want: false},
+		{name: "0", registration: "open", value: "0", want: false},
+		{name: "no", registration: "open", value: "no", want: false},
+		{name: "off", registration: "open", value: "off", want: false},
+		{name: "unset open", registration: "open", value: "", want: true},
+		{name: "unset registration mode", registration: "", value: "", want: true},
+		{name: "unset closed", registration: "closed", value: "", want: false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
 			t.Setenv("TZ", "UTC")
+			t.Setenv("REGISTRATION_MODE", tc.registration)
 			t.Setenv("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", tc.value)
 
 			var receivedBlock bool

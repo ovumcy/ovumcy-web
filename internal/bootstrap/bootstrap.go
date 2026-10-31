@@ -97,7 +97,7 @@ func VerifySchemaInvariants(ctx context.Context, repositories *db.Repositories) 
 // slice 3) from the SAME repositories and secret the web path uses, so a future
 // in-process scheduler (#125) can reuse this exact recipe. secretKey decrypts
 // each owner's stored webhook_url (aad-bound to the owner id); blockPrivateAddresses
-// wires the off-by-default WEBHOOK_BLOCK_PRIVATE_ADDRESSES egress gate. The
+// wires the resolved WEBHOOK_BLOCK_PRIVATE_ADDRESSES egress gate. The
 // returned service reaches a real socket only through the hardened deliverer.
 func BuildNotifyService(repositories *db.Repositories, secretKey []byte, i18nManager *i18n.Manager, blockPrivateAddresses bool) *services.WebhookNotifyService {
 	webhookSettings := services.NewWebhookSettingsService(repositories.Users, secretKey)

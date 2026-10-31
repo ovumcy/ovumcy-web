@@ -91,9 +91,10 @@ var ErrWebhookDeliveryURLScheme = errors.New("webhook delivery url scheme not al
 // refuse ALL redirects. It is intentionally generic and carries no location.
 var errWebhookRedirect = errors.New("webhook delivery refuses redirects")
 
-// errWebhookPrivateAddress is returned by the guarded dialer when the
-// WEBHOOK_BLOCK_PRIVATE_ADDRESSES gate is on and a target resolves to (or is) a
-// private/loopback/link-local/unspecified address. It surfaces from
+// errWebhookPrivateAddress is returned by the guarded dialer when a target
+// resolves to (or is) a denied address: any private/loopback/link-local/
+// unspecified one with WEBHOOK_BLOCK_PRIVATE_ADDRESSES on, cloud metadata with
+// it off. It surfaces from
 // http.Client.Do wrapped in *url.Error; Deliver classifies it via errors.Is so
 // the log reason stays stable. It carries no host or IP so it cannot leak one.
 var errWebhookPrivateAddress = errors.New("webhook delivery refuses private address")
@@ -149,20 +150,25 @@ type WebhookDeliverer interface {
 	Deliver(ctx context.Context, decryptedURL string, payload WebhookPayload) error
 }
 
-// blockPrivateAddresses, when true, denies delivery to private/loopback/
-// link-local targets — both IP literals (fast pre-check in Deliver) and
+// deniedAddress decides which resolved or literal addresses the delivery path
+// refuses: isPrivateIP with the WEBHOOK_BLOCK_PRIVATE_ADDRESSES gate on,
+// isMetadataIP with it off. There is no mode without a guard — cloud metadata
+// is denied whatever the gate says, because no reminder consumer lives there and
+// an owner who can reach it can read the host's credentials.
+type deniedAddress = func(ip net.IP) bool
+
+// webhookDeliveryClient checks both IP literals (fast pre-check in Deliver) and
 // hostnames (resolve-and-check in the guarded dialer, which validates every
-// resolved record and pins the dialed IP to close DNS-rebinding). It is OFF BY
-// DEFAULT because self-hosted ntfy/Gotify legitimately live on the LAN; the gate
-// exists so an operator can opt in via WEBHOOK_BLOCK_PRIVATE_ADDRESSES.
+// resolved record and pins the dialed IP to close DNS-rebinding) against denied.
 type webhookDeliveryClient struct {
-	httpClient            *http.Client
-	blockPrivateAddresses bool
+	httpClient *http.Client
+	denied     deniedAddress
 }
 
 // NewWebhookDeliverer builds the hardened outbound client. blockPrivateAddresses
-// wires the off-by-default private-address gate (see WEBHOOK_BLOCK_PRIVATE_ADDRESSES);
-// callers pass false unless the operator opted in.
+// is the resolved WEBHOOK_BLOCK_PRIVATE_ADDRESSES gate (on by default under open
+// registration, see cmd/ovumcy resolveWebhookBlockPrivate); with it off the
+// client still refuses cloud metadata.
 func NewWebhookDeliverer(blockPrivateAddresses bool) WebhookDeliverer {
 	return newWebhookDelivererWithResolver(blockPrivateAddresses, net.DefaultResolver)
 }
@@ -172,32 +178,37 @@ func NewWebhookDeliverer(blockPrivateAddresses bool) WebhookDeliverer {
 // without live DNS. Production goes through NewWebhookDeliverer with
 // net.DefaultResolver.
 func newWebhookDelivererWithResolver(blockPrivateAddresses bool, resolver ipResolver) *webhookDeliveryClient {
+	denied := isMetadataIP
+	if blockPrivateAddresses {
+		denied = isPrivateIP
+	}
 	return &webhookDeliveryClient{
-		httpClient:            newWebhookHTTPClient(blockPrivateAddresses, resolver),
-		blockPrivateAddresses: blockPrivateAddresses,
+		httpClient: newWebhookHTTPClient(denied, resolver),
+		denied:     denied,
 	}
 }
 
 // newWebhookHTTPClient constructs the hardened *http.Client used for every
-// delivery: bounded timeouts, no keep-alives, and zero redirects. Only when
-// blockPrivateAddresses is on is the resolve-and-check DialContext installed; the
-// default (gate-off) path keeps the plain stock dialer, byte-for-byte unchanged.
-func newWebhookHTTPClient(blockPrivateAddresses bool, resolver ipResolver) *http.Client {
+// delivery: bounded timeouts, no keep-alives, zero redirects, and the
+// resolve-and-check DialContext refusing denied addresses.
+//
+// Transport.Proxy is deliberately nil: HTTPS_PROXY / HTTP_PROXY are ignored. A
+// proxied request dials the proxy, not the target, so the dial guard would vet
+// the proxy's address and let the proxy reach whatever the owner named.
+// Deliveries behind an egress-only proxy are unsupported (docs/notifications.md).
+func newWebhookHTTPClient(denied deniedAddress, resolver ipResolver) *http.Client {
 	// The dial (DNS + TCP connect) is a phase like the two below, not the whole
 	// budget: at webhookDeliveryTimeout a single hung connect consumed all 10s and
 	// left the handshake and the header wait nothing, which is exactly what the
 	// per-phase comment further down claims cannot happen. The total stays bounded
 	// by the client Timeout and the request context regardless.
 	baseDialer := &net.Dialer{Timeout: webhookPhaseTimeout}
-	dialContext := baseDialer.DialContext
-	if blockPrivateAddresses {
-		dialContext = guardedDialContext(baseDialer.DialContext, resolver)
-	}
 	return &http.Client{
 		Timeout: webhookDeliveryTimeout,
 		Transport: &http.Transport{
+			Proxy:             nil,
 			DisableKeepAlives: true,
-			DialContext:       dialContext,
+			DialContext:       guardedDialContext(baseDialer.DialContext, resolver, denied),
 			// The response body is capped at webhookResponseReadLimit, but headers
 			// are read before any of that and default to Go's 10 MiB — three orders
 			// of magnitude past anything a webhook acknowledgement needs, and read
@@ -221,15 +232,15 @@ func newWebhookHTTPClient(blockPrivateAddresses bool, resolver ipResolver) *http
 // branches testable without a real socket to a (necessarily non-loopback) host.
 type dialFunc = func(ctx context.Context, network, addr string) (net.Conn, error)
 
-// guardedDialContext is the resolve-and-check DialContext used ONLY when the
-// private-address gate is on. It resolves the target host once (or uses the IP
-// literal directly) and refuses the whole target with errWebhookPrivateAddress if
-// ANY resolved A/AAAA record is private/loopback/link-local/unspecified. It then
-// dials one of the validated IPs directly (never a second, independent
-// resolution), so a rebinding resolver cannot return a public answer to the check
-// and a private one to the dial. The request keeps its original Host header and
-// TLS SNI because DialContext only fixes the TCP endpoint, not the request URL.
-func guardedDialContext(dial dialFunc, resolver ipResolver) dialFunc {
+// guardedDialContext is the resolve-and-check DialContext of every delivery. It
+// resolves the target host once (or uses the IP literal directly) and refuses the
+// whole target with errWebhookPrivateAddress if ANY resolved A/AAAA record is
+// denied. It then dials one of the validated IPs directly (never a second,
+// independent resolution), so a rebinding resolver cannot return an allowed answer
+// to the check and a denied one to the dial. The request keeps its original Host
+// header and TLS SNI because DialContext only fixes the TCP endpoint, not the
+// request URL.
+func guardedDialContext(dial dialFunc, resolver ipResolver, denied deniedAddress) dialFunc {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
@@ -252,10 +263,10 @@ func guardedDialContext(dial dialFunc, resolver ipResolver) dialFunc {
 			return nil, &net.DNSError{Err: "no addresses", Name: host, IsNotFound: true}
 		}
 
-		// Reject the whole target if any record is private: a mixed public/private
+		// Reject the whole target if any record is denied: a mixed allowed/denied
 		// answer is exactly the rebinding shape we must refuse.
 		for _, ip := range ips {
-			if isPrivateIP(ip) {
+			if denied(ip) {
 				return nil, errWebhookPrivateAddress
 			}
 		}
@@ -305,7 +316,7 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 		return ErrWebhookDeliveryURLScheme
 	}
 
-	if client.blockPrivateAddresses && isPrivateHost(parsed.Hostname()) {
+	if ip := net.ParseIP(parsed.Hostname()); ip != nil && client.denied(ip) {
 		log.Printf("webhook delivery skipped: reason=private_address_blocked host=%s", parsed.Hostname())
 		return fmt.Errorf("webhook delivery to private address refused")
 	}
@@ -438,19 +449,29 @@ func isRedirectRefusal(err error) bool {
 	return errors.Is(err, errWebhookRedirect)
 }
 
-// isPrivateHost reports whether host is a loopback / private / link-local
-// address LITERAL. It is the fast pre-check at Deliver time: an IP-literal
-// target is rejected before any request. A hostname (non-literal) returns false
-// here and is instead resolved-and-checked inside the guarded dialer
-// (guardedDialContext), which validates every resolved record and pins the
-// dialed IP — so the private-address gate is enforced for hostnames too, without
-// a second independent resolution.
-func isPrivateHost(host string) bool {
-	ip := net.ParseIP(strings.TrimSpace(host))
-	if ip == nil {
-		return false
+// metadataV4Net is IPv4 link-local (169.254.0.0/16): AWS, GCP, Azure, OpenStack
+// and DigitalOcean serve instance metadata at 169.254.169.254, and nothing a
+// reminder consumer runs on is addressed from this block. Alibaba's
+// 100.100.100.200 sits in CGNAT space and is refused only with the gate on.
+var metadataV4Net = mustParseWebhookCIDR("169.254.0.0/16")
+
+// metadataV6IP is the AWS IMDS IPv6 endpoint (Nitro instances).
+var metadataV6IP = net.ParseIP("fd00:ec2::254")
+
+// isMetadataIP is the classifier used when the private-address gate is off: it
+// denies cloud metadata only, so LAN targets keep working on a household
+// instance. An IPv6 transition form wrapping a metadata IPv4 (NAT64, 6to4,
+// IPv4-compatible) is denied like the address it routes to.
+func isMetadataIP(ip net.IP) bool {
+	if metadataV4Net.Contains(ip) || metadataV6IP.Equal(ip) {
+		return true
 	}
-	return isPrivateIP(ip)
+	for _, embedded := range embeddedIPv4s(ip) {
+		if metadataV4Net.Contains(embedded) {
+			return true
+		}
+	}
+	return false
 }
 
 // cgnatNet is RFC 6598 carrier-grade-NAT space (100.64.0.0/10). Go's
