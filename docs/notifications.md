@@ -350,24 +350,32 @@ Operator-relevant summary (the full, test-backed claim list lives in
 [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md) and
 [`SECURITY.md` → Webhook Notifications (outbound egress)](../SECURITY.md#webhook-notifications-outbound-egress)):
 
-- **SSRF stance — LAN allowed by design.** The webhook URL is fully
+- **SSRF stance — LAN allowed on a closed instance.** The webhook URL is fully
   owner-controlled, and self-hosted ntfy/Gotify/Apprise instances commonly live
-  on the same LAN as the Ovumcy host. Private, loopback, and link-local
-  addresses are **allowed by default** so that setup works out of the box.
-  Instead of blocking the destination, the request envelope itself is
-  hardened: a 10-second hard timeout, no connection keep-alive/pooling, zero
-  redirects, a capped response read, and `http`/`https` schemes only.
-- **Optional hardening.** Set `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=true` (default:
-  `false`) to refuse delivery to loopback/private/link-local targets, and to any
-  other address the IANA special-purpose registries record as not globally
-  reachable (benchmarking, documentation, reserved and multicast space among
-  them). Leave it
-  unset/`false` for the common self-hosted-on-LAN case (a webhook URL like
-  `http://ntfy.local` or `http://192.168.1.20:8080/...`). Turn it on only if
-  your threat model specifically requires blocking private-network egress from
-  the notify pass. Multi-owner household instances and publicly reachable
-  deployments are the typical such case — enabling it stops one owner from using
-  the shared host's notify pass to probe another service on the private network.
+  on the same LAN as the Ovumcy host. On an instance with
+  `REGISTRATION_MODE=closed`, private, loopback, and link-local addresses are
+  **allowed by default** so that setup works out of the box. The request
+  envelope itself is hardened in every mode: a 10-second hard timeout, no
+  connection keep-alive/pooling, zero redirects, a capped response read, and
+  `http`/`https` schemes only.
+- **Cloud metadata is always refused.** Whatever the setting below, a delivery
+  whose host is or resolves to `169.254.0.0/16` (the instance metadata service
+  on AWS, GCP, Azure and most other clouds) or `fd00:ec2::254` (AWS IMDS over
+  IPv6) is refused before any connection, and the connection goes to the
+  validated IP.
+- **Private-address block.** `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` (default: on
+  under open registration, off when `REGISTRATION_MODE=closed`) refuses delivery
+  to loopback/private/link-local targets, and to any other address the IANA
+  special-purpose registries record as not globally reachable (benchmarking,
+  documentation, reserved and multicast space among them). Unset, it follows the
+  registration mode: under `REGISTRATION_MODE=open` (the default mode) anyone
+  who signs up holds an account, and without the block their webhook would let
+  the shared notify pass probe the operator's private network. An explicit
+  value wins in either mode: set it to `false` on an open instance only if every
+  account holder is trusted with LAN egress, or to `true` on a closed
+  multi-owner instance so one owner cannot probe another service on the private
+  network. Leave it off on a closed household instance whose webhooks target
+  the LAN (a URL like `http://ntfy.local` or `http://192.168.1.20:8080/...`).
   When on, the check covers both IP-literal hosts **and**
   hostnames that resolve to a private address: the destination is resolved,
   refused if any resolved record is private, and then the connection is made to
@@ -385,23 +393,24 @@ Operator-relevant summary (the full, test-backed claim list lives in
   RFC 6052 NAT64 (`64:ff9b::/96`), 6to4 (`2002::/16`), Teredo (`2001::/32`),
   IPv4-compatible (`::/96`) and IPv4-translated (`::ffff:0:0:0/96`). A form
   wrapping a **public** IPv4 stays allowed, since that is where it really
-  routes. This same flag applies to both the CLI pass and the built-in
-  scheduler. The server also logs a startup warning when `REGISTRATION_MODE=open`
-  is combined with `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=false`, surfacing exactly this
+  routes. This same flag, resolved the same way, applies to both the CLI pass
+  and the built-in scheduler. The server also logs a startup warning when
+  `REGISTRATION_MODE=open` is combined with an explicit
+  `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=false`, surfacing exactly this
   multi-owner / publicly-reachable exposure at boot.
-- **Cloud deployments: turn hardening on.** The default above (LAN allowed) is
-  meant for self-hosting on a home/office network. On a cloud VM
-  (AWS/GCP/Azure/etc.) the link-local range also reaches the instance **metadata
-  service** (`169.254.169.254`), which — like any other private target — an
-  owner-controlled webhook URL would let the notify pass POST to. Delivery only
-  sends a fixed body (JSON, or ntfy plain text) and discards the (size-capped)
-  response, so there is no
-  response-body exfiltration path; the residual risk is a semi-trusted owner using
-  status/timing differences to probe the instance's own internal network (a
-  *blind* SSRF). If you deploy Ovumcy to any cloud or otherwise non-LAN host, set
-  `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=true` — the resolve-and-pin check above then
-  refuses loopback/private/link-local targets, including the metadata endpoint,
-  with DNS-rebinding protection.
+- **Cloud deployments: keep the block on.** Delivery only sends a fixed body
+  (JSON, or ntfy plain text) and discards the (size-capped) response, so there
+  is no response-body exfiltration path; with the block off the residual risk is
+  an owner using status/timing differences to probe the instance's own internal
+  network (a *blind* SSRF). The metadata endpoint is refused regardless, but
+  other cloud-internal services are not: on any cloud or otherwise non-LAN host,
+  leave `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` unset under open registration or set it
+  to `true`.
+- **Egress proxies are unsupported.** The delivery client ignores
+  `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`: a proxied request would dial the proxy,
+  so the address check would vet the proxy instead of the destination. On a host
+  whose only route out is an HTTP proxy, every delivery fails and is logged as
+  `reason=transport_error`.
 - **Host-only logging.** Every log line the delivery path emits — success,
   failure, or skip — includes at most the destination **hostname**, never the
   full URL, path, query string, or userinfo.

@@ -153,7 +153,11 @@ func handleNotifyCommand(args []string, handlers cliCommandHandlers) (bool, erro
 	// Strict, exactly as at server boot: this pass is where the egress gate is
 	// enforced, so a value the server would refuse to start on must not be
 	// reinterpreted here into an unguarded delivery run.
-	blockPrivateAddresses, err := getEnvBoolStrict("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false)
+	registrationMode, err := resolveRegistrationMode()
+	if err != nil {
+		return true, err
+	}
+	blockPrivateAddresses, err := resolveWebhookBlockPrivate(registrationMode)
 	if err != nil {
 		return true, err
 	}
