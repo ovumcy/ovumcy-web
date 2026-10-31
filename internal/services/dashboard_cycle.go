@@ -275,6 +275,22 @@ func ProjectionChainSuppressed(user *models.User, stats CycleStats) bool {
 	return PredictionsSuppressed(user, stats) || DashboardCycleDayLooksStale(stats.CurrentCycleDay, dashboardCycleOverdueLength(user, stats))
 }
 
+// chainedFertilityCycles is how many cycles chained after the running one may
+// carry a fertile window or an ovulation day, on the grid and in the .ics feed
+// alike: the next cycle (N+1) only. Each chained cycle adds the per-cycle
+// spread (SD ~2-3 days) to the one before it, so by N+3 the error is wider than
+// the window itself — a projection past its own reference range, which the
+// medical-safety floor suppresses rather than qualifies (WEB-388). Irregular
+// range mode names its fertility as a range placed from the recorded start;
+// the cycle after it has no range of its own, so none is chained there.
+// Predicted periods are not bounded by this.
+func chainedFertilityCycles(user *models.User, stats CycleStats) int {
+	if dashboardIrregularPredictionRangeEnabled(user, stats) {
+		return 0
+	}
+	return 1
+}
+
 // DashboardCyclePastProjectionLength is the fertility signal for the days the
 // out-of-date band does not reach yet: the running cycle is past the overdue
 // gate's length (dashboardCycleOverdueLength, the shorter of the median-first

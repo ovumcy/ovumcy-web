@@ -1337,7 +1337,7 @@ func TestAppendPredictedCyclesCapsIterationCountRegardlessOfGridEnd(t *testing.T
 	}
 	gridEnd := nextPeriodStart.AddDate(500, 0, 0)
 
-	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, time.UTC, false, maxProjectedCyclesInGrid)
+	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, time.UTC, 0, maxProjectedCyclesInGrid)
 
 	if got := len(predictedPeriodMap); got > maxProjectedCyclesInGrid {
 		t.Fatalf("predicted period map holds %d days, want at most the %d-cycle cap", got, maxProjectedCyclesInGrid)

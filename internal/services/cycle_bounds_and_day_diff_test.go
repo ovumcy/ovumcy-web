@@ -196,7 +196,7 @@ func TestAppendPredictedCyclesTerminatesOnANonPositiveStep(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		appendPredictedCycles(predictedPeriod, preFertile, fertilityEdge, fertilityPeak, ovulation, stats, gridEnd, time.UTC, true, maxProjectedCyclesInGrid)
+		appendPredictedCycles(predictedPeriod, preFertile, fertilityEdge, fertilityPeak, ovulation, stats, gridEnd, time.UTC, maxProjectedCyclesInGrid, maxProjectedCyclesInGrid)
 	}()
 
 	select {

@@ -464,7 +464,7 @@ func TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent(t *testin
 // TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays pins the
 // CURRENT horizon on purpose, as a decision to revisit rather than a statement of
 // approval. The feed chains next-period events two and three cycles beyond the
-// first (and an ovulation event per cycle still ahead), each a single all-day date
+// first (and an ovulation event for the running cycle and N+1 only, WEB-388), each a single all-day date
 // with no widened range. The calendar grid's rule against widening chained cycles
 // concerns the START RANGE only (a spread drawn around a projection of a
 // projection); the grid itself also chains single projected days across the visible
@@ -508,10 +508,13 @@ func TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays(t *test
 		t.Fatalf("first projected period = %s, want %s", periods[0].Format("2006-01-02"), want.Format("2006-01-02"))
 	}
 
-	// Ovulation: cycle 0's day (2026-03-16) is already behind now, so the two
-	// chained cycles carry one each.
-	if ovulations != 2 {
-		t.Fatalf("expected exactly two projected ovulation events (cycles 1 and 2), got %d:\n%s", ovulations, body)
+	// Ovulation: cycle 0's day (2026-03-16) is already behind now, and only N+1
+	// may carry one (WEB-388): 2026-04-12, never cycle 2's 2026-05-10.
+	if ovulations != 1 {
+		t.Fatalf("expected exactly one projected ovulation event (N+1), got %d:\n%s", ovulations, body)
+	}
+	if !strings.Contains(body, "DTSTART;VALUE=DATE:20260412\r\n") || strings.Contains(body, "DTSTART;VALUE=DATE:20260510\r\n") {
+		t.Fatalf("the ovulation event belongs to N+1 (2026-04-12) and not to N+2 (2026-05-10):\n%s", body)
 	}
 
 	// Every event is a single all-day date: DTEND is the day after DTSTART.

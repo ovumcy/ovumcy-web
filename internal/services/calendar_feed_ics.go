@@ -169,9 +169,10 @@ type calendarFeedEvent struct {
 //     medical-safety suppression gate.
 //   - Otherwise project the next calendarFeedProjectionCycles cycles forward from
 //     the owner's last period start, reusing the dashboard's own cycle-start
-//     projection + window helpers, and emit a predicted-next-period event and an
-//     ovulation event per projected cycle when each is calculable and not in the
-//     past. Once the running cycle's next period is due or missed
+//     projection + window helpers, and emit a predicted-next-period event per
+//     projected cycle and an ovulation event for the running cycle and the next
+//     one (the running cycle only in irregular range mode) when each is
+//     calculable and not in the past. Once the running cycle's next period is due or missed
 //     (ProjectionChainSuppressed) nothing from the cycles after it is sent.
 //
 // No UID key (no SecretKey, or a user with no id) renders zero events: an event
@@ -319,6 +320,10 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	if suppression.ProjectionChainSuppressed {
 		cycles = 1
 	}
+	// Cycle 0 is the running cycle; the ovulation events stop at
+	// chainedFertilityCycles after it while the periods run the whole horizon,
+	// exactly as the grid shades them (WEB-388).
+	lastOvulationCycle := chainedFertilityCycles(user, stats)
 	for cycle := range cycles {
 		anchor := AddCalendarDays(runningStart, cycle*cycleLength, input.Location)
 
@@ -340,7 +345,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		// one shift going out to a calendar client that keeps it —
 		// ConfirmedOvulationSupersedes bounds that to the confirmation's own cycle,
 		// so the later projected cycles here are untouched.
-		if includeOvulation && window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 &&
+		if includeOvulation && cycle <= lastOvulationCycle && window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 &&
 			(!ovulationWindow || !calendarDayWithin(window.OvulationDate, ranges.OvulationStart, ranges.OvulationEnd)) &&
 			!ConfirmedOvulationSupersedes(user, input.Logs, stats, window.OvulationDate, today, input.Location) {
 			appendEvent(calendarFeedKindOvulation, CalendarDay(window.OvulationDate, input.Location))

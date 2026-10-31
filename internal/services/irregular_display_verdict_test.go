@@ -161,8 +161,8 @@ func TestIrregularSpreadSendsTheDashboardRangeNotTheMedian(t *testing.T) {
 	prediction := DashboardUpcomingPredictions(stats, user, today, DashboardProjectionCycleLength(user, stats))
 	// The median ovulation of this cycle has passed, so the projection has
 	// rolled to the NEXT cycle's day — outside the range, which belongs to this
-	// cycle. That day must stay in the feed: a window replaces only the single
-	// day inside it.
+	// cycle. Range mode names fertility on the running cycle only (WEB-388), so
+	// that day stays out of the feed.
 	if irregularVerdictWithin(prediction.OvulationDate, ovulationStart, ovulationEnd) {
 		t.Fatalf("fixture: the rolled ovulation %s should fall after the range %s..%s", CalendarDayKey(prediction.OvulationDate), CalendarDayKey(ovulationStart), CalendarDayKey(ovulationEnd))
 	}
@@ -185,8 +185,8 @@ func TestIrregularSpreadSendsTheDashboardRangeNotTheMedian(t *testing.T) {
 	if !periodWindow || !ovulationWindow {
 		t.Errorf(".ics feed: period window %t, ovulation window %t, want both", periodWindow, ovulationWindow)
 	}
-	if !rolledOvulation {
-		t.Errorf(".ics feed: drops the next cycle's ovulation %s, which lies outside this cycle's range", CalendarDayKey(prediction.OvulationDate))
+	if rolledOvulation {
+		t.Errorf(".ics feed: sends the next cycle's ovulation %s past the running cycle in range mode", CalendarDayKey(prediction.OvulationDate))
 	}
 
 	// The grid's start-window shading is the dashboard's window, day for day.
