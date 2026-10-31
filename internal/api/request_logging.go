@@ -141,11 +141,13 @@ func isUUIDRequestLogSegment(segment string) bool {
 // the same opaque-token test applied to a bare token segment, so the redaction
 // threshold is identical whether or not the ".ics" suffix is present.
 func isOpaqueTokenDotICSSegment(segment string) bool {
+	// Case-folded like IsCalendarFeedRequest: the feed limiter admits ".ICS",
+	// so the mask must too, or its 429 path logs the token verbatim.
 	const suffix = ".ics"
-	if !strings.HasSuffix(segment, suffix) {
+	if len(segment) < len(suffix) || !strings.EqualFold(segment[len(segment)-len(suffix):], suffix) {
 		return false
 	}
-	return isOpaqueRequestLogSegment(strings.TrimSuffix(segment, suffix))
+	return isOpaqueRequestLogSegment(segment[:len(segment)-len(suffix)])
 }
 
 func isOpaqueRequestLogSegment(segment string) bool {

@@ -319,12 +319,14 @@ func TestCalendarFeedTokenIsRedactedFromRequestLog(t *testing.T) {
 // trailing ".ics" would otherwise defeat the opaque-token redaction.
 func TestSanitizeRequestLogPathMasksRawTokenDotICSFallback(t *testing.T) {
 	rawToken := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP"
-	got := sanitizeRequestLogPath("/calendar/feed/" + rawToken + ".ics")
-	if strings.Contains(got, rawToken) {
-		t.Fatalf("raw-path fallback leaked the token: %q", got)
-	}
-	if got != "/calendar/feed/:token.ics" {
-		t.Fatalf("expected raw fallback to mask as /calendar/feed/:token.ics, got %q", got)
+	for _, suffix := range []string{".ics", ".ICS", ".Ics"} {
+		got := sanitizeRequestLogPath("/calendar/feed/" + rawToken + suffix)
+		if strings.Contains(got, rawToken) {
+			t.Fatalf("raw-path fallback leaked the token for suffix %q: %q", suffix, got)
+		}
+		if got != "/calendar/feed/:token.ics" {
+			t.Fatalf("expected raw fallback to mask %q as /calendar/feed/:token.ics, got %q", suffix, got)
+		}
 	}
 }
 
