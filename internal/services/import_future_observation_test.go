@@ -59,6 +59,54 @@ func TestImportServiceRefusesAFileRecordingAFutureObservation(t *testing.T) {
 	}
 }
 
+// vanishingStoredDayLogs answers the first stored-day read with one day and
+// every later one with none: the day is deleted between the pre-check and the
+// write transaction's own read.
+type vanishingStoredDayLogs struct {
+	importStubLogs
+	stored  models.DailyLog
+	reads   int
+	batched bool
+}
+
+func (s *vanishingStoredDayLogs) ListByUserDayRange(context.Context, uint, time.Time, time.Time) ([]models.DailyLog, error) {
+	s.reads++
+	if s.reads == 1 {
+		return []models.DailyLog{s.stored}, nil
+	}
+	return nil, nil
+}
+
+func (s *vanishingStoredDayLogs) CreateBatch(context.Context, []models.DailyLog) error {
+	s.batched = true
+	return nil
+}
+
+// A stored future day the pre-check skips, deleted before the write reads the
+// stored days again, is a new day to the write and is held to the bound there.
+func TestImportServiceHoldsADayDeletedMidRestoreToTheBound(t *testing.T) {
+	futureKey := importDayKey(manualCycleStartFutureDays + 3)
+	futureDay, err := time.Parse("2006-01-02", futureKey)
+	if err != nil {
+		t.Fatalf("parse day: %v", err)
+	}
+	logs := &vanishingStoredDayLogs{stored: models.DailyLog{UserID: 1, Date: futureDay, IsPeriod: true}}
+	raw, _ := json.Marshal(importPayload{Entries: []ExportJSONEntry{
+		{Date: futureKey, Period: true, Flow: models.FlowLight, CycleFactors: []string{}},
+	}})
+
+	_, err = NewImportService(logs, importStubUsers{}, &importStubReconciler{}, nil).ImportJSON(context.Background(), 1, raw, time.UTC)
+	if !errors.Is(err, ErrImportFutureObservation) {
+		t.Fatalf("expected ErrImportFutureObservation, got %v", err)
+	}
+	if logs.reads != 2 {
+		t.Fatalf("expected the pre-check and the write to read the stored days, got %d reads", logs.reads)
+	}
+	if logs.batched {
+		t.Fatal("the write stored the day it refused")
+	}
+}
+
 // The bound is the save's, not a stricter one: a period on the last day it
 // allows restores, and a day the owner already holds past it is skipped, as a
 // save re-stating it goes through — a backup restored over its own rows still
