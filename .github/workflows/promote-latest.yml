@@ -242,7 +242,7 @@ jobs:
         # `imagetools create` is not. The action is pinned to a commit and
         # carries the checksum of the oras release it installs, so the binary
         # that holds the Docker Hub credential is the one named here.
-        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
         with:
           version: 1.3.1
 
