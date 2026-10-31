@@ -614,6 +614,40 @@ func TestSSOSignInStartDropsAnAbandonedStepupContinuation(t *testing.T) {
 	}
 }
 
+// TestCrossSiteSSOSignInStartLeavesAStepupInFlight is the limit on the two
+// retractions above (WEB-395 L2). GET /auth/oidc/start is a safe method the
+// CSRF middleware never validates, so any site can navigate the owner to it;
+// were a cross-site start allowed to drop the step-up, it would undo the
+// callback's refusal to let a stranger cancel one in progress. Only a
+// first-party start retracts; the sign-in itself still starts.
+func TestCrossSiteSSOSignInStartLeavesAStepupInFlight(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "cross-site-start-keeps-stepup@example.com")
+	fixture.oidcStub.authURL = "https://id.example.com/authorize"
+
+	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+
+	request := httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil)
+	request.Header.Set("Cookie", stepupCookie)
+	request.Header.Set(headerSecFetchSite, secFetchSiteCrossSite)
+	request.Header.Set(headerSecFetchDest, secFetchDestDocument)
+	signInStart := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = signInStart.Body.Close() }()
+	assertStatusCode(t, signInStart, http.StatusTemporaryRedirect)
+
+	for _, name := range []string{oidcStepupCookieName, oidcStepupContinuationCookieName} {
+		if written := responseCookie(signInStart.Cookies(), name); written != nil {
+			t.Fatalf("a cross-site sign-in start must not touch %s, got Set-Cookie %q", name, written.String())
+		}
+	}
+	if stateCookie := responseCookie(signInStart.Cookies(), oidcStateCookieName); stateCookie == nil || strings.TrimSpace(stateCookie.Value) == "" {
+		t.Fatal("expected the cross-site sign-in start to still mint a state cookie")
+	}
+}
+
 func TestOIDCCallbackProviderErrorRedirectsToLoginWithoutLeakingProviderError(t *testing.T) {
 	t.Parallel()
 

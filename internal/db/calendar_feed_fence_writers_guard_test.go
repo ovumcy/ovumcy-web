@@ -41,7 +41,8 @@ var exemptCalendarFeedWriters = map[string]string{
 // column, so the scan cannot find them. Naming them by hand is the compromise
 // this one case needs; each says why.
 var alwaysAdvancingWriters = map[string]string{
-	"DeleteAccountAndRelatedData": "the erased account's feed leaves with its row, and a restore brings both back together",
+	"DeleteAccountAndRelatedData":         "the erased account's feed leaves with its row, and a restore brings both back together",
+	"DeleteAccountFromAuthSessionVersion": "the owner's own erasure: the same row removal, gated on the session version",
 }
 
 // calendarFeedFenceAdvanceCalls are the two spellings of the advance. They are

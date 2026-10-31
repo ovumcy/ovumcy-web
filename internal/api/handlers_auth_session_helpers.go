@@ -38,10 +38,11 @@ func parseForgotPasswordInput(c fiber.Ctx) (forgotPasswordInput, string) {
 		return forgotPasswordInput{}, "invalid recovery code"
 	}
 	input.RecoveryCode = code
-	// The password is passed through exactly as submitted — never trimmed,
-	// never rejected here for being empty. An empty or wrong password is a
-	// failed credential, decided in internal/services alongside the recovery
-	// code so both operands share one failure spec and one timing profile.
+	// The password is passed through as submitted — never rejected here for
+	// being empty, and trimmed only by the service, under the same input policy
+	// sign-in applies. An empty or wrong password is a failed credential,
+	// decided in internal/services alongside the recovery code so both operands
+	// share one failure spec and one timing profile.
 	return input, ""
 }
 

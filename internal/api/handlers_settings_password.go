@@ -44,7 +44,7 @@ func (handler *Handler) ChangePassword(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
+	attempt := services.ReauthAttempt{ClientKey: requestClientKey(c), UserID: user.ID, Now: time.Now()}
 	if err := handler.settingsService.ChangePassword(c.Context(), attempt, user, input.CurrentPassword, input.NewPassword, input.ConfirmPassword); err != nil {
 		if errors.Is(err, services.ErrAuthSessionVersionChanged) {
 			return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, "auth.password_change", "password_change"))

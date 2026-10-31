@@ -60,7 +60,7 @@ func (repo *recordingTimezoneRepo) ClearAllDataAndResetSettings(context.Context,
 	return nil
 }
 
-func (repo *recordingTimezoneRepo) DeleteAccountAndRelatedData(context.Context, uint) error {
+func (repo *recordingTimezoneRepo) DeleteAccountFromAuthSessionVersion(context.Context, uint, int) error {
 	return nil
 }
 

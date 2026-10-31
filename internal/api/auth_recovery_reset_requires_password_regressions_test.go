@@ -25,6 +25,7 @@ func TestRecoveryResetRefusesWithoutTheAccountPassword(t *testing.T) {
 	}{
 		{name: "no-password", password: ""},
 		{name: "wrong-password", password: "NotThePassword9"},
+		{name: "blank-password", password: "   "},
 	}
 
 	for _, testCase := range testCases {
@@ -66,33 +67,47 @@ func TestRecoveryResetRefusesWithoutTheAccountPassword(t *testing.T) {
 // control for the guard above: the legitimate owner — the SECRET_KEY-rotation
 // victim who still knows the password and whose TOTP secret stopped decrypting —
 // must still get through with both factors.
+//
+// The padded spelling is the same password under the input policy sign-in
+// applies (WEB-395 L11): stored hashes are of the trimmed value, so comparing
+// the untrimmed one refused an owner whose sign-in would have succeeded.
 func TestRecoveryResetIssuesAResetTokenForPasswordAndRecoveryCode(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "recovery-with-password@example.com", "StrongPass1", true)
-	recoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
+	for _, testCase := range []struct {
+		name     string
+		password string
+	}{
+		{name: "exact", password: "StrongPass1"},
+		{name: "padded", password: "  StrongPass1\t"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			user := createOnboardingTestUser(t, database, "recovery-with-password-"+testCase.name+"@example.com", "StrongPass1", true)
+			recoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(url.Values{
-		"email":         {user.Email},
-		"recovery_code": {recoveryCode},
-		"password":      {"StrongPass1"},
-	}.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(url.Values{
+				"email":         {user.Email},
+				"recovery_code": {recoveryCode},
+				"password":      {testCase.password},
+			}.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("forgot-password request failed: %v", err)
-	}
-	defer func() { _ = response.Body.Close() }()
+			response, err := app.Test(request, testConfigNoTimeout)
+			if err != nil {
+				t.Fatalf("forgot-password request failed: %v", err)
+			}
+			defer func() { _ = response.Body.Close() }()
 
-	if response.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected status 303, got %d", response.StatusCode)
-	}
-	if location := response.Header.Get("Location"); location != "/reset-password" {
-		t.Fatalf("expected redirect /reset-password, got %q", location)
-	}
-	resetCookie := responseCookie(response.Cookies(), resetPasswordCookieName)
-	if resetCookie == nil || strings.TrimSpace(resetCookie.Value) == "" {
-		t.Fatalf("expected a reset-password cookie for password + recovery code")
+			if response.StatusCode != http.StatusSeeOther {
+				t.Fatalf("expected status 303, got %d", response.StatusCode)
+			}
+			if location := response.Header.Get("Location"); location != "/reset-password" {
+				t.Fatalf("expected redirect /reset-password, got %q", location)
+			}
+			resetCookie := responseCookie(response.Cookies(), resetPasswordCookieName)
+			if resetCookie == nil || strings.TrimSpace(resetCookie.Value) == "" {
+				t.Fatalf("expected a reset-password cookie for password + recovery code")
+			}
+		})
 	}
 }
 

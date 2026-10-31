@@ -97,6 +97,126 @@ func (repository *revokingWriteUserRepository) ClearAllDataAndResetSettings(ctx 
 	return repository.UserRepository.ClearAllDataAndResetSettings(ctx, userID, repository.hooks.enter(expectedSessionVersion))
 }
 
+func (repository *revokingWriteUserRepository) DeleteAccountFromAuthSessionVersion(ctx context.Context, userID uint, expectedSessionVersion int) error {
+	return repository.UserRepository.DeleteAccountFromAuthSessionVersion(ctx, userID, repository.hooks.enter(expectedSessionVersion))
+}
+
+// The OIDC step-up deletion answers the same refusal through its own exit:
+// the callback, not a settings form, so the signed-out redirect rather than
+// the mapped error.
+func TestDeleteAccountStepupRefusesASessionARevocationCommittedMidwayWouldNotReach(t *testing.T) {
+	t.Parallel()
+
+	hooks := &revokingWriteHooks{}
+	fixture := newOIDCStepupFixtureWithOptions(t, "race-delete-account-stepup@example.com", onboardingTestAppOptions{revokingWrites: hooks}, nil)
+	fixture.oidcStub.reauthErr = nil
+	users := db.NewRepositories(fixture.database).Users
+	revocations := 0
+	hooks.beforeWrite = func() {
+		revocations++
+		if err := users.BumpAuthSessionVersion(context.Background(), fixture.user.ID); err != nil {
+			t.Errorf("sign out everywhere: %v", err)
+		}
+	}
+
+	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/deletion/step-up")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+
+	response := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = response.Body.Close() }()
+
+	if revocations != 1 {
+		t.Fatalf("expected the sign-out to run once inside the callback, ran %d times: the race under test never happened", revocations)
+	}
+	if got := countStepupAccounts(t, fixture); got != 1 {
+		t.Fatalf("the refused step-up deletion still erased the account, accounts = %d", got)
+	}
+	if location := response.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the signed-out refusal to land on /login, got %d %q", response.StatusCode, location)
+	}
+	if cleared := responseCookie(response.Cookies(), authCookieName); cleared == nil || strings.TrimSpace(cleared.Value) != "" {
+		t.Fatalf("expected the refusal to clear the auth cookie, got %#v", cleared)
+	}
+}
+
+// Account deletion is an erasure gated on a fresh re-auth, so a revocation
+// committed after the request authenticated and before the delete must refuse
+// it and sign this device out, the rule clear-data follows above (WEB-395 L4).
+// It has no re-issued session to compare, so it runs outside the site table:
+// the negative control shows the unconditional delete it replaced erasing
+// through a revocation it never saw.
+func TestDeleteAccountRefusesASessionARevocationCommittedMidwayWouldNotReach(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []struct {
+		name              string
+		email             string
+		browserForm       bool
+		fromStoredVersion bool
+	}{
+		{name: "json", email: "json"},
+		{name: "browser form", email: "browser", browserForm: true},
+		{name: "negative control: delete from the stored version", email: "control", fromStoredVersion: true},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			t.Parallel()
+
+			hooks := &revokingWriteHooks{}
+			ctx := revokingWriteSettingsContext(t, "race-delete-account-"+mode.email+"@example.com", hooks)
+			run := settingsRevokingWriteRun(t, ctx, http.MethodDelete, "/api/v1/users/current", url.Values{"password": {"StrongPass1"}}, "", false)
+			if mode.browserForm {
+				run.flash = true
+				run.send = func() *http.Response {
+					return settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current", url.Values{"password": {"StrongPass1"}}, map[string]string{"Accept": "text/html"})
+				}
+			}
+			users := db.NewRepositories(run.database).Users
+			versionBefore := storedAuthSessionVersion(t, run.database, run.userID)
+			revocations := 0
+			hooks.beforeWrite = func() {
+				revocations++
+				if err := users.BumpAuthSessionVersion(context.Background(), run.userID); err != nil {
+					t.Errorf("sign out everywhere: %v", err)
+				}
+			}
+			if mode.fromStoredVersion {
+				hooks.storedVersion = func() int {
+					var stored models.User
+					if err := run.database.First(&stored, run.userID).Error; err != nil {
+						t.Errorf("load user %d: %v", run.userID, err)
+					}
+					return stored.AuthSessionVersion
+				}
+			}
+
+			response := run.send()
+			if revocations != 1 {
+				t.Fatalf("expected the sign-out to run once inside the request, ran %d times: the race under test never happened", revocations)
+			}
+			var remaining int64
+			if err := run.database.Model(&models.User{}).Where("id = ?", run.userID).Count(&remaining).Error; err != nil {
+				t.Fatalf("count accounts: %v", err)
+			}
+
+			if mode.fromStoredVersion {
+				if remaining != 0 {
+					t.Fatal("negative control: the unconditional delete should have erased the account")
+				}
+				return
+			}
+			assertRevokedMidwayRefusal(t, run, response)
+			if remaining != 1 {
+				t.Fatal("the refused delete still erased the account")
+			}
+			if versionAfter := storedAuthSessionVersion(t, run.database, run.userID); versionAfter != versionBefore+1 {
+				t.Fatalf("expected the account left at the sign-out's version %d, got %d", versionBefore+1, versionAfter)
+			}
+		})
+	}
+}
+
 // revokingWriteRun is one site's request, prepared up to the point of sending.
 type revokingWriteRun struct {
 	app        *fiber.App

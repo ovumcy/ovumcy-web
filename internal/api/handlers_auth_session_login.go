@@ -75,7 +75,7 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.login", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	clientKey := c.IP()
+	clientKey := requestClientKey(c)
 	result, err := handler.loginService.Authenticate(
 		c.Context(),
 		handler.secretKey,
@@ -174,7 +174,7 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 	handler.logSecurityEvent(c, "auth.logout", "success")
 	if handler.authService.CheckAndRecordLogoutAttempt(
 		handler.secretKey,
-		c.IP(),
+		requestClientKey(c),
 		services.LogoutAttemptIdentity(user.ID),
 		time.Now(),
 	) {

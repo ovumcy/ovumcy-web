@@ -78,7 +78,11 @@ func (handler *Handler) DeleteAccount(c fiber.Ctx) error {
 	}
 
 	// Shared with the OIDC step-up callback; see applyClearData above.
-	if spec, applied := handler.applyDeleteAccount(c, reauth.user); !applied {
+	spec, outcome := handler.applyDeleteAccount(c, reauth.user)
+	switch outcome {
+	case deleteAccountRefusedSignedOut:
+		return handler.respondSignedOutRefusal(c, spec)
+	case deleteAccountRefused:
 		return handler.respondMappedError(c, spec)
 	}
 	// After the delete committed, like every other settings.reauth caller.
@@ -150,7 +154,7 @@ func (handler *Handler) validateSettingsActionPassword(c fiber.Ctx) (settingsRea
 	// session already in hand, so it must not be a faster oracle than the login
 	// form. VerifyReauthPassword refuses even a correct password once the budget
 	// is spent, and never clears it: that is the caller's step, after its write.
-	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
+	attempt := services.ReauthAttempt{ClientKey: requestClientKey(c), UserID: user.ID, Now: time.Now()}
 	budget, err := handler.settingsService.VerifyReauthPassword(attempt, user, password)
 	if err != nil {
 		return settingsReauth{}, mapSettingsDeleteAccountPasswordError(err), settingsReauthCauseField(err), false
