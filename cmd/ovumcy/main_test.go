@@ -2285,6 +2285,32 @@ func TestTryRunCLICommandWithHandlersNotifyParsesWebhookBlockPrivateAddresses(t 
 	}
 }
 
+// An unknown REGISTRATION_MODE is refused before delivery, as at server boot:
+// guessing a mode here would guess the egress posture with it.
+func TestTryRunCLICommandWithHandlersNotifyRefusesUnknownRegistrationMode(t *testing.T) {
+	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("TZ", "UTC")
+	t.Setenv("REGISTRATION_MODE", "invite_only")
+	t.Setenv("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", "")
+
+	called := false
+	handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
+		runNotify: func(db.Config, string, string, *time.Location, bool, []string) error {
+			called = true
+			return nil
+		},
+	})
+	if !handled {
+		t.Fatal("expected notify command to be handled")
+	}
+	if err == nil {
+		t.Fatal("expected an unknown REGISTRATION_MODE to be refused")
+	}
+	if called {
+		t.Fatal("notify must not run under an unknown REGISTRATION_MODE")
+	}
+}
+
 func TestTryRunCLICommandWithHandlersDispatchesWebhook(t *testing.T) {
 	// SECRET_KEY is required by the webhook dispatch (it resolves the encrypt/
 	// decrypt key before invoking the handler); provide a valid one.
