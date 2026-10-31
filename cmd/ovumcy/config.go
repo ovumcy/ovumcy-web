@@ -37,6 +37,12 @@ type runtimeConfig struct {
 	// default for a bare binary; the image sets it) means no fence, which fails
 	// closed: every armed calendar feed is disarmed on every boot.
 	CalendarFeedFencePath string
+	// CalendarFeedFenceOptOut is CALENDAR_FEED_FENCE_OPTOUT. From v2.0 a boot
+	// with no usable fence is refused (WEB-399), because without one a restore
+	// can revive signed-out sessions and removed webhook endpoints. Setting it
+	// accepts that residual: the instance boots, disarms feeds on every start
+	// and warns, but revokes no session or webhook on a restore it cannot see.
+	CalendarFeedFenceOptOut bool
 	// WebhookBlockPrivate mirrors the WEBHOOK_BLOCK_PRIVATE_ADDRESSES egress gate
 	// the notify CLI reads (resolveWebhookBlockPrivate), so the built-in
 	// scheduler wires the same deliverer hardening.
@@ -288,6 +294,11 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	if err != nil {
 		return runtimeConfig{}, err
 	}
+	// Strict: a typo must not turn a refused boot into an accepted residual.
+	calendarFeedFenceOptOut, err := getEnvBoolStrict(calendarFeedFenceOptOutEnv, false)
+	if err != nil {
+		return runtimeConfig{}, err
+	}
 
 	loginMax, loginWindow := getCredentialRateLimit("RATE_LIMIT_LOGIN_MAX", "RATE_LIMIT_LOGIN_WINDOW", 8, 15*time.Minute)
 	registerMax, registerWindow := getCredentialRateLimit("RATE_LIMIT_REGISTER_MAX", "RATE_LIMIT_REGISTER_WINDOW", 8, 15*time.Minute)
@@ -311,16 +322,17 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	passwordResetRedeemMax, passwordResetRedeemWindow := getCredentialRateLimit("RATE_LIMIT_PASSWORD_RESET_REDEEM_MAX", "RATE_LIMIT_PASSWORD_RESET_REDEEM_WINDOW", 8, 15*time.Minute)
 
 	return runtimeConfig{
-		Location:              location,
-		SecretKey:             secretKey,
-		DatabaseConfig:        databaseConfig,
-		Port:                  port,
-		DefaultLanguage:       getEnv("DEFAULT_LANGUAGE", "en"),
-		CalendarFeedFencePath: calendarFeedFencePath,
-		RegistrationMode:      registrationMode,
-		CookieSecure:          cookieSecure,
-		HSTSEnabled:           hstsEnabled,
-		OIDC:                  oidcConfig,
+		Location:                location,
+		SecretKey:               secretKey,
+		DatabaseConfig:          databaseConfig,
+		Port:                    port,
+		DefaultLanguage:         getEnv("DEFAULT_LANGUAGE", "en"),
+		CalendarFeedFencePath:   calendarFeedFencePath,
+		CalendarFeedFenceOptOut: calendarFeedFenceOptOut,
+		RegistrationMode:        registrationMode,
+		CookieSecure:            cookieSecure,
+		HSTSEnabled:             hstsEnabled,
+		OIDC:                    oidcConfig,
 		RateLimits: rateLimitSettings{
 			LoginMax:                  loginMax,
 			LoginWindow:               loginWindow,

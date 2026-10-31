@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/reminders"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"gorm.io/gorm"
 )
@@ -61,7 +63,7 @@ func main() {
 	// Of the passes that write, the restore fence runs first because its disarm
 	// is the wider one: it answers "is this even the database that holds my
 	// revocations", which the key-rotation sentinel behind it assumes.
-	mustEnforceCalendarFeedRestoreFence(calendarFeedFence)
+	mustEnforceCalendarFeedRestoreFence(calendarFeedFence, config.CalendarFeedFenceOptOut)
 	mustEnforceCalendarFeedKeyRotation(repositories, []byte(config.SecretKey))
 	mustRenormalizeAuthEmails(repositories)
 	recomputeDerivedLutealPhases(repositories, location)
@@ -194,18 +196,53 @@ func mustVerifySchemaInvariants(repositories *db.Repositories) {
 // before a listener exists. The decision logic lives (tested) in
 // services.CalendarFeedRestoreFence; this wrapper wires repositories and the
 // file anchor, fails the boot on a DATABASE error, and prints the
-// operator-facing line. An unusable fence is not a boot failure: it disarms and
-// says so, on every start, until the mount is there.
-func mustEnforceCalendarFeedRestoreFence(fence *services.CalendarFeedRestoreFence) {
+// operator-facing line. From v2.0 an unusable fence fails the boot too
+// (WEB-399) unless CALENDAR_FEED_FENCE_OPTOUT accepts the residual; with the
+// opt-out it disarms and warns, on every start, until the mount is there.
+func mustEnforceCalendarFeedRestoreFence(fence *services.CalendarFeedRestoreFence, optOut bool) {
+	message, err := enforceCalendarFeedRestoreFence(fence, optOut)
+	if err != nil {
+		log.Fatal(err) // codecov:ignore -- the refusals are tested through enforceCalendarFeedRestoreFence; log.Fatal exits the test binary
+	}
+	if message != "" {
+		log.Print(message)
+	}
+}
+
+const calendarFeedFenceOptOutEnv = "CALENDAR_FEED_FENCE_OPTOUT"
+
+// errCalendarFeedFenceRequired is the refused boot's error, naming the
+// variable, the docs section and the opt-out.
+var errCalendarFeedFenceRequired = errors.New("calendar-feed restore fence required")
+
+// enforceCalendarFeedRestoreFence is mustEnforceCalendarFeedRestoreFence
+// without the exit. The anchor is checked BEFORE Enforce so a refused boot
+// writes nothing: Enforce's unanchored path disarms and stamps the database,
+// and a stamp from a boot that never served would cost every owner a sign-in
+// on the first start after the operator mounts the fence. A fence that reads
+// but cannot be written is only found inside Enforce, so its outcome is
+// checked again after it.
+func enforceCalendarFeedRestoreFence(fence *services.CalendarFeedRestoreFence, optOut bool) (string, error) {
+	if !optOut {
+		if err := fence.CheckAnchor(); err != nil {
+			return "", calendarFeedFenceRefusal(err)
+		}
+	}
 	ctx, cancel := bootPassContext()
 	defer cancel()
 	outcome, err := fence.Enforce(ctx)
 	if err != nil {
-		log.Fatalf("calendar-feed restore fence failed: %v", err) // codecov:ignore -- reachable only when the DB fails between migration and this first read
+		return "", fmt.Errorf("calendar-feed restore fence failed: %w", err)
 	}
-	if message := calendarFeedRestoreFenceStartupMessage(outcome); message != "" {
-		log.Print(message)
+	if outcome.Unanchored && !optOut {
+		return "", calendarFeedFenceRefusal(outcome.UnanchoredCause)
 	}
+	return calendarFeedRestoreFenceStartupMessage(outcome), nil
+}
+
+func calendarFeedFenceRefusal(cause error) error {
+	return fmt.Errorf("%w (%v): refusing to start. Mount a persistent directory that is NOT part of any database backup and point %s at a file inside it, using an absolute path (docs/self-hosted.md → Calendar Feed Restore Fence). Without it a restored backup cannot be told from the database it replaced, and the restore would revive calendar feeds, signed-out sessions and removed webhook endpoints. To start anyway and accept that, set %s=true",
+		errCalendarFeedFenceRequired, cause, security.CalendarFeedFencePathEnv, calendarFeedFenceOptOutEnv)
 }
 
 // mustEnforceCalendarFeedKeyRotation runs the boot-time calendar-feed
@@ -283,7 +320,7 @@ func calendarFeedRestoreFenceStartupMessage(outcome services.CalendarFeedRestore
 		// Both patterns are single literals on purpose: a pattern assembled from
 		// concatenated pieces is invisible to go vet's printf checker, and the
 		// locale-format guard refuses one for that reason.
-		return fmt.Sprintf("calendar-feed restore fence unavailable (%v): %d armed calendar feed(s) disarmed, the database half of the fence marker dropped, and every start will disarm again; the first start that has the fence back will disarm once more before re-arming. Mount a persistent directory that is NOT part of any database backup and point CALENDAR_FEED_FENCE_PATH at a file inside it, using an absolute path — a relative one is refused at startup, by this server and by the operator CLI alike (see docs/self-hosted.md → Calendar Feed Restore Fence); without it a restored backup cannot be told from the database it replaced", outcome.UnanchoredCause, outcome.DisarmedFeeds)
+		return fmt.Sprintf("calendar-feed restore fence unavailable (%v): %d armed calendar feed(s) disarmed, the database half of the fence marker dropped, and every start will disarm again; the first start that has the fence back will disarm once more before re-arming. Mount a persistent directory that is NOT part of any database backup and point CALENDAR_FEED_FENCE_PATH at a file inside it, using an absolute path — a relative one is refused at startup, by this server and by the operator CLI alike (see docs/self-hosted.md → Calendar Feed Restore Fence); without it a restored backup cannot be told from the database it replaced. CALENDAR_FEED_FENCE_OPTOUT is set, so this instance runs anyway and a restore here can revive signed-out sessions and removed webhook endpoints", outcome.UnanchoredCause, outcome.DisarmedFeeds)
 	case outcome.UnanchoredHistory:
 		// Ahead of the plain ContinuityBroken line below, because this outcome
 		// sets both flags and only this text explains a disarm on a start where

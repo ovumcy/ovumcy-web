@@ -50,8 +50,8 @@ func TestRestoreFenceRefusesAPreRestoreCookieAndClearsWebhooks(t *testing.T) {
 		t.Fatalf("BuildAuthSessionTokenWithSessionID: %v", err)
 	}
 
-	mustEnforceCalendarFeedRestoreFence(fence)
-	mustEnforceCalendarFeedRestoreFence(fence)
+	mustEnforceCalendarFeedRestoreFence(fence, false)
+	mustEnforceCalendarFeedRestoreFence(fence, false)
 	if _, _, err := auth.ResolveAuthSession(ctx, secret, cookie, now); err != nil {
 		t.Fatalf("an ordinary restart must keep the session: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestRestoreFenceRefusesAPreRestoreCookieAndClearsWebhooks(t *testing.T) {
 	if err := os.WriteFile(fencePath, []byte("a-different-generation\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	mustEnforceCalendarFeedRestoreFence(fence)
+	mustEnforceCalendarFeedRestoreFence(fence, false)
 
 	if _, _, err := auth.ResolveAuthSession(ctx, secret, cookie, now); !errors.Is(err, services.ErrAuthSessionTokenRevoked) {
 		t.Fatalf("a cookie minted before the restore must be refused, got %v", err)

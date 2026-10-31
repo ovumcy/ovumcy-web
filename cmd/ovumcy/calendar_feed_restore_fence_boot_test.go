@@ -30,7 +30,7 @@ func TestMustEnforceCalendarFeedRestoreFenceAcrossBoots(t *testing.T) {
 	t.Cleanup(func() { closeDatabase(database) })
 	repositories, fence := bootstrap.BuildRepositories(database, fencePath)
 
-	mustEnforceCalendarFeedRestoreFence(fence)
+	mustEnforceCalendarFeedRestoreFence(fence, false)
 	first := storedFenceMarker(t, repositories)
 	if first == "" {
 		t.Fatal("first boot must record a non-empty fence marker")
@@ -43,7 +43,7 @@ func TestMustEnforceCalendarFeedRestoreFenceAcrossBoots(t *testing.T) {
 		t.Fatalf("both halves must hold the same token; file %q, app_state %q", strings.TrimSpace(string(onDisk)), first)
 	}
 
-	mustEnforceCalendarFeedRestoreFence(fence)
+	mustEnforceCalendarFeedRestoreFence(fence, false)
 	if second := storedFenceMarker(t, repositories); second != first {
 		t.Fatalf("an ordinary restart must keep the marker (before=%q, after=%q)", first, second)
 	}
@@ -54,7 +54,7 @@ func TestMustEnforceCalendarFeedRestoreFenceAcrossBoots(t *testing.T) {
 	if err := os.WriteFile(fencePath, []byte("a-different-generation\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	mustEnforceCalendarFeedRestoreFence(fence)
+	mustEnforceCalendarFeedRestoreFence(fence, false)
 	third := storedFenceMarker(t, repositories)
 	if third == first || third == "a-different-generation" || third == "" {
 		t.Fatalf("a disagreeing fence must mint a fresh marker (before=%q, after=%q)", first, third)
@@ -63,9 +63,10 @@ func TestMustEnforceCalendarFeedRestoreFenceAcrossBoots(t *testing.T) {
 
 // TestMustEnforceCalendarFeedRestoreFenceWithoutAFenceDoesNotStopTheBoot pins
 // the deployment decision this fix rests on: an operator who pulls the new
-// image without adding the mount gets a booting instance with its feeds
-// disarmed, not a container that will not start. It also pins that nothing is
-// recorded, so the next unanchored boot cannot read as agreement.
+// image without adding the mount, and who set CALENDAR_FEED_FENCE_OPTOUT to
+// accept the residual, gets a booting instance with its feeds disarmed, not a
+// container that will not start. It also pins that nothing is recorded, so the
+// next unanchored boot cannot read as agreement.
 func TestMustEnforceCalendarFeedRestoreFenceWithoutAFenceDoesNotStopTheBoot(t *testing.T) {
 	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "fence-unanchored.db")})
 	if err != nil {
@@ -74,10 +75,56 @@ func TestMustEnforceCalendarFeedRestoreFenceWithoutAFenceDoesNotStopTheBoot(t *t
 	t.Cleanup(func() { closeDatabase(database) })
 	repositories, fence := bootstrap.BuildRepositories(database, "")
 
-	mustEnforceCalendarFeedRestoreFence(fence)
+	mustEnforceCalendarFeedRestoreFence(fence, true)
 
 	if marker := storedFenceMarker(t, repositories); marker != "" {
 		t.Fatalf("an unanchored boot must record no marker, got %q", marker)
+	}
+}
+
+// TestEnforceCalendarFeedRestoreFenceRefusesTheBootWithoutAFence pins the v2.0
+// deploy contract (WEB-399): with no usable fence and no opt-out the boot is
+// refused with an error naming the variable, the docs section and the
+// opt-out, and the refused boot writes nothing — no disarm stamp that would
+// cost every owner a sign-in once the operator mounts the fence.
+func TestEnforceCalendarFeedRestoreFenceRefusesTheBootWithoutAFence(t *testing.T) {
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "fence-refused.db")})
+	if err != nil {
+		t.Fatalf("OpenDatabase: %v", err)
+	}
+	t.Cleanup(func() { closeDatabase(database) })
+	repositories, fence := bootstrap.BuildRepositories(database, "")
+
+	_, err = enforceCalendarFeedRestoreFence(fence, false)
+	if !errors.Is(err, errCalendarFeedFenceRequired) {
+		t.Fatalf("a boot without a fence must be refused, got %v", err)
+	}
+	for _, want := range []string{"CALENDAR_FEED_FENCE_PATH", "Calendar Feed Restore Fence", calendarFeedFenceOptOutEnv + "=true"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the refusal must name %q, got %q", want, err)
+		}
+	}
+	if _, found, err := repositories.AppState.Get(context.Background(), models.AppStateKeyCalendarFeedFenceUnanchored); err != nil || found {
+		t.Fatalf("a refused boot must not stamp the database (found=%v, err=%v)", found, err)
+	}
+}
+
+// TestEnforceCalendarFeedRestoreFenceRefusesAnUnwritableFence covers the
+// second refusal: a fence that reads but cannot be written is only found
+// inside Enforce, and is refused there too.
+func TestEnforceCalendarFeedRestoreFenceRefusesAnUnwritableFence(t *testing.T) {
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "fence-unwritable.db")})
+	if err != nil {
+		t.Fatalf("OpenDatabase: %v", err)
+	}
+	t.Cleanup(func() { closeDatabase(database) })
+	// A directory where the fence file should be: reading it as "no token yet"
+	// can still succeed on some platforms, writing it never does.
+	fencePath := t.TempDir()
+	_, fence := bootstrap.BuildRepositories(database, fencePath)
+
+	if _, err := enforceCalendarFeedRestoreFence(fence, false); !errors.Is(err, errCalendarFeedFenceRequired) {
+		t.Fatalf("an unwritable fence must refuse the boot, got %v", err)
 	}
 }
 
