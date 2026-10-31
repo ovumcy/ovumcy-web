@@ -54,52 +54,39 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 }
 
 // advanceCalendarFeedFence is called by every write that changes which calendar
-// feeds are armed. Where it sits relative to that write is decided by which
-// mistake costs more, and the two cases genuinely differ:
+// feeds are armed, and every one of them calls it BEFORE that write. The rule
+// is that the fence may never be BEHIND the row state. Advancing after leaves a
+// window in which the row says revoked and the fence does not, and a restore
+// across that window revives the feed — the defect this whole mechanism exists
+// for. Advancing first cannot produce it: a crash in the window leaves the fence
+// ahead of a row that never changed, which is a still-armed feed and an
+// operation the owner never saw succeed, so they retry it. After an advance the
+// two halves AGREE, so no later boot disarms on its account; the safety comes
+// from the ordering itself, never from a boot-time backstop.
 //
-//   - SaveCalendarFeedToken and ClearCalendarFeedToken advance FIRST. There the
-//     write IS the revocation, and the rule is that the fence may never be
-//     BEHIND the row state. Advancing after leaves a window in which the row
-//     says revoked and the fence does not, and a restore across that window
-//     revives the feed — the defect this whole mechanism exists for. Advancing
-//     first cannot produce it: a crash in the window leaves the fence ahead of
-//     a row that never changed, which is a still-armed feed and a revocation
-//     the owner never saw succeed, so they retry it.
+// What it does not close is a backup taken INSIDE the window. The advance and
+// the row write are separate transactions, so a consistent snapshot between
+// them holds the new token beside a row that is still armed, and restoring that
+// snapshot compares equal and revives the feed. The window is sub-millisecond
+// and the runbook takes backups with the app stopped, which is why it is named
+// rather than engineered away; the reverse order trades it for the strictly
+// worse crash window described above.
 //
-//     Note what this does NOT rest on. After an advance the two halves AGREE,
-//     so no later boot disarms on its account; the safety comes from the
-//     ordering itself, never from a boot-time backstop.
+// What failure of the advance itself does differs by caller:
 //
-//     What it does not close is a backup taken INSIDE the window. The advance
-//     and the row write are separate transactions, so a consistent snapshot
-//     between them holds the new token beside a row that is still armed, and
-//     restoring that snapshot compares equal and revives the feed. The window
-//     is sub-millisecond and the runbook takes backups with the app stopped,
-//     which is why it is named rather than engineered away; the reverse order
-//     trades it for the strictly worse crash window described above.
+//   - SaveCalendarFeedToken and ClearCalendarFeedToken return it. There the
+//     write IS the arming or the revocation, so a fence that cannot record it
+//     refuses the operation and the owner retries.
+//   - Everything else — recovery-code rotation, the operator reset, the
+//     reset-token redeem, clear-data and account erasure — goes through
+//     advanceCalendarFeedFenceBestEffort and proceeds. There the feed clear is
+//     a side effect, and refusing would block a password change or an erasure
+//     on a calendar-feed marker.
 //
-//   - Everything else advances AFTER. There the feed clear is a side effect of
-//     a credential rotation, a clear-data wipe or an erasure, and advancing
-//     first would refuse the whole operation whenever the fence's own write
-//     fails — a password change blocked by a calendar-feed marker. That trade
-//     is not worth closing a window these paths only touch incidentally, and
-//     their containment does not rest on the feed (the same statement bumps
-//     auth_session_version). The window is named as a residual risk rather
-//     than engineered away.
-//
-//     Every "advances AFTER" caller drops this call's error (`_ =`) rather
-//     than returning it, because by the time it runs their own write has
-//     already committed: reporting a completed password reset, recovery-code
-//     rotation or clear-data as failed would be a bigger lie than the missing
-//     fence record. The cost is bounded either way the fence can actually
-//     fail — a write that moved the file but not app_state leaves the halves
-//     disagreeing, and a write that moved neither leaves the fence unanchored
-//     — and Enforce answers both by disarming every armed feed on the next
-//     boot, never by losing a revocation silently. This reasoning is the
-//     server's own; it holds only for a write acting on the account's OWN
-//     feed, never for the operator CLI acting on someone else's, which is why
-//     AdvanceConfirmed (internal/services) exists and refuses instead of
-//     degrading.
+// This reasoning is the server's own; it holds only for a write acting on the
+// account's OWN feed, never for the operator CLI acting on someone else's,
+// which is why AdvanceConfirmed (internal/services) exists and refuses instead
+// of degrading.
 //
 // Deliberately NOT called by the two boot-time bulk disarms: the restore fence
 // records its own token immediately after its disarm, and the key-rotation
@@ -114,13 +101,12 @@ func (repo *UserRepository) advanceCalendarFeedFence(ctx context.Context) error 
 	return repo.calendarFeedFence.Advance(ctx)
 }
 
-// advanceCalendarFeedFenceBestEffort is the "advances AFTER" form, and the only
-// place the dropped error is explained: every caller of it has already
-// committed its own write, so reporting a completed password reset,
-// recovery-code rotation, reset-token consumption, clear-data wipe or account
-// erasure as failed would be a bigger lie than the missing fence record — and
-// the last of those would be told to an owner who can no longer sign in to
-// retry.
+// advanceCalendarFeedFenceBestEffort is the form for writes whose feed clear is a
+// side effect, called BEFORE their row write (WEB-397), and the only place the
+// dropped error is explained: refusing a password reset, recovery-code
+// rotation, reset-token consumption, clear-data wipe or account erasure because
+// a calendar-feed marker could not be written would trade a credential or an
+// erasure for a feed record.
 //
 // The cost is bounded on either route the fence can actually fail. A write that
 // moved the file but not app_state leaves the two halves disagreeing; one that
@@ -1242,7 +1228,8 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"recovery_code_hash":            recoveryHash,
 			"recovery_code_revealed_at":     nil,
@@ -1255,11 +1242,7 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 			return err
 		}
 		return runBeforeCommit(tx, userID, beforeCommit)
-	}); err != nil {
-		return err
-	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
-	return nil
+	})
 }
 
 // runBeforeCommit hands beforeCommit the auth_session_version the write inside
@@ -1327,7 +1310,8 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 	if err != nil {
 		return err
 	}
-	if err := query.Updates(map[string]any{
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	return query.Updates(map[string]any{
 		"password_hash":                 passwordHash,
 		"must_change_password":          true,
 		"local_auth_enabled":            true,
@@ -1337,11 +1321,7 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 		"calendar_feed_detailed_titles": false,
 		"calendar_feed_last_polled_on":  nil,
 		"auth_session_version":          gorm.Expr("auth_session_version + 1"),
-	}).Error; err != nil {
-		return err
-	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
-	return nil
+	}).Error
 }
 
 // UpgradePasswordHashCAS is the transparent bcrypt-cost upgrade the auth
@@ -1446,7 +1426,8 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 	if oldSessionVersion < 1 {
 		return ErrResetTokenAlreadyConsumed
 	}
-	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&models.User{}).
 			Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
 			Where("auth_session_version = ?", oldSessionVersion).
@@ -1470,11 +1451,7 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 			return ErrResetTokenAlreadyConsumed
 		}
 		return runBeforeCommit(tx, userID, beforeCommit)
-	}); err != nil {
-		return err
-	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
-	return nil
+	})
 }
 
 func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
@@ -1751,7 +1728,14 @@ func (repo *UserRepository) SaveOnboardingStep2(ctx context.Context, userID uint
 // models.ErrAuthSessionVersionChanged; on success the stored version is exactly
 // expectedSessionVersion+1.
 func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, userID uint, expectedSessionVersion int) error {
-	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	// The zero-id refusal precedes the advance: a wipe of no owner removes no
+	// feed, and a fence advanced for it records a removal that never happened.
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
+	}
+	// The wipe takes the owner's feed with it: see advanceCalendarFeedFenceBestEffort.
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
 			return err
 		}
@@ -1867,13 +1851,7 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			// devices out.
 		})
 		return err
-	}); err != nil {
-		return err
-	}
-	// The wipe committed above, and it took the owner's feed with it: recording
-	// that outside the database is best-effort for the reason the helper gives.
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
-	return nil
+	})
 }
 
 func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, userID uint) error {
@@ -1882,6 +1860,10 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
+	// The erased account's feed leaves with its row, which is a removal like any
+	// other: a restore that brings the account back brings its subscribe URL
+	// back with it. See advanceCalendarFeedFenceBestEffort.
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
 			return err
@@ -1922,10 +1904,6 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 	// The error is intentionally dropped here: a purge failure must not turn
 	// a completed erasure into a reported failure.
 	_ = repo.database.WithContext(ctx).Where("expires_at <= ?", time.Now().UTC()).Delete(&models.OIDCLogoutState{}).Error
-	// The erased account's feed left with its row, which is a removal like any
-	// other: a restore that brings the account back brings its subscribe URL
-	// back with it.
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return nil
 }
 

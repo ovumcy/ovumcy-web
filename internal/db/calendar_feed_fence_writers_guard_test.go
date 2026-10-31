@@ -44,24 +44,13 @@ var alwaysAdvancingWriters = map[string]string{
 }
 
 // calendarFeedFenceAdvanceCalls are the two spellings of the advance. They are
-// one call in two forms — the error-returning one, which the writers that must
-// advance BEFORE their row write use, and the best-effort wrapper that drops it,
-// which every writer that advances after uses — so the scan has to count both or
-// it would report five writers as never advancing at all.
+// one call in two forms — the error-returning one, which the arming and
+// revoking writers use, and the best-effort wrapper that drops it, which every
+// writer whose feed clear is a side effect uses — so the scan has to count both
+// or it would report five writers as never advancing at all.
 var calendarFeedFenceAdvanceCalls = map[string]bool{
 	"advanceCalendarFeedFence":           true,
 	"advanceCalendarFeedFenceBestEffort": true,
-}
-
-// advanceBeforeTheWrite are the writers whose advance must precede their row
-// write, because there the write IS the revocation and a fence left behind it
-// is the window a restore reopens. Every other writer advances after, so that a
-// failed fence write cannot refuse an unrelated credential rotation or erasure.
-// The split is the load-bearing part of the ordering rule, so it is asserted
-// rather than left to the comment on advanceCalendarFeedFence.
-var advanceBeforeTheWrite = map[string]bool{
-	"SaveCalendarFeedToken":  true,
-	"ClearCalendarFeedToken": true,
 }
 
 // TestEveryCalendarFeedWriterAdvancesTheRestoreFence is the completeness guard
@@ -101,6 +90,7 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		// below, which is the load-bearing half of this guard.
 		advanceAt := -1
 		columnAt := -1
+		transactionAt := -1
 		// A function that issues no write statement cannot be a writer, however
 		// many feed columns it names. The settings projection names
 		// calendar_feed_selector in its Select list because the egress ledger has
@@ -117,10 +107,16 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		ast.Inspect(function.Body, func(node ast.Node) bool {
 			switch typed := node.(type) {
 			case *ast.CallExpr:
-				if selector, ok := typed.Fun.(*ast.SelectorExpr); ok && calendarFeedFenceAdvanceCalls[selector.Sel.Name] {
-					if at := int(typed.Pos()); advanceAt < 0 || at < advanceAt {
-						advanceAt = at
-					}
+				selector, ok := typed.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				at := int(typed.Pos())
+				if calendarFeedFenceAdvanceCalls[selector.Sel.Name] && (advanceAt < 0 || at < advanceAt) {
+					advanceAt = at
+				}
+				if selector.Sel.Name == "Transaction" && (transactionAt < 0 || at < transactionAt) {
+					transactionAt = at
 				}
 			case *ast.BasicLit:
 				if typed.Kind != token.STRING {
@@ -144,7 +140,15 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		if columnAt >= 0 {
 			writers[name] = true
 		}
-		if advanceAt >= 0 && columnAt >= 0 && advanceAt < columnAt {
+		// The write a writer must not run ahead of is its first feed column or,
+		// for one that opens a transaction, the transaction itself: an advance
+		// inside it would run after the statements that precede it there and
+		// could not commit apart from the write.
+		writeAt := columnAt
+		if transactionAt >= 0 && (writeAt < 0 || transactionAt < writeAt) {
+			writeAt = transactionAt
+		}
+		if advanceAt >= 0 && writeAt >= 0 && advanceAt < writeAt {
 			advancesFirst[name] = true
 		}
 	}
@@ -178,24 +182,20 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		}
 	}
 
-	// The ordering rule, both ways. A revocation path that advances after its
-	// row write reopens the window a restore crosses; any other path that
-	// advances before it lets a failed fence write refuse a credential rotation
-	// or an erasure that has nothing to do with calendar feeds.
-	for name := range writers {
+	// The ordering rule (WEB-397): every writer advances BEFORE its write. One
+	// that advances after leaves a crash window in which the row is revoked and
+	// the fence is not, and a restore of a backup taken before the revocation
+	// then compares equal and revives the feed.
+	ordered := sortedNamesOf(writers)
+	for name := range alwaysAdvancingWriters {
+		ordered = append(ordered, name)
+	}
+	for _, name := range ordered {
 		if _, exempt := exemptCalendarFeedWriters[name]; exempt {
 			continue
 		}
-		switch {
-		case advanceBeforeTheWrite[name] && !advancesFirst[name]:
-			t.Fatalf("%s is a revocation path: it must advance the fence BEFORE its row write, or a crash between the two leaves the row revoked and the fence not, which a restore then undoes", name)
-		case !advanceBeforeTheWrite[name] && advancesFirst[name]:
-			t.Fatalf("%s clears the feed only as a side effect: advancing before its row write would refuse the whole operation whenever the fence write fails", name)
-		}
-	}
-	for name := range advanceBeforeTheWrite {
-		if !writers[name] {
-			t.Fatalf("%s no longer writes a feed access column: the ordering entry names a function this rule can no longer be about", name)
+		if !advancesFirst[name] {
+			t.Fatalf("%s must advance the fence BEFORE its write, or a crash between the two leaves the feed revoked and the fence not, which a restore then undoes", name)
 		}
 	}
 
