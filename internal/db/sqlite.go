@@ -30,7 +30,12 @@ func openSQLiteConnection(dbPath string) (*gorm.DB, error) {
 	// — so busy_timeout never engages and concurrent day writes surface as 500s.
 	// BEGIN IMMEDIATE acquires the write lock up front, so contending writers
 	// queue on busy_timeout instead. Regression: sqlite_concurrency_test.go.
-	dsn := fmt.Sprintf("%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_txlock=immediate", dbPath)
+	//
+	// `secure_delete(1)` overwrites deleted content with zeros. Without it a
+	// clear-data or account deletion leaves the erased health records readable
+	// in free pages and cell slack of the database file until something happens
+	// to reuse them. Regression: TestSQLiteErasureLeavesNoRemnantInTheFile.
+	dsn := fmt.Sprintf("%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=secure_delete(1)&_txlock=immediate", dbPath)
 	database, err := gorm.Open(sqlite.Open(dsn), newGORMConfig(os.Stdout))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)

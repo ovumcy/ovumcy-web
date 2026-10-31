@@ -8,6 +8,7 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ErrUserOwnerRequired is returned when a write that acts on exactly one
@@ -1739,6 +1740,15 @@ func (repo *UserRepository) SaveOnboardingStep2(ctx context.Context, userID uint
 // account's sessions in between, the whole wipe rolls back with
 // models.ErrAuthSessionVersionChanged; on success the stored version is exactly
 // expectedSessionVersion+1.
+//
+// On PostgreSQL the owner row is locked FOR UPDATE before anything else, and
+// the deletes run last. A day or symptom insert takes FOR KEY SHARE on that row
+// through its foreign key, which the UPDATE's own NO KEY UPDATE lock does not
+// conflict with: with the deletes first, a row inserted by a transaction still
+// open when they ran committed after them and outlived the wipe. FOR UPDATE
+// waits for such a transaction and holds off the next one until the wipe
+// commits, so the deletes see every row written before it. SQLite drops the
+// clause and needs none (BEGIN IMMEDIATE serializes writers).
 func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, userID uint, expectedSessionVersion int) error {
 	// The zero-id refusal precedes the advance: a wipe of no owner removes no
 	// feed, and a fence advanced for it records a removal that never happened.
@@ -1748,13 +1758,15 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 	// The wipe takes the owner's feed with it: see advanceCalendarFeedFenceBestEffort.
 	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
+		owner, err := scopedUserUpdateTx(tx, userID)
+		if err != nil {
 			return err
 		}
-		if err := tx.Where("user_id = ? AND is_builtin = ?", userID, false).Delete(&models.SymptomType{}).Error; err != nil {
+		var locked []models.User
+		if err := owner.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).Select("id").Find(&locked).Error; err != nil {
 			return err
 		}
-		_, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
+		_, err = updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"cycle_length":  models.DefaultCycleLength,
 			"period_length": models.DefaultPeriodLength,
 			"luteal_phase":  14,
@@ -1862,7 +1874,13 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			// legitimate "panic clear" gesture would not actually sign other
 			// devices out.
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("user_id = ? AND is_builtin = ?", userID, false).Delete(&models.SymptomType{}).Error
 	})
 }
 

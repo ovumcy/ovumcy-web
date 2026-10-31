@@ -296,6 +296,7 @@
   "settings.import_failed": "No se pudo restaurar. Inténtalo de nuevo.",
   "settings.import_invalid_file": "Este archivo no es una exportación válida de Ovumcy.",
   "settings.import_too_large": "Ese archivo es demasiado grande para importarlo.",
+  "settings.import_future_day": "Este archivo registra un periodo o una prueba de embarazo con más de dos días de antelación, así que no se restauró nada.",
   "settings.data.title": "Tus datos",
   "settings.clear_data.title": "Borrar todos los datos de seguimiento",
   "settings.clear_data.subtitle": "Al borrar los datos se elimina o restablece todo lo siguiente:",

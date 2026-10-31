@@ -73,7 +73,9 @@ var ErrDayPregnancyTestDateInvalid = errors.New("pregnancy test date invalid")
 // ErrDayPregnancyTestDateInvalid.
 //
 // It runs inside UpsertDayEntry, against the row the write locked, so every
-// writer of a day inherits it. day is the canonical UTC-midnight write key.
+// writer of a day through it inherits it; the JSON restore writes in batch and
+// holds each new day to it in validateNewDayObservations. day is the canonical
+// UTC-midnight write key.
 func validateDayObservationDate(stored models.DailyLog, payload DayEntryInput, day time.Time, now time.Time, location *time.Location) error {
 	recordsPeriod := payload.IsPeriod && !stored.IsPeriod
 	recordsTest := payload.PregnancyTest != models.PregnancyTestNone &&

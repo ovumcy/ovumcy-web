@@ -36,6 +36,10 @@ var (
 	// ErrImportWriteFailed marks a persistence failure during the atomic
 	// restore transaction; the whole import is rolled back when it fires.
 	ErrImportWriteFailed = errors.New("import write failed")
+	// ErrImportFutureObservation marks a payload whose new day records a period
+	// or a pregnancy-test result past the day-observation bound a day save holds
+	// (validateDayObservationDate); nothing of the file is restored.
+	ErrImportFutureObservation = errors.New("import payload records a future observation")
 )
 
 // importSymptomFlagGetters mirrors exportSymptomFlagSetters in reverse: given a
@@ -202,6 +206,11 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 
 	planned, rejected := service.planEntries(entries, location)
 
+	// A restore carries no instant of its own; the observation bound and the
+	// derived column are both held at the owner's today, so the clock is read
+	// here rather than threaded through the import route.
+	now := time.Now()
+
 	// Custom symptoms are created only for days that will be written: a file of
 	// days the owner already has imports nothing and must leave no symptom behind.
 	otherOriginals := map[string]string{}
@@ -209,6 +218,9 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 		existing, err := existingDayKeys(ctx, service.logs, userID, planned)
 		if err != nil {
 			return ImportResult{}, ErrImportWriteFailed
+		}
+		if err := validateNewDayObservations(planned, existing, now, location); err != nil {
+			return ImportResult{}, err
 		}
 		otherOriginals = customSymptomNamesOfNewDays(planned, existing)
 	}
@@ -223,10 +235,6 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 		return ImportResult{}, err
 	}
 
-	// A restore carries no instant of its own; the derived column must still be
-	// bounded at the owner's today, so the clock is read here rather than
-	// threaded through the import route for this one line.
-	now := time.Now()
 	if err := service.restoreOnboardingStart(ctx, userID, envelope.LastPeriodStart, now, location); err != nil {
 		return ImportResult{}, err
 	}
@@ -281,6 +289,26 @@ func (service *ImportService) planEntries(entries []ExportJSONEntry, location *t
 	}
 
 	return planned, rejected
+}
+
+// validateNewDayObservations holds every planned day the owner does not
+// already have to the bound a day save holds: a period or a pregnancy-test
+// result is an observation, so a file recording one past today plus
+// manualCycleStartFutureDays is refused whole, before any custom symptom is
+// created. A day already stored is skipped by the write, as a save re-stating
+// it goes through, so a backup restored over its own rows still restores.
+// writeDays re-reads the stored days inside its transaction and only ever
+// writes fewer of them, so this check covers every row it writes.
+func validateNewDayObservations(planned []plannedImportDay, existing map[string]struct{}, now time.Time, location *time.Location) error {
+	for _, day := range planned {
+		if _, found := existing[CalendarDayKey(day.dayStart)]; found {
+			continue
+		}
+		if validateDayObservationDate(models.DailyLog{}, day.input, day.dayStart, now, location) != nil {
+			return ErrImportFutureObservation
+		}
+	}
+	return nil
 }
 
 // customSymptomNamesOfNewDays collects the first-seen spelling of each custom

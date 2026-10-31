@@ -18,6 +18,8 @@ func mapImportError(err error) APIErrorSpec {
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid import file")
 	case errors.Is(err, services.ErrImportTooLarge):
 		return globalErrorSpec(fiber.StatusRequestEntityTooLarge, APIErrorCategoryValidation, "import file too large")
+	case errors.Is(err, services.ErrImportFutureObservation):
+		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "import file records a future day")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to import data")
 	}
