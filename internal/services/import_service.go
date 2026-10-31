@@ -230,7 +230,7 @@ func (service *ImportService) ImportJSON(ctx context.Context, userID uint, raw [
 		return ImportResult{}, err
 	}
 
-	added, skipped, err := service.writeDays(ctx, userID, planned, builtins, catalogByKey)
+	added, skipped, err := service.writeDays(ctx, userID, planned, builtins, catalogByKey, now, location)
 	if err != nil {
 		return ImportResult{}, err
 	}
@@ -297,8 +297,8 @@ func (service *ImportService) planEntries(entries []ExportJSONEntry, location *t
 // manualCycleStartFutureDays is refused whole, before any custom symptom is
 // created. A day already stored is skipped by the write, as a save re-stating
 // it goes through, so a backup restored over its own rows still restores.
-// writeDays re-reads the stored days inside its transaction and only ever
-// writes fewer of them, so this check covers every row it writes.
+// writeDays runs it again against the stored days its transaction re-reads: a
+// day deleted between the two reads is new by then.
 func validateNewDayObservations(planned []plannedImportDay, existing map[string]struct{}, now time.Time, location *time.Location) error {
 	for _, day := range planned {
 		if _, found := existing[CalendarDayKey(day.dayStart)]; found {
@@ -423,7 +423,7 @@ func (service *ImportService) reconcileSymptoms(ctx context.Context, userID uint
 // existing-day set alone decides skip-vs-insert. Counting is derived from slice
 // lengths (not incremented in place) so a SQLITE_BUSY retry of the enclosing
 // transaction recomputes clean totals instead of doubling them.
-func (service *ImportService) writeDays(ctx context.Context, userID uint, planned []plannedImportDay, builtins []models.SymptomType, catalogByKey map[string]uint) (int, int, error) {
+func (service *ImportService) writeDays(ctx context.Context, userID uint, planned []plannedImportDay, builtins []models.SymptomType, catalogByKey map[string]uint, now time.Time, location *time.Location) (int, int, error) {
 	if len(planned) == 0 {
 		return 0, 0, nil
 	}
@@ -433,6 +433,9 @@ func (service *ImportService) writeDays(ctx context.Context, userID uint, planne
 		existing, err := existingDayKeys(ctx, txLogs, userID, planned)
 		if err != nil {
 			return ErrImportWriteFailed
+		}
+		if err := validateNewDayObservations(planned, existing, now, location); err != nil {
+			return err
 		}
 
 		newEntries := make([]models.DailyLog, 0, len(planned))
