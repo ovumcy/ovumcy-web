@@ -205,9 +205,20 @@ of this window. On the days after it, up to the window's last day, no phase is
 named (the phase is `unknown`): the ovulation may still be ahead, and "luteal"
 would say it is behind. A day with bleeding logged on it stays `menstrual` —
 a recorded fact outranks the rule. The window can run past the projected next period;
-it is not cut there, and the calendar marks those days as both. The projected
-cycles chained after the current one keep the median window — a projection of a
-projection is not widened.
+it is not cut there, and the calendar marks those days as both. The cycles
+chained after the current one carry no fertility at all in this mode: they have
+no range of their own, and a median window there would be a projection of a
+projection drawn as if it were measured.
+
+### Fertility horizon
+
+The fertile window and the ovulation day are shown on the running cycle and the
+cycle after it (N+1) only — in irregular range mode on the running cycle only.
+Each chained cycle adds the per-cycle spread (SD about 2–3 days) to the one
+before it, so by N+3 the error is wider than the window itself: a projection
+past its own reference range, which is suppressed, not qualified. The predicted
+periods keep the full calendar horizon. The `.ics` feed follows the same rule:
+no ovulation event past N+1, none past the running cycle in range mode.
 
 ### Step 4 — next period
 

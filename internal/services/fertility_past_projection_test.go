@@ -84,38 +84,26 @@ func TestIrregularRangeModeNamesNoOvulationFromTheMissedStart(t *testing.T) {
 				}
 				rangeEnd := cycleContext.DisplayOvulationRangeEnd
 
-				feedRolled, feedPeriodWindow := false, false
+				// Range mode chains no fertility at all (WEB-388), so the rolled
+				// ovulation stays off the feed and the grid on the control day too.
+				feedPeriodWindow := false
 				for _, event := range calendarFeedEvents(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: location}) {
 					feedPeriodWindow = feedPeriodWindow || event.kind == calendarFeedKindPeriodWindow
 					if event.kind == calendarFeedKindOvulation && CalendarDaysBetween(rangeEnd, event.date) > 0 {
-						if tc.chain {
-							t.Errorf("the feed sends ovulation %s, past the range the hero names", CalendarDayKey(event.date))
-						}
-						feedRolled = feedRolled || CalendarDayKey(event.date) == rolled
+						t.Errorf("the feed sends ovulation %s, past the range the hero names", CalendarDayKey(event.date))
 					}
 				}
 				if !feedPeriodWindow {
 					t.Error("the feed drops the running cycle's next-period window")
 				}
-				if !tc.chain && !feedRolled {
-					t.Errorf("control: the feed does not send the chained ovulation %s", rolled)
-				}
 
-				gridRolled := false
 				for _, month := range []time.Month{time.October, time.November, time.December} {
 					for _, day := range BuildCalendarDayStates(user, time.Date(2026, month, 1, 0, 0, 0, 0, location), logs, stats, now, location) {
 						fertile := day.IsOvulation || day.IsFertility || day.IsFertilityEdge || day.IsFertilityPeak
-						if !day.InMonth || !day.Date.After(today) || !fertile {
-							continue
+						if day.InMonth && day.Date.After(today) && fertile {
+							t.Errorf("the grid draws projected fertile or ovulation day %s (rolled %s)", CalendarDayKey(day.Date), rolled)
 						}
-						if tc.chain {
-							t.Errorf("the grid draws projected fertile or ovulation day %s", CalendarDayKey(day.Date))
-						}
-						gridRolled = gridRolled || (day.IsOvulation && CalendarDayKey(day.Date) == rolled)
 					}
-				}
-				if !tc.chain && !gridRolled {
-					t.Errorf("control: the grid does not draw the chained ovulation %s", rolled)
 				}
 
 				settings := WebhookReminderSettings{Enabled: true, NotifyOvulation: true, ReminderLeadDays: MaxReminderLeadDays}
