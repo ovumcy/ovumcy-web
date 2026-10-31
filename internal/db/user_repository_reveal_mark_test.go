@@ -128,7 +128,7 @@ func TestClaimCalendarFeedRevealIsSingleUsePerMint(t *testing.T) {
 		t.Fatalf("a minted feed token must arrive with its reveal armed, got %v", mark)
 	}
 
-	claimed, err := repo.ClaimCalendarFeedReveal(ctx, user.ID, time.Now())
+	claimed, err := repo.ClaimCalendarFeedReveal(ctx, user.ID, "selector-one", time.Now())
 	if err != nil {
 		t.Fatalf("ClaimCalendarFeedReveal: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestClaimCalendarFeedRevealIsSingleUsePerMint(t *testing.T) {
 		t.Fatal("expected the first claim to consume the reveal")
 	}
 
-	replayed, err := repo.ClaimCalendarFeedReveal(ctx, user.ID, time.Now())
+	replayed, err := repo.ClaimCalendarFeedReveal(ctx, user.ID, "selector-one", time.Now())
 	if err != nil {
 		t.Fatalf("ClaimCalendarFeedReveal replay: %v", err)
 	}
@@ -145,7 +145,22 @@ func TestClaimCalendarFeedRevealIsSingleUsePerMint(t *testing.T) {
 	}
 
 	mint("selector-two")
-	rearmed, err := repo.ClaimCalendarFeedReveal(ctx, user.ID, time.Now())
+	// A reveal minted for the link this rotation replaced, and a claim naming no
+	// selector, both match nothing: the new link's mark stays armed for its own
+	// reveal.
+	for name, selector := range map[string]string{"previous selector": "selector-one", "empty selector": ""} {
+		stale, err := repo.ClaimCalendarFeedReveal(ctx, user.ID, selector, time.Now())
+		if err != nil {
+			t.Fatalf("ClaimCalendarFeedReveal with the %s: %v", name, err)
+		}
+		if stale {
+			t.Fatalf("a claim with the %s must not consume the new link's reveal", name)
+		}
+		if mark := reloadUserForRevealMarkTest(t, repo, user.ID).CalendarFeedRevealedAt; mark != nil {
+			t.Fatalf("a claim with the %s moved the new link's mark: %v", name, mark)
+		}
+	}
+	rearmed, err := repo.ClaimCalendarFeedReveal(ctx, user.ID, "selector-two", time.Now())
 	if err != nil {
 		t.Fatalf("ClaimCalendarFeedReveal after rotate: %v", err)
 	}
@@ -168,7 +183,7 @@ func TestRevealClaimsAreScopedToTheirOwner(t *testing.T) {
 	if _, err := repo.ClaimRecoveryCodeReveal(ctx, ownerA.ID, time.Now()); err != nil {
 		t.Fatalf("ClaimRecoveryCodeReveal: %v", err)
 	}
-	if _, err := repo.ClaimCalendarFeedReveal(ctx, ownerA.ID, time.Now()); err != nil {
+	if _, err := repo.ClaimCalendarFeedReveal(ctx, ownerA.ID, "selector-a", time.Now()); err != nil {
 		t.Fatalf("ClaimCalendarFeedReveal: %v", err)
 	}
 
@@ -231,7 +246,7 @@ func TestClaimCalendarFeedRevealFailsClosedWhenTheUpdateErrors(t *testing.T) {
 	user := createUserForRevealMarkTest(t, repo, "feed-mark-closed@example.com")
 	closeRevealMarkRepoHandle(t, repo)
 
-	claimed, err := repo.ClaimCalendarFeedReveal(context.Background(), user.ID, time.Now())
+	claimed, err := repo.ClaimCalendarFeedReveal(context.Background(), user.ID, "selector-one", time.Now())
 	if err == nil {
 		t.Fatal("expected ClaimCalendarFeedReveal against a closed database to surface an error")
 	}

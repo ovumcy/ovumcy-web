@@ -48,11 +48,15 @@ func (s *stubCalendarFeedSettingsRepo) SaveCalendarFeedToken(_ context.Context, 
 
 // ClaimCalendarFeedReveal models the real compare-and-set: the first call
 // consumes the reveal, every later one loses because the mark is already set.
-func (s *stubCalendarFeedSettingsRepo) ClaimCalendarFeedReveal(_ context.Context, userID uint, revealedAt time.Time) (bool, error) {
+func (s *stubCalendarFeedSettingsRepo) ClaimCalendarFeedReveal(_ context.Context, userID uint, selector string, revealedAt time.Time) (bool, error) {
 	if s.claimErr != nil {
 		return false, s.claimErr
 	}
 	s.findUserID = userID
+	// Mirrors the real predicate: only the row's current selector claims.
+	if selector == "" || selector != s.findUser.CalendarFeedSelector {
+		return false, nil
+	}
 	if s.findUser.CalendarFeedRevealedAt != nil {
 		return false, nil
 	}
@@ -90,7 +94,7 @@ func TestGenerateFeedTokenPersistsHashedTokenAndReturnsFullTokenOnce(t *testing.
 	repo := &stubCalendarFeedSettingsRepo{}
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
-	token, err := service.GenerateFeedToken(context.Background(), 42, false)
+	token, err := service.GenerateFeedToken(context.Background(), 42, false, nil)
 	if err != nil {
 		t.Fatalf("GenerateFeedToken: %v", err)
 	}
@@ -138,13 +142,13 @@ func TestGenerateFeedTokenRotationInvalidatesOldToken(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{}
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
-	firstToken, err := service.GenerateFeedToken(context.Background(), 7, false)
+	firstToken, err := service.GenerateFeedToken(context.Background(), 7, false, nil)
 	if err != nil {
 		t.Fatalf("first GenerateFeedToken: %v", err)
 	}
 	firstColumns := *repo.saved
 
-	secondToken, err := service.GenerateFeedToken(context.Background(), 7, false)
+	secondToken, err := service.GenerateFeedToken(context.Background(), 7, false, nil)
 	if err != nil {
 		t.Fatalf("rotate GenerateFeedToken: %v", err)
 	}
@@ -178,7 +182,7 @@ func TestGenerateFeedTokenPropagatesPersistError(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{saveErr: errors.New("write failed")}
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
-	token, err := service.GenerateFeedToken(context.Background(), 1, false)
+	token, err := service.GenerateFeedToken(context.Background(), 1, false, nil)
 	if !errors.Is(err, ErrCalendarFeedTokenPersist) {
 		t.Fatalf("expected ErrCalendarFeedTokenPersist, got %v", err)
 	}
@@ -196,7 +200,7 @@ func TestGenerateFeedTokenFailsClosedWithoutSecretKey(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{}
 	service := NewCalendarFeedSettingsService(repo, nil)
 
-	token, err := service.GenerateFeedToken(context.Background(), 1, false)
+	token, err := service.GenerateFeedToken(context.Background(), 1, false, nil)
 	if !errors.Is(err, ErrCalendarFeedTokenGenerate) {
 		t.Fatalf("expected ErrCalendarFeedTokenGenerate, got %v", err)
 	}
@@ -273,10 +277,11 @@ func TestClaimFeedRevealIsSingleUsePerMintAndOwnerBound(t *testing.T) {
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 	now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
 
-	if _, err := service.GenerateFeedToken(context.Background(), 7, false); err != nil {
+	if _, err := service.GenerateFeedToken(context.Background(), 7, false, nil); err != nil {
 		t.Fatalf("GenerateFeedToken: %v", err)
 	}
-	claimed, err := service.ClaimFeedReveal(context.Background(), 7, now)
+	firstSelector := repo.saved.Selector
+	claimed, err := service.ClaimFeedReveal(context.Background(), 7, firstSelector, now)
 	if err != nil {
 		t.Fatalf("ClaimFeedReveal: %v", err)
 	}
@@ -284,7 +289,7 @@ func TestClaimFeedRevealIsSingleUsePerMintAndOwnerBound(t *testing.T) {
 		t.Fatal("expected a freshly minted token to arm exactly one reveal")
 	}
 
-	replayed, err := service.ClaimFeedReveal(context.Background(), 7, now)
+	replayed, err := service.ClaimFeedReveal(context.Background(), 7, firstSelector, now)
 	if err != nil {
 		t.Fatalf("ClaimFeedReveal replay: %v", err)
 	}
@@ -293,10 +298,13 @@ func TestClaimFeedRevealIsSingleUsePerMintAndOwnerBound(t *testing.T) {
 	}
 
 	// A rotate is a second mint, so it re-arms.
-	if _, err := service.GenerateFeedToken(context.Background(), 7, false); err != nil {
+	if _, err := service.GenerateFeedToken(context.Background(), 7, false, nil); err != nil {
 		t.Fatalf("GenerateFeedToken rotate: %v", err)
 	}
-	rearmed, err := service.ClaimFeedReveal(context.Background(), 7, now)
+	if stale, err := service.ClaimFeedReveal(context.Background(), 7, firstSelector, now); err != nil || stale {
+		t.Fatalf("a reveal minted for the replaced link must claim nothing (claimed=%v, err=%v)", stale, err)
+	}
+	rearmed, err := service.ClaimFeedReveal(context.Background(), 7, repo.saved.Selector, now)
 	if err != nil {
 		t.Fatalf("ClaimFeedReveal after rotate: %v", err)
 	}
@@ -306,8 +314,12 @@ func TestClaimFeedRevealIsSingleUsePerMintAndOwnerBound(t *testing.T) {
 
 	unattributed := &stubCalendarFeedSettingsRepo{}
 	if _, err := NewCalendarFeedSettingsService(unattributed, []byte(calendarFeedTestSecretKey)).
-		ClaimFeedReveal(context.Background(), 0, now); !errors.Is(err, ErrCalendarFeedTokenPersist) {
+		ClaimFeedReveal(context.Background(), 0, "selector", now); !errors.Is(err, ErrCalendarFeedTokenPersist) {
 		t.Fatalf("expected a claim naming no account to be refused, got %v", err)
+	}
+	if _, err := NewCalendarFeedSettingsService(unattributed, []byte(calendarFeedTestSecretKey)).
+		ClaimFeedReveal(context.Background(), 7, "", now); !errors.Is(err, ErrCalendarFeedTokenPersist) {
+		t.Fatalf("expected a claim naming no selector to be refused, got %v", err)
 	}
 	if unattributed.findUser.CalendarFeedRevealedAt != nil {
 		t.Fatal("a claim naming no account must never reach the repository")
@@ -322,11 +334,76 @@ func TestClaimFeedRevealSurfacesStorageFailure(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{claimErr: errors.New("claim failed")}
 
 	claimed, err := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey)).
-		ClaimFeedReveal(context.Background(), 7, time.Now())
+		ClaimFeedReveal(context.Background(), 7, "selector", time.Now())
 	if !errors.Is(err, ErrCalendarFeedTokenPersist) {
 		t.Fatalf("expected the storage failure to surface as a persist error, got %v", err)
 	}
 	if claimed {
 		t.Fatal("a claim that could not be recorded must never report success")
+	}
+}
+
+// TestGenerateFeedTokenDeliveryFailureStoresNothingAndKeepsThePreviousToken is
+// the delivery-order regression: when the hook that seals the reveal fails, the
+// mint must not have been saved, so the owner's previous URL keeps serving
+// instead of dying with the new one never shown.
+func TestGenerateFeedTokenDeliveryFailureStoresNothingAndKeepsThePreviousToken(t *testing.T) {
+	repo := &stubCalendarFeedSettingsRepo{}
+	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
+
+	previous, err := service.GenerateFeedToken(context.Background(), 7, false, nil)
+	if err != nil {
+		t.Fatalf("GenerateFeedToken: %v", err)
+	}
+	before := *repo.saved
+
+	sealFailure := errors.New("seal failed")
+	token, err := service.GenerateFeedToken(context.Background(), 7, false, func(string, string) error { return sealFailure })
+	if !errors.Is(err, ErrCalendarFeedTokenDeliver) {
+		t.Fatalf("expected the delivery failure to surface as a deliver error, got %v", err)
+	}
+	if token != "" {
+		t.Fatal("a token whose delivery failed must not be returned")
+	}
+	if *repo.saved != before || repo.findUser.CalendarFeedSelector != before.Selector {
+		t.Fatalf("a failed delivery must leave the stored token untouched, got %+v", repo.saved)
+	}
+	if !VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), previous, *repo.saved) {
+		t.Fatal("the previous token must still verify after a failed delivery")
+	}
+}
+
+// TestGenerateFeedTokenDeliversTheMintedSelectorBeforeTheSave pins both halves
+// of the contract the reveal cookie relies on: the hook receives the token and
+// the very selector that is then stored, and runs while nothing is saved yet.
+func TestGenerateFeedTokenDeliversTheMintedSelectorBeforeTheSave(t *testing.T) {
+	repo := &stubCalendarFeedSettingsRepo{}
+	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
+
+	var deliveredToken, deliveredSelector string
+	savedAtDelivery := true
+	token, err := service.GenerateFeedToken(context.Background(), 7, false, func(token, selector string) error {
+		deliveredToken, deliveredSelector = token, selector
+		savedAtDelivery = repo.saved != nil
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("GenerateFeedToken: %v", err)
+	}
+	if savedAtDelivery {
+		t.Fatal("the delivery hook must run BEFORE the token is saved")
+	}
+	if deliveredToken != token || deliveredSelector == "" || deliveredSelector != repo.saved.Selector {
+		t.Fatalf("the hook must receive the returned token and the stored selector, got %q / %q", deliveredToken, deliveredSelector)
+	}
+
+	repo = &stubCalendarFeedSettingsRepo{saveErr: errors.New("write failed")}
+	service = NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
+	delivered := false
+	if _, err := service.GenerateFeedToken(context.Background(), 7, false, func(string, string) error { delivered = true; return nil }); !errors.Is(err, ErrCalendarFeedTokenPersist) {
+		t.Fatalf("expected the save failure to surface as a persist error, got %v", err)
+	}
+	if !delivered {
+		t.Fatal("the hook runs before the save, so a failed save still follows a delivery")
 	}
 }

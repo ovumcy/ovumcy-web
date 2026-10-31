@@ -45,7 +45,21 @@ type stubRotationUserStore struct {
 	disarmed  int64
 	disarmErr error
 	callCount int
+	allCount  int
 	journal   *[]string
+}
+
+// DisarmAllCalendarFeedTokens is the rotation arm's write; it journals as
+// "disarm-all" so a test can tell which of the two writes ran.
+func (s *stubRotationUserStore) DisarmAllCalendarFeedTokens(_ context.Context) (int64, error) {
+	s.allCount++
+	if s.journal != nil {
+		*s.journal = append(*s.journal, "disarm-all")
+	}
+	if s.disarmErr != nil {
+		return 0, s.disarmErr
+	}
+	return s.disarmed, nil
 }
 
 func (s *stubRotationUserStore) DisarmCalendarFeedTokensWithoutMAC(_ context.Context) (int64, error) {
@@ -166,9 +180,9 @@ func TestCalendarFeedRotationSentinelUnchangedKeyIsANoOp(t *testing.T) {
 
 // TestCalendarFeedRotationSentinelRotationDisarmsThenRecordsNewEpoch is the
 // finding's regression: a stored epoch from key A plus a boot under key B must
-// disarm legacy rows FIRST and only then record key B's epoch. With the
-// sentinel gone (the pre-fix behavior) nothing disarms those rows and the
-// first bcrypt poll re-arms the leaked URL under the new key.
+// disarm EVERY armed row (the full write, not the MAC-less one) FIRST and only
+// then record key B's epoch. With the narrow write, a MAC row survives and the
+// day key A returns it verifies a leaked URL again.
 func TestCalendarFeedRotationSentinelRotationDisarmsThenRecordsNewEpoch(t *testing.T) {
 	oldEpoch, err := security.CalendarFeedKeyEpoch([]byte(rotationSentinelTestKeyA))
 	if err != nil {
@@ -189,8 +203,11 @@ func TestCalendarFeedRotationSentinelRotationDisarmsThenRecordsNewEpoch(t *testi
 	if !outcome.RotationDetected || outcome.FirstBoot || outcome.DisarmedFeeds != 3 {
 		t.Fatalf("expected rotation outcome with 3 disarmed rows, got %+v", outcome)
 	}
-	if len(journal) != 2 || journal[0] != "disarm" || journal[1] != "set" {
-		t.Fatalf("rotation must disarm BEFORE recording the new epoch, journal=%v", journal)
+	if len(journal) != 2 || journal[0] != "disarm-all" || journal[1] != "set" {
+		t.Fatalf("rotation must disarm EVERY armed row BEFORE recording the new epoch, journal=%v", journal)
+	}
+	if users.callCount != 0 {
+		t.Fatalf("rotation must not use the MAC-less-only disarm, it ran %d time(s)", users.callCount)
 	}
 
 	newEpoch, err := security.CalendarFeedKeyEpoch([]byte(rotationSentinelTestKeyB))

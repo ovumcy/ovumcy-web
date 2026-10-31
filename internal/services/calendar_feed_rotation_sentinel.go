@@ -15,10 +15,12 @@ type calendarFeedRotationAppState interface {
 	Set(ctx context.Context, key string, value string) error
 }
 
-// calendarFeedRotationUserStore is the single bulk write the sentinel performs
-// when it detects a rotation.
+// calendarFeedRotationUserStore is the pair of bulk writes the sentinel
+// performs: the narrow one on a first boot (no key evidence), the full one when
+// it detects a rotation.
 type calendarFeedRotationUserStore interface {
 	DisarmCalendarFeedTokensWithoutMAC(ctx context.Context) (int64, error)
+	DisarmAllCalendarFeedTokens(ctx context.Context) (int64, error)
 }
 
 // CalendarFeedRotationOutcome reports what one Enforce pass did, for the
@@ -34,30 +36,32 @@ type CalendarFeedRotationOutcome struct {
 	// key's — SECRET_KEY was rotated (or the feed-MAC label set was bumped)
 	// since the previous boot.
 	RotationDetected bool
-	// DisarmedFeeds counts the legacy pre-032 rows cleared by this pass.
+	// DisarmedFeeds counts the armed rows cleared by this pass: the MAC-less
+	// legacy rows on a first boot, every armed row on a rotation.
 	DisarmedFeeds int64
 }
 
-// CalendarFeedRotationSentinel closes the one gap in "a SECRET_KEY rotation
-// disarms armed calendar feeds": rows minted before migration 032 carry no
-// verifier MAC, so the feed verifies them through bcrypt — which does not
-// depend on SECRET_KEY — and the first successful poll would then backfill a
-// MAC derived from the NEW key, silently re-arming a leaked subscribe URL the
-// rotation was meant to kill.
+// CalendarFeedRotationSentinel makes a SECRET_KEY rotation revoke calendar
+// feeds for good. Two things would otherwise survive it. Rows minted before
+// migration 032 carry no verifier MAC, so the feed verifies them through
+// bcrypt, which does not depend on SECRET_KEY, and the first successful poll
+// would backfill a MAC derived from the NEW key. And a row WITH a MAC is only
+// refused while the running key differs from the one that minted it: rotating
+// K1 to K2 and back to K1 would make a leaked subscribe URL verify again.
 //
 // The sentinel runs once per server boot, after migrations and before the
 // listener starts (so no poll can race it): it derives the current
-// calendar-feed key epoch (security.CalendarFeedKeyEpoch — irreversible, and
-// it also changes on a feed-MAC label bump), compares it with the epoch stored
-// in app_state, and on a mismatch disarms every armed row without a MAC. Rows
-// WITH a MAC are left alone: the rotated key already makes their verification
-// a hard refusal, and not touching them keeps a boot with a mistyped key from
-// irreversibly clearing anything beyond the legacy rows.
+// calendar-feed key epoch (security.CalendarFeedKeyEpoch, irreversible, and it
+// also changes on a feed-MAC label bump), compares it with the epoch stored in
+// app_state, and on a mismatch clears EVERY armed row, MAC or not. Every armed
+// row present at a mismatch boot was minted under an older key, so none is
+// worth keeping; a boot with a mistyped SECRET_KEY costs each owner one
+// re-generation of the subscribe URL.
 //
-// A stored epoch that is ABSENT is not a third routine case: see Enforce. It
-// means a new installation or the first start after upgrading past the
-// sentinel, and only one of those can hold a MAC-less feed — so the same
-// disarm runs there, and finds nothing on a new installation.
+// A stored epoch that is ABSENT is a different case: see Enforce. It means a
+// new installation or the first start after upgrading past the sentinel. Only
+// the latter can hold feeds, and nothing records which key minted them, so the
+// narrow MAC-less disarm runs there and finds nothing on a new installation.
 type CalendarFeedRotationSentinel struct {
 	appState  calendarFeedRotationAppState
 	users     calendarFeedRotationUserStore
@@ -119,7 +123,9 @@ func (sentinel *CalendarFeedRotationSentinel) Enforce(ctx context.Context) (Cale
 		return CalendarFeedRotationOutcome{}, nil
 	}
 
-	disarmed, err := sentinel.users.DisarmCalendarFeedTokensWithoutMAC(ctx)
+	// Every armed row, MAC or not: a MAC row refused under this key would
+	// verify again the day the old key comes back.
+	disarmed, err := sentinel.users.DisarmAllCalendarFeedTokens(ctx)
 	if err != nil {
 		return CalendarFeedRotationOutcome{RotationDetected: true}, err
 	}

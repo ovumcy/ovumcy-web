@@ -29,7 +29,7 @@ func TestCalendarFeedRevealCookieRoundTripPreservesURL(t *testing.T) {
 
 	app := fiber.New()
 	app.Get("/seal", func(c fiber.Ctx) error {
-		if err := handler.setCalendarFeedRevealCookie(c, 77, feedURL, true); err != nil {
+		if err := handler.setCalendarFeedRevealCookie(c, 77, "SELECTORAAAAAAAAA", feedURL, true); err != nil {
 			t.Fatalf("seal reveal cookie: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
@@ -68,7 +68,7 @@ func TestCalendarFeedRevealCookieRejectsTamperedByte(t *testing.T) {
 
 	app := fiber.New()
 	app.Get("/seal", func(c fiber.Ctx) error {
-		if err := handler.setCalendarFeedRevealCookie(c, 77, "https://ovumcy.example/calendar/feed/TAMPER1234567890ABCDEFGHJKLMNPQR.ics", false); err != nil {
+		if err := handler.setCalendarFeedRevealCookie(c, 77, "SELECTORAAAAAAAAA", "https://ovumcy.example/calendar/feed/TAMPER1234567890ABCDEFGHJKLMNPQR.ics", false); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
@@ -97,6 +97,33 @@ func TestCalendarFeedRevealCookieRejectsTamperedByte(t *testing.T) {
 	assertRevealCookieCleared(t, openResponse, calendarFeedRevealCookieName)
 }
 
+// TestCalendarFeedRevealCookieRefusesToSealWithoutASelector pins the setter
+// half of the selector binding: a reveal the claim could not tie to a minted
+// link is never sealed.
+func TestCalendarFeedRevealCookieRefusesToSealWithoutASelector(t *testing.T) {
+	t.Parallel()
+	handler := newCalendarFeedRevealCookieTestHandler()
+
+	app := fiber.New()
+	app.Get("/seal", func(c fiber.Ctx) error {
+		if err := handler.setCalendarFeedRevealCookie(c, 77, "", "https://ovumcy.example/calendar/feed/ABCDEFGHJKLMNPQR1234567890ABCDEFGH.ics", false); err == nil {
+			t.Fatal("expected setCalendarFeedRevealCookie to reject an empty selector")
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("seal request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == calendarFeedRevealCookieName && cookie.Value != "" {
+			t.Fatal("expected no sealed reveal cookie for an empty selector")
+		}
+	}
+}
+
 // TestCalendarFeedRevealCookieEmptyURLGuardsAndRejects covers two defensive
 // paths: sealing a blank URL is refused (the caller must pass a real token), and
 // a sealed payload that carries an empty URL opens to an empty state.
@@ -107,7 +134,7 @@ func TestCalendarFeedRevealCookieEmptyURLGuardsAndRejects(t *testing.T) {
 	app := fiber.New()
 	// Refuses to seal a blank URL.
 	app.Get("/seal-blank", func(c fiber.Ctx) error {
-		if err := handler.setCalendarFeedRevealCookie(c, 77, "   ", false); err == nil {
+		if err := handler.setCalendarFeedRevealCookie(c, 77, "SELECTORAAAAAAAAA", "   ", false); err == nil {
 			t.Fatal("expected setCalendarFeedRevealCookie to reject a blank URL")
 		}
 		return c.SendStatus(fiber.StatusNoContent)
@@ -238,14 +265,14 @@ func TestCalendarFeedRevealCookieRefusesUnattributedOwner(t *testing.T) {
 	app := fiber.New()
 	// Seal-time guard: an owner id is mandatory, and the refusal writes no cookie.
 	app.Get("/seal-unattributed", func(c fiber.Ctx) error {
-		if err := handler.setCalendarFeedRevealCookie(c, 0, unattributedURL, false); err == nil {
+		if err := handler.setCalendarFeedRevealCookie(c, 0, "SELECTORAAAAAAAAA", unattributedURL, false); err == nil {
 			t.Fatal("expected setCalendarFeedRevealCookie to refuse a zero owner id")
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	// Positive anchor: a payload sealed for owner A reveals to owner A.
 	app.Get("/seal", func(c fiber.Ctx) error {
-		if err := handler.setCalendarFeedRevealCookie(c, ownerA, ownedURL, false); err != nil {
+		if err := handler.setCalendarFeedRevealCookie(c, ownerA, "SELECTORAAAAAAAAA", ownedURL, false); err != nil {
 			t.Fatalf("seal reveal cookie for owner A: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)

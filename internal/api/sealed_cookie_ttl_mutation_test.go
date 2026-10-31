@@ -434,7 +434,7 @@ func TestCalendarFeedRevealCookieExpiresHonorsTwentyMinuteTTL(t *testing.T) {
 	handler := ttlMutationTestHandler()
 	app := fiber.New()
 	app.Get("/set", func(c fiber.Ctx) error {
-		if err := handler.setCalendarFeedRevealCookie(c, 7, "https://ovumcy.example/calendar/feed/ABCDEFGHJKLMNPQR1234567890ABCDEFGH.ics", false); err != nil {
+		if err := handler.setCalendarFeedRevealCookie(c, 7, "SELECTORAAAAAAAAA", "https://ovumcy.example/calendar/feed/ABCDEFGHJKLMNPQR1234567890ABCDEFGH.ics", false); err != nil {
 			t.Fatalf("setCalendarFeedRevealCookie: %v", err)
 		}
 		return c.SendStatus(http.StatusNoContent)
