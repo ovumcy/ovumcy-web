@@ -84,14 +84,18 @@ func TestIrregularRangeModeNamesNoOvulationFromTheMissedStart(t *testing.T) {
 				}
 				rangeEnd := cycleContext.DisplayOvulationRangeEnd
 
-				feedRolled := false
+				feedRolled, feedPeriodWindow := false, false
 				for _, event := range calendarFeedEvents(CalendarFeedICSInput{User: user, Logs: logs, Now: now, Location: location}) {
+					feedPeriodWindow = feedPeriodWindow || event.kind == calendarFeedKindPeriodWindow
 					if event.kind == calendarFeedKindOvulation && CalendarDaysBetween(rangeEnd, event.date) > 0 {
 						if tc.chain {
 							t.Errorf("the feed sends ovulation %s, past the range the hero names", CalendarDayKey(event.date))
 						}
 						feedRolled = feedRolled || CalendarDayKey(event.date) == rolled
 					}
+				}
+				if !feedPeriodWindow {
+					t.Error("the feed drops the running cycle's next-period window")
 				}
 				if !tc.chain && !feedRolled {
 					t.Errorf("control: the feed does not send the chained ovulation %s", rolled)
@@ -116,8 +120,8 @@ func TestIrregularRangeModeNamesNoOvulationFromTheMissedStart(t *testing.T) {
 
 				settings := WebhookReminderSettings{Enabled: true, NotifyOvulation: true, ReminderLeadDays: MaxReminderLeadDays}
 				for _, reminder := range DecideDueReminders(user, settings, logs, now, location) {
-					if reminder.Type == DueReminderTypeOvulation && CalendarDaysBetween(rangeEnd, reminder.EventDate) > 0 {
-						t.Errorf("webhook announces ovulation %s, past the range the hero names", CalendarDayKey(reminder.EventDate))
+					if reminder.Type == DueReminderTypeOvulation && tc.chain {
+						t.Errorf("webhook announces ovulation %s while the range the hero names is behind today", CalendarDayKey(reminder.EventDate))
 					}
 				}
 			})
