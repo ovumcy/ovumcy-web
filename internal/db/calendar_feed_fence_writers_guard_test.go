@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
@@ -349,12 +350,7 @@ func TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark(t *testing.T
 // that resolves nothing passes over everything.
 func loadTypedDBPackage(t *testing.T) *packages.Package {
 	t.Helper()
-	config := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
-			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
-		Tests: false,
-	}
-	loaded, err := packages.Load(config, ".")
+	loaded, err := loadTypedDBPackageOnce()
 	if err != nil {
 		t.Fatalf("type-check the db package: %v", err)
 	}
@@ -366,6 +362,17 @@ func loadTypedDBPackage(t *testing.T) *packages.Package {
 	}
 	return loaded[0]
 }
+
+// loadTypedDBPackageOnce shares one type-check between the guards that read it;
+// they only inspect the result.
+var loadTypedDBPackageOnce = sync.OnceValues(func() ([]*packages.Package, error) {
+	config := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
+			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Tests: false,
+	}
+	return packages.Load(config, ".")
+})
 
 // userModelField resolves a models.User field to its declaration, so a use is
 // matched by object identity rather than by spelling.
