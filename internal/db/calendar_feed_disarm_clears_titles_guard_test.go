@@ -35,7 +35,8 @@ var calendarFeedDisarmWriters = []string{
 // writes the column. Raw SQL (Raw or Exec) naming the selector is refused here;
 // a single-column Update, a key added by index and a models.User field write
 // are refused by TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark.
-// Raw SQL is read through variables, concatenation and call arguments; SQL
+// Raw SQL is read through variables, struct fields, concatenation, call
+// arguments and the results of functions declared in this package; SQL
 // loaded from outside the source (the migration runner's files) is out of reach
 // of any source scan, and migrations are pinned by their own tests.
 func TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn(t *testing.T) {
@@ -55,7 +56,8 @@ func TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn(t *testing.T) {
 // the forms a disarm can take: a literal or constant key, a nil, typed-nil,
 // expression or empty selector, a missing or true flag, an arm that omits the
 // flag, raw SQL naming the selector directly, through a variable or as a
-// format argument, and an arm through a named string type.
+// format argument, a helper's return value or a struct field, and an arm
+// through a named string type.
 func TestCalendarFeedTitleScanSeesEveryDisarmForm(t *testing.T) {
 	const source = `package db
 const selectorKey = "calendar_feed_selector"
@@ -77,6 +79,11 @@ var packageStatement = "UPDATE users SET calendar_feed_selector = NULL"
 func rawPackageVariable() { query{}.Exec(packageStatement) }
 func rawBuilt() { query{}.Exec(sprintf("UPDATE users SET %s = NULL", "calendar_feed_selector")) }
 func sprintf(format string, args ...any) string { return format }
+func disarmSQL() string { return "UPDATE users SET calendar_feed_selector = NULL" }
+func rawHelper() { query{}.Exec(disarmSQL()) }
+type repository struct{ statement string }
+func newRepository() repository { return repository{statement: "UPDATE users SET calendar_feed_selector = NULL"} }
+func (r repository) rawField() { query{}.Exec(r.statement) }
 type FeedSelector string
 func namedArm(s FeedSelector, d bool) any { return map[string]any{"calendar_feed_selector": s, "calendar_feed_detailed_titles": d} }
 `
@@ -103,7 +110,7 @@ func namedArm(s FeedSelector, d bool) any { return map[string]any{"calendar_feed
 	if disarms["arm"] || disarms["armed"] || disarms["namedArm"] {
 		t.Errorf("the scan classified an arm as a disarm: %v", sortedNamesOf(disarms))
 	}
-	wantProblems := []string{"missing at", "constantKey at", "empty at", "kept at", "arm at", "typedNil at", "expression at", "raw at", "rawVariable at", "rawPackageVariable at", "rawBuilt at"}
+	wantProblems := []string{"missing at", "constantKey at", "empty at", "kept at", "arm at", "typedNil at", "expression at", "raw at", "rawVariable at", "rawPackageVariable at", "rawBuilt at", "rawHelper at", "rawField at"}
 	if len(problems) != len(wantProblems) {
 		t.Fatalf("expected %d problems, got %v", len(wantProblems), problems)
 	}
@@ -133,6 +140,17 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 		value := info.Types[expr].Value
 		return value != nil && value.Kind() == want.Kind() && constant.Compare(value, token.EQL, want)
 	}
+	// objectOf names what an identifier or a selector (a field, a method, a
+	// qualified function) refers to; nil for anything else.
+	objectOf := func(expr ast.Expr) types.Object {
+		switch typed := expr.(type) {
+		case *ast.Ident:
+			return info.ObjectOf(typed)
+		case *ast.SelectorExpr:
+			return info.ObjectOf(typed.Sel)
+		}
+		return nil
+	}
 
 	// Every value a variable is given, anywhere in the files, so SQL held in a
 	// variable is read through to the strings it was built from.
@@ -143,10 +161,8 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 			case *ast.AssignStmt:
 				if len(typed.Lhs) == len(typed.Rhs) {
 					for index, target := range typed.Lhs {
-						if ident, ok := target.(*ast.Ident); ok {
-							if object := info.ObjectOf(ident); object != nil {
-								assigned[object] = append(assigned[object], typed.Rhs[index])
-							}
+						if object := objectOf(target); object != nil {
+							assigned[object] = append(assigned[object], typed.Rhs[index])
 						}
 					}
 				}
@@ -158,6 +174,28 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 						}
 					}
 				}
+			case *ast.KeyValueExpr:
+				// A struct literal's field key resolves to the field.
+				if key, ok := typed.Key.(*ast.Ident); ok {
+					if object := info.ObjectOf(key); object != nil {
+						assigned[object] = append(assigned[object], typed.Value)
+					}
+				}
+			case *ast.FuncDecl:
+				// A function's single results are what a call of it yields.
+				object := info.ObjectOf(typed.Name)
+				if object == nil || typed.Body == nil {
+					return true
+				}
+				ast.Inspect(typed.Body, func(inner ast.Node) bool {
+					if _, nested := inner.(*ast.FuncLit); nested {
+						return false
+					}
+					if result, ok := inner.(*ast.ReturnStmt); ok && len(result.Results) == 1 {
+						assigned[object] = append(assigned[object], result.Results[0])
+					}
+					return true
+				})
 			}
 			return true
 		})
@@ -172,24 +210,30 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 		if strings.Contains(columnOf(expr), selectorColumn) {
 			return true
 		}
+		follow := func(object types.Object) bool {
+			for _, value := range assigned[object] {
+				if sqlNamesSelector(value) {
+					return true
+				}
+			}
+			return false
+		}
 		switch typed := expr.(type) {
 		case *ast.ParenExpr:
 			return sqlNamesSelector(typed.X)
 		case *ast.BinaryExpr:
 			return sqlNamesSelector(typed.X) || sqlNamesSelector(typed.Y)
 		case *ast.CallExpr:
-			// fmt.Sprintf and friends: any argument that names the column.
+			// fmt.Sprintf and friends: any argument that names the column; a
+			// function of this package: whatever it returns.
 			for _, argument := range typed.Args {
 				if sqlNamesSelector(argument) {
 					return true
 				}
 			}
-		case *ast.Ident:
-			for _, value := range assigned[info.ObjectOf(typed)] {
-				if sqlNamesSelector(value) {
-					return true
-				}
-			}
+			return follow(objectOf(typed.Fun))
+		case *ast.Ident, *ast.SelectorExpr:
+			return follow(objectOf(typed))
 		}
 		return false
 	}
