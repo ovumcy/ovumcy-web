@@ -25,18 +25,19 @@ var calendarFeedDisarmWriters = []string{
 
 // TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn is WEB-389's
 // completeness guard. Every column map that writes calendar_feed_selector must
-// also write calendar_feed_detailed_titles, and a disarm (selector NULL or "")
-// must write it false: a pre-v2 binary mints a link without writing that
-// column, so a flag left on a revoked row would carry over to that link after a
-// re-upgrade.
+// also write calendar_feed_detailed_titles, and a disarm (any selector value
+// that is not a non-empty string) must write it false: a pre-v2 binary mints a
+// link without writing that column, so a flag left on a revoked row would carry
+// over to that link after a re-upgrade.
 //
 // Columns are resolved by the type checker over every non-test file of this
 // package, so a key spelled as a named constant counts. Only this package
-// writes the column. A selector write outside a column map literal — a
-// single-column Update, raw SQL in Exec, a key added by index, a models.User
-// field — is refused outright by
-// TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark, so a map
-// literal is the only form a disarm can take.
+// writes the column. Raw SQL (Raw or Exec) naming the selector is refused here;
+// a single-column Update, a key added by index and a models.User field write
+// are refused by TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark.
+// SQL assembled at run time is out of reach of any source scan; in this package
+// only the migration runner does that, and migrations are pinned by their own
+// tests.
 func TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn(t *testing.T) {
 	pkg := loadTypedDBPackage(t)
 	disarms, problems := scanCalendarFeedTitleWrites(pkg.Fset, pkg.TypesInfo, pkg.Syntax)
@@ -51,8 +52,9 @@ func TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn(t *testing.T) {
 }
 
 // TestCalendarFeedTitleScanSeesEveryDisarmForm proves the scan is not blind to
-// the forms a disarm map can take: a literal or constant key, a nil or empty
-// selector, a missing or true flag, and an arm that omits the flag.
+// the forms a disarm can take: a literal or constant key, a nil, typed-nil,
+// expression or empty selector, a missing or true flag, an arm that omits the
+// flag, and raw SQL naming the selector.
 func TestCalendarFeedTitleScanSeesEveryDisarmForm(t *testing.T) {
 	const source = `package db
 const selectorKey = "calendar_feed_selector"
@@ -63,6 +65,12 @@ func kept() any { return map[string]any{"calendar_feed_selector": nil, "calendar
 func arm(s string) any { return map[string]any{"calendar_feed_selector": s} }
 func cleared() any { return map[string]any{"calendar_feed_selector": nil, "calendar_feed_detailed_titles": false} }
 func armed(s string, d bool) any { return map[string]any{"calendar_feed_selector": s, "calendar_feed_detailed_titles": d} }
+func null() any { return nil }
+func typedNil(d bool) any { return map[string]any{"calendar_feed_selector": (*string)(nil), "calendar_feed_detailed_titles": d} }
+func expression(d bool) any { return map[string]any{"calendar_feed_selector": null(), "calendar_feed_detailed_titles": d} }
+type query struct{}
+func (query) Exec(string, ...any) {}
+func raw() { query{}.Exec("UPDATE users SET calendar_feed_selector = NULL") }
 `
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, "synthetic.go", source, 0)
@@ -75,7 +83,7 @@ func armed(s string, d bool) any { return map[string]any{"calendar_feed_selector
 	}
 
 	disarms, problems := scanCalendarFeedTitleWrites(fileSet, info, []*ast.File{file})
-	for _, name := range []string{"missing", "constantKey", "empty", "kept", "cleared"} {
+	for _, name := range []string{"missing", "constantKey", "empty", "kept", "cleared", "typedNil", "expression"} {
 		if !disarms[name] {
 			t.Errorf("the scan did not classify %s as a disarm: %v", name, sortedNamesOf(disarms))
 		}
@@ -83,7 +91,7 @@ func armed(s string, d bool) any { return map[string]any{"calendar_feed_selector
 	if disarms["arm"] || disarms["armed"] {
 		t.Errorf("the scan classified an arm as a disarm: %v", sortedNamesOf(disarms))
 	}
-	wantProblems := []string{"missing at", "constantKey at", "empty at", "kept at", "arm at"}
+	wantProblems := []string{"missing at", "constantKey at", "empty at", "kept at", "arm at", "typedNil at", "expression at", "raw at"}
 	if len(problems) != len(wantProblems) {
 		t.Fatalf("expected %d problems, got %v", len(wantProblems), problems)
 	}
@@ -124,11 +132,23 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 			}
 			name := function.Name.Name
 			ast.Inspect(function.Body, func(node ast.Node) bool {
+				if call, ok := node.(*ast.CallExpr); ok {
+					callee, ok := call.Fun.(*ast.SelectorExpr)
+					if ok && (callee.Sel.Name == "Raw" || callee.Sel.Name == "Exec") && len(call.Args) > 0 &&
+						strings.Contains(columnOf(call.Args[0]), selectorColumn) {
+						problems = append(problems, name+" at "+fileSet.Position(call.Pos()).String()+": raw SQL names calendar_feed_selector; write it through a column map beside calendar_feed_detailed_titles")
+					}
+					return true
+				}
 				literal, ok := node.(*ast.CompositeLit)
 				if !ok {
 					return true
 				}
-				if _, isMap := info.TypeOf(literal).Underlying().(*types.Map); !isMap {
+				literalType := info.TypeOf(literal)
+				if literalType == nil {
+					return true
+				}
+				if _, isMap := literalType.Underlying().(*types.Map); !isMap {
 					return true
 				}
 				var selector, titles ast.Expr
@@ -148,7 +168,11 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 					return true
 				}
 				position := fileSet.Position(literal.Pos()).String()
-				disarm := info.Types[selector].IsNil() || isConstant(selector, constant.MakeString(""))
+				// Only a plain string can arm a link; anything else — nil, a typed
+				// nil, gorm.Expr("NULL") — is read as a disarm.
+				selectorType, isBasic := info.TypeOf(selector).(*types.Basic)
+				arms := isBasic && selectorType.Info()&types.IsString != 0 && !isConstant(selector, constant.MakeString(""))
+				disarm := !arms
 				switch {
 				case disarm:
 					disarms[name] = true
