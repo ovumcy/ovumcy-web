@@ -316,8 +316,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// sent. Outside irregular range mode the fertility half is already withheld
 	// by then; in range mode the pages name only the range placed from the
 	// recorded start (WEB-385). The grid stops at the same period.
-	chainSuppressed := suppression.ProjectionChainSuppressed
-	if chainSuppressed {
+	if suppression.ProjectionChainSuppressed {
 		cycles = 1
 	}
 	for cycle := range cycles {
