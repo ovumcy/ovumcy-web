@@ -29,6 +29,8 @@ func TestIsStaleEphemeralVolumeTouchesOnlyThisGuardsOldVolumes(t *testing.T) {
 		"an anonymous volume is kept":          {"0cb9eaada82745cc515c61eb6ba2d25ead7757fde72f35832ed4dc3be7cb09e3", false},
 		"a prefix match without nanos":         {ephemeralVolumePrefix + ephemeralVolumeSuffix, false},
 		"a prefix match with a foreign middle": {ephemeralVolumePrefix + "v2" + ephemeralVolumeSuffix, false},
+		"a signed middle is not a timestamp":   {ephemeralVolumePrefix + "-1" + ephemeralVolumeSuffix, false},
+		"a plus-signed middle neither":         {ephemeralVolumePrefix + "+1" + ephemeralVolumeSuffix, false},
 		"the suffix alone":                     {"1testdata", false},
 	} {
 		t.Run(name, func(t *testing.T) {

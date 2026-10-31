@@ -536,19 +536,20 @@ func removeStaleEphemeralVolumes() {
 }
 
 // isStaleEphemeralVolume reports whether name is one of this guard's ephemeral
-// volumes whose creation, read from the unix nanos in the name, lies more than
-// staleEphemeralVolumeAge before now. A name of any other shape is never
+// volumes whose creation, read from the unix nanos in the name, lies at least
+// staleEphemeralVolumeAge before now. A name of any other shape — including a
+// signed middle, which ParseUint refuses and this guard never writes — is never
 // stale: this is the only thing standing between the sweep and a volume it
 // does not own.
 func isStaleEphemeralVolume(name string, now time.Time) bool {
 	if !strings.HasPrefix(name, ephemeralVolumePrefix) || !strings.HasSuffix(name, ephemeralVolumeSuffix) {
 		return false
 	}
-	nanos, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(name, ephemeralVolumePrefix), ephemeralVolumeSuffix), 10, 64)
+	nanos, err := strconv.ParseUint(strings.TrimSuffix(strings.TrimPrefix(name, ephemeralVolumePrefix), ephemeralVolumeSuffix), 10, 63)
 	if err != nil {
 		return false
 	}
-	return now.Sub(time.Unix(0, nanos)) >= staleEphemeralVolumeAge
+	return now.Sub(time.Unix(0, int64(nanos))) >= staleEphemeralVolumeAge
 }
 
 // removeEphemeralVolume removes the volume, retrying while it is still in use.
