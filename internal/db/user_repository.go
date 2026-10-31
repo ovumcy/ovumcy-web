@@ -979,8 +979,9 @@ func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID ui
 		// THIS one yet, and NULL is the "never successfully polled" state
 		// every rearmed feed starts in.
 		"calendar_feed_last_polled_on": nil,
-		// The title choice belongs to this link (WEB-379). Like the epoch it is
-		// written only here, so a revoke needs no clear: no token, no feed.
+		// The title choice belongs to this link (WEB-379). Every disarm clears
+		// it too: a pre-v2 binary mints without writing it, so a flag left on a
+		// revoked row would carry over to that link after a re-upgrade (WEB-389).
 		"calendar_feed_detailed_titles": columns.DetailedTitles,
 	}).Error
 }
@@ -1111,10 +1112,11 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 		return err
 	}
 	return query.Updates(map[string]any{
-		"calendar_feed_selector":       nil,
-		"calendar_feed_verifier_hash":  nil,
-		"calendar_feed_verifier_mac":   nil,
-		"calendar_feed_last_polled_on": nil,
+		"calendar_feed_selector":        nil,
+		"calendar_feed_verifier_hash":   nil,
+		"calendar_feed_verifier_mac":    nil,
+		"calendar_feed_detailed_titles": false,
+		"calendar_feed_last_polled_on":  nil,
 	}).Error
 }
 
@@ -1141,10 +1143,11 @@ func (repo *UserRepository) DisarmCalendarFeedTokensWithoutMAC(ctx context.Conte
 	result := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("calendar_feed_selector IS NOT NULL AND calendar_feed_selector != '' AND (calendar_feed_verifier_mac IS NULL OR calendar_feed_verifier_mac = '')").
 		Updates(map[string]any{
-			"calendar_feed_selector":       nil,
-			"calendar_feed_verifier_hash":  nil,
-			"calendar_feed_verifier_mac":   nil,
-			"calendar_feed_last_polled_on": nil,
+			"calendar_feed_selector":        nil,
+			"calendar_feed_verifier_hash":   nil,
+			"calendar_feed_verifier_mac":    nil,
+			"calendar_feed_detailed_titles": false,
+			"calendar_feed_last_polled_on":  nil,
 		})
 	return result.RowsAffected, result.Error
 }
@@ -1171,10 +1174,11 @@ func (repo *UserRepository) DisarmAllCalendarFeedTokens(ctx context.Context) (in
 	result := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("calendar_feed_selector IS NOT NULL AND calendar_feed_selector != ''").
 		Updates(map[string]any{
-			"calendar_feed_selector":       nil,
-			"calendar_feed_verifier_hash":  nil,
-			"calendar_feed_verifier_mac":   nil,
-			"calendar_feed_last_polled_on": nil,
+			"calendar_feed_selector":        nil,
+			"calendar_feed_verifier_hash":   nil,
+			"calendar_feed_verifier_mac":    nil,
+			"calendar_feed_detailed_titles": false,
+			"calendar_feed_last_polled_on":  nil,
 		})
 	return result.RowsAffected, result.Error
 }
@@ -1240,12 +1244,13 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 	}
 	if err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
-			"recovery_code_hash":           recoveryHash,
-			"recovery_code_revealed_at":    nil,
-			"calendar_feed_selector":       nil,
-			"calendar_feed_verifier_hash":  nil,
-			"calendar_feed_verifier_mac":   nil,
-			"calendar_feed_last_polled_on": nil,
+			"recovery_code_hash":            recoveryHash,
+			"recovery_code_revealed_at":     nil,
+			"calendar_feed_selector":        nil,
+			"calendar_feed_verifier_hash":   nil,
+			"calendar_feed_verifier_mac":    nil,
+			"calendar_feed_detailed_titles": false,
+			"calendar_feed_last_polled_on":  nil,
 		}); err != nil {
 			return err
 		}
@@ -1323,14 +1328,15 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 		return err
 	}
 	if err := query.Updates(map[string]any{
-		"password_hash":                passwordHash,
-		"must_change_password":         true,
-		"local_auth_enabled":           true,
-		"calendar_feed_selector":       nil,
-		"calendar_feed_verifier_hash":  nil,
-		"calendar_feed_verifier_mac":   nil,
-		"calendar_feed_last_polled_on": nil,
-		"auth_session_version":         gorm.Expr("auth_session_version + 1"),
+		"password_hash":                 passwordHash,
+		"must_change_password":          true,
+		"local_auth_enabled":            true,
+		"calendar_feed_selector":        nil,
+		"calendar_feed_verifier_hash":   nil,
+		"calendar_feed_verifier_mac":    nil,
+		"calendar_feed_detailed_titles": false,
+		"calendar_feed_last_polled_on":  nil,
+		"auth_session_version":          gorm.Expr("auth_session_version + 1"),
 	}).Error; err != nil {
 		return err
 	}
@@ -1445,16 +1451,17 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 			Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
 			Where("auth_session_version = ?", oldSessionVersion).
 			Updates(map[string]any{
-				"password_hash":                newPasswordHash,
-				"recovery_code_hash":           recoveryHash,
-				"recovery_code_revealed_at":    nil,
-				"must_change_password":         false,
-				"local_auth_enabled":           true,
-				"calendar_feed_selector":       nil,
-				"calendar_feed_verifier_hash":  nil,
-				"calendar_feed_verifier_mac":   nil,
-				"calendar_feed_last_polled_on": nil,
-				"auth_session_version":         gorm.Expr("auth_session_version + 1"),
+				"password_hash":                 newPasswordHash,
+				"recovery_code_hash":            recoveryHash,
+				"recovery_code_revealed_at":     nil,
+				"must_change_password":          false,
+				"local_auth_enabled":            true,
+				"calendar_feed_selector":        nil,
+				"calendar_feed_verifier_hash":   nil,
+				"calendar_feed_verifier_mac":    nil,
+				"calendar_feed_detailed_titles": false,
+				"calendar_feed_last_polled_on":  nil,
+				"auth_session_version":          gorm.Expr("auth_session_version + 1"),
 			})
 		if result.Error != nil {
 			return result.Error
@@ -1837,10 +1844,11 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			// is the data-reset arm of the approved force-rotate-on-recovery rule;
 			// the password-reset / operator-reset / recovery-regen force-rotate
 			// hooks are a later slice.
-			"calendar_feed_selector":       nil,
-			"calendar_feed_verifier_hash":  nil,
-			"calendar_feed_verifier_mac":   nil,
-			"calendar_feed_last_polled_on": nil,
+			"calendar_feed_selector":        nil,
+			"calendar_feed_verifier_hash":   nil,
+			"calendar_feed_verifier_mac":    nil,
+			"calendar_feed_detailed_titles": false,
+			"calendar_feed_last_polled_on":  nil,
 			// The two shown-once reveal marks (migration 036) are deliberately
 			// ABSENT from this map. They are not preferences and hold no health
 			// data — each records that a secret was already displayed — and NULL

@@ -17,7 +17,7 @@ import (
 // (settings.clear_data.resets.<group>) to the writes ClearAllDataAndResetSettings
 // makes: a users column it sets, or "delete:<table>" for a table it deletes from.
 var clearDataCopyGroups = map[string][]string{
-	"calendar_feed": {"calendar_feed_selector", "calendar_feed_verifier_hash", "calendar_feed_verifier_mac", "calendar_feed_last_polled_on"},
+	"calendar_feed": {"calendar_feed_selector", "calendar_feed_verifier_hash", "calendar_feed_verifier_mac", "calendar_feed_last_polled_on", "calendar_feed_detailed_titles"},
 	"webhook": {
 		"webhook_enabled", "webhook_url", "webhook_notify_period", "webhook_notify_ovulation",
 		"webhook_period_last_sent_cycle_start", "webhook_ovulation_last_sent_cycle_start",
