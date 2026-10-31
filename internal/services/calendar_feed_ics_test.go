@@ -467,10 +467,9 @@ func TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent(t *testin
 // first (and an ovulation event for the running cycle and N+1 only, WEB-388), each a single all-day date
 // with no widened range. The calendar grid's rule against widening chained cycles
 // concerns the START RANGE only (a spread drawn around a projection of a
-// projection); the grid itself also chains single projected days across the visible
-// month, so the feed's far dates are the same kind of claim, not a wider one. What
-// stays unbounded by data confidence is the count: three cycles, whatever the
-// number of completed cycles behind them.
+// projection); the grid itself also chains single projected periods across the
+// visible month, so the feed's far period dates are the same kind of claim, not a
+// wider one. Fertility is bounded on both: no ovulation past N+1 (WEB-388).
 func TestBuildCalendarFeedICSProjectsExactlyThreeCyclesAheadAsSingleDays(t *testing.T) {
 	input := CalendarFeedICSInput{
 		User:       predictableFeedUser(t, "2026-03-02"),
