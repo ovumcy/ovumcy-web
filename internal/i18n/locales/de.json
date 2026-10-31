@@ -728,6 +728,7 @@
   "settings.success.webhook_removed": "Webhook-Endpunkt entfernt.",
   "settings.error.invalid_webhook_url": "Geben Sie eine gültige Webhook-URL mit http:// oder https:// ein.",
   "settings.error.webhook_url_unreadable": "Diese Instanz kann den gespeicherten Endpunkt nicht mehr lesen, weshalb ein leeres Feld nichts zu behalten hätte. Geben Sie einen neuen Endpunkt ein oder entfernen Sie den gespeicherten.",
+  "settings.error.webhook_save_conflict": "Die Webhook-Einstellungen wurden anderswo geändert, nachdem diese Seite geladen wurde. Es wurde nichts gespeichert; prüfen Sie die aktuellen Einstellungen und versuchen Sie es erneut.",
   "settings.error.webhook_update_failed": "Webhook-Einstellungen konnten nicht gespeichert werden. Bitte erneut versuchen.",
   "settings.webhook.title": "Webhook-Erinnerungen",
   "settings.webhook.subtitle": "Senden Sie Erinnerungen zu Periode und Eisprung an Ihren eigenen ntfy-, Gotify- oder anderen Webhook-Endpunkt.",

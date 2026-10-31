@@ -57,4 +57,11 @@ var (
 	// and this write rolled back rather than hand its caller a session that
 	// outlives that revocation.
 	ErrAuthSessionVersionChanged = errors.New("auth session version changed since it was read")
+
+	// ErrWebhookConfigVersionChanged reports that a webhook-settings save found
+	// the row at a revocation epoch other than the one its caller read: another
+	// delivery-configuration write (a removal, a save from another device or the
+	// CLI) landed in between, and this save wrote nothing rather than re-store an
+	// endpoint decided from a row that no longer exists.
+	ErrWebhookConfigVersionChanged = errors.New("webhook settings changed since they were read")
 )

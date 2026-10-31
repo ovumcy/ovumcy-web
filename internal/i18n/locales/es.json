@@ -728,6 +728,7 @@
   "settings.success.webhook_removed": "Endpoint del webhook retirado.",
   "settings.error.invalid_webhook_url": "Introduce una URL de webhook válida con http:// o https://.",
   "settings.error.webhook_url_unreadable": "Esta instancia ya no puede leer el endpoint almacenado, así que dejar el campo en blanco no conserva nada. Introduce un endpoint nuevo o retira el almacenado.",
+  "settings.error.webhook_save_conflict": "La configuración del webhook se cambió en otro lugar después de cargar esta página. No se ha guardado nada; revisa la configuración actual e inténtalo de nuevo.",
   "settings.error.webhook_update_failed": "No se pudieron guardar los ajustes del webhook. Inténtalo de nuevo.",
   "settings.webhook.title": "Recordatorios por webhook",
   "settings.webhook.subtitle": "Envía recordatorios de menstruación y ovulación a tu propio endpoint de ntfy, Gotify u otro webhook.",

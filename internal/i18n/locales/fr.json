@@ -423,6 +423,7 @@
   "settings.success.webhook_removed": "Point de terminaison du webhook retiré.",
   "settings.error.invalid_webhook_url": "Saisissez une URL de webhook valide en http:// ou https://.",
   "settings.error.webhook_url_unreadable": "Cette instance ne peut plus lire le point de terminaison stocké, donc laisser le champ vide ne conserve rien. Saisissez un nouveau point de terminaison, ou retirez celui qui est stocké.",
+  "settings.error.webhook_save_conflict": "Les paramètres du webhook ont été modifiés ailleurs après le chargement de cette page. Rien n'a été enregistré ; vérifiez les paramètres actuels et réessayez.",
   "settings.error.webhook_update_failed": "Impossible d'enregistrer les paramètres du webhook. Veuillez réessayer.",
   "settings.webhook.title": "Rappels par webhook",
   "settings.webhook.subtitle": "Envoyez des rappels de règles et d'ovulation vers votre propre point de terminaison ntfy, Gotify ou autre webhook.",

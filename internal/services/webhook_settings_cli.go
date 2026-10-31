@@ -147,12 +147,22 @@ func (service *WebhookSettingsCLIService) ApplyWebhookSettings(ctx context.Conte
 		NotifyPeriod:     boolPatch(patch.NotifyPeriod, current.NotifyPeriod),
 		NotifyOvulation:  boolPatch(patch.NotifyOvulation, current.NotifyOvulation),
 		ReminderLeadDays: intPatch(patch.ReminderLeadDays, current.ReminderLeadDays),
+		// The merge is decided from the owner row resolveOwner read; pinning the
+		// write to its epoch keeps a keep-merge from re-storing an endpoint
+		// removed in between.
+		ConfigVersion: owner.WebhookConfigVersion,
 	}
 	switch patch.URLAction {
 	case webhookURLSet:
 		update.URL = patch.NewURL
 	case webhookURLClear:
 		update.URL = ""
+		// Clearing is a revocation and takes one step: with no endpoint left,
+		// delivery goes off unless the operator explicitly asked to enable it,
+		// which the save then refuses as an armed webhook with no target.
+		if patch.Enabled == nil {
+			update.Enabled = false
+		}
 	case webhookURLKeep:
 		// Named so the switch still reads as the three actions it has, and
 		// falling through so it cannot acquire a second body: see below.

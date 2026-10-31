@@ -257,10 +257,11 @@ func TestSaveWebhookSettingsKeepingTheEndpointCannotArmIt(t *testing.T) {
 
 	// A caller asking to keep the endpoint AND to arm delivery over it.
 	if err := repo.SaveWebhookSettings(ctx, user.ID, models.WebhookSettingsColumns{
-		Enabled:          true,
-		KeepEncryptedURL: true,
-		NotifyPeriod:     true,
-		ReminderLeadDays: 3,
+		Enabled:               true,
+		KeepEncryptedURL:      true,
+		NotifyPeriod:          true,
+		ReminderLeadDays:      3,
+		ExpectedConfigVersion: 1,
 	}); err != nil {
 		t.Fatalf("keeping save: %v", err)
 	}

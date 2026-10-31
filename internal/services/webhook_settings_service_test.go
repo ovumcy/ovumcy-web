@@ -466,6 +466,51 @@ func TestSaveWebhookSettingsFromFormBlankURLKeepsStoredEndpoint(t *testing.T) {
 	}
 }
 
+// TestSaveWebhookSettingsFromFormPinsTheEpochItDecidedFrom: every branch is
+// decided from one read, so the write carries that read's epoch and a removal
+// landing in between makes the save lose rather than re-store the endpoint.
+func TestSaveWebhookSettingsFromFormPinsTheEpochItDecidedFrom(t *testing.T) {
+	const userID = 22
+	for _, form := range []WebhookSettingsFormUpdate{
+		{Enabled: true},
+		{Enabled: true, URL: "https://ntfy.example/new", URLProvided: true},
+		{RemoveURL: true},
+	} {
+		svc, repo := newWebhookServiceForTest()
+		repo.loadUser = models.User{
+			WebhookURL:           storeWebhookURLForForm(t, userID, "https://ntfy.example/kept"),
+			WebhookConfigVersion: 41,
+		}
+		if err := svc.SaveWebhookSettingsFromForm(context.Background(), userID, form); err != nil {
+			t.Fatalf("SaveWebhookSettingsFromForm(%+v): %v", form, err)
+		}
+		if repo.savedColumns.ExpectedConfigVersion != 41 {
+			t.Fatalf("form %+v pinned epoch %d, want the read's 41", form, repo.savedColumns.ExpectedConfigVersion)
+		}
+	}
+}
+
+// TestSaveWebhookSettingsFromFormTreatsAWhitespaceURLAsBlank holds the service
+// to the same reading as the handler, for any caller that sets URLProvided on a
+// value that trims to nothing.
+func TestSaveWebhookSettingsFromFormTreatsAWhitespaceURLAsBlank(t *testing.T) {
+	const userID = 23
+	const storedURL = "https://ntfy.example/kept-topic"
+	svc, repo := newWebhookServiceForTest()
+	repo.loadUser = models.User{WebhookURL: storeWebhookURLForForm(t, userID, storedURL)}
+
+	if err := svc.SaveWebhookSettingsFromForm(context.Background(), userID, WebhookSettingsFormUpdate{
+		URL:         "  \t",
+		URLProvided: true,
+	}); err != nil {
+		t.Fatalf("SaveWebhookSettingsFromForm: %v", err)
+	}
+	got, err := svc.DecryptWebhookURL(userID, repo.savedColumns.EncryptedURL)
+	if err != nil || got != storedURL {
+		t.Fatalf("a whitespace URL replaced the stored endpoint: got %q err %v", got, err)
+	}
+}
+
 // TestSaveWebhookSettingsFromFormReplacesURLWhenProvided confirms a newly-typed
 // URL replaces the stored one and is re-encrypted (ciphertext, not plaintext).
 func TestSaveWebhookSettingsFromFormReplacesURLWhenProvided(t *testing.T) {

@@ -728,6 +728,7 @@
   "settings.success.webhook_removed": "Webhook endpoint withdrawn.",
   "settings.error.invalid_webhook_url": "Enter a valid http:// or https:// webhook URL.",
   "settings.error.webhook_url_unreadable": "This instance can no longer read the stored endpoint, so leaving the field blank has nothing to keep. Enter a new endpoint, or withdraw the stored one.",
+  "settings.error.webhook_save_conflict": "Webhook settings were changed elsewhere after this page loaded. Nothing was saved; check the current settings and try again.",
   "settings.error.webhook_update_failed": "Could not save webhook settings. Please try again.",
   "settings.webhook.title": "Webhook reminders",
   "settings.webhook.subtitle": "Send period and ovulation reminders to your own ntfy, Gotify, or other webhook endpoint.",

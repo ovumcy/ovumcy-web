@@ -40,6 +40,11 @@ var ErrWebhookURLInvalid = errors.New("webhook url invalid")
 // permanently stuck. It never carries the ciphertext or the decrypt error text.
 var ErrWebhookURLUnreadable = errors.New("webhook url unreadable")
 
+// ErrWebhookConfigVersionChanged is returned when a save lost its pin: another
+// delivery-configuration write landed after the read the save was decided from,
+// and nothing was written.
+var ErrWebhookConfigVersionChanged = models.ErrWebhookConfigVersionChanged
+
 // aadForWebhookURL returns the additional-authenticated-data binding an
 // encrypted webhook URL to a single user's row. It parallels aadForTOTPSecret
 // (a deliberately separate helper, not a shared one): including the user id
@@ -66,6 +71,10 @@ type WebhookSettingsUpdate struct {
 	// endpoint the instance cannot read cannot be armed -- and the service
 	// refuses the combination rather than trusting the caller.
 	KeepStoredURL bool
+	// ConfigVersion is the webhook_config_version of the row this update was
+	// decided from; the write is refused with ErrWebhookConfigVersionChanged if
+	// the row has moved on since.
+	ConfigVersion int
 }
 
 // WebhookSettingsFormUpdate is the transport-free input to
@@ -211,10 +220,11 @@ func validateWebhookAuthority(parsed *url.URL) error {
 // a security-posture change.
 func (service *WebhookSettingsService) SaveWebhookSettings(ctx context.Context, userID uint, update WebhookSettingsUpdate) error {
 	columns := models.WebhookSettingsColumns{
-		Enabled:          update.Enabled,
-		NotifyPeriod:     update.NotifyPeriod,
-		NotifyOvulation:  update.NotifyOvulation,
-		ReminderLeadDays: NormalizeReminderLeadDays(update.ReminderLeadDays),
+		Enabled:               update.Enabled,
+		NotifyPeriod:          update.NotifyPeriod,
+		NotifyOvulation:       update.NotifyOvulation,
+		ReminderLeadDays:      NormalizeReminderLeadDays(update.ReminderLeadDays),
+		ExpectedConfigVersion: update.ConfigVersion,
 	}
 
 	if update.KeepStoredURL {
@@ -335,12 +345,16 @@ func (service *WebhookSettingsService) SaveWebhookSettingsFromForm(ctx context.C
 		return err
 	}
 	update.ReminderLeadDays = current.ReminderLeadDays
+	// Every branch below is decided from this read -- the keep branch most of
+	// all, since it re-stores the endpoint the read returned -- so the write is
+	// pinned to it and a removal landing in between wins.
+	update.ConfigVersion = current.WebhookConfigVersion
 
 	switch {
 	case form.RemoveURL:
 		update.Enabled = false
 		update.URL = ""
-	case form.URLProvided:
+	case form.URLProvided && strings.TrimSpace(form.URL) != "":
 		update.Enabled = form.Enabled
 		update.URL = form.URL
 	default:
@@ -413,7 +427,7 @@ const (
 // or userinfo).
 //
 // Destination is the one wider line, for the owner's settings page only:
-// host[:port] plus a masked path (see webhookDestinationDisplay). Host remains
+// host[:port], never any part of the path (see webhookDestinationDisplay). Host remains
 // the value every other surface and every state decision uses.
 type WebhookURLDisplay struct {
 	Readability WebhookURLReadability

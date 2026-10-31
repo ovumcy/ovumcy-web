@@ -168,11 +168,12 @@ func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 			name: "delivery disabled",
 			revoke: func(t *testing.T, fixture webhookRevocationFixture) {
 				if err := fixture.repo.SaveWebhookSettings(context.Background(), fixture.ownerID, models.WebhookSettingsColumns{
-					Enabled:          false,
-					EncryptedURL:     ownerEndpoint,
-					NotifyPeriod:     true,
-					NotifyOvulation:  false,
-					ReminderLeadDays: 3,
+					Enabled:               false,
+					EncryptedURL:          ownerEndpoint,
+					NotifyPeriod:          true,
+					NotifyOvulation:       false,
+					ReminderLeadDays:      3,
+					ExpectedConfigVersion: 1,
 				}); err != nil {
 					t.Fatalf("disable delivery: %v", err)
 				}
@@ -182,11 +183,12 @@ func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 			name: "endpoint replaced",
 			revoke: func(t *testing.T, fixture webhookRevocationFixture) {
 				if err := fixture.repo.SaveWebhookSettings(context.Background(), fixture.ownerID, models.WebhookSettingsColumns{
-					Enabled:          true,
-					EncryptedURL:     "https://somewhere-else.example/hook",
-					NotifyPeriod:     true,
-					NotifyOvulation:  false,
-					ReminderLeadDays: 3,
+					Enabled:               true,
+					EncryptedURL:          "https://somewhere-else.example/hook",
+					NotifyPeriod:          true,
+					NotifyOvulation:       false,
+					ReminderLeadDays:      3,
+					ExpectedConfigVersion: 1,
 				}); err != nil {
 					t.Fatalf("replace the endpoint: %v", err)
 				}

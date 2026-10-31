@@ -9,9 +9,11 @@ import (
 	"testing"
 )
 
-// The destination line is the one place a stored webhook URL's path is allowed
-// near a page, so every case below pins what is shown AND what is not.
-func TestWebhookDestinationDisplayMasksTheStoredURL(t *testing.T) {
+// The destination line is the one place a stored webhook URL comes near a page.
+// It is host[:port] and nothing else: no path segment is ever shown, because a
+// segment's position says nothing about whether it is the credential (Telegram
+// puts the bot token in the FIRST one).
+func TestWebhookDestinationDisplayShowsNoPartOfThePath(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -22,39 +24,22 @@ func TestWebhookDestinationDisplayMasksTheStoredURL(t *testing.T) {
 		leaks []string
 	}{
 		{
+			name:  "telegram bot token in the first segment",
+			raw:   "https://api.telegram.org/bot123456789:AAFixtureTokenValue0000/sendMessage?chat_id=42",
+			want:  "api.telegram.org",
+			leaks: []string{"bot", "123456789", "AAFixture", "sendMessage", "chat_id", "/"},
+		},
+		{
 			name:  "slack-like",
 			raw:   "https://chat-hooks.example.test/services/TEAM0000/BOT00000/fixture-token-wxyz",
-			want:  "chat-hooks.example.test/services/…/wxyz",
-			leaks: []string{"TEAM0000", "BOT00000", "fixture-token"},
+			want:  "chat-hooks.example.test",
+			leaks: []string{"services", "TEAM0000", "BOT00000", "fixture-token", "wxyz"},
 		},
 		{
-			name:  "discord-like",
-			raw:   "https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz-0123",
-			want:  "discord.com/api/…/0123",
-			leaks: []string{"123456789012345678", "abcdefghij"},
-		},
-		{
-			name:  "ntfy-like single short segment",
+			name:  "ntfy-like single segment",
 			raw:   "https://ntfy.sh/my-topic",
-			want:  "ntfy.sh/…",
-			leaks: []string{"my-topic"},
-		},
-		{
-			name:  "single long segment shows only the tail",
-			raw:   "https://ntfy.example.com/a-very-secret-topic-name",
-			want:  "ntfy.example.com/…/name",
-			leaks: []string{"secret"},
-		},
-		{
-			name:  "two short segments show the first and no tail",
-			raw:   "https://example.com/hooks/abc",
-			want:  "example.com/hooks/…",
-			leaks: []string{"abc"},
-		},
-		{
-			name: "root path",
-			raw:  "https://example.com/",
-			want: "example.com",
+			want:  "ntfy.sh",
+			leaks: []string{"my-topic", "/"},
 		},
 		{
 			name: "no path",
@@ -64,8 +49,8 @@ func TestWebhookDestinationDisplayMasksTheStoredURL(t *testing.T) {
 		{
 			name:  "non-default port is kept",
 			raw:   "https://hooks.example.com:8443/services/abc123/a1b2e5f6c3d4",
-			want:  "hooks.example.com:8443/services/…/c3d4",
-			leaks: []string{"abc123", "a1b2"},
+			want:  "hooks.example.com:8443",
+			leaks: []string{"services", "abc123", "c3d4"},
 		},
 		{
 			name: "default https port is omitted",
@@ -75,7 +60,7 @@ func TestWebhookDestinationDisplayMasksTheStoredURL(t *testing.T) {
 		{
 			name: "default http port is omitted",
 			raw:  "http://hooks.example.com:80/x",
-			want: "hooks.example.com/…",
+			want: "hooks.example.com",
 		},
 		{
 			name: "port 443 on http is not the default",
@@ -85,37 +70,13 @@ func TestWebhookDestinationDisplayMasksTheStoredURL(t *testing.T) {
 		{
 			name: "ipv6 host keeps its brackets",
 			raw:  "https://[2001:db8::1]:8443/a/b",
-			want: "[2001:db8::1]:8443/a/…",
+			want: "[2001:db8::1]:8443",
 		},
 		{
-			name:  "a short final segment is hidden, the tail never crosses a slash",
-			raw:   "https://example.com/abcdefghijk/x",
-			want:  "example.com/abcdefghijk/…",
-			leaks: []string{"jk/x", "/x"},
-		},
-		{
-			name:  "a final segment of eight characters shows no tail",
-			raw:   "https://example.com/abc/shorttok",
-			want:  "example.com/abc/…",
-			leaks: []string{"horttok", "ttok"},
-		},
-		{
-			name:  "a final segment of nine characters shows only its last four",
-			raw:   "https://example.com/abc/shorttoke",
-			want:  "example.com/abc/…/toke",
-			leaks: []string{"shortt", "ort"},
-		},
-		{
-			name:  "userinfo is never shown",
-			raw:   "https://alice:hunter2@example.com/x/yy",
-			want:  "example.com/x/…",
-			leaks: []string{"alice", "hunter2", "@"},
-		},
-		{
-			name:  "query and fragment are never shown",
-			raw:   "https://example.com/hook/path-segment-long?token=SECRETQUERY#frag",
-			want:  "example.com/hook/…/long",
-			leaks: []string{"SECRETQUERY", "token", "frag", "?", "#"},
+			name:  "userinfo, query and fragment are never shown",
+			raw:   "https://alice:hunter2@example.com/hook?token=SECRETQUERY#frag",
+			want:  "example.com",
+			leaks: []string{"alice", "hunter2", "@", "SECRETQUERY", "frag"},
 		},
 		{
 			name: "unparseable value shows nothing",
@@ -158,7 +119,7 @@ func TestEgressSummaryAndOverlaidRowAgreeOnAQuietInstance(t *testing.T) {
 		&stubEgressWebhookDisplay{display: WebhookURLDisplay{
 			Readability: WebhookURLReadable,
 			Host:        "hooks.example.test",
-			Destination: "hooks.example.test/services/…/abcd",
+			Destination: "hooks.example.test:8443",
 		}},
 		&stubEgressFeedStatus{status: CalendarFeedStatus{Known: true}},
 		false,
@@ -171,8 +132,8 @@ func TestEgressSummaryAndOverlaidRowAgreeOnAQuietInstance(t *testing.T) {
 	if ledger.Section != EgressSectionPathsEnabled {
 		t.Fatalf("setup: want the armed heading kept (the operator CLI may still deliver), got %q", ledger.Section)
 	}
-	if ledger.Webhook.Destination != "hooks.example.test/services/…/abcd" {
-		t.Fatalf("the ledger must carry the masked destination, got %q", ledger.Webhook.Destination)
+	if ledger.Webhook.Destination != "hooks.example.test:8443" {
+		t.Fatalf("the ledger must carry the destination, got %q", ledger.Webhook.Destination)
 	}
 
 	for _, locale := range []string{"en", "de", "fr", "es", "it", "ru"} {

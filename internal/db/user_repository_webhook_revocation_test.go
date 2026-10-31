@@ -38,11 +38,12 @@ import (
 func armWebhookForClaimTest(t *testing.T, repo *UserRepository, userID uint) int {
 	t.Helper()
 	if err := repo.SaveWebhookSettings(context.Background(), userID, models.WebhookSettingsColumns{
-		Enabled:          true,
-		EncryptedURL:     "opaque-ciphertext-stand-in",
-		NotifyPeriod:     true,
-		NotifyOvulation:  true,
-		ReminderLeadDays: models.DefaultReminderLeadDays,
+		Enabled:               true,
+		EncryptedURL:          "opaque-ciphertext-stand-in",
+		NotifyPeriod:          true,
+		NotifyOvulation:       true,
+		ReminderLeadDays:      models.DefaultReminderLeadDays,
+		ExpectedConfigVersion: reloadUserForWebhook(t, repo, userID).WebhookConfigVersion,
 	}); err != nil {
 		t.Fatalf("arm webhook delivery for owner %d: %v", userID, err)
 	}
@@ -71,11 +72,12 @@ func TestSaveWebhookSettingsAdvancesTheRevocationEpoch(t *testing.T) {
 	// Disabling is the same write, and owes the same advance — it is the
 	// revocation the owner is most likely to make.
 	if err := repo.SaveWebhookSettings(context.Background(), user.ID, models.WebhookSettingsColumns{
-		Enabled:          false,
-		EncryptedURL:     "opaque-ciphertext-stand-in",
-		NotifyPeriod:     true,
-		NotifyOvulation:  true,
-		ReminderLeadDays: models.DefaultReminderLeadDays,
+		Enabled:               false,
+		EncryptedURL:          "opaque-ciphertext-stand-in",
+		NotifyPeriod:          true,
+		NotifyOvulation:       true,
+		ReminderLeadDays:      models.DefaultReminderLeadDays,
+		ExpectedConfigVersion: first,
 	}); err != nil {
 		t.Fatalf("disable delivery: %v", err)
 	}
@@ -194,11 +196,12 @@ func TestClaimWebhookWatermarkIsLostAfterTheOwnerDisabledDelivery(t *testing.T) 
 	// The owner disables delivery while the pass is still working through the
 	// owner list.
 	if err := repo.SaveWebhookSettings(context.Background(), user.ID, models.WebhookSettingsColumns{
-		Enabled:          false,
-		EncryptedURL:     "opaque-ciphertext-stand-in",
-		NotifyPeriod:     true,
-		NotifyOvulation:  true,
-		ReminderLeadDays: models.DefaultReminderLeadDays,
+		Enabled:               false,
+		EncryptedURL:          "opaque-ciphertext-stand-in",
+		NotifyPeriod:          true,
+		NotifyOvulation:       true,
+		ReminderLeadDays:      models.DefaultReminderLeadDays,
+		ExpectedConfigVersion: snapshotEpoch,
 	}); err != nil {
 		t.Fatalf("disable delivery: %v", err)
 	}
@@ -242,11 +245,12 @@ func TestClaimWebhookWatermarkIsLostAfterTheOwnerChangedTheEndpoint(t *testing.T
 	anchor := time.Date(2026, time.April, 23, 0, 0, 0, 0, time.UTC)
 
 	if err := repo.SaveWebhookSettings(context.Background(), user.ID, models.WebhookSettingsColumns{
-		Enabled:          true,
-		EncryptedURL:     "a-different-opaque-ciphertext",
-		NotifyPeriod:     true,
-		NotifyOvulation:  true,
-		ReminderLeadDays: models.DefaultReminderLeadDays,
+		Enabled:               true,
+		EncryptedURL:          "a-different-opaque-ciphertext",
+		NotifyPeriod:          true,
+		NotifyOvulation:       true,
+		ReminderLeadDays:      models.DefaultReminderLeadDays,
+		ExpectedConfigVersion: snapshotEpoch,
 	}); err != nil {
 		t.Fatalf("replace the endpoint: %v", err)
 	}
@@ -332,11 +336,12 @@ func TestReleaseWebhookWatermarkStillRestoresAfterARevocation(t *testing.T) {
 	// The delivery fails, and the owner disables the webhook before the release
 	// lands. The release must still happen: nothing was delivered.
 	if err := repo.SaveWebhookSettings(context.Background(), user.ID, models.WebhookSettingsColumns{
-		Enabled:          false,
-		EncryptedURL:     "opaque-ciphertext-stand-in",
-		NotifyPeriod:     true,
-		NotifyOvulation:  true,
-		ReminderLeadDays: models.DefaultReminderLeadDays,
+		Enabled:               false,
+		EncryptedURL:          "opaque-ciphertext-stand-in",
+		NotifyPeriod:          true,
+		NotifyOvulation:       true,
+		ReminderLeadDays:      models.DefaultReminderLeadDays,
+		ExpectedConfigVersion: epoch,
 	}); err != nil {
 		t.Fatalf("disable delivery: %v", err)
 	}
