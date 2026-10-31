@@ -483,10 +483,10 @@ async function removePostgresContainer(containerID) {
   await runDockerCapture(["rm", "-f", "-v", containerID]).catch(() => {});
 }
 
-// Same key and value shape as internal/testdb (PostgresContainerLabel), so either
+// Same key and value shape as internal/testdb (postgresContainerLabel), so either
 // harness sweeps what the other left behind.
 const POSTGRES_CONTAINER_LABEL = "ovumcy.test.postgres";
-const STALE_CONTAINER_AGE_MS = 60 * 60 * 1000;
+const STALE_CONTAINER_AGE_MS = 3 * 60 * 60 * 1000;
 
 // isStalePostgresContainer: the label value is the creation time in unix nanos.
 // Any other shape (empty, signed, fractional, non-numeric) is never stale.
@@ -510,11 +510,15 @@ async function removeStalePostgresContainers() {
       `{{.ID}} {{.Label "${POSTGRES_CONTAINER_LABEL}"}}`,
     ]);
     const now = Date.now();
+    const staleIDs = [];
     for (const line of listed.stdout.split("\n")) {
       const [id, value, ...rest] = line.trim().split(/\s+/);
       if (id && value && rest.length === 0 && isStalePostgresContainer(value, now)) {
-        await removePostgresContainer(id);
+        staleIDs.push(id);
       }
+    }
+    if (staleIDs.length > 0) {
+      await runDockerCapture(["rm", "-f", "-v", ...staleIDs]);
     }
   } catch {
     // housekeeping only
