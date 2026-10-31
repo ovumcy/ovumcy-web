@@ -260,9 +260,11 @@ func TestBuildCalendarDaysGivesTheBandAndWindowOverlapItsOwnFill(t *testing.T) {
 // The same overlap one rung up, on the site the band-anchored rung above cannot
 // see: a fertile day the projected START WINDOW covers and the projected band
 // never reaches. On an irregular cycle the window runs from the shortest
-// observed cycle to the longest — 21 to 60 days here — so it spans the next
-// cycle's fertile window, while the five projected bleeding days sit weeks
-// earlier inside it. Those cells fell to the plain start-window rung and the
+// observed cycle to the longest — 21 to 60 days here — and the running cycle's
+// range-mode fertile window is widened to the ovulation the longest cycle
+// allows (2026-04-15), so it runs past the five projected bleeding days into
+// the start window. The chained cycles carry no window in range mode
+// (WEB-388); this overlap is the running cycle's own. Those cells fell to the plain start-window rung and the
 // fertile window went missing from them, which is the hole this PR set out to
 // close; a class closed at one of its two sites is not closed.
 //
@@ -285,7 +287,7 @@ func TestBuildCalendarDaysFillsTheFertileStartWindowTheBandNeverReaches(t *testi
 		NextPeriodStart:      lastPeriodStart.AddDate(0, 0, 28),
 		OvulationDate:        lastPeriodStart.AddDate(0, 0, 14),
 		FertilityWindowStart: lastPeriodStart.AddDate(0, 0, 9),
-		FertilityWindowEnd:   lastPeriodStart.AddDate(0, 0, 14),
+		FertilityWindowEnd:   services.PredictCycleWindow(lastPeriodStart, 60, 14).OvulationDate,
 	}
 
 	states := services.BuildCalendarDayStates(
@@ -297,7 +299,7 @@ func TestBuildCalendarDaysFillsTheFertileStartWindowTheBandNeverReaches(t *testi
 		location,
 	)
 
-	fertileStartWindow := make([]string, 0, 6)
+	fertileStartWindow := make([]string, 0, 13)
 	for _, state := range states {
 		if state.IsPredictedStartWindow && (state.IsFertilityEdge || state.IsFertilityPeak) && !state.IsPredicted {
 			fertileStartWindow = append(fertileStartWindow, state.DateString)
@@ -305,7 +307,7 @@ func TestBuildCalendarDaysFillsTheFertileStartWindowTheBandNeverReaches(t *testi
 	}
 	// The setup assertion, not the subject: the scenario has to be real before
 	// its rendering is worth asserting.
-	if want := []string{"2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-11"}; !slices.Equal(fertileStartWindow, want) {
+	if want := []string{"2026-04-03", "2026-04-04", "2026-04-05", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-11", "2026-04-12", "2026-04-13", "2026-04-14", "2026-04-15"}; !slices.Equal(fertileStartWindow, want) {
 		t.Fatalf("test setup: fertile start-window days outside the band = %v, want %v", fertileStartWindow, want)
 	}
 
@@ -336,8 +338,8 @@ func TestBuildCalendarDaysFillsTheFertileStartWindowTheBandNeverReaches(t *testi
 
 	// The control right beside the window: a start-window day no fertile window
 	// covers keeps the plain fill, so the rung cannot swallow the whole range.
-	if classes := strings.Fields(byDate["2026-04-05"].CellClass); !slices.Equal(classes, []string{"calendar-cell", "calendar-cell-start-window"}) {
-		t.Errorf("day 2026-04-05: cellClass = %q, want the plain start-window state", byDate["2026-04-05"].CellClass)
+	if classes := strings.Fields(byDate["2026-04-16"].CellClass); !slices.Equal(classes, []string{"calendar-cell", "calendar-cell-start-window"}) {
+		t.Errorf("day 2026-04-16: cellClass = %q, want the plain start-window state", byDate["2026-04-16"].CellClass)
 	}
 }
 
