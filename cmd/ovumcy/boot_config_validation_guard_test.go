@@ -215,6 +215,9 @@ func TestBootRefusesAnUnparseableSecurityBoolean(t *testing.T) {
 		// A lenient read here fell back to off, which skips OIDC Validate and
 		// turns OIDC_LOGIN_MODE=oidc_only back into password sign-in.
 		{"OIDC_ENABLED", "ture"},
+		// A lenient read would turn a refused fence-less boot into an
+		// accepted residual on a typo (WEB-399).
+		{"CALENDAR_FEED_FENCE_OPTOUT", "yes please"},
 	}
 
 	for _, tc := range cases {

@@ -133,6 +133,14 @@ type CalendarFeedRestoreFence struct {
 	writing sync.Mutex
 }
 
+// CheckAnchor reports why the fence's outside half cannot be read, or nil. It
+// writes nothing, so a boot that refuses on it leaves the database exactly as
+// it found it (WEB-399).
+func (fence *CalendarFeedRestoreFence) CheckAnchor() error {
+	_, _, err := fence.anchor.Read()
+	return err
+}
+
 // NewCalendarFeedRestoreFence wires the fence.
 func NewCalendarFeedRestoreFence(appState calendarFeedRestoreFenceAppState, users calendarFeedRestoreFenceUserStore, anchor calendarFeedRestoreFenceAnchor) *CalendarFeedRestoreFence {
 	return &CalendarFeedRestoreFence{appState: appState, users: users, anchor: anchor}
