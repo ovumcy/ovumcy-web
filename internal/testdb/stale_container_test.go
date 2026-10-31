@@ -55,11 +55,11 @@ func TestStaleSweepAgainstARealDaemon(t *testing.T) {
 		return id
 	}
 	label := func(createdAt time.Time) []string {
-		return []string{"--label", fmt.Sprintf("%s=%d", PostgresContainerLabel, createdAt.UnixNano())}
+		return []string{"--label", fmt.Sprintf("%s=%d", postgresContainerLabel, createdAt.UnixNano())}
 	}
 	running := func(id string) bool {
-		out, err := runDockerCommandWithError("ps", "-q", "--no-trunc", "--filter", "id="+id)
-		return err == nil && strings.TrimSpace(out) != ""
+		out := runDockerCommand(t, "ps", "-q", "--no-trunc", "--filter", "id="+id)
+		return strings.TrimSpace(out) != ""
 	}
 
 	backdated := start(label(time.Now().Add(-2 * staleContainerAge))...)
@@ -84,7 +84,7 @@ func TestStaleSweepAgainstARealDaemon(t *testing.T) {
 // with -f -v, and a malformed row is skipped.
 func TestRemoveStalePostgresContainersRemovesOnlyStaleListedIDs(t *testing.T) {
 	now := time.Now()
-	old := fmt.Sprintf("%d", now.Add(-2*time.Hour).UnixNano())
+	old := fmt.Sprintf("%d", now.Add(-2*staleContainerAge).UnixNano())
 	fresh := fmt.Sprintf("%d", now.Add(-time.Minute).UnixNano())
 	listing := strings.Join([]string{"aaa " + old, "bbb " + fresh, "ccc", "ddd garbage", "eee " + old + " extra"}, "\n")
 
@@ -93,7 +93,7 @@ func TestRemoveStalePostgresContainersRemovesOnlyStaleListedIDs(t *testing.T) {
 	runDockerCommandWithError = func(args ...string) (string, error) {
 		switch args[0] {
 		case "ps":
-			if !strings.Contains(strings.Join(args, " "), "label="+PostgresContainerLabel) {
+			if !strings.Contains(strings.Join(args, " "), "label="+postgresContainerLabel) {
 				t.Errorf("the listing must filter on the label; got %v", args)
 			}
 			return listing, nil

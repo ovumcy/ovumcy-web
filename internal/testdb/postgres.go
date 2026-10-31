@@ -28,13 +28,17 @@ const (
 	// /var/lib/postgresql instead.
 	postgresDataDir = "/var/lib/postgresql/data"
 
-	// PostgresContainerLabel marks every throwaway Postgres container the test
+	// postgresContainerLabel marks every throwaway Postgres container the test
 	// harnesses start (this package and scripts/run-e2e.mjs); its value is the
 	// creation time in unix nanos. A `go test` or e2e run killed mid-flight runs
 	// no cleanup, and nothing else removes a `--rm` container that is still
 	// running, so the next run sweeps labelled ones older than staleContainerAge.
-	PostgresContainerLabel = "ovumcy.test.postgres"
-	staleContainerAge      = time.Hour
+	//
+	// The age is well above any single run: the docker-backed packages take over
+	// twenty minutes, and a run under a raised -timeout must not lose its live
+	// container to another checkout's sweep.
+	postgresContainerLabel = "ovumcy.test.postgres"
+	staleContainerAge      = 3 * time.Hour
 
 	dockerCommandTimeout          = 30 * time.Second
 	dockerImagePullTimeout        = 3 * time.Minute
@@ -74,7 +78,7 @@ func StartPostgres(t *testing.T, databaseName string) (dsn string, containerID s
 	staleContainerSweep.Do(removeStalePostgresContainers)
 
 	containerID = runDockerCommand(t, "run", "-d", "--rm", "-P",
-		"--label", fmt.Sprintf("%s=%d", PostgresContainerLabel, time.Now().UnixNano()),
+		"--label", fmt.Sprintf("%s=%d", postgresContainerLabel, time.Now().UnixNano()),
 		"--tmpfs", postgresDataDir,
 		"-e", "POSTGRES_USER="+postgresTestUser,
 		"-e", "POSTGRES_PASSWORD="+postgresTestPassword,
@@ -114,8 +118,8 @@ var staleContainerSweep sync.Once
 // this is housekeeping, and the start that follows fails loudly on a daemon
 // that cannot answer.
 func removeStalePostgresContainers() {
-	listed, err := runDockerCommandWithError("ps", "--filter", "label="+PostgresContainerLabel,
-		"--format", `{{.ID}} {{.Label "`+PostgresContainerLabel+`"}}`)
+	listed, err := runDockerCommandWithError("ps", "--filter", "label="+postgresContainerLabel,
+		"--format", `{{.ID}} {{.Label "`+postgresContainerLabel+`"}}`)
 	if err != nil {
 		return
 	}
