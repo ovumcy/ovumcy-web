@@ -78,7 +78,7 @@ func injectMissingDockerBinary(t *testing.T) {
 func TestDockerCommandFailureAfterThePreflightFailsRatherThanSkips(t *testing.T) {
 	callSites := map[string][]string{
 		"image pull":      {"pull", postgresTestImage},
-		"container start": {"run", "-d", "--rm", "-P", postgresTestImage},
+		"container start": {"run", "-d", "--rm", "-P", "--tmpfs", postgresDataDir, postgresTestImage},
 		"port lookup":     {"port", "abc123", "5432/tcp"},
 	}
 
