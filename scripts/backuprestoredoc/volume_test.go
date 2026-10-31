@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +83,17 @@ const (
 	sqliteDatabaseFile = "ovumcy.db"
 
 	dockerCommandTimeout = 3 * time.Minute
+
+	// The ephemeral volume's removal retries for this long, this often, while a
+	// `docker run --rm` helper that mounted it is still being torn down.
+	volumeRemoveTimeout       = 30 * time.Second
+	volumeRemoveRetryInterval = 250 * time.Millisecond
+
+	// The ephemeral volume is <prefix><unix nanos><suffix>; the nanos are what
+	// lets a later run tell a stale leftover from a neighbouring run's volume.
+	ephemeralVolumePrefix   = "ovumcyguard"
+	ephemeralVolumeSuffix   = "testdata"
+	staleEphemeralVolumeAge = time.Hour
 )
 
 // walSetFiles is the trio the runbook names. In WAL mode the rows most recently
@@ -482,20 +494,70 @@ func runVolumeScript(t *testing.T, dir string, volume string, script string) (st
 func ephemeralVolume(t *testing.T) string {
 	t.Helper()
 
-	name := fmt.Sprintf("ovumcyguard%dtestdata", time.Now().UnixNano())
+	name := fmt.Sprintf("%s%d%s", ephemeralVolumePrefix, time.Now().UnixNano(), ephemeralVolumeSuffix)
 	if strings.Contains(name, dataVolumeName) {
 		t.Fatalf("the ephemeral volume name %q contains %q, which would defeat the check that keeps this guard away from a real deployment", name, dataVolumeName)
 	}
 
+	removeStaleEphemeralVolumes()
 	runDocker(t, nil, "volume", "create", name)
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), dockerCommandTimeout)
-		defer cancel()
-		// The documented restore removes and recreates this volume itself, so
-		// its absence here is not an error worth failing a passing test over.
-		_ = exec.CommandContext(ctx, "docker", "volume", "rm", "-f", name).Run()
-	})
+	t.Cleanup(func() { removeEphemeralVolume(t, name) })
 	return name
+}
+
+// removeStaleEphemeralVolumes removes what an earlier run of this guard created
+// and never got to remove: a `go test` killed by its own timeout or by the
+// developer runs no t.Cleanup, and nothing else ever deletes a named volume.
+// Only this guard's own naming pattern is touched, and only a volume older than
+// staleEphemeralVolumeAge by the nanos in its name, so a run in a neighbouring
+// checkout keeps its volume. No -f: a volume still in use is left where it is.
+// Every error is ignored — this is housekeeping, and the create that follows
+// fails loudly on a daemon that cannot answer.
+func removeStaleEphemeralVolumes() {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerCommandTimeout)
+	defer cancel()
+
+	listed, err := exec.CommandContext(ctx, "docker", "volume", "ls", "-q", "--filter", "name="+ephemeralVolumePrefix).Output()
+	if err != nil {
+		return
+	}
+	for _, name := range strings.Fields(string(listed)) {
+		if !strings.HasPrefix(name, ephemeralVolumePrefix) || !strings.HasSuffix(name, ephemeralVolumeSuffix) {
+			continue
+		}
+		nanos, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(name, ephemeralVolumePrefix), ephemeralVolumeSuffix), 10, 64)
+		if err != nil || time.Since(time.Unix(0, nanos)) < staleEphemeralVolumeAge {
+			continue
+		}
+		_ = exec.CommandContext(ctx, "docker", "volume", "rm", name).Run()
+	}
+}
+
+// removeEphemeralVolume removes the volume, retrying while it is still in use.
+// `docker run --rm` returns when the helper's process exits, but the daemon
+// removes the container afterwards, and a `volume rm` that lands inside that
+// window fails with "volume is in use" — the leak that left one
+// ovumcyguard*testdata volume behind per lost race. The documented restore
+// removes and recreates the volume itself, so its absence is not a failure
+// (`-f` ignores a missing volume); a volume still present when the retries run
+// out is reported, because it is exactly what this cleanup exists to prevent.
+func removeEphemeralVolume(t *testing.T, name string) {
+	t.Helper()
+
+	deadline := time.Now().Add(volumeRemoveTimeout)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), dockerCommandTimeout)
+		output, err := exec.CommandContext(ctx, "docker", "volume", "rm", "-f", name).CombinedOutput()
+		cancel()
+		if err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Errorf("docker volume %s was not removed within %s and is left behind: %v: %s", name, volumeRemoveTimeout, err, strings.TrimSpace(string(output)))
+			return
+		}
+		time.Sleep(volumeRemoveRetryInterval)
+	}
 }
 
 // writeVolume replaces the volume's contents with the files in dir. This is the

@@ -19,6 +19,13 @@ const (
 	postgresTestPassword = "ovumcy"
 	postgresTestImage    = "postgres:17-alpine"
 
+	// postgresDataDir is the path the image declares as VOLUME. Mounting a
+	// tmpfs there keeps the daemon from creating an anonymous volume per start
+	// (the data is disposable and the start is faster); the `rm -f -v` in the
+	// cleanup covers an image whose VOLUME path moved — postgres:18 declares
+	// /var/lib/postgresql instead.
+	postgresDataDir = "/var/lib/postgresql/data"
+
 	dockerCommandTimeout          = 30 * time.Second
 	dockerImagePullTimeout        = 3 * time.Minute
 	dockerRunTimeout              = 3 * time.Minute
@@ -56,6 +63,7 @@ func StartPostgres(t *testing.T, databaseName string) (dsn string, containerID s
 	ensurePostgresImageAvailable(t)
 
 	containerID = runDockerCommand(t, "run", "-d", "--rm", "-P",
+		"--tmpfs", postgresDataDir,
 		"-e", "POSTGRES_USER="+postgresTestUser,
 		"-e", "POSTGRES_PASSWORD="+postgresTestPassword,
 		"-e", "POSTGRES_DB="+databaseName,
@@ -63,7 +71,11 @@ func StartPostgres(t *testing.T, databaseName string) (dsn string, containerID s
 	)
 
 	t.Cleanup(func() {
-		_ = runDockerCommandAllowFailure("rm", "-f", containerID)
+		// -v is load-bearing: an explicit `rm -f` lands before the daemon's own
+		// --rm auto-remove, and without -v the container's anonymous volumes
+		// survive it. One run of the suite used to leave one orphaned data
+		// volume per container behind this way.
+		_ = runDockerCommandAllowFailure("rm", "-f", "-v", containerID)
 	})
 
 	waitForPostgresReadiness(t, containerID, databaseName)
