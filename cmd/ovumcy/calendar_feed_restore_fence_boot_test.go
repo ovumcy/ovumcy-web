@@ -95,7 +95,7 @@ func TestEnforceCalendarFeedRestoreFenceRefusesTheBootWithoutAFence(t *testing.T
 	t.Cleanup(func() { closeDatabase(database) })
 	repositories, fence := bootstrap.BuildRepositories(database, "")
 
-	_, err = enforceCalendarFeedRestoreFence(fence, false)
+	_, err = enforceCalendarFeedRestoreFence(context.Background(), fence, false)
 	if !errors.Is(err, errCalendarFeedFenceRequired) {
 		t.Fatalf("a boot without a fence must be refused, got %v", err)
 	}
@@ -118,12 +118,15 @@ func TestEnforceCalendarFeedRestoreFenceRefusesAnUnwritableFence(t *testing.T) {
 		t.Fatalf("OpenDatabase: %v", err)
 	}
 	t.Cleanup(func() { closeDatabase(database) })
-	// A directory where the fence file should be: reading it as "no token yet"
-	// can still succeed on some platforms, writing it never does.
-	fencePath := t.TempDir()
+	// A parent directory that does not exist: the read finds no token yet on
+	// every platform, and the write, which never creates the parent, fails.
+	fencePath := filepath.Join(t.TempDir(), "absent", "calendar-feed.fence")
 	_, fence := bootstrap.BuildRepositories(database, fencePath)
 
-	if _, err := enforceCalendarFeedRestoreFence(fence, false); !errors.Is(err, errCalendarFeedFenceRequired) {
+	if err := fence.CheckAnchor(); err != nil {
+		t.Fatalf("this fence must pass the read-only pre-check so the refusal comes from Enforce, got %v", err)
+	}
+	if _, err := enforceCalendarFeedRestoreFence(context.Background(), fence, false); !errors.Is(err, errCalendarFeedFenceRequired) {
 		t.Fatalf("an unwritable fence must refuse the boot, got %v", err)
 	}
 }
