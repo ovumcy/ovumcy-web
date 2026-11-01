@@ -236,10 +236,12 @@ test.describe('Auth: OIDC login entry', () => {
 
     // Submitting the card posts to the step-up, which hands back a same-origin
     // interstitial (the settings CSP pins form-action to 'self') that bounces
-    // to the provider's authorize endpoint with prompt=login + max_age, then
-    // /auth/oidc/callback links the identity and 303s back to /settings. The
-    // terminal signal is the success flash, not the URL: the flow starts and
-    // ends on /settings, so a URL wait would be satisfied before it began.
+    // to the provider's authorize endpoint with prompt=login + max_age. The
+    // callback links nothing: it parks the returned identity and lands on the
+    // confirmation page, and only that page's CSRF-protected confirm writes the
+    // link and 303s back to /settings. The terminal signal is the success
+    // flash, not the URL: the flow starts and ends on /settings, so a URL wait
+    // would be satisfied before it began.
     // Caveat on what this proves: the local IdP keeps no login session of its
     // own and ignores prompt=login, so the lane covers the round trip and the
     // persisted link — the app's freshness gate itself (reauthClaimsFresh over
@@ -249,6 +251,14 @@ test.describe('Auth: OIDC login entry', () => {
     // current password.
     await linkIdentityForm.locator('#settings-oidc-link-password').fill(credentials.password);
     await linkIdentityForm.locator('button[type="submit"]').click();
+    const confirmLinkForm = page.locator('form[data-oidc-link-confirm-form]');
+    await expect(confirmLinkForm).toBeVisible({ timeout: 20_000 });
+    await expect(page).toHaveURL(/\/settings\/oidc\/link$/);
+    await expect(page.locator('[data-oidc-link-confirm-issuer]')).not.toBeEmpty();
+    await expect(
+      page.locator('[data-oidc-link-confirm-email], [data-oidc-link-confirm-subject]'),
+    ).not.toBeEmpty();
+    await confirmLinkForm.locator('button[type="submit"]').click();
     await expect(
       page.locator(
         '[data-flash-key="settings.success.oidc_identity_linked"][data-flash-status="success"]',

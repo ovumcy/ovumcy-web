@@ -599,43 +599,55 @@ func (service *OIDCLoginService) UnlinkIdentity(ctx context.Context, user models
 	return expectedSessionVersion + 1, nil
 }
 
-// CompleteIdentityLinkReauth authorises a NEW OIDC identity link from an
-// already-authenticated settings session: it runs a fresh code exchange,
-// requires the same freshness proof as ValidateReauthExchange (prompt=login +
-// max_age enforced via reauthFreshnessVerdict), and then persists the link via
-// ConfirmAndLinkIdentity.
+// VerifyIdentityLinkReauth checks the Settings step-up for linking a NEW OIDC
+// identity and returns the identity the exchange resolved to, WITHOUT linking
+// it. It runs a fresh code exchange and requires the same freshness proof as
+// ValidateReauthExchange (prompt=login + max_age enforced via
+// reauthFreshnessVerdict).
+//
+// Nothing is persisted here (WEB-401): the callback that reaches this method is
+// CSRF-exempt and can be driven cross-site with an attacker's own code against
+// the owner's PKCE challenge, so the identity it returns is only a candidate.
+// The owner is shown it on a same-origin confirmation page, and the link is
+// written by ConfirmAndLinkIdentity from the CSRF-protected confirm request.
 //
 // It deliberately does NOT reuse ValidateReauthExchange: that helper requires
 // the returned (issuer, subject) to already be linked to expectedUserID,
-// which is exactly backwards for linking — the whole point here is a pair
-// that has never been linked to anyone. Reusing it would make first-time
-// linking impossible; the freshness check is the part worth sharing, the
-// "already linked" check is not.
-//
-// expectedSessionVersion is the version of the session that started the
-// step-up; see ConfirmAndLinkIdentity, whose returned session version this
-// passes back (an already-linked no-op leaves expectedSessionVersion).
-func (service *OIDCLoginService) CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, now time.Time) (int, error) {
+// which is exactly backwards for linking. An identity already linked to a
+// DIFFERENT account is refused here, before the owner is asked to confirm a
+// link that cannot be written; ConfirmAndLinkIdentity re-checks it at write
+// time.
+func (service *OIDCLoginService) VerifyIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, now time.Time) (security.OIDCClaims, error) {
 	if !service.Enabled() {
-		return 0, ErrOIDCDisabled
+		return security.OIDCClaims{}, ErrOIDCDisabled
 	}
 	if targetUserID == 0 {
-		return 0, ErrOIDCLinkFailed
+		return security.OIDCClaims{}, ErrOIDCLinkFailed
 	}
 	if strings.TrimSpace(code) == "" || strings.TrimSpace(codeVerifier) == "" || strings.TrimSpace(expectedNonce) == "" {
-		return 0, ErrOIDCCallbackInvalid
+		return security.OIDCClaims{}, ErrOIDCCallbackInvalid
 	}
 
 	exchange, err := service.client.ExchangeCode(ctx, code, codeVerifier, expectedNonce)
 	if err != nil {
-		return 0, ErrOIDCAuthenticationFailed
+		return security.OIDCClaims{}, ErrOIDCAuthenticationFailed
 	}
 
 	if err := reauthFreshnessVerdict(exchange.Claims, maxAuthAge, now); err != nil {
-		return 0, err
+		return security.OIDCClaims{}, err
+	}
+	if !hasIdentityKey(exchange.Claims) {
+		return security.OIDCClaims{}, ErrOIDCLinkFailed
 	}
 
-	return service.ConfirmAndLinkIdentity(ctx, targetUserID, expectedSessionVersion, exchange.Claims, now)
+	existing, found, err := service.identities.FindByIssuerSubject(ctx, exchange.Claims.Issuer, exchange.Claims.Subject)
+	if err != nil {
+		return security.OIDCClaims{}, ErrOIDCIdentityResolveFailed
+	}
+	if found && existing.UserID != targetUserID {
+		return security.OIDCClaims{}, ErrOIDCLinkFailed
+	}
+	return exchange.Claims, nil
 }
 
 func (service *OIDCLoginService) authenticateLinkedIdentity(ctx context.Context, exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, bool, error) {

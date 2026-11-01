@@ -107,10 +107,9 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 // completeOIDCIdentityLinkStepup is dispatched from CompleteOIDCLogin when the
 // callback carries a step-up cookie whose purpose is identity_link. It proves
 // the account that started the flow is still the one that owns this session,
-// then hands the exchange straight to CompleteIdentityLinkReauth, which
-// verifies freshness and persists the link via ConfirmAndLinkIdentity — the
-// same service method the public link-confirm route used to call before
-// WEB-77 removed it for good, and the same one the operator CLI command
+// has VerifyIdentityLinkReauth check freshness, and parks the returned identity
+// for the owner to confirm. ConfirmOIDCIdentityLink writes the link through
+// ConfirmAndLinkIdentity — the same service method the operator CLI command
 // calls for the no-session recovery case.
 func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcStepupState, exchange oidcCallbackExchange) error {
 	if state.Purpose != oidcStepupPurposeIdentityLink {
@@ -147,23 +146,101 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 
 	ctx, cancel := oidcRequestContext(c)
 	defer cancel()
-	linkedSessionVersion, err := handler.oidcService.CompleteIdentityLinkReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, user.AuthSessionVersion, stepupReauthMaxAge, time.Now())
-	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
-		return handler.redirectSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, oidcIdentityLinkStepupAction, "link"))
-	}
+	claims, err := handler.oidcService.VerifyIdentityLinkReauth(ctx, code, state.CodeVerifier, state.Nonce, user.ID, stepupReauthMaxAge, time.Now())
 	if err != nil {
 		spec := mapOIDCIdentityLinkReauthError(err)
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
 
-	handler.logSecurityEvent(c, oidcIdentityLinkStepupAction, "linked")
+	// Nothing is linked here (WEB-401): this callback is CSRF-exempt, so the
+	// identity it carries may be one an attacker posted into the owner's
+	// browser. The owner confirms it on the same-origin page first.
+	if err := handler.setOIDCLinkPendingCookie(c, user.ID, user.AuthSessionVersion, claims); err != nil {
+		// codecov:ignore:start -- VerifyIdentityLinkReauth returns only claims
+		// carrying an (issuer, subject) and the user id is the resolved session's,
+		// so the setter's refusals cannot be reached from here.
+		spec := authOIDCAuthenticationFailedErrorSpec()
+		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
+		return handler.redirectSettingsRefusal(c, spec)
+		// codecov:ignore:end
+	}
+	handler.logSecurityEvent(c, oidcIdentityLinkStepupAction, "confirmation_pending")
+	return c.Redirect().Status(fiber.StatusSeeOther).To(oidcLinkConfirmPagePath)
+}
+
+const oidcIdentityLinkConfirmAction = "settings.oidc_identity_link.confirm"
+
+// ShowOIDCIdentityLinkConfirmPage names the provider and the identity a
+// finished link step-up returned, and asks the owner to confirm the link. With
+// no pending link for this account it lands on /settings.
+func (handler *Handler) ShowOIDCIdentityLinkConfirmPage(c fiber.Ctx) error {
+	user, ok := currentUser(c)
+	if !ok {
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+	}
+	pending, err := handler.parseOIDCLinkPendingCookie(c, user.ID)
+	if err != nil {
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+	}
+	messages := currentMessages(c)
+	return handler.render(c, "settings_oidc_link_confirm", fiber.Map{
+		"Title":       brandedPageTitle(messages, "settings.oidc_link.confirm.title", "Ovumcy | Link sign-in"),
+		"CurrentUser": user,
+		"LinkIssuer":  pending.Issuer,
+		"LinkEmail":   pending.Email,
+		"LinkSubject": pending.Subject,
+	})
+}
+
+// ConfirmOIDCIdentityLink writes the link the owner confirmed on the
+// interstitial. The identity comes only from the owner-bound sealed pending
+// cookie, never from the request body, and the route is CSRF-protected, so a
+// cross-site post cannot complete it.
+func (handler *Handler) ConfirmOIDCIdentityLink(c fiber.Ctx) error {
+	user, ok := currentUser(c)
+	if !ok {
+		// codecov:ignore:start -- mounted on the usersCurrent group behind AuthRequired.
+		spec := unauthorizedErrorSpec()
+		handler.logSecurityError(c, oidcIdentityLinkConfirmAction, spec)
+		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
+	}
+	if handler.oidcService == nil || !handler.oidcService.Enabled() {
+		handler.clearOIDCLinkPendingCookie(c)
+		spec := authOIDCUnavailableErrorSpec()
+		handler.logSecurityError(c, oidcIdentityLinkConfirmAction, spec)
+		return handler.respondMappedError(c, spec)
+	}
+	pending, err := handler.parseOIDCLinkPendingCookie(c, user.ID)
+	if err != nil {
+		// Expired, foreign or absent: the step-up has to be run again.
+		spec := settingsOIDCReauthStaleErrorSpec()
+		handler.logSecurityError(c, oidcIdentityLinkConfirmAction, spec)
+		return handler.respondMappedError(c, spec)
+	}
+	handler.clearOIDCLinkPendingCookie(c)
+
+	linkedSessionVersion, err := handler.oidcService.ConfirmAndLinkIdentity(c.Context(), user.ID, pending.SessionVersion, pending.claims(), time.Now())
+	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
+		return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, oidcIdentityLinkConfirmAction, "link"))
+	}
+	if err != nil {
+		spec := mapOIDCIdentityLinkReauthError(err)
+		handler.logSecurityError(c, oidcIdentityLinkConfirmAction, spec)
+		return handler.respondMappedError(c, spec)
+	}
+
+	handler.logSecurityEvent(c, oidcIdentityLinkConfirmAction, "linked")
 	// The link bumped AuthSessionVersion in the same write, revoking every
 	// earlier session; this device keeps signing in on a re-issued one.
 	// Every refusal reissueSessionAfterIdentityChange returns has already
 	// cleared the auth cookie.
-	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, linkedSessionVersion, oidcIdentityLinkStepupAction, "link"); !ok {
-		return handler.redirectSignedOutRefusal(c, spec)
+	if spec, ok := handler.reissueSessionAfterIdentityChange(c, user.ID, linkedSessionVersion, oidcIdentityLinkConfirmAction, "link"); !ok {
+		return handler.respondSignedOutRefusal(c, spec)
+	}
+	if acceptsJSON(c) {
+		return c.JSON(fiber.Map{"ok": true})
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "oidc_identity_linked"})
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")

@@ -63,10 +63,9 @@ type stubOIDCWorkflowService struct {
 	lastConfirmLinkClaims  security.OIDCClaims
 
 	// Identity-link step-up (Settings). identityLinkReauthErr, when set, is
-	// returned by CompleteIdentityLinkReauth directly (simulating an exchange
-	// or freshness failure) without ever reaching ConfirmAndLinkIdentity.
-	// Otherwise the stub records the call and falls through to confirmLinkErr,
-	// mirroring the real method's "exchange, then ConfirmAndLinkIdentity" shape.
+	// returned by VerifyIdentityLinkReauth (simulating an exchange or freshness
+	// failure); otherwise it answers identityLinkClaims. ConfirmAndLinkIdentity,
+	// reached only from the owner's confirm, answers confirmLinkErr.
 	identityLinkReauthErr        error
 	identityLinkClaims           security.OIDCClaims
 	lastIdentityLinkCode         string
@@ -232,7 +231,7 @@ func (stub *stubOIDCWorkflowService) assertReauthExchangeMatchesStart(t *testing
 	assertStepupExchangeMatchesStart(t, stub, wantCode, stub.lastReauthCode, stub.lastReauthCodeVerifier, stub.lastReauthNonceCheck, stub.lastReauthMaxAge)
 }
 
-// assertIdentityLinkExchangeMatchesStart is the CompleteIdentityLinkReauth half.
+// assertIdentityLinkExchangeMatchesStart is the VerifyIdentityLinkReauth half.
 func (stub *stubOIDCWorkflowService) assertIdentityLinkExchangeMatchesStart(t *testing.T, wantCode string) {
 	t.Helper()
 	assertStepupExchangeMatchesStart(t, stub, wantCode, stub.lastIdentityLinkCode, stub.lastIdentityLinkCodeVerifier, stub.lastIdentityLinkNonce, stub.lastIdentityLinkMaxAge)
@@ -243,21 +242,26 @@ func (stub *stubOIDCWorkflowService) ListLinkedIdentities(_ context.Context, _ u
 	return stub.linkedIdentities, stub.listLinkedErr
 }
 
-// CompleteIdentityLinkReauth records the exchange and answers like
-// ConfirmAndLinkIdentity's stand-in: it writes nothing, so the session version
-// it reports is the one the step-up started from.
-func (stub *stubOIDCWorkflowService) CompleteIdentityLinkReauth(_ context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, _ time.Time) (int, error) {
-	stub.lastIdentityLinkSessionVersion = expectedSessionVersion
+// VerifyIdentityLinkReauth records the exchange and answers with the
+// configured claims; like the real method it links nothing.
+func (stub *stubOIDCWorkflowService) VerifyIdentityLinkReauth(_ context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, _ time.Time) (security.OIDCClaims, error) {
 	stub.lastIdentityLinkCode = code
 	stub.lastIdentityLinkCodeVerifier = codeVerifier
 	stub.lastIdentityLinkNonce = expectedNonce
 	stub.lastIdentityLinkUserID = targetUserID
 	stub.lastIdentityLinkMaxAge = maxAuthAge
 	if stub.identityLinkReauthErr != nil {
-		return 0, stub.identityLinkReauthErr
+		return security.OIDCClaims{}, stub.identityLinkReauthErr
 	}
+	return stub.identityLinkClaims, nil
+}
+
+// ConfirmAndLinkIdentity records the link and writes nothing, so the session
+// version it reports is the one it was asked to write from.
+func (stub *stubOIDCWorkflowService) ConfirmAndLinkIdentity(_ context.Context, targetUserID uint, expectedSessionVersion int, claims security.OIDCClaims, _ time.Time) (int, error) {
+	stub.lastIdentityLinkSessionVersion = expectedSessionVersion
 	stub.lastConfirmLinkUserID = targetUserID
-	stub.lastConfirmLinkClaims = stub.identityLinkClaims
+	stub.lastConfirmLinkClaims = claims
 	if stub.afterIdentityLinkConfirm != nil {
 		stub.afterIdentityLinkConfirm()
 	}

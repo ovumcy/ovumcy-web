@@ -100,6 +100,55 @@ func postOIDCIdentityLinkStepupStartWithPassword(t *testing.T, fixture *oidcStep
 	return mustAppResponse(t, fixture.app, request)
 }
 
+// readOIDCLinkPendingCookie returns the "name=value" pair of the pending link
+// a step-up callback parked.
+func readOIDCLinkPendingCookie(t *testing.T, response *http.Response) string {
+	t.Helper()
+	cookie := responseCookie(response.Cookies(), oidcLinkPendingCookieName)
+	if cookie == nil || strings.TrimSpace(cookie.Value) == "" {
+		t.Fatal("expected the callback to park the identity in the pending-link cookie")
+	}
+	return cookie.Name + "=" + cookie.Value
+}
+
+// postOIDCIdentityLinkConfirm sends the interstitial's confirm form for the
+// fixture's session, with or without the CSRF token.
+func postOIDCIdentityLinkConfirm(t *testing.T, fixture *oidcStepupFixture, authCookie string, pendingCookie string, withCSRF bool) *http.Response {
+	t.Helper()
+	csrfCookie, csrfToken := loadSettingsCSRFContext(t, fixture.app, authCookie)
+	form := url.Values{}
+	if withCSRF {
+		form.Set("csrf_token", csrfToken)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/confirm", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(authCookie, csrfCookie), pendingCookie))
+	return mustAppResponse(t, fixture.app, request)
+}
+
+// runOIDCIdentityLinkCallback starts the link step-up and returns the
+// callback's response, which parks the identity without linking it.
+func runOIDCIdentityLinkCallback(t *testing.T, fixture *oidcStepupFixture) *http.Response {
+	t.Helper()
+	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
+	t.Cleanup(func() { _ = startResponse.Body.Close() })
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture)
+	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	t.Cleanup(func() { _ = callbackResponse.Body.Close() })
+	return callbackResponse
+}
+
+// confirmOIDCIdentityLinkThroughStepup runs the whole flow — start, callback,
+// the owner's confirm — and returns the confirm's response.
+func confirmOIDCIdentityLinkThroughStepup(t *testing.T, fixture *oidcStepupFixture) *http.Response {
+	t.Helper()
+	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+	response := postOIDCIdentityLinkConfirm(t, fixture, fixture.authCookie, pendingCookie, true)
+	t.Cleanup(func() { _ = response.Body.Close() })
+	return response
+}
+
 // TestOIDCIdentityLinkStepupStartRefusesWithoutALiveSession pins (a): the
 // settings route is behind AuthRequired/OwnerOnly like every other
 // usersCurrent route, so a request carrying no session must be refused before
@@ -352,12 +401,109 @@ func TestOIDCIdentityLinkStepupCallbackRefusesAForeignSession(t *testing.T) {
 	}
 }
 
+// TestOIDCIdentityLinkStepupCallbackLinksNothingBeforeTheOwnerConfirms is the
+// WEB-401 repro. The callback is CSRF-exempt, so an attacker who obtained the
+// owner's authorize URL can post their own code into the owner's browser; the
+// identity that arrives that way must not be linked on arrival. The callback
+// parks it in the owner-bound pending cookie and sends the browser to the
+// confirmation page, writing nothing.
+func TestOIDCIdentityLinkStepupCallbackLinksNothingBeforeTheOwnerConfirms(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-pending@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{
+		Issuer:  "https://id.example.com",
+		Subject: "settings-pending-subject",
+		Email:   "provider-side@example.net",
+	}
+
+	callbackResponse := runOIDCIdentityLinkCallback(t, fixture)
+
+	if fixture.oidcStub.lastIdentityLinkUserID != fixture.user.ID {
+		t.Fatalf("expected VerifyIdentityLinkReauth to run for user %d, got %d", fixture.user.ID, fixture.oidcStub.lastIdentityLinkUserID)
+	}
+	fixture.oidcStub.assertIdentityLinkExchangeMatchesStart(t, "callback-code")
+	if fixture.oidcStub.lastConfirmLinkUserID != 0 {
+		t.Fatalf("the callback must link nothing before the owner confirms, but ConfirmAndLinkIdentity ran for user %d", fixture.oidcStub.lastConfirmLinkUserID)
+	}
+	if callbackResponse.StatusCode != http.StatusSeeOther || callbackResponse.Header.Get("Location") != oidcLinkConfirmPagePath {
+		t.Fatalf("expected a 303 to %s, got %d to %q", oidcLinkConfirmPagePath, callbackResponse.StatusCode, callbackResponse.Header.Get("Location"))
+	}
+	if reissued := responseCookie(callbackResponse.Cookies(), authCookieName); reissued != nil {
+		t.Fatalf("the callback changed nothing and must not touch the session, got %v", reissued)
+	}
+	pendingCookie := readOIDCLinkPendingCookie(t, callbackResponse)
+
+	// The page names the provider and the identity the owner is asked to link.
+	request := httptest.NewRequest(http.MethodGet, oidcLinkConfirmPagePath, nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, pendingCookie))
+	page := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = page.Body.Close() }()
+	assertStatusCode(t, page, http.StatusOK)
+	assertBodyContainsAll(t, mustReadBodyString(t, page.Body),
+		bodyStringMatch{fragment: "https://id.example.com", message: "expected the provider on the confirmation page"},
+		bodyStringMatch{fragment: "provider-side@example.net", message: "expected the provider-reported email on the confirmation page"},
+		bodyStringMatch{fragment: `action="/api/v1/users/current/oidc/link/confirm"`, message: "expected the confirm form"},
+		bodyStringMatch{fragment: `name="csrf_token"`, message: "expected the confirm form to carry the CSRF token"},
+	)
+	if fixture.oidcStub.lastConfirmLinkUserID != 0 {
+		t.Fatal("rendering the confirmation page must link nothing")
+	}
+}
+
+// TestOIDCIdentityLinkConfirmPageShowsTheSubjectWhenTheProviderSentNoEmail
+// pins the other arm of the identity line: with no email claim the page names
+// the provider-side subject instead.
+func TestOIDCIdentityLinkConfirmPageShowsTheSubjectWhenTheProviderSentNoEmail(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-no-email@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "subject-without-email"}
+	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+
+	request := httptest.NewRequest(http.MethodGet, oidcLinkConfirmPagePath, nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, pendingCookie))
+	page := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = page.Body.Close() }()
+	assertStatusCode(t, page, http.StatusOK)
+	assertBodyContainsAll(t, mustReadBodyString(t, page.Body),
+		bodyStringMatch{fragment: "data-oidc-link-confirm-subject", message: "expected the subject line"},
+		bodyStringMatch{fragment: "subject-without-email", message: "expected the provider-side subject on the page"},
+	)
+}
+
+// TestOIDCIdentityLinkConfirmPageWithoutAPendingLinkLandsOnSettings: the page
+// has nothing to show without a pending link for this account, including one
+// parked for another account.
+func TestOIDCIdentityLinkConfirmPageWithoutAPendingLinkLandsOnSettings(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-page-empty@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "page-foreign-subject"}
+	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+	otherUser := createOnboardingTestUser(t, fixture.database, "settings-oidc-link-page-other@example.com", "StrongPass1", true)
+
+	for name, cookie := range map[string]string{
+		"no pending link":           fixture.authCookie,
+		"another account's pending": joinCookieHeader(issueAuthCookieForUser(t, otherUser), pendingCookie),
+	} {
+		request := httptest.NewRequest(http.MethodGet, oidcLinkConfirmPagePath, nil)
+		request.Header.Set("Cookie", cookie)
+		response := mustAppResponse(t, fixture.app, request)
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/settings" {
+			t.Fatalf("%s: expected a 303 to /settings, got %d to %q", name, response.StatusCode, response.Header.Get("Location"))
+		}
+	}
+}
+
 // TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding is the positive
-// anchor for (c): a fresh reauth after the start must call
-// ConfirmAndLinkIdentity for the SAME account that started the flow, with the
-// (issuer, subject) the exchange resolved to — exactly the binding the
-// (removed for good in WEB-77) public /auth/oidc/link-confirm route used to
-// create.
+// anchor: after the callback parked the identity, the owner's confirm calls
+// ConfirmAndLinkIdentity for the SAME account that started the flow, from the
+// step-up session's version, with the (issuer, subject) the exchange resolved
+// to.
 func TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding(t *testing.T) {
 	t.Parallel()
 
@@ -367,32 +513,22 @@ func TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding(t *testing.T) {
 		Subject: "settings-linked-subject",
 	}
 
-	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
-	defer func() { _ = startResponse.Body.Close() }()
-	if startResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 from the step-up start, got %d", startResponse.StatusCode)
-	}
-	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture)
+	confirmResponse := confirmOIDCIdentityLinkThroughStepup(t, fixture)
 
-	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
-	defer func() { _ = callbackResponse.Body.Close() }()
-
-	if fixture.oidcStub.lastIdentityLinkUserID != fixture.user.ID {
-		t.Fatalf("expected CompleteIdentityLinkReauth to run for user %d, got %d", fixture.user.ID, fixture.oidcStub.lastIdentityLinkUserID)
-	}
 	if want := services.NormalizeAuthSessionVersion(fixture.user.AuthSessionVersion); services.NormalizeAuthSessionVersion(fixture.oidcStub.lastIdentityLinkSessionVersion) != want {
 		t.Fatalf("expected the link to revoke from the step-up session's version %d, got %d", want, fixture.oidcStub.lastIdentityLinkSessionVersion)
 	}
-	fixture.oidcStub.assertIdentityLinkExchangeMatchesStart(t, "callback-code")
 	if fixture.oidcStub.lastConfirmLinkUserID != fixture.user.ID {
 		t.Fatalf("expected ConfirmAndLinkIdentity to run for user %d, got %d", fixture.user.ID, fixture.oidcStub.lastConfirmLinkUserID)
 	}
 	if fixture.oidcStub.lastConfirmLinkClaims.Issuer != "https://id.example.com" || fixture.oidcStub.lastConfirmLinkClaims.Subject != "settings-linked-subject" {
 		t.Fatalf("unexpected linked claims: %+v", fixture.oidcStub.lastConfirmLinkClaims)
 	}
+	if confirmResponse.StatusCode != http.StatusSeeOther || confirmResponse.Header.Get("Location") != "/settings" {
+		t.Fatalf("expected a 303 to /settings, got %d to %q", confirmResponse.StatusCode, confirmResponse.Header.Get("Location"))
+	}
 
-	flashCookie := responseCookie(callbackResponse.Cookies(), flashCookieName)
+	flashCookie := responseCookie(confirmResponse.Cookies(), flashCookieName)
 	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
 		t.Fatal("expected a success flash cookie")
 	}
@@ -401,8 +537,70 @@ func TestOIDCIdentityLinkStepupCompletesAndCreatesTheBinding(t *testing.T) {
 	}
 	// The link revoked every earlier session in the same write; this device is
 	// re-issued one rather than signed out.
-	if reissued := responseCookie(callbackResponse.Cookies(), authCookieName); reissued == nil || strings.TrimSpace(reissued.Value) == "" {
+	if reissued := responseCookie(confirmResponse.Cookies(), authCookieName); reissued == nil || strings.TrimSpace(reissued.Value) == "" {
 		t.Fatal("expected the link to re-issue this device's auth cookie")
+	}
+	// The pending link is spent.
+	if spent := responseCookie(confirmResponse.Cookies(), oidcLinkPendingCookieName); spent == nil || strings.TrimSpace(spent.Value) != "" {
+		t.Fatalf("expected the confirm to clear the pending-link cookie, got %v", spent)
+	}
+}
+
+// TestOIDCIdentityLinkConfirmRefusesWithoutCSRF: the confirm is the step that
+// breaks the cross-site chain, so a post without the page's CSRF token — what
+// a cross-site form can send — links nothing even with the pending cookie.
+func TestOIDCIdentityLinkConfirmRefusesWithoutCSRF(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-confirm-csrf@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "csrf-subject"}
+	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+
+	response := postOIDCIdentityLinkConfirm(t, fixture, fixture.authCookie, pendingCookie, false)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected the CSRF middleware to refuse the confirm with 403, got %d", response.StatusCode)
+	}
+	if fixture.oidcStub.lastConfirmLinkUserID != 0 {
+		t.Fatal("a confirm without the CSRF token must link nothing")
+	}
+}
+
+// TestOIDCIdentityLinkConfirmRefusesWithoutAPendingLinkOfThisAccount: the
+// identity is read only from a pending cookie minted for the session's own
+// account; none, or another account's, links nothing and asks for a new
+// step-up.
+func TestOIDCIdentityLinkConfirmRefusesWithoutAPendingLinkOfThisAccount(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-confirm-foreign@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "foreign-pending-subject"}
+	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+	otherUser := createOnboardingTestUser(t, fixture.database, "settings-oidc-link-confirm-other@example.com", "StrongPass1", true)
+
+	for name, tc := range map[string]struct {
+		authCookie    string
+		pendingCookie string
+	}{
+		"no pending link":           {authCookie: fixture.authCookie},
+		"another account's pending": {authCookie: issueAuthCookieForUser(t, otherUser), pendingCookie: pendingCookie},
+	} {
+		response := postOIDCIdentityLinkConfirm(t, fixture, tc.authCookie, tc.pendingCookie, true)
+		_ = response.Body.Close()
+		if fixture.oidcStub.lastConfirmLinkUserID != 0 {
+			t.Fatalf("%s: linked for user %d", name, fixture.oidcStub.lastConfirmLinkUserID)
+		}
+		if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/settings" {
+			t.Fatalf("%s: expected a 303 to /settings, got %d to %q", name, response.StatusCode, response.Header.Get("Location"))
+		}
+		flashCookie := responseCookie(response.Cookies(), flashCookieName)
+		if flashCookie == nil {
+			t.Fatalf("%s: expected a refusal flash", name)
+		}
+		if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != settingsOIDCReauthStaleErrorSpec().Key {
+			t.Fatalf("%s: expected %q, got %q", name, settingsOIDCReauthStaleErrorSpec().Key, payload.SettingsError)
+		}
 	}
 }
 
@@ -799,13 +997,7 @@ func TestOIDCIdentityLinkStepupReissueFailureIsReportedAsARefusal(t *testing.T) 
 		}
 	}
 
-	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
-	defer func() { _ = startResponse.Body.Close() }()
-	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture)
-
-	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
-	defer func() { _ = callbackResponse.Body.Close() }()
+	callbackResponse := confirmOIDCIdentityLinkThroughStepup(t, fixture)
 
 	// Anti-vacuity: the link itself completed before the reissue ran, so a
 	// refusal below can only have come from the reissue and not from
@@ -866,13 +1058,7 @@ func TestOIDCIdentityLinkStepupVersionRaceDuringReissueIsReportedAsARefusal(t *t
 		}
 	}
 
-	startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
-	defer func() { _ = startResponse.Body.Close() }()
-	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture)
-
-	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
-	defer func() { _ = callbackResponse.Body.Close() }()
+	callbackResponse := confirmOIDCIdentityLinkThroughStepup(t, fixture)
 
 	// Anti-vacuity: the link itself completed before the race was provoked, so
 	// the refusal below can only have come from the version-mismatch arm.

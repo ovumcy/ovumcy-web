@@ -104,8 +104,9 @@ func settingsOIDCIdentityLinkClaimedErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryValidation, "oidc identity already linked")
 }
 
-// mapOIDCIdentityLinkReauthError maps failures of CompleteIdentityLinkReauth
-// (the Settings step-up that links a NEW OIDC identity). Stale freshness and a
+// mapOIDCIdentityLinkReauthError maps failures of the Settings step-up that
+// links a NEW OIDC identity: VerifyIdentityLinkReauth at the callback and
+// ConfirmAndLinkIdentity at the owner's confirm. Stale freshness and a
 // cross-user claim keep their own specs so the owner learns what to do next;
 // everything else collapses into the generic SSO failure so provider state
 // never leaks through error granularity.

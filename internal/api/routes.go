@@ -110,6 +110,9 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	// permanent binding ConfirmAndLinkIdentity performs. The only other way in
 	// is the operator CLI (ovumcy link-oidc-identity).
 	usersCurrent.Post("/oidc/link/step-up", handler.OwnerOnly, handler.StartOIDCIdentityLinkStepup)
+	// The step-up callback only parks the returned identity; the link is
+	// written here, from the owner's confirmation (WEB-401).
+	usersCurrent.Post("/oidc/link/confirm", handler.OwnerOnly, handler.ConfirmOIDCIdentityLink)
 	usersCurrent.Delete("/oidc/identities/:id", handler.OwnerOnly, handler.UnlinkOIDCIdentity)
 
 	onboarding := v1.Group("/onboarding", handler.AuthRequired)
@@ -203,6 +206,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/stats", handler.AuthRequired, handler.ShowStats)
 	app.Get("/settings", handler.AuthRequired, handler.ShowSettings)
 	app.Get("/settings/2fa", handler.refuseHEADOnShownOnceSurface, handler.AuthRequired, handler.ShowTOTPSetupPage)
+	app.Get(oidcLinkConfirmPagePath, handler.AuthRequired, handler.ShowOIDCIdentityLinkConfirmPage)
 	// One-time reveal of the freshly generated/rotated .ics subscribe URL. The
 	// URL (a secret) is read from the sealed one-time cookie, shown once, then
 	// the cookie is cleared; a refresh redirects back to /settings.

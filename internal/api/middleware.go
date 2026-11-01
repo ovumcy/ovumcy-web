@@ -37,6 +37,8 @@ const (
 	oidcLogoutBridgeCookieName       = "ovumcy_oidc_logout_bridge"
 	totpPendingCookieName            = "ovumcy_totp_pending"
 	totpSetupCookieName              = "ovumcy_totp_setup"
+	oidcLinkPendingCookieName        = "ovumcy_oidc_link_confirm"
+	oidcLinkConfirmPagePath          = "/settings/oidc/link"
 	oidcLogoutBridgePath             = "/auth/oidc/logout"
 	oidcLogoutBridgeRedirectPath     = "/auth/oidc/logout/redirect"
 	contextUserKey                   = "current_user"

@@ -16,6 +16,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 )
@@ -370,6 +371,17 @@ func openAPIResponseSchemaGuardTable() []openAPIResponseSchemaGuardEntry {
 		{operation: "POST /api/v1/users/current/oidc/link/step-up", drive: func(t *testing.T) (int, []byte) {
 			fixture := newOIDCStepupFixture(t, "schema-guard-link-stepup@example.com")
 			return schemaGuardBody(t, postOIDCIdentityLinkStepupStart(t, fixture))
+		}},
+		{operation: "POST /api/v1/users/current/oidc/link/confirm", drive: func(t *testing.T) (int, []byte) {
+			fixture := newOIDCStepupFixture(t, "schema-guard-link-confirm@example.com")
+			fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "schema-guard-link-confirm"}
+			pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+			csrfCookie, csrfToken := fixture.settingsCSRF(t)
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/confirm", strings.NewReader(url.Values{"csrf_token": {csrfToken}}.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("Accept", "application/json")
+			request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(fixture.authCookie, csrfCookie), pendingCookie))
+			return schemaGuardBody(t, mustAppResponse(t, fixture.app, request))
 		}},
 		{operation: "DELETE /api/v1/users/current/oidc/identities/{id}", drive: func(t *testing.T) (int, []byte) {
 			fixture := newOIDCStepupFixture(t, "schema-guard-unlink@example.com")

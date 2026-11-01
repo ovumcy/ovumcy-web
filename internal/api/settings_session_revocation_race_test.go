@@ -709,11 +709,11 @@ func (service *realIdentityOIDCWorkflowService) leave() {
 	}
 }
 
-func (service *realIdentityOIDCWorkflowService) CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, now time.Time) (int, error) {
-	if _, err := service.stubOIDCWorkflowService.CompleteIdentityLinkReauth(ctx, code, codeVerifier, expectedNonce, targetUserID, expectedSessionVersion, maxAuthAge, now); err != nil {
+func (service *realIdentityOIDCWorkflowService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, expectedSessionVersion int, claims security.OIDCClaims, now time.Time) (int, error) {
+	if _, err := service.stubOIDCWorkflowService.ConfirmAndLinkIdentity(ctx, targetUserID, expectedSessionVersion, claims, now); err != nil {
 		return 0, err
 	}
-	linkedVersion, err := service.real.ConfirmAndLinkIdentity(ctx, targetUserID, service.enter(expectedSessionVersion), service.identityLinkClaims, now)
+	linkedVersion, err := service.real.ConfirmAndLinkIdentity(ctx, targetUserID, service.enter(expectedSessionVersion), claims, now)
 	service.leave()
 	return linkedVersion, err
 }
@@ -818,12 +818,9 @@ func TestSettingsIdentityChangesRefuseASessionARevocationCommittedMidwayWouldNot
 					return response
 				}
 			} else {
-				startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
-				t.Cleanup(func() { _ = startResponse.Body.Close() })
-				stepupCookie := readStepupCookie(t, startResponse)
-				state := extractStepupCallbackState(t, fixture)
+				pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
 				send = func() *http.Response {
-					response := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+					response := postOIDCIdentityLinkConfirm(t, fixture, fixture.authCookie, pendingCookie, true)
 					t.Cleanup(func() { _ = response.Body.Close() })
 					return response
 				}

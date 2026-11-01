@@ -101,6 +101,10 @@ test.describe('Auth: OIDC cross-site callback', () => {
     // Starting the step-up asks for the account's current password first.
     await linkIdentityForm.locator('#settings-oidc-link-password').fill(credentials.password);
     await linkIdentityForm.locator('button[type="submit"]').click();
+    // The cross-site callback parks the identity; the same-origin confirm links it.
+    const confirmLinkForm = page.locator('form[data-oidc-link-confirm-form]');
+    await expect(confirmLinkForm).toBeVisible({ timeout: 20_000 });
+    await confirmLinkForm.locator('button[type="submit"]').click();
     await expect(
       page.locator(
         '[data-flash-key="settings.success.oidc_identity_linked"][data-flash-status="success"]',
