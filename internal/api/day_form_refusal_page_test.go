@@ -594,7 +594,11 @@ func TestEveryDayAndCycleRefusalHasLocalizedCopyInEveryLocale(t *testing.T) {
 				t.Fatalf("day or cycle refusal key %q has no entry in the error translation map: the refusal page would show it raw", key)
 			}
 			for _, language := range manager.SupportedLanguages() {
-				if strings.TrimSpace(manager.Messages(language)[translationKey]) == "" {
+				messages := manager.Messages(language)
+				if _, bound := lookupObservationBoundMessage(messages, language, translationKey); bound {
+					continue
+				}
+				if strings.TrimSpace(messages[translationKey]) == "" {
 					t.Errorf("key %q maps to %q, which locale %q does not define", key, translationKey, language)
 				}
 			}
