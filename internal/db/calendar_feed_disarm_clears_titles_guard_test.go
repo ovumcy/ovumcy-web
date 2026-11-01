@@ -32,13 +32,18 @@ var calendarFeedDisarmWriters = []string{
 //
 // Columns are resolved by the type checker over every non-test file of this
 // package, so a key spelled as a named constant counts. Only this package
-// writes the column. Raw SQL (Raw or Exec) naming the selector is refused here;
-// a single-column Update, a key added by index and a models.User field write
-// are refused by TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark.
-// Raw SQL is read through variables, struct fields, concatenation, call
-// arguments and the results of functions declared in this package; SQL
-// loaded from outside the source (the migration runner's files) is out of reach
-// of any source scan, and migrations are pinned by their own tests.
+// writes the column. Raw SQL is refused by where the column name comes from,
+// not by where it goes: every string constant naming the selector must be a
+// column-map key, a const declaration (judged at each use), an
+// argument of Where, or an argument of Select in a function that writes
+// nothing. Any other spelling is refused however it reaches Raw or Exec —
+// through a variable, a parameter, a (string, error) return, an interface or
+// a generic call. A single-column Update, a key added by index and a
+// models.User field write are refused by
+// TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark. A name
+// assembled at run time from fragments, and SQL loaded from outside the source
+// (the migration runner's files), are out of reach of any source scan;
+// migrations are pinned by their own tests.
 func TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn(t *testing.T) {
 	pkg := loadTypedDBPackage(t)
 	disarms, problems := scanCalendarFeedTitleWrites(pkg.Fset, pkg.TypesInfo, pkg.Syntax)
@@ -55,9 +60,11 @@ func TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn(t *testing.T) {
 // TestCalendarFeedTitleScanSeesEveryDisarmForm proves the scan is not blind to
 // the forms a disarm can take: a literal or constant key, a nil, typed-nil,
 // expression or empty selector, a missing or true flag, an arm that omits the
-// flag, raw SQL naming the selector directly, through a variable or as a
-// format argument, a helper's return value or a struct field, and an arm
-// through a named string type.
+// flag, raw SQL spelled inline, in a variable, as a format argument, in a
+// helper's return (single or with an error), in a struct field, as a
+// parameter, behind an interface or a generic, a package-level column map, and
+// a Select feeding a write — while a Where, a read-only Select and an arm
+// through a named string type pass.
 func TestCalendarFeedTitleScanSeesEveryDisarmForm(t *testing.T) {
 	const source = `package db
 const selectorKey = "calendar_feed_selector"
@@ -74,6 +81,7 @@ func expression(d bool) any { return map[string]any{"calendar_feed_selector": nu
 type query struct{}
 func (query) Exec(string, ...any) {}
 func raw() { query{}.Exec("UPDATE users SET calendar_feed_selector = NULL") }
+func rawConstant() { query{}.Exec("UPDATE users SET " + selectorKey + " = NULL") }
 func rawVariable() { stmt := "UPDATE users SET " + "calendar_feed_selector = NULL"; query{}.Exec(stmt) }
 var packageStatement = "UPDATE users SET calendar_feed_selector = NULL"
 func rawPackageVariable() { query{}.Exec(packageStatement) }
@@ -81,9 +89,27 @@ func rawBuilt() { query{}.Exec(sprintf("UPDATE users SET %s = NULL", "calendar_f
 func sprintf(format string, args ...any) string { return format }
 func disarmSQL() string { return "UPDATE users SET calendar_feed_selector = NULL" }
 func rawHelper() { query{}.Exec(disarmSQL()) }
+func tupleSQL() (string, error) { return "UPDATE users SET calendar_feed_selector = NULL", nil }
 type repository struct{ statement string }
 func newRepository() repository { return repository{statement: "UPDATE users SET calendar_feed_selector = NULL"} }
 func (r repository) rawField() { query{}.Exec(r.statement) }
+func run(statement string) { query{}.Exec(statement) }
+func rawParameter() { run("UPDATE users SET calendar_feed_selector = NULL") }
+type source interface{ Statement() string }
+type disarmSource struct{}
+func (disarmSource) Statement() string { return "UPDATE users SET calendar_feed_selector = NULL" }
+func rawInterface(s source) { query{}.Exec(s.Statement()) }
+func pick[T any](v T) T { return v }
+func rawGeneric() { query{}.Exec(pick("UPDATE users SET calendar_feed_selector = NULL")) }
+var packageColumns = map[string]any{"calendar_feed_selector": nil}
+type chain struct{}
+func (chain) Where(string, ...any) chain { return chain{} }
+func (chain) Select(...string) chain { return chain{} }
+func (chain) First(any) chain { return chain{} }
+func (chain) Updates(any) chain { return chain{} }
+func read() { chain{}.Where("calendar_feed_selector = ?", "x").Select("calendar_feed_selector").First(nil) }
+func whereWrite() { chain{}.Where("calendar_feed_selector = ?", "x").Updates(nil) }
+func selectWrite() { chain{}.Select("calendar_feed_selector").Updates(nil) }
 type FeedSelector string
 func namedArm(s FeedSelector, d bool) any { return map[string]any{"calendar_feed_selector": s, "calendar_feed_detailed_titles": d} }
 `
@@ -93,9 +119,10 @@ func namedArm(s FeedSelector, d bool) any { return map[string]any{"calendar_feed
 		t.Fatalf("parse: %v", err)
 	}
 	info := &types.Info{
-		Types: map[ast.Expr]types.TypeAndValue{},
-		Defs:  map[*ast.Ident]types.Object{},
-		Uses:  map[*ast.Ident]types.Object{},
+		Types:     map[ast.Expr]types.TypeAndValue{},
+		Defs:      map[*ast.Ident]types.Object{},
+		Uses:      map[*ast.Ident]types.Object{},
+		Instances: map[*ast.Ident]types.Instance{},
 	}
 	if _, err := (&types.Config{Importer: importer.Default()}).Check("db", fileSet, []*ast.File{file}, info); err != nil {
 		t.Fatalf("type-check: %v", err)
@@ -110,7 +137,12 @@ func namedArm(s FeedSelector, d bool) any { return map[string]any{"calendar_feed
 	if disarms["arm"] || disarms["armed"] || disarms["namedArm"] {
 		t.Errorf("the scan classified an arm as a disarm: %v", sortedNamesOf(disarms))
 	}
-	wantProblems := []string{"missing at", "constantKey at", "empty at", "kept at", "arm at", "typedNil at", "expression at", "raw at", "rawVariable at", "rawPackageVariable at", "rawBuilt at", "rawHelper at", "rawField at"}
+	wantProblems := []string{
+		"missing at", "constantKey at", "empty at", "kept at", "arm at", "typedNil at", "expression at",
+		"raw at", "rawConstant at", "rawVariable at", "packageStatement at", "rawBuilt at", "disarmSQL at",
+		"tupleSQL at", "newRepository at", "rawParameter at", "Statement at", "rawGeneric at",
+		"packageColumns at", "selectWrite at",
+	}
 	if len(problems) != len(wantProblems) {
 		t.Fatalf("expected %d problems, got %v", len(wantProblems), problems)
 	}
@@ -128,6 +160,10 @@ func namedArm(s FeedSelector, d bool) any { return map[string]any{"calendar_feed
 func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files []*ast.File) (map[string]bool, []string) {
 	const selectorColumn = "calendar_feed_selector"
 	const titlesColumn = "calendar_feed_detailed_titles"
+	writeMethods := map[string]bool{
+		"Update": true, "Updates": true, "UpdateColumn": true, "UpdateColumns": true,
+		"Save": true, "Create": true, "Delete": true, "Exec": true, "Raw": true,
+	}
 
 	columnOf := func(expr ast.Expr) string {
 		value := info.Types[expr].Value
@@ -140,120 +176,47 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 		value := info.Types[expr].Value
 		return value != nil && value.Kind() == want.Kind() && constant.Compare(value, token.EQL, want)
 	}
-	// objectOf names what an identifier or a selector (a field, a method, a
-	// qualified function) refers to; nil for anything else.
-	objectOf := func(expr ast.Expr) types.Object {
-		switch typed := expr.(type) {
-		case *ast.Ident:
-			return info.ObjectOf(typed)
-		case *ast.SelectorExpr:
-			return info.ObjectOf(typed.Sel)
+	methodOf := func(call *ast.CallExpr) string {
+		if callee, ok := call.Fun.(*ast.SelectorExpr); ok {
+			return callee.Sel.Name
 		}
-		return nil
-	}
-
-	// Every value a variable is given, anywhere in the files, so SQL held in a
-	// variable is read through to the strings it was built from.
-	assigned := map[types.Object][]ast.Expr{}
-	for _, file := range files {
-		ast.Inspect(file, func(node ast.Node) bool {
-			switch typed := node.(type) {
-			case *ast.AssignStmt:
-				if len(typed.Lhs) == len(typed.Rhs) {
-					for index, target := range typed.Lhs {
-						if object := objectOf(target); object != nil {
-							assigned[object] = append(assigned[object], typed.Rhs[index])
-						}
-					}
-				}
-			case *ast.ValueSpec:
-				if len(typed.Names) == len(typed.Values) {
-					for index, ident := range typed.Names {
-						if object := info.ObjectOf(ident); object != nil {
-							assigned[object] = append(assigned[object], typed.Values[index])
-						}
-					}
-				}
-			case *ast.KeyValueExpr:
-				// A struct literal's field key resolves to the field.
-				if key, ok := typed.Key.(*ast.Ident); ok {
-					if object := info.ObjectOf(key); object != nil {
-						assigned[object] = append(assigned[object], typed.Value)
-					}
-				}
-			case *ast.FuncDecl:
-				// A function's single results are what a call of it yields.
-				object := info.ObjectOf(typed.Name)
-				if object == nil || typed.Body == nil {
-					return true
-				}
-				ast.Inspect(typed.Body, func(inner ast.Node) bool {
-					if _, nested := inner.(*ast.FuncLit); nested {
-						return false
-					}
-					if result, ok := inner.(*ast.ReturnStmt); ok && len(result.Results) == 1 {
-						assigned[object] = append(assigned[object], result.Results[0])
-					}
-					return true
-				})
-			}
-			return true
-		})
-	}
-	visited := map[ast.Expr]bool{}
-	var sqlNamesSelector func(ast.Expr) bool
-	sqlNamesSelector = func(expr ast.Expr) bool {
-		if visited[expr] {
-			return false
-		}
-		visited[expr] = true
-		if strings.Contains(columnOf(expr), selectorColumn) {
-			return true
-		}
-		follow := func(object types.Object) bool {
-			for _, value := range assigned[object] {
-				if sqlNamesSelector(value) {
-					return true
-				}
-			}
-			return false
-		}
-		switch typed := expr.(type) {
-		case *ast.ParenExpr:
-			return sqlNamesSelector(typed.X)
-		case *ast.BinaryExpr:
-			return sqlNamesSelector(typed.X) || sqlNamesSelector(typed.Y)
-		case *ast.CallExpr:
-			// fmt.Sprintf and friends: any argument that names the column; a
-			// function of this package: whatever it returns.
-			for _, argument := range typed.Args {
-				if sqlNamesSelector(argument) {
-					return true
-				}
-			}
-			return follow(objectOf(typed.Fun))
-		case *ast.Ident, *ast.SelectorExpr:
-			return follow(objectOf(typed))
-		}
-		return false
+		return ""
 	}
 
 	disarms := map[string]bool{}
 	var problems []string
+	// The places a constant naming the selector may sit; any other is refused.
+	allowed := map[ast.Expr]bool{}
 	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			if constants, ok := node.(*ast.GenDecl); ok && constants.Tok == token.CONST {
+				for _, spec := range constants.Specs {
+					for _, value := range spec.(*ast.ValueSpec).Values {
+						allowed[value] = true
+					}
+				}
+			}
+			return true
+		})
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
 			if !ok || function.Body == nil {
 				continue
 			}
 			name := function.Name.Name
+			writes := false
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				if call, ok := node.(*ast.CallExpr); ok && writeMethods[methodOf(call)] {
+					writes = true
+				}
+				return !writes
+			})
 			ast.Inspect(function.Body, func(node ast.Node) bool {
 				if call, ok := node.(*ast.CallExpr); ok {
-					callee, ok := call.Fun.(*ast.SelectorExpr)
-					clear(visited)
-					if ok && (callee.Sel.Name == "Raw" || callee.Sel.Name == "Exec") && len(call.Args) > 0 &&
-						sqlNamesSelector(call.Args[0]) {
-						problems = append(problems, name+" at "+fileSet.Position(call.Pos()).String()+": raw SQL names calendar_feed_selector; write it through a column map beside calendar_feed_detailed_titles")
+					if method := methodOf(call); method == "Where" || (method == "Select" && !writes) {
+						for _, argument := range call.Args {
+							allowed[argument] = true
+						}
 					}
 					return true
 				}
@@ -274,6 +237,7 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 					if !ok {
 						continue
 					}
+					allowed[keyValue.Key] = true
 					switch columnOf(keyValue.Key) {
 					case selectorColumn:
 						selector = keyValue.Value
@@ -304,6 +268,36 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 				}
 				return true
 			})
+		}
+	}
+
+	refuseStrayNames := func(name string, node ast.Node) {
+		ast.Inspect(node, func(inner ast.Node) bool {
+			expr, ok := inner.(ast.Expr)
+			if !ok || !strings.Contains(columnOf(expr), selectorColumn) {
+				return true
+			}
+			if !allowed[expr] {
+				problems = append(problems, name+" at "+fileSet.Position(expr.Pos()).String()+": calendar_feed_selector is spelled outside a column map, a Where or a read-only Select; raw SQL cannot be checked for calendar_feed_detailed_titles")
+			}
+			return false
+		})
+	}
+	for _, file := range files {
+		for _, declaration := range file.Decls {
+			switch typed := declaration.(type) {
+			case *ast.FuncDecl:
+				refuseStrayNames(typed.Name.Name, typed)
+			case *ast.GenDecl:
+				for _, spec := range typed.Specs {
+					switch named := spec.(type) {
+					case *ast.ValueSpec:
+						refuseStrayNames(named.Names[0].Name, named)
+					case *ast.TypeSpec:
+						refuseStrayNames(named.Name.Name, named)
+					}
+				}
+			}
 		}
 	}
 	return disarms, problems
