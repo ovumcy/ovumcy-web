@@ -151,7 +151,7 @@ func TestCalendarFeedRestoreFenceRevokesNothingWhenTheFenceCannotRecord(t *testi
 	for name, setup := range cases {
 		t.Run(name, func(t *testing.T) {
 			appState, anchor := setup()
-			users := &stubFenceUserStore{disarmed: 1, revoked: models.RestoreRevocationCounts{Sessions: 4, LocalPasswords: 3}}
+			users := &stubFenceUserStore{disarmed: 1, revoked: models.RestoreRevocationCounts{Sessions: 4, LocalSignIns: 3}}
 			outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
 			if err != nil {
 				t.Fatalf("Enforce: %v", err)

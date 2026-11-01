@@ -45,7 +45,7 @@ func TestRevokeRestoredAccessReachesEveryAccount(t *testing.T) {
 			if err != nil {
 				t.Fatalf("RevokeRestoredAccess: %v", err)
 			}
-			if counts != (models.RestoreRevocationCounts{Sessions: 3, WebhookEndpoints: 1, LocalPasswords: 2}) {
+			if counts != (models.RestoreRevocationCounts{Sessions: 3, WebhookEndpoints: 1, LocalSignIns: 2}) {
 				t.Fatalf("expected 3 sessions, 1 endpoint and 2 passwords revoked, got %+v", counts)
 			}
 

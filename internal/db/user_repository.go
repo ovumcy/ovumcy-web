@@ -1241,7 +1241,7 @@ func (repo *UserRepository) RevokeRestoredAccess(ctx context.Context) (models.Re
 		if webhooks.Error != nil {
 			return webhooks.Error
 		}
-		counts = models.RestoreRevocationCounts{Sessions: passwordless.RowsAffected + passwords.RowsAffected, WebhookEndpoints: webhooks.RowsAffected, LocalPasswords: passwords.RowsAffected}
+		counts = models.RestoreRevocationCounts{Sessions: passwordless.RowsAffected + passwords.RowsAffected, WebhookEndpoints: webhooks.RowsAffected, LocalSignIns: passwords.RowsAffected}
 		return nil
 	})
 	if err != nil {
