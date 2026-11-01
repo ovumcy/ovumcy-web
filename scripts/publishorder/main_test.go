@@ -92,6 +92,7 @@ const (
 	signStep      = "Sign the pushed digest"
 	attestStep    = "Attest build provenance"
 	verifyStep    = "Verify the signature and provenance before promoting"
+	sbomStep      = "Verify the SBOM attestation on every platform before promoting"
 	freshnessStep = "Refuse to move the public aliases backwards"
 	promoteStep   = "Promote the signed digest to its public tags"
 	publicStep    = "Verify every public tag anonymously and against the signed digest"
@@ -198,6 +199,7 @@ func TestNoPublicTagIsCreatedBeforeTheSignature(t *testing.T) {
 	sign := index(signStep)
 	attest := index(attestStep)
 	verify := index(verifyStep)
+	sbom := index(sbomStep)
 	freshness := index(freshnessStep)
 	promote := index(promoteStep)
 	public := index(publicStep)
@@ -214,6 +216,8 @@ func TestNoPublicTagIsCreatedBeforeTheSignature(t *testing.T) {
 		{sign, promote, signStep, promoteStep, "a tag written before the signature is an unsigned public release for as long as the signing step takes, and forever if it fails"},
 		{attest, promote, attestStep, promoteStep, "provenance is promised for every published image, so the alias must not exist before the attestation does"},
 		{verify, promote, verifyStep, promoteStep, "the signature and the attestation are two API calls that reported success; the promotion is gated on reading them back, not on their exit codes"},
+		{verify, sbom, verifyStep, sbomStep, "the SBOM is bound to the release only through the index digest, so it is read back after that digest's signature verified, not before"},
+		{sbom, promote, sbomStep, promoteStep, "an SBOM is promised for every published image, so the alias must not exist before the SBOM has been read back"},
 		{freshness, promote, freshnessStep, promoteStep, "the aliases are written by the promotion and mirrored after it, so a run that is older than the live image has to be refused before the first of those writes, not after"},
 		{promote, public, promoteStep, publicStep, "the public check reads the tags the promotion writes"},
 	} {
@@ -297,6 +301,7 @@ func TestOnlyReviewedStepsRunBeforeThePromotion(t *testing.T) {
 		signStep,
 		attestStep,
 		verifyStep,
+		sbomStep,
 		freshnessStep,
 	}
 
@@ -835,6 +840,11 @@ func TestTheSigningStepsActOnThePushedDigest(t *testing.T) {
 			step:     verifyStep,
 			contains: []string{"cosign verify", "gh attestation verify", "steps.build.outputs.digest"},
 			because:  "signing and attesting are two API calls that reported success; this step is the only one that reads either back, and the promotion below is gated on it",
+		},
+		{
+			step:     sbomStep,
+			contains: []string{"imagetools inspect", "{{ json .SBOM }}", ".SPDX", "steps.build.outputs.digest"},
+			because:  "the SBOM is promised on every published image, and this step is the only one that reads it back off the digest the promotion publishes",
 		},
 	} {
 		block := withoutComments(stepBlock(t, job, want.step))

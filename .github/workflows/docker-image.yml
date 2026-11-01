@@ -1321,6 +1321,47 @@ jobs:
 
           echo "signature and provenance verified on ${IMAGE_DIGEST}, which may now be promoted."
 
+      - name: Verify the SBOM attestation on every platform before promoting
+        # README.md promises an SBOM on every published image and tells an
+        # operator to read it with `imagetools inspect`; until this step nothing
+        # in CI read it back. The SBOM is BuildKit's in-toto attestation
+        # (`sbom: true` on the push), stored as an attestation manifest inside
+        # the pushed index rather than as a Sigstore bundle, so
+        # `cosign verify-attestation` has nothing to find — the signer binding
+        # is the index digest itself, which the step above verified against
+        # this workflow's identity. What is checked here is that the same
+        # digest carries an SPDX document for every platform it ships.
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${IMAGE_PLATFORMS}" ]; then
+            echo "::error::IMAGE_PLATFORMS names no platform, so this check would judge nothing."
+            exit 1
+          fi
+          IFS=',' read -r -a platforms <<< "${IMAGE_PLATFORMS}"
+
+          sbom="$(docker buildx imagetools inspect "${IMAGE_DIGEST}" --format '{{ json .SBOM }}')"
+
+          for platform in "${platforms[@]}"; do
+            # Only an in-toto layer whose predicate type is
+            # https://spdx.dev/Document lands under `.SPDX`, so its presence
+            # is the predicate-type check.
+            if ! jq -e --arg p "${platform}" '
+                .[$p].SPDX
+                | (.spdxVersion | type == "string" and startswith("SPDX-"))
+                  and ((.packages // []) | length > 0)
+              ' <<< "${sbom}" > /dev/null; then
+              echo "::error::${IMAGE_DIGEST} carries no SPDX SBOM with packages for ${platform}, so the release would ship without the SBOM README.md promises."
+              exit 1
+            fi
+            echo "SPDX SBOM present for ${platform}."
+          done
+
+          echo "SBOM attestation verified on every platform of ${IMAGE_DIGEST}."
+
       - name: Refuse to move the public aliases backwards
         # `main` and the Docker Hub mirror's copy of it are
         # rewritten unconditionally by the steps below, so a run for an OLDER
