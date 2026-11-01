@@ -55,7 +55,7 @@ func (handler *Handler) setOIDCLinkPendingCookie(c fiber.Ctx, userID uint, sessi
 		SessionVersion: services.NormalizeAuthSessionVersion(sessionVersion),
 		Issuer:         claims.Issuer,
 		Subject:        claims.Subject,
-		Email:          strings.TrimSpace(claims.Email),
+		Email:          verifiedEmail(claims),
 		ExpiresAt:      time.Now().Add(oidcLinkPendingCookieTTL),
 	}
 	serialized, err := json.Marshal(payload)
@@ -64,6 +64,17 @@ func (handler *Handler) setOIDCLinkPendingCookie(c fiber.Ctx, userID uint, sessi
 	}
 	// Session-scoped (zero expires) — the payload carries its own ExpiresAt.
 	return handler.writeSealedCookie(c, oidcLinkPendingCookieSpec, serialized, time.Time{})
+}
+
+// verifiedEmail is the email the confirmation page may name. An unverified
+// claim is whatever the provider account's holder typed — on a provider with
+// self-registration, the owner's own address — so it is never shown; the page
+// names the subject instead.
+func verifiedEmail(claims security.OIDCClaims) string {
+	if !claims.EmailVerified {
+		return ""
+	}
+	return strings.TrimSpace(claims.Email)
 }
 
 // parseOIDCLinkPendingCookie returns the pending link only when it was minted
