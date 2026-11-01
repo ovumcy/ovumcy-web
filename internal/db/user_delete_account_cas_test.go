@@ -82,7 +82,7 @@ func TestForceResetPasswordRefusesAnAccountThatNoLongerExists(t *testing.T) {
 		}
 	})
 	repo := NewUserRepository(database)
-	if err := repo.ForceResetPasswordAndRevokeSessions(context.Background(), 99999, "operator-hash"); !errors.Is(err, ErrUserOwnerRequired) {
+	if err := repo.ForceResetPasswordAndRevokeSessions(context.Background(), 99999, "operator-hash", true); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("expected ErrUserOwnerRequired for a vanished account, got %v", err)
 	}
 }

@@ -48,7 +48,7 @@ func (stubLogoutAuthRepo) UpdatePasswordAndRevokeSessions(context.Context, uint,
 	return nil
 }
 
-func (stubLogoutAuthRepo) ForceResetPasswordAndRevokeSessions(context.Context, uint, string) error {
+func (stubLogoutAuthRepo) ForceResetPasswordAndRevokeSessions(context.Context, uint, string, bool) error {
 	return nil
 }
 

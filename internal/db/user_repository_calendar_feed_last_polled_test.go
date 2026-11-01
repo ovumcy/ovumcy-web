@@ -227,7 +227,7 @@ func TestEveryCalendarFeedSelectorClearingSiteAlsoClearsTheLastPolledMark(t *tes
 		repo := openWebhookRepoForTest(t)
 		userID, selector := seedArmedFeedForPolledTest(t, repo, "feed-clear-force-reset@example.com")
 		seedMark(t, repo, userID, selector)
-		if err := repo.ForceResetPasswordAndRevokeSessions(ctx, userID, "new-password-hash"); err != nil {
+		if err := repo.ForceResetPasswordAndRevokeSessions(ctx, userID, "new-password-hash", false); err != nil {
 			t.Fatalf("ForceResetPasswordAndRevokeSessions: %v", err)
 		}
 		if mark := polledOnOf(t, repo, userID); mark != nil {

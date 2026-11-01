@@ -48,7 +48,7 @@ Operations that rotate a long-lived credential bump `users.auth_session_version`
 - Password change (`PUT /api/v1/users/current/password`).
 - Password reset via recovery code (`POST /api/v1/password-resets/redeem`).
 - Recovery-code regeneration (`POST /api/v1/users/current/recovery-code`) — every other device is signed out; the current request is re-issued a cookie at the new version so the originating session stays alive, or is signed out too when a revocation committed after it was authenticated refused the regeneration (see below).
-- Forced password reset via the `ovumcy reset-password` operator command.
+- Forced password reset via the `ovumcy reset-password` operator command. With `--full` the same transaction also clears TOTP and the recovery code and deletes every linked OIDC identity of the account.
 - TOTP 2FA enable (`PUT /api/v1/users/current/2fa`) and disable (`DELETE /api/v1/users/current/2fa`) — toggling the second factor is also a change to the account's auth posture, so any cookie issued before the toggle is invalidated. Every other device is signed out; the originating device is re-issued a cookie inline, or is signed out too when a revocation committed during the request refused the toggle (see below).
 - Clear data (`POST /api/v1/users/current/data-wipe`) — the bump happens inside the same transaction as the wipe, so a stolen session that triggered the wipe cannot retain access to the emptied account, and a "panic clear" really does sign other devices out. The originating device is re-issued a cookie inline, or is signed out when a revocation committed during the request refused the wipe (see below). See *Retention and Deletion*.
 

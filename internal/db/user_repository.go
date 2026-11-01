@@ -1342,32 +1342,60 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context,
 // locked-out account, so it is the operator-reset arm of the approved
 // force-rotate-on-recovery rule: any feed URL that may have leaked is cleared in
 // the same write that resets the credential and revokes sessions.
-func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error {
-	query, err := repo.scopedUserUpdate(ctx, userID)
-	if err != nil {
+//
+// clearSecondFactors is `reset-password --full`: the same transaction also
+// clears TOTP and the recovery code and deletes every linked OIDC identity, so
+// a factor an attacker enrolled or linked does not survive a compromise
+// recovery. Both run after the row UPDATE, which holds the owner row lock, so a
+// concurrent link either committed before it (and is deleted here) or fails its
+// session-version compare-and-set after it.
+func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, clearSecondFactors bool) error {
+	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
 	repo.advanceCalendarFeedFenceBestEffort(ctx)
-	result := query.Updates(map[string]any{
-		"password_hash":                 passwordHash,
-		"must_change_password":          true,
-		"local_auth_enabled":            true,
-		"calendar_feed_selector":        nil,
-		"calendar_feed_verifier_hash":   nil,
-		"calendar_feed_verifier_mac":    nil,
-		"calendar_feed_detailed_titles": false,
-		"calendar_feed_last_polled_on":  nil,
-		"auth_session_version":          gorm.Expr("auth_session_version + 1"),
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		query, err := scopedUserUpdateTx(tx, userID)
+		if err != nil {
+			return err
+		}
+		result := query.Updates(map[string]any{
+			"password_hash":                 passwordHash,
+			"must_change_password":          true,
+			"local_auth_enabled":            true,
+			"calendar_feed_selector":        nil,
+			"calendar_feed_verifier_hash":   nil,
+			"calendar_feed_verifier_mac":    nil,
+			"calendar_feed_detailed_titles": false,
+			"calendar_feed_last_polled_on":  nil,
+			"auth_session_version":          gorm.Expr("auth_session_version + 1"),
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		// An account erased between the operator's lookup and this write must not
+		// be reported as reset.
+		if result.RowsAffected == 0 {
+			return ErrUserOwnerRequired
+		}
+		if !clearSecondFactors {
+			return nil
+		}
+		factors, err := scopedUserUpdateTx(tx, userID)
+		if err != nil {
+			return err
+		}
+		if err := factors.Updates(map[string]any{
+			"totp_secret":               "",
+			"totp_enabled":              false,
+			"totp_last_used_step":       0,
+			"recovery_code_hash":        "",
+			"recovery_code_revealed_at": nil,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error
 	})
-	if result.Error != nil {
-		return result.Error
-	}
-	// An account erased between the operator's lookup and this write must not
-	// be reported as reset.
-	if result.RowsAffected == 0 {
-		return ErrUserOwnerRequired
-	}
-	return nil
 }
 
 // UpgradePasswordHashCAS is the transparent bcrypt-cost upgrade the auth

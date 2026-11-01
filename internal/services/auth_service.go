@@ -69,7 +69,9 @@ type AuthUserRepository interface {
 	// version, AND force-clears the calendar-feed token in one atomic update
 	// (feed-clear arm of the force-rotate-on-recovery rule). Distinct from the
 	// routine UpdatePasswordAndRevokeSessions, which must NOT touch the feed.
-	ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error
+	// clearSecondFactors also clears TOTP and the recovery code and deletes
+	// every linked OIDC identity in the same transaction.
+	ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, clearSecondFactors bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, expectedSessionVersion int, passwordHash string, recoveryHash string, mustChangePassword bool, beforeCommit func(sessionVersion int) error) error
 	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, oldSessionVersion int, newPasswordHash string, recoveryHash string, beforeCommit func(sessionVersion int) error) error
 	// UpgradePasswordHashCAS rewrites password_hash WITHOUT bumping
@@ -287,8 +289,9 @@ func NormalizeForcedResetPassword(raw string) (string, error) {
 // account, cannot be reached by any address-taking form at all. Its one
 // caller, the `ovumcy reset-password` CLI command, resolves the operator's
 // address to that id through OperatorUserService first, so an ambiguous
-// address is refused there rather than acted on here.
-func (service *AuthService) ForceResetPasswordByID(ctx context.Context, userID uint, newPassword string) error {
+// address is refused there rather than acted on here. clearSecondFactors is
+// the command's --full mode (see ForceResetPasswordAndRevokeSessions).
+func (service *AuthService) ForceResetPasswordByID(ctx context.Context, userID uint, newPassword string, clearSecondFactors bool) error {
 	if userID == 0 {
 		return ErrAuthUserIDRequired
 	}
@@ -305,7 +308,7 @@ func (service *AuthService) ForceResetPasswordByID(ctx context.Context, userID u
 		return ErrAuthUserNotFound
 	}
 
-	return service.forceResetPassword(ctx, user.ID, newPassword)
+	return service.forceResetPassword(ctx, user.ID, newPassword, clearSecondFactors)
 }
 
 // forceResetPassword is the write shared by both addressing forms: hash the
@@ -314,13 +317,13 @@ func (service *AuthService) ForceResetPasswordByID(ctx context.Context, userID u
 // change-on-next-login, revokes sessions, and force-clears the calendar-feed
 // token in one atomic update. A ROUTINE authenticated change uses
 // UpdatePasswordAndRevokeSessions and keeps the feed (manual rotate only).
-func (service *AuthService) forceResetPassword(ctx context.Context, userID uint, newPassword string) error {
+func (service *AuthService) forceResetPassword(ctx context.Context, userID uint, newPassword string, clearSecondFactors bool) error {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthPasswordHash, err)
 	}
 
-	if err := service.users.ForceResetPasswordAndRevokeSessions(ctx, userID, string(passwordHash)); err != nil {
+	if err := service.users.ForceResetPasswordAndRevokeSessions(ctx, userID, string(passwordHash), clearSecondFactors); err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthPasswordUpdate, err)
 	}
 

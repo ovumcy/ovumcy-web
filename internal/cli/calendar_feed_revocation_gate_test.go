@@ -220,9 +220,9 @@ type journalingPasswordResetRepository struct {
 	journal *[]string
 }
 
-func (repo *journalingPasswordResetRepository) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error {
+func (repo *journalingPasswordResetRepository) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, clearSecondFactors bool) error {
 	*repo.journal = append(*repo.journal, "row-write")
-	return repo.UserRepository.ForceResetPasswordAndRevokeSessions(ctx, userID, passwordHash)
+	return repo.UserRepository.ForceResetPasswordAndRevokeSessions(ctx, userID, passwordHash, clearSecondFactors)
 }
 
 // TestResetPasswordAdvancesTheFenceBeforeTheRow is

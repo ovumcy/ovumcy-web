@@ -85,7 +85,7 @@ func TestNewPasswordHashesUseConfiguredCost(t *testing.T) {
 			findByIDOptionalUser:  models.User{ID: 5, Email: "owner@example.com", Role: models.RoleOwner},
 		}
 		service := NewAuthService(repo)
-		if err := service.ForceResetPasswordByID(context.Background(), 5, "StrongPass1"); err != nil {
+		if err := service.ForceResetPasswordByID(context.Background(), 5, "StrongPass1", false); err != nil {
 			t.Fatalf("ForceResetPasswordByID: %v", err)
 		}
 		if got := mustBcryptCost(t, repo.updatedPasswordHash); got != passwordHashCost {
