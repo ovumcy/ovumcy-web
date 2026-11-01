@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -1387,12 +1388,17 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context,
 // force-rotate-on-recovery rule: any feed URL that may have leaked is cleared in
 // the same write that resets the credential and revokes sessions.
 //
-// clearSecondFactors is `reset-password --full`: the same transaction also
-// clears TOTP and the recovery code and deletes every linked OIDC identity, so
-// a factor an attacker enrolled or linked does not survive a compromise
-// recovery. Both run after the row UPDATE, which holds the owner row lock, so a
-// concurrent link either committed before it (and is deleted here) or fails its
-// session-version compare-and-set after it.
+// clearSecondFactors is `reset-password --full`: the same UPDATE also clears
+// TOTP and the recovery code, and the same transaction deletes every linked
+// OIDC identity, so a factor an attacker enrolled or linked does not survive a
+// compromise recovery. The delete runs after the UPDATE, which holds the owner
+// row lock, so a concurrent link either committed before it (and is deleted
+// here) or fails its session-version compare-and-set after it. Regression:
+// TestForceResetFullDeletesAnIdentityLinkedConcurrentlyOnPostgres.
+//
+// The second-factor columns are a literal of their own merged into the reset's,
+// not keys added by index: the reveal-mark and calendar-feed sweeps read column
+// map literals and do not follow index assignment.
 func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, clearSecondFactors bool) error {
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
@@ -1403,7 +1409,7 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 		if err != nil {
 			return err // codecov:ignore -- userID already passed requireUserOwnerID above, the helper's only refusal
 		}
-		result := query.Updates(map[string]any{
+		columns := map[string]any{
 			"password_hash":                 passwordHash,
 			"must_change_password":          true,
 			"local_auth_enabled":            true,
@@ -1413,7 +1419,17 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 			"calendar_feed_detailed_titles": false,
 			"calendar_feed_last_polled_on":  nil,
 			"auth_session_version":          gorm.Expr("auth_session_version + 1"),
-		})
+		}
+		if clearSecondFactors {
+			maps.Copy(columns, map[string]any{
+				"totp_secret":               "",
+				"totp_enabled":              false,
+				"totp_last_used_step":       0,
+				"recovery_code_hash":        "",
+				"recovery_code_revealed_at": nil,
+			})
+		}
+		result := query.Updates(columns)
 		if result.Error != nil {
 			return result.Error // codecov:ignore -- DB-layer error on the reset UPDATE; not reachable in unit tests
 		}
@@ -1424,19 +1440,6 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 		}
 		if !clearSecondFactors {
 			return nil
-		}
-		factors, err := scopedUserUpdateTx(tx, userID)
-		if err != nil {
-			return err // codecov:ignore -- userID already passed requireUserOwnerID above, the helper's only refusal
-		}
-		if err := factors.Updates(map[string]any{
-			"totp_secret":               "",
-			"totp_enabled":              false,
-			"totp_last_used_step":       0,
-			"recovery_code_hash":        "",
-			"recovery_code_revealed_at": nil,
-		}).Error; err != nil {
-			return err // codecov:ignore -- DB-layer error on an UPDATE of the row the statement above just wrote; not reachable in unit tests
 		}
 		return tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error
 	})
