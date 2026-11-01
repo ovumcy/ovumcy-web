@@ -110,6 +110,11 @@ type localizedFormatContract struct {
 	// function's body.
 	fallbackArrivesIndirectly bool
 
+	// pluralFamilies marks keys that are plural bases resolved through
+	// i18n.TranslatePlural: the catalogue side checks every variant the
+	// language owes (PluralCategories) instead of the bare key.
+	pluralFamilies bool
+
 	// note names the argument expressions, so a reader can check the type
 	// column against the call without opening the file.
 	note string
@@ -287,6 +292,19 @@ var localizedFormatContracts = []localizedFormatContract{
 		verbs:         []string{"%s", "%s"},
 		argumentTypes: []string{"string", "string"},
 		note:          "reminder.EventDate and reminder.EventDateEnd formatted as 2006-01-02",
+	},
+	{
+		// The day-observation refusals: plural families whose one %d is the
+		// bound, so the number and the noun agreeing with it both follow
+		// services.ManualCycleStartFutureDays. No fallback literal: a miss
+		// renders the next lookup's answer, never verb residue.
+		file:           "internal/api/i18n_helpers.go",
+		function:       "lookupObservationBoundMessage",
+		keys:           []string{"dashboard.error.invalid_cycle_start_date", "dashboard.error.invalid_pregnancy_test_date", "settings.import_future_day"},
+		verbs:          []string{"%d"},
+		argumentTypes:  []string{"int"},
+		pluralFamilies: true,
+		note:           "services.ManualCycleStartFutureDays()",
 	},
 }
 
@@ -1011,7 +1029,7 @@ func assertEveryCatalogueMatchesItsContract(t *testing.T, manager *i18n.Manager,
 	for _, language := range languages {
 		messages := manager.Messages(language)
 		for _, contract := range localizedFormatContracts {
-			for _, key := range contract.keys {
+			for _, key := range catalogueKeysOf(contract, language) {
 				value, present := messages[key]
 				if !present || strings.TrimSpace(value) == "" {
 					// lookupMessage counts a blank value as a miss, so the
@@ -1046,6 +1064,21 @@ func assertEveryCatalogueMatchesItsContract(t *testing.T, manager *i18n.Manager,
 	if checked < 66 {
 		t.Fatalf("compared only %d (catalogue, key) pair(s); eleven keys across six languages is 66, so this run measured a fraction of what it claims to", checked)
 	}
+}
+
+// catalogueKeysOf lists the catalogue entries a contract formats in language:
+// its keys as written, or every plural variant of each base.
+func catalogueKeysOf(contract localizedFormatContract, language string) []string {
+	if !contract.pluralFamilies {
+		return contract.keys
+	}
+	var keys []string
+	for _, base := range contract.keys {
+		for _, category := range i18n.PluralCategories(language) {
+			keys = append(keys, base+"."+category)
+		}
+	}
+	return keys
 }
 
 // assertPatternFormatsCleanly runs the pattern through Go's own formatter with

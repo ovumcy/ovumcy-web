@@ -1,9 +1,11 @@
 package api
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -26,6 +28,48 @@ func lookupMessage(messages map[string]string, key string) (string, bool) {
 		return "", false
 	}
 	return value, true
+}
+
+// lookupErrorMessage is lookupMessage for a refusal's catalogue key, with the
+// day-observation refusals rendered through lookupObservationBoundMessage.
+func lookupErrorMessage(c fiber.Ctx, key string) (string, bool) {
+	messages := currentMessages(c)
+	if value, ok := lookupObservationBoundMessage(messages, currentLanguage(c), key); ok {
+		return value, true
+	}
+	return lookupMessage(messages, key)
+}
+
+// The sentences that name the day-observation bound. Each is a plural family
+// whose one %d is services.ManualCycleStartFutureDays, so the copy follows the
+// constant and the noun agrees with it.
+const (
+	observationBoundCycleStartKey    = "dashboard.error.invalid_cycle_start_date"
+	observationBoundPregnancyTestKey = "dashboard.error.invalid_pregnancy_test_date"
+	observationBoundImportKey        = "settings.import_future_day"
+)
+
+// lookupObservationBoundMessage answers false for any other key. The switch
+// spells the families at the Sprintf site, where the locale format barrier
+// (locale_format_verb_parity_test.go) reads them.
+func lookupObservationBoundMessage(messages map[string]string, language string, key string) (string, bool) {
+	var family string
+	switch key {
+	case observationBoundCycleStartKey:
+		family = observationBoundCycleStartKey
+	case observationBoundPregnancyTestKey:
+		family = observationBoundPregnancyTestKey
+	case observationBoundImportKey:
+		family = observationBoundImportKey
+	default:
+		return "", false
+	}
+	days := services.ManualCycleStartFutureDays()
+	pattern := i18n.TranslatePlural(messages, language, family, days)
+	if pattern == family || strings.TrimSpace(pattern) == "" {
+		return "", false
+	}
+	return fmt.Sprintf(pattern, days), true
 }
 
 // translateMessage is the fallback-free form: a miss renders as the key, which
