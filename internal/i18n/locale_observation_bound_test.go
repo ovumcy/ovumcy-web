@@ -17,13 +17,22 @@ import (
 // whatever number is rendered.
 
 // observationBoundSentenceKeys are the plural bases internal/api formats with
-// the bound (lookupObservationBoundMessage); the format barrier's contract
-// table pins the same set to that site.
-var observationBoundSentenceKeys = []string{
-	"dashboard.error.invalid_cycle_start_date",
-	"dashboard.error.invalid_pregnancy_test_date",
-	"settings.import_future_day",
+// the bound, read from the format barrier's contract for that site, which
+// already pins them to the keys the site resolves.
+func observationBoundSentenceKeys(t *testing.T) []string {
+	t.Helper()
+	for _, contract := range localizedFormatContracts {
+		if contract.function == "lookupObservationBoundMessage" {
+			return contract.keys
+		}
+	}
+	t.Fatal("localizedFormatContracts declares no lookupObservationBoundMessage site")
+	return nil
 }
+
+// spelledBound matches the number words the copy used before it read the
+// constant, in all six languages.
+var spelledBound = regexp.MustCompile(`(?i)\b(two|zwei|dos|deux|due)\b|два|двух`)
 
 func TestObservationBoundSentencesTakeTheBoundThroughOnePercentD(t *testing.T) {
 	catalogues := shippedCatalogues(t)
@@ -32,7 +41,7 @@ func TestObservationBoundSentencesTakeTheBoundThroughOnePercentD(t *testing.T) {
 	}
 	digit := regexp.MustCompile(`[0-9]`)
 	for language, messages := range catalogues {
-		for _, base := range observationBoundSentenceKeys {
+		for _, base := range observationBoundSentenceKeys(t) {
 			if _, fixed := messages[base]; fixed {
 				t.Errorf("%s carries %s as one fixed-form value; a bound sentence is a plural family", language, base)
 			}
@@ -51,7 +60,7 @@ func TestObservationBoundSentencesTakeTheBoundThroughOnePercentD(t *testing.T) {
 				if len(verbs) != 1 || verbs[0] != "%d" {
 					t.Errorf("%s %s: format verbs %v, want exactly [%%d] (value %q)", language, key, verbs, value)
 				}
-				if digit.MatchString(value) {
+				if digit.MatchString(value) || spelledBound.MatchString(value) {
 					t.Errorf("%s %s spells a number instead of taking the bound through %%d: %q", language, key, value)
 				}
 			}
@@ -65,7 +74,7 @@ func TestObservationBoundSentencesTakeTheBoundThroughOnePercentD(t *testing.T) {
 func TestObservationBoundSentencesRenderTheConstant(t *testing.T) {
 	days := services.ManualCycleStartFutureDays()
 	for language, messages := range shippedCatalogues(t) {
-		for _, base := range observationBoundSentenceKeys {
+		for _, base := range observationBoundSentenceKeys(t) {
 			pattern := i18n.TranslatePlural(messages, language, base, days)
 			if pattern == base {
 				t.Errorf("%s: %s resolves to no variant for %d", language, base, days)
