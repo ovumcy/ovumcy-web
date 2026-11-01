@@ -275,9 +275,13 @@ func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outco
 //     every boot (Enforce's unanchored path), so containment is complete
 //     without this write.
 //   - Configured but unwritable — a broken mount, a full disk, a transient I/O
-//     error. Nothing is recorded and ErrCalendarFeedFenceWriteFailed is
-//     returned, so the caller refuses its own write (WEB-414): the halves still
-//     agree and the row never moves, so there is nothing a restore could undo.
+//     error — over halves that agree. Nothing is recorded and
+//     ErrCalendarFeedFenceWriteFailed is returned, so the caller refuses its
+//     own write (WEB-414): the halves still agree and the row never moves, so
+//     there is nothing a restore could undo. Over halves that already disagree
+//     (or cannot be read) the next boot runs the full pass anyway, so the
+//     database half moves alone, as AdvanceOrDiverge does, and the write
+//     proceeds.
 //     Moving the database half alone would fail closed too, but the next boot
 //     cannot tell that disagreement from a restored backup and answers it with
 //     the full ContinuityBroken revocation — every session, webhook and local
@@ -307,7 +311,13 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 		if errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
 			return nil
 		}
-		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: err}
+		// Refuse only where there is continuity to keep. Halves that already
+		// disagree — an instance that booted unanchored under the opt-out, its
+		// database half dropped — already send the next boot down the full pass,
+		// so refusing there would only block an owner revoking a leaked feed.
+		if fence.confirmContinuity(ctx) == nil {
+			return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: err}
+		}
 	}
 	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
 }
