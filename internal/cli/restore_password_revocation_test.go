@@ -56,7 +56,7 @@ func TestARestoreRevivesNoPasswordAForcedResetReplaced(t *testing.T) {
 
 	withNotifyRepositories(t, databasePath, fencePath, func(_ *db.Repositories, fence *services.CalendarFeedRestoreFence) {
 		outcome, err := fence.Enforce(context.Background())
-		if err != nil || !outcome.ContinuityBroken || outcome.Revoked.LocalPasswords != 1 {
+		if err != nil || !outcome.ContinuityBroken || outcome.Revoked.LocalSignIns != 1 {
 			t.Fatalf("server boot over the restore: outcome %+v, err %v", outcome, err)
 		}
 	})

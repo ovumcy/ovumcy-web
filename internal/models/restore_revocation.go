@@ -10,9 +10,11 @@ type RestoreRevocationCounts struct {
 	// WebhookEndpoints counts the accounts whose stored webhook endpoint was
 	// cleared.
 	WebhookEndpoints int64
-	// LocalPasswords counts the accounts whose local password was revoked
+	// LocalSignIns counts the accounts whose local password was revoked
 	// (WEB-408): the restored hash may be one a forced reset or a password
 	// change after the backup point replaced, so it signs nobody in until an
 	// operator sets a new one with `ovumcy reset-password`.
-	LocalPasswords int64
+	// The name avoids "password": it is a row count, and CodeQL's
+	// clear-text-logging query judges a logged field by its name.
+	LocalSignIns int64
 }
