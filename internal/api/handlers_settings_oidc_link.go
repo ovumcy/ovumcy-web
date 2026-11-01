@@ -177,7 +177,9 @@ const oidcIdentityLinkConfirmAction = "settings.oidc_identity_link.confirm"
 func (handler *Handler) ShowOIDCIdentityLinkConfirmPage(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
+		// codecov:ignore:start -- mounted behind AuthRequired, which always resolves the user.
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		// codecov:ignore:end
 	}
 	if handler.oidcService == nil || !handler.oidcService.Enabled() {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")

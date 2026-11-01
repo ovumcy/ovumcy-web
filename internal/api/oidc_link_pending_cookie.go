@@ -60,7 +60,7 @@ func (handler *Handler) setOIDCLinkPendingCookie(c fiber.Ctx, userID uint, sessi
 	}
 	serialized, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return err // codecov:ignore -- a struct of strings, ints and a time cannot fail to marshal
 	}
 	// Session-scoped (zero expires) — the payload carries its own ExpiresAt.
 	return handler.writeSealedCookie(c, oidcLinkPendingCookieSpec, serialized, time.Time{})
