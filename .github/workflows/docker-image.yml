@@ -1343,17 +1343,43 @@ jobs:
           fi
           IFS=',' read -r -a platforms <<< "${IMAGE_PLATFORMS}"
 
-          sbom="$(docker buildx imagetools inspect "${IMAGE_DIGEST}" --format '{{ json .SBOM }}')"
+          # The attestation manifests were pushed inside the index, so there is
+          # no propagation to wait for; the retry covers a registry blip only.
+          sbom_file="${RUNNER_TEMP}/sbom.json"
+          attempts=3
+          for attempt in $(seq 1 "${attempts}"); do
+            if docker buildx imagetools inspect "${IMAGE_DIGEST}" --format '{{ json .SBOM }}' > "${sbom_file}"; then
+              break
+            fi
+            if [ "${attempt}" -eq "${attempts}" ]; then
+              echo "::error::reading the SBOM of ${IMAGE_DIGEST} failed ${attempts} times — the buildx output above says why. Nothing is promoted."
+              exit 1
+            fi
+            echo "::warning::reading the SBOM of ${IMAGE_DIGEST} failed (attempt ${attempt} of ${attempts}); asking again."
+            sleep 10
+          done
 
           for platform in "${platforms[@]}"; do
             # Only an in-toto layer whose predicate type is
-            # https://spdx.dev/Document lands under `.SPDX`, so its presence
-            # is the predicate-type check.
-            if ! jq -e --arg p "${platform}" '
-                .[$p].SPDX
-                | (.spdxVersion | type == "string" and startswith("SPDX-"))
-                  and ((.packages // []) | length > 0)
-              ' <<< "${sbom}" > /dev/null; then
+            # https://spdx.dev/Document lands under `SPDX`, so its presence is
+            # the predicate-type check. buildx keys the answer by platform for
+            # a multi-platform index and returns the bare document for a
+            # single-platform one; the bare form is accepted only when exactly
+            # one platform is expected.
+            if ! python3 -c '
+          import json, pathlib, sys
+          doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          platform, expected = sys.argv[2], int(sys.argv[3])
+          if not isinstance(doc, dict):
+              sys.exit(1)
+          entry = doc if (expected == 1 and "SPDX" in doc) else doc.get(platform)
+          spdx = (entry or {}).get("SPDX") if isinstance(entry, dict) else None
+          ok = (isinstance(spdx, dict)
+                and str(spdx.get("spdxVersion", "")).startswith("SPDX-")
+                and isinstance(spdx.get("packages"), list)
+                and len(spdx["packages"]) > 0)
+          sys.exit(0 if ok else 1)
+          ' "${sbom_file}" "${platform}" "${#platforms[@]}"; then
               echo "::error::${IMAGE_DIGEST} carries no SPDX SBOM with packages for ${platform}, so the release would ship without the SBOM README.md promises."
               exit 1
             fi
