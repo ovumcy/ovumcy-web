@@ -24,14 +24,14 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 	}
 
 	if !strings.HasPrefix(rawToken, secureCookieVersion+".") {
-		handler.clearAuthCookie(c)
+		handler.clearRejectedSessionCookies(c)
 		handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "invalid token"))
 		return nil, errors.New("invalid token")
 	}
 
 	tokenValue, err := handler.decodeSealedAuthCookieToken(rawToken)
 	if err != nil {
-		handler.clearAuthCookie(c)
+		handler.clearRejectedSessionCookies(c)
 		handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "invalid token"))
 		return nil, errors.New("invalid token")
 	}
@@ -44,7 +44,7 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 			return nil, err
 		}
 		if errors.Is(err, services.ErrAuthSessionTokenRevoked) {
-			handler.clearAuthCookie(c)
+			handler.clearRejectedSessionCookies(c)
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "revoked session"))
 			return nil, errors.New("invalid token")
 		}
@@ -57,14 +57,14 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 			return nil, errors.New("missing auth cookie")
 		// codecov:ignore:end
 		case errors.Is(err, services.ErrAuthSessionTokenExpired):
-			handler.clearAuthCookie(c)
+			handler.clearRejectedSessionCookies(c)
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "token expired"))
 			return nil, errors.New("token expired")
 		case errors.Is(err, services.ErrAuthSessionTokenInvalid),
 			errors.Is(err, services.ErrAuthSessionTokenInvalidUserID),
 			errors.Is(err, services.ErrAuthSessionTokenRevoked),
 			errors.Is(err, services.ErrAuthInvalidCreds):
-			handler.clearAuthCookie(c)
+			handler.clearRejectedSessionCookies(c)
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "invalid token"))
 			return nil, errors.New("invalid token")
 		default:

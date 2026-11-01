@@ -471,11 +471,19 @@ var unguardedMutationReasons = map[string]string{
 	"DELETE /api/v1/users/current/2fa":                 "disables two-factor; demands the current password",
 	"POST /api/v1/users/current/data-wipe/validate":    "checks the password; writes nothing",
 	"POST /api/v1/users/current/data-wipe":             "erases the data; demands the current password",
-	"POST /api/v1/users/current/data-wipe/step-up":     "starts a provider re-authentication; stores nothing on the account",
-	"POST /api/v1/users/current/deletion/step-up":      "starts a provider re-authentication; stores nothing on the account",
 	"POST /api/v1/users/current/oidc/link/step-up":     "starts a provider re-authentication; stores nothing on the account",
 	"DELETE /api/v1/users/current/oidc/identities/:id": "unlinks an identity; demands the current password",
 	"DELETE /api/v1/sessions/current":                  "signs out; changes no setting and no data",
+}
+
+// boundRoutesDrivenElsewhere names the bound routes whose cross-account case
+// cannot use settingsWriteCase, with the test that drives it instead. The
+// erasure step-up starts store nothing on the account — their effect is the
+// sealed step-up cookie — and serve only an account without a local password
+// on an instance with OIDC, which the shared fixture is not.
+var boundRoutesDrivenElsewhere = map[string]string{
+	"POST /api/v1/users/current/data-wipe/step-up": "TestErasureStepupStartRefusesAPageFromAnotherAccount",
+	"POST /api/v1/users/current/deletion/step-up":  "TestErasureStepupStartRefusesAPageFromAnotherAccount",
 }
 
 // accountBindingGuardMarker reads the shared guard body's own name back off a
@@ -531,6 +539,9 @@ func TestEveryStateChangingV1RouteIsAccountBoundOrNamedWithItsReason(t *testing.
 	cased := map[string]bool{}
 	for _, write := range append(settingsWriteCases(fixture), onboardingWriteCases(fixture)...) {
 		cased[write.route] = true
+	}
+	for route := range boundRoutesDrivenElsewhere {
+		cased[route] = true
 	}
 	var bound []string
 	for route := range cased {
@@ -649,6 +660,12 @@ func TestEveryRenderedSettingsWriteCarriesTheAccountBinding(t *testing.T) {
 		}
 		assertRenderedBindings(t, fixture.app, path, fixture.firstCookie, fixture.firstBinding, patterns, found)
 	}
+	// An account with no local password renders the erasure step-up starts in
+	// place of the password-confirmed erasure forms.
+	if err := fixture.database.Model(&models.User{}).Where("id = ?", fixture.first.ID).Update("local_auth_enabled", false).Error; err != nil {
+		t.Fatalf("drop the local password: %v", err)
+	}
+	assertRenderedBindings(t, fixture.app, "/settings", fixture.firstCookie, fixture.firstBinding, patterns, found)
 
 	// The writes that have no form of their own on any page, by name: the
 	// timezone sync is a script (its binding rides on <body>, checked below),

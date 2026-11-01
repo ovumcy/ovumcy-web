@@ -82,7 +82,7 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 		clientKey,
 		credentials.Email,
 		credentials.Password,
-		30*time.Minute,
+		resetTokenTTL,
 		time.Now(),
 	)
 	if err != nil {

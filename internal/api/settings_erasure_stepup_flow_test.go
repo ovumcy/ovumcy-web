@@ -263,7 +263,9 @@ func TestErasureStepupStartReturnsAnInterstitialForBrowsers(t *testing.T) {
 	fixture := newOIDCStepupFixture(t, "settings-erasure-start-browser@example.com")
 
 	csrfCookie, csrfToken := fixture.settingsCSRF(t)
-	form := url.Values{"csrf_token": {csrfToken}}
+	// A browser submit is a rendered form, so it carries the page's account
+	// binding (WEB-400).
+	form := url.Values{"csrf_token": {csrfToken}, dayFormAccountField: {renderedDayFormAccount(t, fixture.app, fixture.authCookie, "/settings")}}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/data-wipe/step-up", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "text/html")
