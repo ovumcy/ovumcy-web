@@ -1360,11 +1360,12 @@ func assertSymptomTypesSchemaReconciled(t *testing.T, database *gorm.DB) {
 // symptom_ids made NOT NULL, and both bootstraps stayed green. A shared list is
 // also what carries the next column added here onto both engines at once.
 //
-// Nullability is asserted per engine rather than compared between them:
-// TestMigratedSchemasMatchAcrossDialects deliberately leaves that axis out,
-// because the drivers report a PRIMARY KEY column's nullability differently.
-// None of the columns below is a key, and both drivers report all of them
-// identically (measured 2026-08-21 on the migrated schema of each engine).
+// Nullability is asserted per engine here even though
+// TestMigratedSchemasMatchAcrossDialects now compares it between them: parity
+// holds just as well when both trees make a column wrong the same way, and this
+// list pins the value each column must have. None of the columns below is a
+// key, and both drivers report all of them identically (measured 2026-08-21 on
+// the migrated schema of each engine).
 var dailyLogsTrackingContract = []struct {
 	Column  string
 	NotNull bool
