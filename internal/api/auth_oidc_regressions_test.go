@@ -253,6 +253,10 @@ func (stub *stubOIDCWorkflowService) VerifyIdentityLinkReauth(_ context.Context,
 	if stub.identityLinkReauthErr != nil {
 		return security.OIDCClaims{}, stub.identityLinkReauthErr
 	}
+	if stub.identityLinkClaims.Subject == "" {
+		// The real method never answers success without an identity key.
+		return security.OIDCClaims{Issuer: testOIDCIssuerURL, Subject: "stub-link-subject"}, nil
+	}
 	return stub.identityLinkClaims, nil
 }
 
