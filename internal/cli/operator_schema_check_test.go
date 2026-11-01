@@ -53,7 +53,7 @@ func TestOperatorCommandsRefuseADatabaseWithoutTheNormalizedEmailIndex(t *testin
 			return runWebhookCommand(config, testWebhookSecretKey, []string{"set", owner.Email, "--enabled=true", "--url-stdin"}, strings.NewReader(testWebhookURLWithToken+"\n"), output)
 		}},
 		{"notify", func(config db.Config, _ models.User, output *bytes.Buffer) error {
-			return runNotifyOperatorCommand(config, testWebhookSecretKey, "en", time.UTC, false, nil, output)
+			return runNotifyOperatorCommand(config, "", testWebhookSecretKey, "en", time.UTC, false, false, nil, output)
 		}},
 	}
 
@@ -106,9 +106,10 @@ func TestOperatorNotifyWritesItsReportToTheInjectedOutput(t *testing.T) {
 
 	databasePath := createCLIUsersDatabase(t)
 	config := db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}
+	fencePath := armOperatorFence(t, databasePath)
 
 	var output bytes.Buffer
-	if err := runNotifyOperatorCommand(config, testWebhookSecretKey, "en", time.UTC, false, []string{"--dry-run"}, &output); err != nil {
+	if err := runNotifyOperatorCommand(config, fencePath, testWebhookSecretKey, "en", time.UTC, false, false, []string{"--dry-run"}, &output); err != nil {
 		t.Fatalf("notify on a migrated database: %v", err)
 	}
 	if !strings.Contains(output.String(), "Webhook notify pass complete") {

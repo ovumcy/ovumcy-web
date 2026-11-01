@@ -103,7 +103,7 @@ func (s *stubFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) (int
 	return s.disarmed, nil
 }
 
-func (s *stubFenceUserStore) RevokeAllSessionsAndWebhookEndpoints(_ context.Context) (models.RestoreRevocationCounts, error) {
+func (s *stubFenceUserStore) RevokeRestoredAccess(_ context.Context) (models.RestoreRevocationCounts, error) {
 	s.revokeCalls++
 	s.revokeAfterDisarm = s.callCount > 0
 	if s.revokeErr != nil {
@@ -199,8 +199,9 @@ func TestCalendarFeedRestoreFenceAgreementIsANoOp(t *testing.T) {
 // itself, at the unit level: the file kept the token this run minted while the
 // database came back holding an older one, which is what restoring a backup
 // taken before a revocation looks like under an UNCHANGED SECRET_KEY. Every
-// armed feed goes, and the disarm is ordered before either half of the new
-// token is recorded.
+// armed feed goes, and the disarm is ordered before the database half of the
+// new token is recorded — after the file half, so an unwritable fence is found
+// before anything is revoked (WEB-408).
 func TestCalendarFeedRestoreFenceDisarmsWhenTheHalvesDisagree(t *testing.T) {
 	journal := []string{}
 	appState := &stubFenceAppState{
@@ -224,7 +225,7 @@ func TestCalendarFeedRestoreFenceDisarmsWhenTheHalvesDisagree(t *testing.T) {
 	// already hold the new token: a crash before it leaves a stamp the next boot
 	// ignores, while erasing first would clear the evidence ahead of the write
 	// that replaces it.
-	if want := []string{"disarm", "anchor", "set", "delete"}; !equalStrings(journal, want) {
+	if want := []string{"anchor", "disarm", "set", "delete"}; !equalStrings(journal, want) {
 		t.Fatalf("ordering must be %v, got %v", want, journal)
 	}
 }
@@ -375,8 +376,10 @@ func TestCalendarFeedRestoreFencePropagatesDatabaseFailures(t *testing.T) {
 	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != "an-older-generation" {
 		t.Fatalf("a failed disarm must keep the old marker, got %q", got)
 	}
-	if anchor.written != "" {
-		t.Fatalf("a failed disarm must not write the fence file, got %q", anchor.written)
+	// On the ContinuityBroken path the file moves first (WEB-408); what keeps
+	// the retry is that it can no longer agree with the database half.
+	if anchor.value == "an-older-generation" {
+		t.Fatal("a failed disarm must leave the halves disagreeing")
 	}
 }
 
@@ -718,7 +721,7 @@ func (s *countingFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) 
 	return count, nil
 }
 
-func (s *countingFenceUserStore) RevokeAllSessionsAndWebhookEndpoints(_ context.Context) (models.RestoreRevocationCounts, error) {
+func (s *countingFenceUserStore) RevokeRestoredAccess(_ context.Context) (models.RestoreRevocationCounts, error) {
 	return models.RestoreRevocationCounts{}, nil
 }
 
@@ -1268,8 +1271,8 @@ func TestCalendarFeedRestoreFenceEmptyHalvesOverAStampedDatabaseDisarm(t *testin
 	if appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
 		t.Fatal(`the stamp must be gone once it has been answered for: a stamp left behind is inert while the halves agree (read only where both are empty), so erasure is hygiene that keeps the stamp meaning "the last boot ran unanchored," not a guard against a disarm loop`)
 	}
-	if want := []string{"disarm", "anchor", "set", "delete"}; !equalStrings(journal, want) {
-		t.Fatalf("the disarm has to precede the token, and the token the erasure:\n got %v\nwant %v", journal, want)
+	if want := []string{"anchor", "disarm", "set", "delete"}; !equalStrings(journal, want) {
+		t.Fatalf("the file half has to precede the disarm, the disarm the database half, and that the erasure:\n got %v\nwant %v", journal, want)
 	}
 }
 
@@ -1299,9 +1302,9 @@ func TestCalendarFeedRestoreFenceStampErasureFailureFailsTheBoot(t *testing.T) {
 // cannot reach: that one runs with a disagreeing pair, not two empty halves
 // over a stamp. A failed disarm here must fail the boot like every other
 // disarm failure, keep BOTH outcome flags for a caller that only checks the
-// error, and record nothing else — the crash-safety this pass relies on
-// assumes the disarm ran to completion before either half of a new token is
-// written.
+// error, and record nothing in the DATABASE half — the file half already
+// moved (WEB-408), so the halves now disagree and the next boot re-runs the
+// pass as a plain ContinuityBroken.
 func TestCalendarFeedRestoreFenceUnanchoredHistoryDisarmFailurePropagates(t *testing.T) {
 	journal := []string{}
 	disarmFailure := errors.New("disarm failed")
@@ -1319,8 +1322,8 @@ func TestCalendarFeedRestoreFenceUnanchoredHistoryDisarmFailurePropagates(t *tes
 	if !outcome.ContinuityBroken || !outcome.UnanchoredHistory {
 		t.Fatalf("expected ContinuityBroken and UnanchoredHistory both set, got %+v", outcome)
 	}
-	if want := []string{"disarm"}; !equalStrings(journal, want) {
-		t.Fatalf("a failed disarm must record nothing else, got %v", journal)
+	if want := []string{"anchor", "disarm"}; !equalStrings(journal, want) {
+		t.Fatalf("a failed disarm must record nothing in the database half, got %v", journal)
 	}
 }
 

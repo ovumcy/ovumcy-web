@@ -26,7 +26,7 @@ type calendarFeedRestoreFenceAppState interface {
 // boot that sees a restore (ContinuityBroken).
 type calendarFeedRestoreFenceUserStore interface {
 	DisarmAllCalendarFeedTokens(ctx context.Context) (int64, error)
-	RevokeAllSessionsAndWebhookEndpoints(ctx context.Context) (models.RestoreRevocationCounts, error)
+	RevokeRestoredAccess(ctx context.Context) (models.RestoreRevocationCounts, error)
 }
 
 // calendarFeedRestoreFenceAnchor is the half of the fence that lives outside
@@ -161,12 +161,13 @@ func NewCalendarFeedRestoreFence(appState calendarFeedRestoreFenceAppState, user
 // installation; a stamped database whose two halves are both empty is a restore
 // that cannot be ruled out, not a first boot.
 //
-// Ordering matches the sibling: the disarm runs BEFORE either half of the new
-// token is recorded, so a crash in between re-runs the disarm on the next boot
-// (zero rows the second time) instead of recording a fence whose revocation
-// never happened. Between the two halves the file is written first: a crash
-// after it leaves the halves disagreeing, which re-runs the pass — while the
-// reverse would record agreement the file never reached.
+// Ordering: every disarm and revocation runs BEFORE the DATABASE half of the
+// new token is recorded, so a crash in between re-runs the pass on the next
+// boot instead of recording a fence whose revocation never happened. The file
+// is written first — after the revocations on the unanchored and first-boot
+// paths, before them on the ContinuityBroken path (revokeRestored says why) —
+// and either way a crash after it leaves the halves disagreeing, which re-runs
+// the pass, while the reverse would record agreement the file never reached.
 func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFeedRestoreFenceOutcome, error) {
 	// Held across the whole pass, so record's two writes cannot interleave with
 	// an Advance. Nothing serves yet when this runs, so it never contends;
@@ -222,24 +223,39 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 // deletion is recorded in auth_session_version or in the row itself, and a
 // webhook removal in webhook_config_version, all inside the dump. Nothing in
 // the restored rows says which of those happened after the backup point, so
-// all of them are revoked, as all feeds are.
+// all of them are revoked, as all feeds are. Local passwords go too (WEB-408):
+// a forced reset after the backup point is undone by the restore, and the
+// compromised hash it replaced would sign in again.
 //
-// The same ordering as the feed disarm alone: both writes precede the record,
-// so a crash in between re-runs the pass on the next boot. A re-run bumps
-// every session version once more and clears endpoints already cleared, which
-// costs nothing a first run did not already cost.
+// The new token reaches the FILE half before anything is revoked, and the
+// database half only after. A crash anywhere in between leaves the halves
+// disagreeing, so the next boot re-runs this pass, as before. What the order
+// adds is that the revocation happens once: an anchor that reads but cannot be
+// written degrades to the unanchored outcome here, before any revocation,
+// instead of revoking and then failing to record — which, on a fence volume
+// that is configured but missing, used to repeat the whole revocation on every
+// start, and with passwords in it would lock every owner out on every start.
+// That degraded boot disarms feeds as every unanchored boot does, and is
+// refused outright unless CALENDAR_FEED_FENCE_OPTOUT accepts the residual.
 func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outcome CalendarFeedRestoreFenceOutcome) (CalendarFeedRestoreFenceOutcome, error) {
+	token, err := security.NewCalendarFeedFenceToken()
+	if err != nil {
+		return outcome, err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
+	}
+	if err := fence.anchor.Write(token); err != nil {
+		return fence.disarmUnanchored(ctx, err, 0)
+	}
 	disarmed, err := fence.users.DisarmAllCalendarFeedTokens(ctx)
 	if err != nil {
 		return outcome, err
 	}
 	outcome.DisarmedFeeds = disarmed
-	revoked, err := fence.users.RevokeAllSessionsAndWebhookEndpoints(ctx)
+	revoked, err := fence.users.RevokeRestoredAccess(ctx)
 	if err != nil {
 		return outcome, err
 	}
 	outcome.Revoked = revoked
-	return fence.record(ctx, outcome, disarmed)
+	return fence.storeToken(ctx, outcome, token)
 }
 
 // Advance records that the set of armed calendar feeds just changed, in both
@@ -409,6 +425,38 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
 
+	if err := fence.confirmContinuity(ctx); err != nil {
+		return err
+	}
+
+	token, err := security.NewCalendarFeedFenceToken()
+	if err != nil {
+		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
+	}
+	if err := fence.anchor.Write(token); err != nil {
+		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceUnreachable, Cause: err}
+	}
+	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
+		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err}
+	}
+	return nil
+}
+
+// CheckContinuity is AdvanceConfirmed's refusal half alone: the same errors,
+// for the same states, and nothing written in either half on any outcome. It
+// is for a process that must not act on a database the server has not yet
+// booted over since a restore — `ovumcy notify`, whose delivery would reach a
+// webhook endpoint that only the server's ContinuityBroken pass clears
+// (WEB-408).
+func (fence *CalendarFeedRestoreFence) CheckContinuity(ctx context.Context) error {
+	fence.writing.Lock()
+	defer fence.writing.Unlock()
+	return fence.confirmContinuity(ctx)
+}
+
+// confirmContinuity is the read both CheckContinuity and AdvanceConfirmed
+// refuse on. The caller holds fence.writing.
+func (fence *CalendarFeedRestoreFence) confirmContinuity(ctx context.Context) error {
 	anchored, anchorFound, err := fence.anchor.Read()
 	if err != nil {
 		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceUnreachable, Cause: err}
@@ -421,17 +469,6 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 
 	if !continuityHolds(anchorFound, storedFound, anchored, stored) {
 		return &CalendarFeedFenceContinuityError{AnchorFound: anchorFound, StoredFound: storedFound}
-	}
-
-	token, err := security.NewCalendarFeedFenceToken()
-	if err != nil {
-		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
-	}
-	if err := fence.anchor.Write(token); err != nil {
-		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceUnreachable, Cause: err}
-	}
-	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
-		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err}
 	}
 	return nil
 }
@@ -476,6 +513,12 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome Calen
 	if err := fence.anchor.Write(token); err != nil {
 		return fence.disarmUnanchored(ctx, err, disarmed)
 	}
+	return fence.storeToken(ctx, outcome, token)
+}
+
+// storeToken is record's database half: the token the file already holds,
+// then the unanchored stamp's erasure, in that order.
+func (fence *CalendarFeedRestoreFence) storeToken(ctx context.Context, outcome CalendarFeedRestoreFenceOutcome, token string) (CalendarFeedRestoreFenceOutcome, error) {
 	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
 		return outcome, err
 	}

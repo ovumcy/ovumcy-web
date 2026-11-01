@@ -121,19 +121,10 @@ func confirmOperatorFeedRevocation(ctx context.Context, fencePath string, fence 
 	}
 
 	if err := fence.AdvanceConfirmed(ctx); err != nil {
-		var continuity *services.CalendarFeedFenceContinuityError
-		var step *services.CalendarFeedFenceStepError
-		var cause error
-		if errors.As(err, &step) {
-			cause = step.Cause
+		if state, cause, ok := calendarFeedFenceStateForRefusal(err); ok {
+			return calendarFeedFenceConfirmRefusal(fencePath, state, cause)
 		}
 		switch {
-		case errors.As(err, &continuity):
-			return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateForContinuity(continuity), nil)
-		case errors.Is(err, services.ErrCalendarFeedFenceUnreachable):
-			return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateUnreachable, cause)
-		case errors.Is(err, services.ErrCalendarFeedFenceMarkerUnavailable):
-			return calendarFeedFenceConfirmRefusal(fencePath, calendarFeedFenceStateMarkerUnavailable, cause)
 		case errors.Is(err, services.ErrCalendarFeedFenceHalfAdvanced):
 			// The one refusal after which something HAS changed: the fence file
 			// moved and app_state did not, so the server's next start disarms
@@ -219,6 +210,27 @@ const (
 	// would never notice a state added without an entry.
 	calendarFeedFenceStateCount
 )
+
+// calendarFeedFenceStateForRefusal classifies every fence error that leaves
+// both halves untouched — the ones CheckContinuity and AdvanceConfirmed share
+// — and reports false for anything else, which the caller handles itself.
+func calendarFeedFenceStateForRefusal(err error) (calendarFeedFenceConfirmState, error, bool) {
+	var continuity *services.CalendarFeedFenceContinuityError
+	var step *services.CalendarFeedFenceStepError
+	var cause error
+	if errors.As(err, &step) {
+		cause = step.Cause
+	}
+	switch {
+	case errors.As(err, &continuity):
+		return calendarFeedFenceStateForContinuity(continuity), nil, true
+	case errors.Is(err, services.ErrCalendarFeedFenceUnreachable):
+		return calendarFeedFenceStateUnreachable, cause, true
+	case errors.Is(err, services.ErrCalendarFeedFenceMarkerUnavailable):
+		return calendarFeedFenceStateMarkerUnavailable, cause, true
+	}
+	return calendarFeedFenceStateInvalid, nil, false
+}
 
 // calendarFeedFenceStateForContinuity classifies a
 // *services.CalendarFeedFenceContinuityError by which half(s) it found,
@@ -380,14 +392,20 @@ var calendarFeedFenceConfirmRefusals = map[calendarFeedFenceConfirmState]calenda
 // so the panic is a programming error caught in tests, not something a real
 // shell can trigger.
 func calendarFeedFenceConfirmRefusal(fencePath string, state calendarFeedFenceConfirmState, cause error) error {
-	const consequence = "A removal recorded only inside the database is undone by restoring a backup taken before it."
+	return composeCalendarFeedFenceRefusal(fencePath, state, cause,
+		"A removal recorded only inside the database is undone by restoring a backup taken before it.", "Nothing was changed")
+}
 
+// composeCalendarFeedFenceRefusal is the shared shape of every fence refusal:
+// the state's sentence, what acting anyway would cost (consequence), the
+// state's remedy, and a closing outcome that says what the command did not do.
+func composeCalendarFeedFenceRefusal(fencePath string, state calendarFeedFenceConfirmState, cause error, consequence, outcome string) error {
 	refusal, ok := calendarFeedFenceConfirmRefusals[state]
 	if !ok {
-		panic(fmt.Sprintf("calendar-feed restore fence: confirmOperatorFeedRevocation state %d has no refusal text", state))
+		panic(fmt.Sprintf("calendar-feed restore fence: refusal state %d has no refusal text", state))
 	}
 
 	// No trailing period (staticcheck ST1005): Go error strings end without
 	// punctuation, even a deliberately long, multi-sentence operator one.
-	return fmt.Errorf("calendar-feed restore fence: %s %s %s Nothing was changed", refusal.sentence(fencePath, cause), consequence, refusal.remedy)
+	return fmt.Errorf("calendar-feed restore fence: %s %s %s %s", refusal.sentence(fencePath, cause), consequence, refusal.remedy, outcome)
 }

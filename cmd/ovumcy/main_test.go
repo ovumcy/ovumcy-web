@@ -2145,17 +2145,20 @@ func TestTryRunCLICommandWithHandlersDispatchesNotify(t *testing.T) {
 	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
 	t.Setenv("TZ", "UTC")
 	t.Setenv("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", "true")
+	t.Setenv(calendarFeedFenceOptOutEnv, "true")
 
 	var (
 		receivedArgs         []string
 		receivedBlock        bool
+		receivedOptOut       bool
 		receivedSecretNonNil bool
 		receivedLangNonEmpty bool
 	)
 	handled, err := tryRunCLICommandWithHandlers([]string{"notify", "--dry-run"}, cliCommandHandlers{
-		runNotify: func(_ db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error {
+		runNotify: func(_ db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, fenceOptOut bool, args []string) error {
 			receivedArgs = args
 			receivedBlock = blockPrivateAddresses
+			receivedOptOut = fenceOptOut
 			receivedSecretNonNil = secretKey != ""
 			receivedLangNonEmpty = defaultLanguage != ""
 			if location == nil {
@@ -2175,6 +2178,9 @@ func TestTryRunCLICommandWithHandlersDispatchesNotify(t *testing.T) {
 	}
 	if !receivedBlock {
 		t.Fatal("expected WEBHOOK_BLOCK_PRIVATE_ADDRESSES=true forwarded as true")
+	}
+	if !receivedOptOut {
+		t.Fatal("expected CALENDAR_FEED_FENCE_OPTOUT=true forwarded as true")
 	}
 	if !receivedSecretNonNil {
 		t.Fatal("expected the resolved SECRET_KEY forwarded to the notify handler")
@@ -2201,7 +2207,7 @@ func TestTryRunCLICommandWithHandlersNotifyReportsInvalidSecretKey(t *testing.T)
 	t.Setenv("SECRET_KEY_FILE", "")
 
 	handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
-		runNotify: func(db.Config, string, string, *time.Location, bool, []string) error {
+		runNotify: func(db.Config, string, string, *time.Location, bool, bool, []string) error {
 			t.Fatal("did not expect the notify handler to be called without a SECRET_KEY")
 			return nil
 		},
@@ -2220,7 +2226,7 @@ func TestTryRunCLICommandWithHandlersNotifyReportsInvalidDatabaseConfig(t *testi
 	t.Setenv("DB_DRIVER", "mysql")
 
 	handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
-		runNotify: func(db.Config, string, string, *time.Location, bool, []string) error {
+		runNotify: func(db.Config, string, string, *time.Location, bool, bool, []string) error {
 			t.Fatal("did not expect the notify handler to be called with an invalid DB config")
 			return nil
 		},
@@ -2267,7 +2273,7 @@ func TestTryRunCLICommandWithHandlersNotifyParsesWebhookBlockPrivateAddresses(t 
 
 			var receivedBlock bool
 			handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
-				runNotify: func(_ db.Config, _ string, _ string, _ *time.Location, blockPrivateAddresses bool, _ []string) error {
+				runNotify: func(_ db.Config, _ string, _ string, _ *time.Location, blockPrivateAddresses bool, _ bool, _ []string) error {
 					receivedBlock = blockPrivateAddresses
 					return nil
 				},
@@ -2295,7 +2301,7 @@ func TestTryRunCLICommandWithHandlersNotifyRefusesUnknownRegistrationMode(t *tes
 
 	called := false
 	handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
-		runNotify: func(db.Config, string, string, *time.Location, bool, []string) error {
+		runNotify: func(db.Config, string, string, *time.Location, bool, bool, []string) error {
 			called = true
 			return nil
 		},

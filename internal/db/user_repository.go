@@ -77,7 +77,12 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 //
 //   - SaveCalendarFeedToken and ClearCalendarFeedToken return it. There the
 //     write IS the arming or the revocation, so a fence that cannot record it
-//     refuses the operation and the owner retries.
+//     refuses the operation and the owner retries. SaveWebhookSettings and
+//     RemoveWebhookDestination return it too (WEB-408): no feed moves there,
+//     but the write can withdraw a webhook endpoint, and a restore across it
+//     the fence never saw would hand that endpoint back to the next notify
+//     pass. The fence is the only restore detector the boot pass has, so a
+//     revocation it does not record is one no boot can answer.
 //   - Everything else — recovery-code rotation, the operator reset, the
 //     reset-token redeem, clear-data and account erasure — goes through
 //     advanceCalendarFeedFenceBestEffort and proceeds. There the feed clear is
@@ -531,6 +536,9 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 	if err != nil {
 		return err
 	}
+	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
+		return err
+	}
 	// Pinned to the epoch the caller read: every delivery-configuration writer
 	// advances it, so a match proves no removal or other save landed between the
 	// caller's read and this write. Regression:
@@ -571,6 +579,9 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 func (repo *UserRepository) RemoveWebhookDestination(ctx context.Context, userID uint) error {
 	query, err := repo.scopedUserUpdate(ctx, userID)
 	if err != nil {
+		return err
+	}
+	if err := repo.advanceCalendarFeedFence(ctx); err != nil {
 		return err
 	}
 	return query.Updates(map[string]any{
@@ -1175,17 +1186,37 @@ func (repo *UserRepository) DisarmAllCalendarFeedTokens(ctx context.Context) (in
 	return result.RowsAffected, result.Error
 }
 
-// RevokeAllSessionsAndWebhookEndpoints is the restore fence's second bulk write
-// (WEB-399), run after DisarmAllCalendarFeedTokens on a boot that saw a
+// RevokeRestoredAccess is the restore fence's second bulk write (WEB-399,
+// WEB-408), run after DisarmAllCalendarFeedTokens on a boot that saw a
 // restore. It bumps auth_session_version on EVERY account, so no cookie minted
 // before the boot validates, and clears every stored webhook endpoint with its
 // delivery mark, advancing webhook_config_version so a claim snapshotted
 // against the restored row cannot complete. The per-kind opt-ins and the lead
-// window stay: they are preferences, not a destination. Both statements run in
-// one transaction, so a failure leaves neither half and the boot retries.
-func (repo *UserRepository) RevokeAllSessionsAndWebhookEndpoints(ctx context.Context) (models.RestoreRevocationCounts, error) {
+// window stay: they are preferences, not a destination.
+//
+// It also revokes every local password, leaving the account in the shape an
+// OIDC-only account has (no hash, no recovery code, local sign-in off). The
+// restored hash may be the compromised one a forced reset after the backup
+// point replaced, and nothing in the row says which; must_change_password
+// would not contain it, because the forced-reset route accepts that same
+// password and outranks TOTP. The account signs in again through a linked
+// OIDC identity or once an operator runs `ovumcy reset-password`.
+//
+// All statements run in one transaction, so a failure leaves none of them and
+// the boot retries.
+func (repo *UserRepository) RevokeRestoredAccess(ctx context.Context) (models.RestoreRevocationCounts, error) {
 	var counts models.RestoreRevocationCounts
 	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		passwords := tx.Model(&models.User{}).
+			Where("local_auth_enabled = ? OR password_hash != ''", true).
+			Updates(map[string]any{
+				"password_hash":      "",
+				"recovery_code_hash": "",
+				"local_auth_enabled": false,
+			})
+		if passwords.Error != nil {
+			return passwords.Error
+		}
 		sessions := tx.Model(&models.User{}).Where("id > 0").
 			UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1"))
 		if sessions.Error != nil {
@@ -1202,7 +1233,7 @@ func (repo *UserRepository) RevokeAllSessionsAndWebhookEndpoints(ctx context.Con
 		if webhooks.Error != nil {
 			return webhooks.Error
 		}
-		counts = models.RestoreRevocationCounts{Sessions: sessions.RowsAffected, WebhookEndpoints: webhooks.RowsAffected}
+		counts = models.RestoreRevocationCounts{Sessions: sessions.RowsAffected, WebhookEndpoints: webhooks.RowsAffected, LocalPasswords: passwords.RowsAffected}
 		return nil
 	})
 	if err != nil {
