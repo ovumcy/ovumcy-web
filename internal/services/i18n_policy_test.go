@@ -52,11 +52,26 @@ func assertMappedTranslationKeysResolveInEveryLocale(t *testing.T, mapName strin
 	for _, language := range languages {
 		messages := manager.Messages(language)
 		for source, key := range translationKeys {
-			if value, ok := messages[key]; !ok || value == "" {
+			if !localeDefinesMessage(messages, language, key) {
 				t.Errorf("%s: locale %q has no entry for %q (mapped from spec %q): the message would render as the raw key", mapName, language, key, source)
 			}
 		}
 	}
+}
+
+// localeDefinesMessage accepts a key as a plain value, or as a plural family
+// that carries every variant the language owes (the day-observation refusals
+// are rendered through i18n.TranslatePlural).
+func localeDefinesMessage(messages map[string]string, language string, key string) bool {
+	if value, ok := messages[key]; ok && value != "" {
+		return true
+	}
+	for _, category := range i18n.PluralCategories(language) {
+		if messages[key+"."+category] == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // TestAuthErrorTranslationKeysResolveInEveryLocale is the #287 regression:
