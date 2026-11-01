@@ -1,0 +1,41 @@
+{{define "content"}}
+{{/* The identity-link step-up lands here instead of linking on arrival
+     (WEB-401): its callback is CSRF-exempt, so the identity it returned may
+     have been posted into this browser by someone else. Only the confirm form
+     below, CSRF-protected and bound to this account's sealed pending cookie,
+     writes the link. */}}
+<section class="mx-auto flex min-h-[72vh] max-w-3xl items-center justify-center px-4 py-8">
+  <div class="card card-hero w-full p-7 sm:p-10">
+    <p class="journal-kicker">{{t .Messages "app.name"}}</p>
+
+    <div>
+      <h1 class="journal-title" data-title-key="settings.oidc_link.confirm.title">{{t .Messages "settings.oidc_link.confirm.title"}}</h1>
+      <p class="journal-muted mt-2">{{t .Messages "settings.oidc_link.confirm.description"}}</p>
+    </div>
+
+    <dl class="mt-5 space-y-3 text-sm">
+      <div>
+        <dt class="field-label">{{t .Messages "settings.oidc_link.confirm.provider"}}</dt>
+        <dd class="break-all" data-oidc-link-confirm-issuer>{{.LinkIssuer}}</dd>
+      </div>
+      <div>
+        {{if .LinkEmail}}
+        <dt class="field-label">{{t .Messages "settings.oidc_link.confirm.email"}}</dt>
+        <dd class="break-all" data-oidc-link-confirm-email>{{.LinkEmail}}</dd>
+        {{else}}
+        <dt class="field-label">{{t .Messages "settings.oidc_link.confirm.subject"}}</dt>
+        <dd class="break-all" data-oidc-link-confirm-subject>{{.LinkSubject}}</dd>
+        {{end}}
+      </div>
+    </dl>
+
+    <p class="status-error mt-5">{{t .Messages "settings.oidc_link.confirm.warning"}}</p>
+
+    <form action="/api/v1/users/current/oidc/link/confirm" method="post" class="mt-6 flex flex-wrap gap-2" data-oidc-link-confirm-form>
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="btn-primary">{{t .Messages "settings.oidc_link.confirm.submit"}}</button>
+      <a href="/settings" class="btn-secondary inline-flex justify-center">{{t .Messages "settings.oidc_link.confirm.cancel"}}</a>
+    </form>
+  </div>
+</section>
+{{end}}

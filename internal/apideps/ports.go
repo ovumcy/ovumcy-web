@@ -56,10 +56,13 @@ type OIDCWorkflowService interface {
 	StartReauth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
 	Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (services.OIDCLoginResult, error)
 	ValidateReauthExchange(ctx context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, now time.Time) error
-	// CompleteIdentityLinkReauth links through ConfirmAndLinkIdentity and
-	// returns the session version it left the account at, with the same
-	// contract.
-	CompleteIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, expectedSessionVersion int, maxAuthAge time.Duration, now time.Time) (int, error)
+	// VerifyIdentityLinkReauth checks the identity-link step-up and returns the
+	// identity it resolved to; it writes nothing.
+	VerifyIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, now time.Time) (security.OIDCClaims, error)
+	// ConfirmAndLinkIdentity writes the link only from expectedSessionVersion,
+	// bumping AuthSessionVersion in the same write, and returns the version it
+	// left the account at.
+	ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, expectedSessionVersion int, claims security.OIDCClaims, linkTime time.Time) (int, error)
 	// UnlinkIdentity removes one identity from the account and bumps its
 	// AuthSessionVersion in the same write — only from the version user
 	// carries — and returns the version it left the account at; the caller

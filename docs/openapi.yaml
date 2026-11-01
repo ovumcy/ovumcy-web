@@ -3910,9 +3910,12 @@ paths:
         binding, so it is authorized the same way the other step-ups in this
         section are: a fresh interactive re-authentication at the provider
         (`prompt=login`, `max_age=0`). This endpoint only mints the sealed
-        step-up cookie and returns the provider's authorize URL — nothing is
-        written until the callback at `/auth/oidc/callback` proves the fresh
-        authentication, links the identity and redirects to `/settings`.
+        step-up cookie and returns the provider's authorize URL. The callback
+        at `/auth/oidc/callback` proves the fresh authentication but writes
+        nothing: it parks the returned identity in a sealed cookie bound to
+        this account and redirects to `/settings/oidc/link`, which names the
+        provider and the identity and asks for confirmation. The link is
+        written only by `POST /api/v1/users/current/oidc/link/confirm`.
 
         A request that does not accept JSON (an ordinary form submit) is
         answered with a same-origin interstitial page instead of the JSON body,
@@ -3977,6 +3980,59 @@ paths:
               example:
                 error: "sso temporarily unavailable"
                 error_detail: { key: "sso temporarily unavailable", category: "internal", target: "auth_form" }
+
+  /api/v1/users/current/oidc/link/confirm:
+    post:
+      tags: [settings]
+      summary: Link the OIDC identity a finished link step-up returned (owner only).
+      description: |
+        The confirm form on `/settings/oidc/link`. The identity is read only
+        from the sealed pending-link cookie the step-up callback set for this
+        account (5-minute lifetime), never from the request; the body carries
+        only the CSRF token. The callback is CSRF-exempt, so this confirm is
+        the step that keeps an identity posted into the browser from another
+        site from being linked unseen. On success the link bumps
+        `auth_session_version`, every other session is signed out and this
+        device is re-issued a session; a JSON caller gets `{"ok": true}`, a
+        form submit lands on `/settings` with a success flash. With no
+        pending link for this account (expired, absent, minted for another
+        account) nothing is linked and the refusal (`oidc reauth stale`) asks
+        for a new step-up; a form submit gets it as a `/settings` flash. A
+        revocation committed since the step-up signs this device out.
+      responses:
+        '200':
+          description: Identity linked (JSON callers).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '303':
+          description: Form submit — redirect to `/settings` (linked, or refused with a settings flash) or to `/login` (this device was signed out).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: The identity was linked to another account after the step-up returned it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "oidc identity already linked"
+                error_detail: { key: "oidc identity already linked", category: "validation", target: "settings_form" }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503':
+          description: SSO is disabled or the identity store is unreachable; nothing was linked.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "sso temporarily unavailable"
+                error_detail: { key: "sso temporarily unavailable", category: "internal", target: "auth_form" }
+        '403':
+          description: The caller is not the owner, or the request was refused before the handler runs (CSRF) with the `csrf_refused` key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
 
   /api/v1/users/current/oidc/identities/{id}:
     delete:

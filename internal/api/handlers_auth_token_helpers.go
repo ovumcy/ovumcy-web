@@ -132,6 +132,7 @@ func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
 	handler.clearTOTPPendingCookie(c)
 	handler.clearTOTPSetupCookie(c)
 	handler.clearCalendarFeedRevealCookie(c)
+	handler.clearOIDCLinkPendingCookie(c)
 }
 
 // clearSessionEndCookies retracts everything clearAuthRelatedCookies does, plus

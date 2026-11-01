@@ -474,6 +474,7 @@ var unguardedMutationReasons = map[string]string{
 	"POST /api/v1/users/current/data-wipe/step-up":     "starts a provider re-authentication; stores nothing on the account",
 	"POST /api/v1/users/current/deletion/step-up":      "starts a provider re-authentication; stores nothing on the account",
 	"POST /api/v1/users/current/oidc/link/step-up":     "starts a provider re-authentication; stores nothing on the account",
+	"POST /api/v1/users/current/oidc/link/confirm":     "links only the identity in the owner-bound sealed pending-link cookie",
 	"DELETE /api/v1/users/current/oidc/identities/:id": "unlinks an identity; demands the current password",
 	"DELETE /api/v1/sessions/current":                  "signs out; changes no setting and no data",
 }
