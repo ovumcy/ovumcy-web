@@ -167,6 +167,48 @@ func TestForceOperatorResetForceClearsFeedAtomically(t *testing.T) {
 	}
 }
 
+// TestForceOperatorResetFullClearsSecondFactors is the repository half of
+// `reset-password --full`: TOTP, the recovery code and every OIDC identity of
+// the account go in the same transaction as the reset, and another account's
+// identity stays.
+func TestForceOperatorResetFullClearsSecondFactors(t *testing.T) {
+	repo, userID := createArmedFeedUserForForceClear(t, "operator-full@example.com")
+	other := &models.User{Email: "operator-full-other@example.com", PasswordHash: "other-hash", Role: models.RoleOwner, CreatedAt: time.Now().UTC()}
+	if err := repo.Create(context.Background(), other); err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+	if err := repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"totp_secret": "sealed-secret", "totp_enabled": true, "totp_last_used_step": 7,
+	}).Error; err != nil {
+		t.Fatalf("seed totp: %v", err)
+	}
+	for _, identity := range []models.OIDCIdentity{
+		{UserID: userID, Issuer: "https://idp.example.com", Subject: "target", CreatedAt: time.Now().UTC()},
+		{UserID: other.ID, Issuer: "https://idp.example.com", Subject: "other", CreatedAt: time.Now().UTC()},
+	} {
+		if err := repo.database.Create(&identity).Error; err != nil {
+			t.Fatalf("seed identity: %v", err)
+		}
+	}
+
+	if err := repo.ForceResetPasswordAndRevokeSessions(context.Background(), userID, "operator-new-hash", true); err != nil {
+		t.Fatalf("ForceResetPasswordAndRevokeSessions(full): %v", err)
+	}
+
+	assertFeedClearedAndVersionBumped(t, repo, userID, 2)
+	got, _ := repo.FindByID(context.Background(), userID)
+	if got.TOTPSecret != "" || got.TOTPEnabled || got.TOTPLastUsedStep != 0 || got.RecoveryCodeHash != "" || got.RecoveryCodeRevealedAt != nil {
+		t.Fatalf("expected second factors cleared, got totp=%q/%v/%d recovery=%q", got.TOTPSecret, got.TOTPEnabled, got.TOTPLastUsedStep, got.RecoveryCodeHash)
+	}
+	var remaining []models.OIDCIdentity
+	if err := repo.database.Find(&remaining).Error; err != nil {
+		t.Fatalf("list identities: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].UserID != other.ID {
+		t.Fatalf("expected only the other account's identity to remain, got %+v", remaining)
+	}
+}
+
 // TestRoutinePasswordChangeDoesNotClearFeed proves the NEGATIVE contract: a
 // ROUTINE authenticated password change (UpdatePasswordAndRevokeSessions) bumps
 // the version but LEAVES the feed armed — a routine change is not a compromise
