@@ -1207,20 +1207,28 @@ func (repo *UserRepository) DisarmAllCalendarFeedTokens(ctx context.Context) (in
 func (repo *UserRepository) RevokeRestoredAccess(ctx context.Context) (models.RestoreRevocationCounts, error) {
 	var counts models.RestoreRevocationCounts
 	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Accounts without a local password first: once the statement below
+		// has run, every account matches this predicate and would be bumped
+		// twice.
+		passwordless := tx.Model(&models.User{}).
+			Where("id > 0 AND local_auth_enabled = ? AND password_hash = ''", false).
+			UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1"))
+		if passwordless.Error != nil {
+			return passwordless.Error
+		}
+		// The bump rides in the same UPDATE as the hash it revokes, as every
+		// password_hash writer's must.
 		passwords := tx.Model(&models.User{}).
-			Where("local_auth_enabled = ? OR password_hash != ''", true).
+			Where("id > 0 AND (local_auth_enabled = ? OR password_hash != '')", true).
 			Updates(map[string]any{
-				"password_hash":      "",
-				"recovery_code_hash": "",
-				"local_auth_enabled": false,
+				"password_hash":             "",
+				"recovery_code_hash":        "",
+				"recovery_code_revealed_at": nil,
+				"local_auth_enabled":        false,
+				"auth_session_version":      gorm.Expr("auth_session_version + 1"),
 			})
 		if passwords.Error != nil {
 			return passwords.Error
-		}
-		sessions := tx.Model(&models.User{}).Where("id > 0").
-			UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1"))
-		if sessions.Error != nil {
-			return sessions.Error
 		}
 		webhooks := tx.Model(&models.User{}).
 			Where("webhook_url != '' OR webhook_enabled = ?", true).
@@ -1233,7 +1241,7 @@ func (repo *UserRepository) RevokeRestoredAccess(ctx context.Context) (models.Re
 		if webhooks.Error != nil {
 			return webhooks.Error
 		}
-		counts = models.RestoreRevocationCounts{Sessions: sessions.RowsAffected, WebhookEndpoints: webhooks.RowsAffected, LocalPasswords: passwords.RowsAffected}
+		counts = models.RestoreRevocationCounts{Sessions: passwordless.RowsAffected + passwords.RowsAffected, WebhookEndpoints: webhooks.RowsAffected, LocalPasswords: passwords.RowsAffected}
 		return nil
 	})
 	if err != nil {
