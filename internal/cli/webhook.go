@@ -81,11 +81,16 @@ func RunWebhookCommand(databaseConfig db.Config, secretKey string, args []string
 	return runWebhookCommand(databaseConfig, secretKey, args, os.Stdin, os.Stdout)
 }
 
-// runWebhookCommand parses and dispatches the webhook subcommand. input/output
-// are injected so tests drive the flow with buffers (no real terminal). It
+func runWebhookCommand(databaseConfig db.Config, secretKey string, args []string, input io.Reader, output io.Writer) error {
+	return runWebhookCommandWithFence(databaseConfig, secretKey, calendarFeedFencePath(), args, input, output)
+}
+
+// runWebhookCommandWithFence parses and dispatches the webhook subcommand.
+// input/output are injected so tests drive the flow with buffers (no real
+// terminal), and fencePath so they need no process-wide environment. It
 // validates arguments before opening the DB so a bad invocation never touches
 // persistence.
-func runWebhookCommand(databaseConfig db.Config, secretKey string, args []string, input io.Reader, output io.Writer) error {
+func runWebhookCommandWithFence(databaseConfig db.Config, secretKey string, fencePath string, args []string, input io.Reader, output io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(webhookUsage)
 	}
@@ -97,7 +102,7 @@ func runWebhookCommand(databaseConfig db.Config, secretKey string, args []string
 		if err != nil {
 			return err
 		}
-		service, cleanup, err := openWebhookCLIService(databaseConfig, secretKey)
+		service, _, cleanup, err := openWebhookCLIService(databaseConfig, secretKey, fencePath)
 		if err != nil {
 			return err
 		}
@@ -115,12 +120,12 @@ func runWebhookCommand(databaseConfig db.Config, secretKey string, args []string
 		if err != nil {
 			return err
 		}
-		service, cleanup, err := openWebhookCLIService(databaseConfig, secretKey)
+		service, fence, cleanup, err := openWebhookCLIService(databaseConfig, secretKey, fencePath)
 		if err != nil {
 			return err
 		}
 		defer cleanup()
-		return runWebhookSet(service, opts, patch, output)
+		return runWebhookSet(service, fencePath, fence, opts, patch, output)
 	default:
 		return errors.New(webhookUsage)
 	}
@@ -129,15 +134,17 @@ func runWebhookCommand(databaseConfig db.Config, secretKey string, args []string
 // openWebhookCLIService opens the database and assembles the CLI webhook
 // settings orchestration from the same repositories and secret the web path
 // uses (services.NewWebhookSettingsService, mirroring bootstrap.BuildNotifyService's
-// settings half). It returns a cleanup that closes the DB handle.
-func openWebhookCLIService(databaseConfig db.Config, secretKey string) (*services.WebhookSettingsCLIService, func(), error) {
-	repositories, _, closeDatabase, err := openOperatorRepositories(databaseConfig, calendarFeedFencePath())
+// settings half). It returns the fence its repositories were built with — `set`
+// confirms against that same fence before it writes — and a cleanup that
+// closes the DB handle.
+func openWebhookCLIService(databaseConfig db.Config, secretKey string, fencePath string) (*services.WebhookSettingsCLIService, *services.CalendarFeedRestoreFence, func(), error) {
+	repositories, fence, closeDatabase, err := openOperatorRepositories(databaseConfig, fencePath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	settingsService := services.NewWebhookSettingsService(repositories.Users, []byte(secretKey))
 	cliService := services.NewWebhookSettingsCLIService(repositories.Users, settingsService)
-	return cliService, closeDatabase, nil
+	return cliService, fence, closeDatabase, nil
 }
 
 // runWebhookShow prints the owner's webhook status: configured/not and the
@@ -157,19 +164,39 @@ func runWebhookShow(service *services.WebhookSettingsCLIService, email string, o
 // runWebhookSet applies the parsed patch (merged onto the current settings by
 // the service) and prints a REDACTED confirmation — enabled state, toggles,
 // lead days, and host only. On --dry-run nothing is written.
-func runWebhookSet(service *services.WebhookSettingsCLIService, opts webhookSetOptions, patch services.WebhookSettingsPatch, output io.Writer) error {
-	view, err := service.ApplyWebhookSettings(context.Background(), opts.email, patch, opts.dryRun)
-	if err != nil {
-		return mapWebhookError(err, opts.email)
-	}
+//
+// A real write passes confirmOperatorFeedRevocation first (WEB-414). Every save
+// advances the webhook revocation epoch and can withdraw an endpoint —
+// disabled, cleared, replaced, a reminder kind turned off — and one recorded
+// only in the database is handed back to `ovumcy notify` by a restore of an
+// earlier backup. The repository's own Advance records nothing when this shell
+// has no fence path, so this process confirms and advances the server's fence
+// or refuses, as `users delete` and a forced `reset-password` do. The preview
+// runs first so an invalid patch or an unknown owner is refused before the
+// fence moves.
+func runWebhookSet(service *services.WebhookSettingsCLIService, fencePath string, fence *services.CalendarFeedRestoreFence, opts webhookSetOptions, patch services.WebhookSettingsPatch, output io.Writer) error {
 	if output == nil {
 		output = os.Stdout
 	}
+	ctx := context.Background()
+	view, err := service.PreviewWebhookSettings(ctx, opts.email, patch)
+	if err != nil {
+		return mapWebhookError(err, opts.email)
+	}
 	if opts.dryRun {
 		_, _ = fmt.Fprintf(output, "[dry-run] no changes written. Would set webhook for %s:\n", opts.email)
-	} else {
-		_, _ = fmt.Fprintf(output, "webhook configured for %s:\n", opts.email)
+		printWebhookStatus(output, "", view)
+		return nil
 	}
+
+	if err := confirmOperatorFeedRevocation(ctx, fencePath, fence, output); err != nil {
+		return err
+	}
+	view, err = service.ApplyWebhookSettings(ctx, opts.email, patch, false)
+	if err != nil {
+		return operatorFeedRevocationCommitted(mapWebhookError(err, opts.email))
+	}
+	_, _ = fmt.Fprintf(output, "webhook configured for %s:\n", opts.email)
 	printWebhookStatus(output, "", view)
 	return nil
 }

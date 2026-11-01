@@ -22,6 +22,7 @@ var feedRevokingServiceCalls = map[string]string{
 	"DeleteUserByID":         "OperatorUserService.deleteUser calls DeleteAccountAndRelatedData: the erased row takes its armed feed with it, and a restore brings both back together",
 	"DeleteUserByEmail":      "the address-addressed form of the same erasure, reaching the same DeleteAccountAndRelatedData",
 	"ForceResetPasswordByID": "AuthService.forceResetPassword calls ForceResetPasswordAndRevokeSessions, which force-clears the three calendar-feed access columns in the same statement",
+	"ApplyWebhookSettings":   "a non-preview call reaches SaveWebhookSettings, which can disable, clear or replace the endpoint; withdrawn only in the database, a restore hands it back to notify (WEB-414). Previews go through PreviewWebhookSettings",
 }
 
 // TestEveryFeedRevokingCLICallPassesTheFenceGate is the CLI counterpart of
@@ -88,7 +89,7 @@ func TestEveryFeedRevokingCLICallPassesTheFenceGate(t *testing.T) {
 			t.Fatalf("no call to %s remains in this package (%s): drop the entry rather than leaving the guard listing a call it can never see", name, reason)
 		}
 	}
-	for _, gated := range []string{"runUsersDelete", "runResetPasswordCommand"} {
+	for _, gated := range []string{"runUsersDelete", "runResetPasswordCommand", "runWebhookSet"} {
 		if _, ok := functions[gated]; !ok {
 			t.Fatalf("%s is not in the parsed package: this guard is not looking at what it claims", gated)
 		}

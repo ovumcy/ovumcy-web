@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -103,6 +104,21 @@ func loadWebhookRow(t *testing.T, databasePath string, userID uint) models.User 
 	return user
 }
 
+// webhookTestFences holds one armed fence per test database, because `webhook
+// set` now confirms the restore fence before it writes (WEB-414). Arming a
+// second fresh file over the same database would read as a restore.
+var webhookTestFences sync.Map
+
+func webhookTestFence(t *testing.T, databasePath string) string {
+	t.Helper()
+	if fencePath, ok := webhookTestFences.Load(databasePath); ok {
+		return fencePath.(string)
+	}
+	fencePath := armOperatorFence(t, databasePath)
+	webhookTestFences.Store(databasePath, fencePath)
+	return fencePath
+}
+
 func sqliteConfig(databasePath string) db.Config {
 	return db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}
 }
@@ -118,9 +134,10 @@ func TestRunWebhookCommandSetPersistsSettingsAndEncryptsURL(t *testing.T) {
 	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
 	var output bytes.Buffer
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--notify-period=false", "--reminder-lead-days=5", "--url-stdin"},
 		strings.NewReader(testWebhookURLWithToken+"\n"),
 		&output,
@@ -181,9 +198,10 @@ func TestRunWebhookCommandShowPrintsHostOnlyNeverToken(t *testing.T) {
 
 	// Arm the webhook first (piped URL).
 	var armOut bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-stdin"},
 		strings.NewReader(testWebhookURLWithToken+"\n"),
 		&armOut,
@@ -193,9 +211,10 @@ func TestRunWebhookCommandShowPrintsHostOnlyNeverToken(t *testing.T) {
 	_ = owner
 
 	var output bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"show", "owner@example.com"},
 		strings.NewReader(""),
 		&output,
@@ -226,9 +245,10 @@ func TestRunWebhookCommandShowNotConfigured(t *testing.T) {
 	createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
 	var output bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"show", "owner@example.com"},
 		strings.NewReader(""),
 		&output,
@@ -255,9 +275,10 @@ func TestRunWebhookCommandShowReportsAnUnreadableEndpoint(t *testing.T) {
 	sealUnreadableWebhookEndpoint(t, databasePath, owner.ID, "https://ntfy.example.com/secret-topic?token=abc123")
 
 	var output bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"show", "unreadable@example.com"},
 		strings.NewReader(""),
 		&output,
@@ -316,9 +337,10 @@ func TestRunWebhookCommandSetRejectsInvalidScheme(t *testing.T) {
 	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
 	var output bytes.Buffer
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-stdin"},
 		strings.NewReader("ftp://evil.example/hook\n"),
 		&output,
@@ -341,9 +363,10 @@ func TestRunWebhookCommandUnknownEmail(t *testing.T) {
 	databasePath := createCLIWebhookDatabase(t)
 
 	var output bytes.Buffer
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"show", "ghost@example.com"},
 		strings.NewReader(""),
 		&output,
@@ -362,9 +385,10 @@ func TestRunWebhookCommandDryRunWritesNothing(t *testing.T) {
 	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
 	var output bytes.Buffer
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--reminder-lead-days=9", "--url-stdin", "--dry-run"},
 		strings.NewReader(testWebhookURLWithToken+"\n"),
 		&output,
@@ -398,9 +422,10 @@ func TestRunWebhookCommandLeadDaysClampedAboveMax(t *testing.T) {
 	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
 	var output bytes.Buffer
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--reminder-lead-days=99"},
 		strings.NewReader(""),
 		&output,
@@ -424,9 +449,10 @@ func TestRunWebhookCommandClearURLDisablesEndpoint(t *testing.T) {
 	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
 	// Arm, then clear.
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-stdin"},
 		strings.NewReader(testWebhookURLWithToken+"\n"),
 		&bytes.Buffer{},
@@ -435,9 +461,10 @@ func TestRunWebhookCommandClearURLDisablesEndpoint(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=false", "--clear-url"},
 		strings.NewReader(""),
 		&output,
@@ -465,9 +492,10 @@ func TestRunWebhookCommandURLFromEnv(t *testing.T) {
 	t.Setenv(webhookURLEnv, testWebhookURLWithToken)
 
 	var output bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-env"},
 		strings.NewReader(""),
 		&output,
@@ -503,9 +531,10 @@ func TestRunWebhookCommandAmbientEnvIsIgnoredWithoutURLEnv(t *testing.T) {
 
 	t.Setenv(webhookURLEnv, "")
 	var armed bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-stdin"},
 		strings.NewReader(testWebhookURLFromStdin+"\n"),
 		&armed,
@@ -515,9 +544,10 @@ func TestRunWebhookCommandAmbientEnvIsIgnoredWithoutURLEnv(t *testing.T) {
 
 	t.Setenv(webhookURLEnv, testWebhookURLWithToken)
 	var edited bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--notify-ovulation=true"},
 		strings.NewReader(""),
 		&edited,
@@ -545,9 +575,10 @@ func TestRunWebhookCommandURLEnvRefusesAnEmptyVariable(t *testing.T) {
 
 	t.Setenv(webhookURLEnv, "  ")
 	var output bytes.Buffer
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-env"},
 		strings.NewReader(""),
 		&output,
@@ -570,9 +601,10 @@ func TestRunWebhookCommandEnvAndStdinRejected(t *testing.T) {
 	t.Setenv(webhookURLEnv, testWebhookURLWithToken)
 
 	var output bytes.Buffer
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-env", "--url-stdin"},
 		strings.NewReader(testWebhookURLFromStdin+"\n"),
 		&output,
@@ -612,9 +644,10 @@ func TestRunWebhookCommandStdinAloneStillReadsStdin(t *testing.T) {
 	t.Setenv(webhookURLEnv, "")
 
 	var output bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-stdin"},
 		strings.NewReader(testWebhookURLFromStdin+"\n"),
 		&output,
@@ -645,9 +678,10 @@ func TestRunWebhookCommandClearURLDisarmsInOneStep(t *testing.T) {
 	t.Setenv(webhookURLEnv, testWebhookURLWithToken)
 
 	var armed bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-env"},
 		strings.NewReader(""),
 		&armed,
@@ -659,9 +693,10 @@ func TestRunWebhookCommandClearURLDisarmsInOneStep(t *testing.T) {
 	}
 
 	var cleared bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--clear-url"},
 		strings.NewReader(""),
 		&cleared,
@@ -688,9 +723,10 @@ func TestRunWebhookCommandClearURLWithExplicitEnableIsRefused(t *testing.T) {
 
 	t.Setenv(webhookURLEnv, testWebhookURLWithToken)
 	var armed bytes.Buffer
-	if err := runWebhookCommand(
+	if err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-env"},
 		strings.NewReader(""),
 		&armed,
@@ -699,9 +735,10 @@ func TestRunWebhookCommandClearURLWithExplicitEnableIsRefused(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--clear-url"},
 		strings.NewReader(""),
 		&output,
@@ -749,9 +786,10 @@ func TestRunWebhookCommandEnableWithoutEndpointRejected(t *testing.T) {
 	databasePath := createCLIWebhookDatabase(t)
 	createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true"},
 		strings.NewReader(""),
 		&bytes.Buffer{},
@@ -787,9 +825,10 @@ func TestRunWebhookCommandStdinRequiresURL(t *testing.T) {
 	databasePath := createCLIWebhookDatabase(t)
 	createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
-	err := runWebhookCommand(
+	err := runWebhookCommandWithFence(
 		sqliteConfig(databasePath),
 		testWebhookSecretKey,
+		webhookTestFence(t, databasePath),
 		[]string{"set", "owner@example.com", "--enabled=true", "--url-stdin"},
 		strings.NewReader(""),
 		&bytes.Buffer{},
@@ -855,7 +894,7 @@ func TestRunWebhookShowNilOutputDefaultsToStdout(t *testing.T) {
 	databasePath := createCLIWebhookDatabase(t)
 	createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
-	service, cleanup, err := openWebhookCLIService(sqliteConfig(databasePath), testWebhookSecretKey)
+	service, _, cleanup, err := openWebhookCLIService(sqliteConfig(databasePath), testWebhookSecretKey, "")
 	if err != nil {
 		t.Fatalf("open service: %v", err)
 	}
@@ -875,7 +914,8 @@ func TestRunWebhookSetNilOutputDefaultsToStdout(t *testing.T) {
 	databasePath := createCLIWebhookDatabase(t)
 	createCLIWebhookOwner(t, databasePath, "owner@example.com")
 
-	service, cleanup, err := openWebhookCLIService(sqliteConfig(databasePath), testWebhookSecretKey)
+	fencePath := webhookTestFence(t, databasePath)
+	service, fence, cleanup, err := openWebhookCLIService(sqliteConfig(databasePath), testWebhookSecretKey, fencePath)
 	if err != nil {
 		t.Fatalf("open service: %v", err)
 	}
@@ -883,11 +923,11 @@ func TestRunWebhookSetNilOutputDefaultsToStdout(t *testing.T) {
 
 	lead := 5
 	// Real write, nil output.
-	if err := runWebhookSet(service, webhookSetOptions{email: "owner@example.com", reminderLeadDays: &lead}, services.WebhookSettingsPatch{ReminderLeadDays: &lead}, nil); err != nil {
+	if err := runWebhookSet(service, fencePath, fence, webhookSetOptions{email: "owner@example.com", reminderLeadDays: &lead}, services.WebhookSettingsPatch{ReminderLeadDays: &lead}, nil); err != nil {
 		t.Fatalf("nil output (real write) should default to stdout, got %v", err)
 	}
 	// Dry-run, nil output.
-	if err := runWebhookSet(service, webhookSetOptions{email: "owner@example.com", dryRun: true, reminderLeadDays: &lead}, services.WebhookSettingsPatch{ReminderLeadDays: &lead}, nil); err != nil {
+	if err := runWebhookSet(service, fencePath, fence, webhookSetOptions{email: "owner@example.com", dryRun: true, reminderLeadDays: &lead}, services.WebhookSettingsPatch{ReminderLeadDays: &lead}, nil); err != nil {
 		t.Fatalf("nil output (dry-run) should default to stdout, got %v", err)
 	}
 }
