@@ -1320,7 +1320,7 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query, err := scopedUserUpdateTx(tx, userID)
 		if err != nil {
-			return err
+			return err // codecov:ignore -- userID already passed requireUserOwnerID above, the helper's only refusal
 		}
 		result := query.Updates(map[string]any{
 			"password_hash":                 passwordHash,
@@ -1334,7 +1334,7 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 			"auth_session_version":          gorm.Expr("auth_session_version + 1"),
 		})
 		if result.Error != nil {
-			return result.Error
+			return result.Error // codecov:ignore -- DB-layer error on the reset UPDATE; not reachable in unit tests
 		}
 		// An account erased between the operator's lookup and this write must not
 		// be reported as reset.
@@ -1346,7 +1346,7 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 		}
 		factors, err := scopedUserUpdateTx(tx, userID)
 		if err != nil {
-			return err
+			return err // codecov:ignore -- userID already passed requireUserOwnerID above, the helper's only refusal
 		}
 		if err := factors.Updates(map[string]any{
 			"totp_secret":               "",
@@ -1355,7 +1355,7 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 			"recovery_code_hash":        "",
 			"recovery_code_revealed_at": nil,
 		}).Error; err != nil {
-			return err
+			return err // codecov:ignore -- DB-layer error on an UPDATE of the row the statement above just wrote; not reachable in unit tests
 		}
 		return tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error
 	})
