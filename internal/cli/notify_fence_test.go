@@ -163,6 +163,18 @@ func TestNotifyFenceGateAcceptsAnAgreeingFenceWithoutWriting(t *testing.T) {
 	}
 }
 
+// TestNotifyFenceGateRejectsANilFenceInsteadOfPanicking: every production
+// caller gets its fence from buildRepositories; a nil one is wiring, refused
+// plainly rather than dereferenced.
+func TestNotifyFenceGateRejectsANilFenceInsteadOfPanicking(t *testing.T) {
+	t.Parallel()
+
+	err := confirmNotifyFenceContinuity(context.Background(), filepath.Join(t.TempDir(), "calendar-feed.fence"), nil, false, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "internal error") {
+		t.Fatalf("want the wiring error, got %v", err)
+	}
+}
+
 // withNotifyRepositories opens databasePath with the fence at fencePath, as the
 // server would, and closes it before returning so the file can be replaced.
 func withNotifyRepositories(t *testing.T, databasePath, fencePath string, run func(repositories *db.Repositories, fence *services.CalendarFeedRestoreFence)) {
