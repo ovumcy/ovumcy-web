@@ -26,7 +26,7 @@ var (
 type AuthSessionClaims struct {
 	UserID         uint   `json:"uid"`
 	Role           string `json:"role"`
-	SessionVersion int    `json:"sv,omitempty"`
+	SessionVersion int    `json:"sv"`
 	SessionID      string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
@@ -98,7 +98,11 @@ func ParseAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*A
 	if claims.UserID == 0 {
 		return nil, ErrAuthSessionTokenInvalidUserID
 	}
-	claims.SessionVersion = NormalizeAuthSessionVersion(claims.SessionVersion)
+	// Refused, never normalized to 1, the same as both grant parsers: a token
+	// with no epoch would otherwise match every account still at version 1.
+	if claims.SessionVersion < 1 {
+		return nil, ErrAuthSessionTokenInvalid
+	}
 	claims.SessionID = strings.TrimSpace(claims.SessionID)
 	if claims.SessionID == "" {
 		return nil, ErrAuthSessionTokenInvalid

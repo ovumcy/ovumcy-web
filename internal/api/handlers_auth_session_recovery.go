@@ -47,7 +47,7 @@ func (handler *Handler) ForgotPassword(c fiber.Ctx) error {
 		input.RecoveryCode,
 		input.Password,
 		now,
-		30*time.Minute,
+		resetTokenTTL,
 	)
 	if err != nil {
 		spec := mapPasswordRecoveryStartError(err)

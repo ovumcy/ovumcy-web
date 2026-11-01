@@ -60,6 +60,7 @@
         data-confirm="{{t .Messages "settings.confirm_clear_data"}}"
         data-confirm-accept="{{t .Messages "settings.clear_data.confirm_accept"}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
         <button type="submit" class="btn-secondary">{{t .Messages "settings.clear_data.stepup_submit"}}</button>
       </form>
     </div>
@@ -112,6 +113,7 @@
         data-confirm="{{t .Messages "settings.confirm_delete_account"}}"
         data-confirm-accept="{{t .Messages "settings.delete_account.stepup_submit"}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
         <button type="submit" class="btn-danger">{{t .Messages "settings.delete_account.stepup_submit"}}</button>
       </form>
     </div>

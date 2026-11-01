@@ -90,30 +90,32 @@ func TestParseAuthSessionTokenRejectsWrongAlgorithm(t *testing.T) {
 	}
 }
 
-func TestParseAuthSessionTokenNormalizesLegacyMissingVersion(t *testing.T) {
+// A token with no epoch is refused like both grant parsers refuse one, never
+// normalized to 1: that would bind it to every account still at version 1
+// (WEB-400).
+func TestParseAuthSessionTokenRefusesMissingOrNonPositiveVersion(t *testing.T) {
 	secret := []byte("test-auth-secret")
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 
-	claims := AuthSessionClaims{
-		UserID:    42,
-		Role:      "owner",
-		SessionID: "session-for-version-normalization",
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
-	}
-	rawToken, err := signAuthSessionClaims(secret, &claims)
-	if err != nil {
-		t.Fatalf("sign legacy token: %v", err)
-	}
+	for _, version := range []int{0, -1} {
+		claims := AuthSessionClaims{
+			UserID:         42,
+			Role:           "owner",
+			SessionVersion: version,
+			SessionID:      "session-without-epoch",
+			RegisteredClaims: jwt.RegisteredClaims{
+				ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
+				IssuedAt:  jwt.NewNumericDate(now),
+			},
+		}
+		rawToken, err := signAuthSessionClaims(secret, &claims)
+		if err != nil {
+			t.Fatalf("sign token: %v", err)
+		}
 
-	parsedClaims, err := ParseAuthSessionToken(secret, rawToken, now.Add(1*time.Minute))
-	if err != nil {
-		t.Fatalf("ParseAuthSessionToken() unexpected error: %v", err)
-	}
-	if parsedClaims.SessionVersion != 1 {
-		t.Fatalf("expected legacy session version to normalize to 1, got %d", parsedClaims.SessionVersion)
+		if _, err := ParseAuthSessionToken(secret, rawToken, now.Add(1*time.Minute)); !errors.Is(err, ErrAuthSessionTokenInvalid) {
+			t.Fatalf("sv=%d: expected ErrAuthSessionTokenInvalid, got %v", version, err)
+		}
 	}
 }
 

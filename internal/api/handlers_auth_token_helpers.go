@@ -134,6 +134,21 @@ func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
 	handler.clearCalendarFeedRevealCookie(c)
 }
 
+// clearRejectedSessionCookies is what a refused session (expired, revoked,
+// invalid) retracts: the auth cookie and every handoff only that session could
+// consume. The reset-password and TOTP-pending cookies stay, because both are
+// consumed WITHOUT a session — a forced reset or a 2FA challenge can be in
+// flight in a browser that still sends a lapsed auth cookie, and the refusal of
+// that cookie must not end the sign-in it is racing. The provider-logout bridge
+// stays too: a sign-out writes it and the bridge route consumes it after the
+// session is already gone.
+func (handler *Handler) clearRejectedSessionCookies(c fiber.Ctx) {
+	handler.clearAuthCookie(c)
+	handler.clearRecoveryCodePageCookie(c)
+	handler.clearTOTPSetupCookie(c)
+	handler.clearCalendarFeedRevealCookie(c)
+}
+
 // clearSessionEndCookies retracts everything clearAuthRelatedCookies does, plus
 // the two plaintext preference caches `ovumcy_lang` and `ovumcy_tz` and any
 // pending flash. It is the

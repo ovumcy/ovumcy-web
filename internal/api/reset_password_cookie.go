@@ -9,7 +9,11 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-const resetPasswordCookieTTL = 30 * time.Minute
+// resetTokenTTL bounds every reset token the cookie below carries. The token
+// alone sets a password and mints a session, so on a shared browser it is the
+// window in which the next person can take the account; the cookie itself is
+// session-scoped and the signed expiry is the server's only bound.
+const resetTokenTTL = 10 * time.Minute
 
 // resetPasswordCookiePayload carries only the reset token itself. It used to
 // also carry a "Forced" bool the mint call site chose, which every gate that
@@ -42,7 +46,7 @@ func (handler *Handler) setResetPasswordCookie(c fiber.Ctx, token string) error 
 		return err
 	}
 
-	return handler.writeSealedCookie(c, resetPasswordCookieSpec, serialized, time.Now().Add(resetPasswordCookieTTL))
+	return handler.writeSealedCookie(c, resetPasswordCookieSpec, serialized, time.Time{})
 }
 
 func (handler *Handler) readResetPasswordCookie(c fiber.Ctx) string {

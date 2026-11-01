@@ -15,7 +15,7 @@ import (
 // specific surviving/not-covered gremlins mutant so the mutant is killed:
 //
 //   - The per-purpose TTL constants (oidcStateCookieTTL, oidcStepupCookieTTL,
-//     resetPasswordCookieTTL, recoveryCodeCookieTTL, totpPendingCookieTTL)
+//     resetTokenTTL, recoveryCodeCookieTTL, totpPendingCookieTTL)
 //     were ARITHMETIC_BASE "NOT COVERED": `N * time.Minute`
 //     mutates to `N / time.Minute` == 0s (integer division; N < 60e9 ns), so a
 //     freshly issued cookie would expire immediately. Each test pins the expiry
@@ -160,9 +160,11 @@ func TestTOTPPendingCookieExpiryHonorsFiveMinuteTTL(t *testing.T) {
 	}
 }
 
-// --- resetPasswordCookieTTL: 30 * time.Minute (cookie Expires attribute) ----
+// --- reset-password cookie: session-scoped; resetTokenTTL 10 * time.Minute ---
+// The token alone sets a password and mints a session, so a persistent cookie
+// handed it to the next user of a shared browser (WEB-400).
 
-func TestResetPasswordCookieExpiresHonorsThirtyMinuteTTL(t *testing.T) {
+func TestResetPasswordCookieIsSessionScopedAndTokenTTLIsTenMinutes(t *testing.T) {
 	t.Parallel()
 
 	handler := ttlMutationTestHandler()
@@ -174,13 +176,11 @@ func TestResetPasswordCookieExpiresHonorsThirtyMinuteTTL(t *testing.T) {
 		return c.SendStatus(http.StatusNoContent)
 	})
 
-	before := time.Now()
 	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/set", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
 	defer func() { _ = response.Body.Close() }()
-	after := time.Now()
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
 	}
@@ -189,14 +189,11 @@ func TestResetPasswordCookieExpiresHonorsThirtyMinuteTTL(t *testing.T) {
 	if cookie == nil {
 		t.Fatal("expected a reset-password Set-Cookie")
 	}
-	if cookie.Expires.IsZero() {
-		t.Fatal("reset-password cookie must carry an explicit expiry, not be session-scoped")
+	if !cookie.Expires.IsZero() || cookie.MaxAge != 0 {
+		t.Fatalf("reset-password cookie must be session-scoped, got expires=%s max-age=%d", cookie.Expires, cookie.MaxAge)
 	}
-
-	minExpiry := before.Add(30*time.Minute - ttlSlack)
-	maxExpiry := after.Add(30*time.Minute + ttlSlack)
-	if cookie.Expires.Before(minExpiry) || cookie.Expires.After(maxExpiry) {
-		t.Fatalf("expected reset-password cookie expiry in [%s, %s], got %s", minExpiry, maxExpiry, cookie.Expires)
+	if resetTokenTTL != 10*time.Minute {
+		t.Fatalf("expected the reset token TTL to be 10m, got %s", resetTokenTTL)
 	}
 }
 
