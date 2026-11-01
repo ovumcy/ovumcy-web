@@ -458,8 +458,9 @@ func TestCalendarFeedRestoreFenceAdvanceMovesBothHalvesTogether(t *testing.T) {
 // that is not CONFIGURED needs no record at all: Enforce's unanchored path
 // already disarms every armed feed on every boot, so writing the database half
 // alone would add a per-request write and a disagreement nothing ever reads.
-// A fence that is configured but unwritable is the case below, and there the
-// database half moving alone IS the answer.
+// A fence that is configured but unwritable is the two cases below: Advance
+// refuses, AdvanceOrDiverge moves the database half alone. Both forms agree
+// on the unconfigured case.
 func TestCalendarFeedRestoreFenceAdvanceRecordsNothingWithoutAFence(t *testing.T) {
 	appState := &stubFenceAppState{values: map[string]string{}}
 	anchor := &stubFenceAnchor{writeErr: security.ErrCalendarFeedFenceNotConfigured}
@@ -467,6 +468,9 @@ func TestCalendarFeedRestoreFenceAdvanceRecordsNothingWithoutAFence(t *testing.T
 
 	if err := fence.Advance(context.Background()); err != nil {
 		t.Fatalf("an unconfigured fence must not fail a revocation: %v", err)
+	}
+	if err := fence.AdvanceOrDiverge(context.Background()); err != nil {
+		t.Fatalf("an unconfigured fence must not fail a side-effect revocation: %v", err)
 	}
 	if len(appState.values) != 0 {
 		t.Fatalf("an unconfigured fence must record nothing, got %v", appState.values)
@@ -476,13 +480,47 @@ func TestCalendarFeedRestoreFenceAdvanceRecordsNothingWithoutAFence(t *testing.T
 	}
 }
 
-// TestCalendarFeedRestoreFenceAdvanceBreaksTheFenceWhenTheFileRefuses pins the
-// fail-closed half. An owner revoking a feed must not be refused because a
-// volume could not be written, and the revocation must not be reported as
-// durable when it is not. Letting the database half move on ALONE satisfies
-// both: the call succeeds, the halves now disagree, and the next boot answers
-// that by disarming every feed.
-func TestCalendarFeedRestoreFenceAdvanceBreaksTheFenceWhenTheFileRefuses(t *testing.T) {
+// TestCalendarFeedRestoreFenceAdvanceRefusesATransientFileFailure pins WEB-414's
+// first half. A configured fence whose file write fails for a moment must
+// refuse the owner's write and leave both halves as they were, so the boot
+// after the failure clears reads continuity and revokes nothing. Moving the
+// database half alone would have made that boot indistinguishable from a
+// restore, and its answer is every session, webhook and local password.
+func TestCalendarFeedRestoreFenceAdvanceRefusesATransientFileFailure(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
+	}}
+	cause := errors.New("no space left on device")
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true, writeErr: cause}
+	users := &stubFenceUserStore{}
+	fence := NewCalendarFeedRestoreFence(appState, users, anchor)
+
+	err := fence.Advance(context.Background())
+	if !errors.Is(err, ErrCalendarFeedFenceWriteFailed) || !errors.Is(err, cause) {
+		t.Fatalf("Advance must refuse an unwritable fence file with its cause, got %v", err)
+	}
+	if anchor.value != fenceTestToken || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != fenceTestToken {
+		t.Fatalf("a refused advance must leave both halves on the old token, got file %q database %q",
+			anchor.value, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
+	}
+
+	anchor.writeErr = nil
+	outcome, err := fence.Enforce(context.Background())
+	if err != nil {
+		t.Fatalf("Enforce: %v", err)
+	}
+	if outcome != (CalendarFeedRestoreFenceOutcome{}) || users.callCount != 0 || users.revokeCalls != 0 {
+		t.Fatalf("the boot after a transient failure must be a no-op, got %+v (disarms %d, revocations %d)",
+			outcome, users.callCount, users.revokeCalls)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceOrDivergeBreaksTheFenceWhenTheFileRefuses
+// pins the fail-closed form for a write that must not be refused (a password
+// change, an erasure). It must not be reported as durable when it is not, so
+// the database half moves on ALONE: the call succeeds, the halves disagree, and
+// the next boot answers that by disarming every feed.
+func TestCalendarFeedRestoreFenceAdvanceOrDivergeBreaksTheFenceWhenTheFileRefuses(t *testing.T) {
 	appState := &stubFenceAppState{values: map[string]string{
 		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
 	}}
@@ -492,8 +530,8 @@ func TestCalendarFeedRestoreFenceAdvanceBreaksTheFenceWhenTheFileRefuses(t *test
 	users := &countingFenceUserStore{counts: []int64{2, 0}}
 	fence := NewCalendarFeedRestoreFence(appState, users, anchor)
 
-	if err := fence.Advance(context.Background()); err != nil {
-		t.Fatalf("a revocation must not fail because the fence file refused: %v", err)
+	if err := fence.AdvanceOrDiverge(context.Background()); err != nil {
+		t.Fatalf("a side-effect revocation must not fail because the fence file refused: %v", err)
 	}
 	if anchor.value != fenceTestToken {
 		t.Fatalf("the file half must be left where it was, got %q", anchor.value)

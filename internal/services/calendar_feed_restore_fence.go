@@ -266,47 +266,66 @@ func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outco
 // nothing. Advancing on the change itself is the same shape the webhook
 // revocation epoch uses, for the same reason.
 //
-// A failure to write the FILE half is never returned — an owner's revocation
-// must not be refused because a volume could not be written — but the two
-// reasons it can fail are answered differently:
+// It is for a write that IS the change and that the caller can refuse: an
+// owner arming, rotating or revoking their own feed, saving or removing their
+// webhook. The two reasons the FILE half can fail are answered differently:
 //
-//   - NOT CONFIGURED at all. Nothing is recorded, on either half. An instance
-//     with no fence already disarms every armed feed on every boot (Enforce's
-//     unanchored path), so containment is complete without this write, and
-//     moving the database half alone would only add a per-request write and a
-//     disagreement the boot pass never reads.
-//   - Configured but unwritable — a broken mount, a full disk. The database
-//     half moves on ALONE, deliberately: the halves now disagree, and the next
-//     boot answers that by disarming. A fence that cannot record a revocation
-//     has to fail closed rather than report success.
+//   - NOT CONFIGURED at all. Nothing is recorded, on either half, and nil is
+//     returned. An instance with no fence already disarms every armed feed on
+//     every boot (Enforce's unanchored path), so containment is complete
+//     without this write.
+//   - Configured but unwritable — a broken mount, a full disk, a transient I/O
+//     error. Nothing is recorded and ErrCalendarFeedFenceWriteFailed is
+//     returned, so the caller refuses its own write (WEB-414): the halves still
+//     agree and the row never moves, so there is nothing a restore could undo.
+//     Moving the database half alone would fail closed too, but the next boot
+//     cannot tell that disagreement from a restored backup and answers it with
+//     the full ContinuityBroken revocation — every session, webhook and local
+//     password on the instance — for a write the owner could simply retry.
 //
-// Only a database failure reaches the caller, whose own write is failing for
-// the same reason. That case has a third outcome, and it is the expensive one:
-// the file half has already been written, so the halves disagree and the next
-// boot disarms EVERY armed feed on the instance — not only the one whose write
-// failed. One transient app_state error therefore costs every owner their
-// subscribe URL. It is priced in rather than avoided: the halves are written
-// one after the other with no transaction spanning both, so some order has to
-// carry the risk, and file-then-database is the order whose failure disarms
-// too much instead of too little. The reverse would leave the halves agreeing
-// on a token minted before a revocation that did happen, which is the defect
-// this whole mechanism exists to close.
+// A database failure after the file half was written is returned as well, and
+// is the one outcome that changes something: the halves disagree, so the next
+// boot runs the ContinuityBroken pass. It is priced in rather than avoided: the
+// halves are written one after the other with no transaction spanning both,
+// and file-then-database is the order whose failure revokes too much instead
+// of too little. The reverse would leave the halves agreeing on a token minted
+// before a revocation that did happen, which is the defect this whole
+// mechanism exists to close.
 //
-// Which is also why a caller that has already COMMITTED its own write drops
-// this error instead of returning it: by then the fence has failed closed on
-// its own, and the operation being reported as failed would be a second,
-// larger lie than the missing marker.
-//
-// This method is the SERVER's own: it is called on behalf of the request that
-// is itself arming, rotating or removing the caller's OWN feed, where refusing
-// for want of a mounted volume would be the wrong trade. It is never the right
-// call for a process acting on someone ELSE's behalf — an operator revoking
-// another account's feed (`users delete`, a forced password reset) — because
-// there "the database half moves on alone" stops being a safe degradation and
-// becomes the defect this mechanism exists to close: a removal recorded
-// nowhere a restore of an older backup could contradict. AdvanceConfirmed
-// below exists for exactly that caller, and refuses instead.
+// A write whose feed clear is a side effect it must not be refused over — a
+// password change, an erasure — calls AdvanceOrDiverge instead, and an
+// operator process acting on someone ELSE's account calls AdvanceConfirmed.
 func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
+	fence.writing.Lock()
+	defer fence.writing.Unlock()
+
+	token, err := security.NewCalendarFeedFenceToken()
+	if err != nil {
+		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
+	}
+	if err := fence.anchor.Write(token); err != nil {
+		if errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
+			return nil
+		}
+		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: err}
+	}
+	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
+}
+
+// AdvanceOrDiverge is Advance for a write that proceeds whatever the fence
+// does — recovery-code rotation, a password reset, reset-token redemption,
+// clear-data, account erasure — whose feed clear is a side effect. Refusing
+// those over a calendar-feed marker would trade a credential or an erasure for
+// a feed record.
+//
+// So where Advance refuses on a configured but unwritable file, this moves the
+// database half on ALONE: the halves disagree, and the next boot answers with
+// the full ContinuityBroken pass, passwords included. That cost is the
+// containment, not a side effect of it: nothing outside the database recorded
+// this write, so a backup taken before it, restored, leaves the very same
+// disagreement, and no marker the database could carry would tell the two
+// apart — a restored dump carries it too. Only these rarer writes pay it.
+func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
 
@@ -320,20 +339,25 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
 }
 
+// ErrCalendarFeedFenceWriteFailed is returned by Advance when the fence is
+// configured and its file could not be written. Nothing was written in either
+// half, so the caller's own write must not run, and a retry is safe. It always
+// wraps the anchor error.
+var ErrCalendarFeedFenceWriteFailed = errors.New("calendar feed restore fence: could not write the fence file")
+
 // ErrCalendarFeedFenceUnreachable is returned by AdvanceConfirmed when this
 // process cannot prove it is reading and writing the SAME anchor the server
 // does: CALENDAR_FEED_FENCE_PATH unset, no mount behind it, or any other
 // anchor failure, including one surfaced by the read half. It always wraps
 // the underlying cause.
 //
-// Advance answers the identical failure by letting the database half move on
-// alone (see its own doc comment) because an owner's request to change their
-// OWN feed must not be refused for want of a mounted volume. AdvanceConfirmed
-// exists for the opposite caller — an operator-driven revocation that is not
-// itself the fence's owner — where that same degradation would BE the defect
-// this whole mechanism exists to close. So on this path AdvanceConfirmed
-// writes NOTHING, in either half, and the caller refuses the operation
-// entirely instead.
+// Advance and AdvanceOrDiverge treat an UNSET path as "no fence" and proceed,
+// because an instance with no fence disarms every feed on every boot anyway.
+// AdvanceConfirmed exists for the opposite caller — an operator process whose
+// shell may simply not be looking at the server's fence — where proceeding
+// would record the removal nowhere a restore of an older backup could
+// contradict. So on this path AdvanceConfirmed writes NOTHING, in either half,
+// and the caller refuses the operation entirely instead.
 var ErrCalendarFeedFenceUnreachable = errors.New("calendar feed restore fence: could not confirm continuity")
 
 // ErrCalendarFeedFenceMarkerUnavailable is returned by AdvanceConfirmed when
@@ -348,8 +372,8 @@ var ErrCalendarFeedFenceMarkerUnavailable = errors.New("calendar feed restore fe
 // file half was written and the database half then could not be. It is the
 // one error out of that method after which something HAS changed: the file is
 // ahead of app_state, so the server's next boot reads that as a restore and
-// disarms every armed feed — fail closed, the same answer Advance's own
-// unreachable-anchor path gives, reached through a different door. A caller
+// disarms every armed feed — fail closed, the same answer AdvanceOrDiverge's
+// unwritable-anchor path gives, reached through a different door. A caller
 // must not tell the operator that nothing changed on this error. It always
 // wraps the storage error.
 var ErrCalendarFeedFenceHalfAdvanced = errors.New("calendar feed restore fence: the file advanced but the database marker did not")
@@ -401,7 +425,7 @@ func (err *CalendarFeedFenceContinuityError) Error() string {
 // AdvanceConfirmed is Advance's fail-closed sibling for a caller that is not
 // the fence's own owner-facing server process — today, the operator CLI
 // revoking a feed on someone else's behalf (`users delete`, a forced password
-// reset). Both methods answer the same question — "record that the set of
+// reset) or saving their webhook (`webhook set`). Both methods answer the same question — "record that the set of
 // armed feeds just changed" — but must answer an unreachable or disagreeing
 // fence oppositely, for the reason ErrCalendarFeedFenceUnreachable's doc
 // comment gives.
@@ -410,8 +434,7 @@ func (err *CalendarFeedFenceContinuityError) Error() string {
 // the SAME token — the one condition Enforce calls a no-op — and only then
 // mints, writes the file, then the database marker, in that order, same as
 // Advance. A failure writing the database half after the file has already
-// moved is still returned here (unlike Advance, which has nothing left to
-// protect by dropping it), wrapped in ErrCalendarFeedFenceHalfAdvanced: the
+// moved is returned wrapped in ErrCalendarFeedFenceHalfAdvanced: the
 // file is now ahead of app_state, so the very next boot reads that as a
 // restore and disarms every armed feed.
 //
@@ -545,10 +568,9 @@ func (fence *CalendarFeedRestoreFence) storeToken(ctx context.Context, outcome C
 // no fence configured can advance either half (Advance records nothing when not
 // configured), so a backup taken then, restored beside the untouched file,
 // compares equal and the stamp is never consulted. A fence that is configured
-// but unusable is the other flavour of unanchored: there Advance moves the
-// database half alone, so every feed change made in the gap is already a
-// disagreement the next fenced boot reads, and a gap with no change has nothing
-// to contain. The drop still runs for that flavour, on purpose — the two are
+// but unusable is the other flavour of unanchored: there Advance refuses every
+// owner feed change and AdvanceOrDiverge moves the database half alone, so the
+// gap either changed nothing or left a disagreement the next fenced boot reads. The drop still runs for that flavour, on purpose — the two are
 // told apart only by the error, and a drop keyed on it would leave the file
 // agreeing with a database half nothing wrote across a gap the pass just
 // declared it could not vouch for. With the database half gone, the file's return

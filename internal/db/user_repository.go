@@ -40,6 +40,7 @@ var ErrUserOwnerRequired = errors.New("user owner is required")
 // depends on the behaviour rather than on the layer above it.
 type CalendarFeedFence interface {
 	Advance(ctx context.Context) error
+	AdvanceOrDiverge(ctx context.Context) error
 }
 
 type UserRepository struct {
@@ -83,6 +84,9 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 //     the fence never saw would hand that endpoint back to the next notify
 //     pass. The fence is the only restore detector the boot pass has, so a
 //     revocation it does not record is one no boot can answer.
+//     Advance refuses an unwritable fence file as well as a database failure
+//     (WEB-414), so a transient file error costs the owner one retry rather
+//     than costing every owner the next boot's full restore revocation.
 //   - Everything else — recovery-code rotation, the operator reset, the
 //     reset-token redeem, clear-data and account erasure — goes through
 //     advanceCalendarFeedFenceBestEffort and proceeds. There the feed clear is
@@ -91,8 +95,8 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 //
 // This reasoning is the server's own; it holds only for a write acting on the
 // account's OWN feed, never for the operator CLI acting on someone else's,
-// which is why AdvanceConfirmed (internal/services) exists and refuses instead
-// of degrading.
+// which is why AdvanceConfirmed (internal/services) exists and refuses an
+// unset fence path too.
 //
 // Deliberately NOT called by the two boot-time bulk disarms: the restore fence
 // records its own token immediately after its disarm, and the key-rotation
@@ -114,16 +118,19 @@ func (repo *UserRepository) advanceCalendarFeedFence(ctx context.Context) error 
 // a calendar-feed marker could not be written would trade a credential or an
 // erasure for a feed record.
 //
-// The cost is bounded on either route the fence can actually fail. A write that
-// moved the file but not app_state leaves the two halves disagreeing; one that
-// moved neither means the fence file is unwritable, which sends every later
-// boot down Enforce's unanchored path. Both disarm every armed feed on the next
-// start, so no revocation is lost silently. The third route — a failed token
+// It calls AdvanceOrDiverge, never Advance: an unwritable fence file must not
+// leave both halves agreeing across a write that proceeds, so the database half
+// moves alone and the next boot runs the full ContinuityBroken pass. A write
+// that moved the file but not app_state leaves the same disagreement. Either
+// way no revocation is lost silently. The remaining route — a failed token
 // mint, neither half written over a writable fence — WOULD lose the record, and
-// takes an OS-level entropy fault; Advance marks it unreachable for the same
+// takes an OS-level entropy fault; the fence marks it unreachable for the same
 // reason.
 func (repo *UserRepository) advanceCalendarFeedFenceBestEffort(ctx context.Context) {
-	_ = repo.advanceCalendarFeedFence(ctx)
+	if repo.calendarFeedFence == nil {
+		return
+	}
+	_ = repo.calendarFeedFence.AdvanceOrDiverge(ctx)
 }
 
 func (repo *UserRepository) CountUsers(ctx context.Context) (int64, error) {
