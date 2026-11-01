@@ -29,8 +29,16 @@ func TestResetPasswordFullRecoversAnOIDCOnlyAccountWithUnverifiableTOTP(t *testi
 	dbConfig := db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}
 	secretKey := []byte("0123456789abcdef0123456789abcdef")
 
+	repositories, _, closeDatabase, err := openOperatorRepositories(dbConfig, fencePath)
+	if err != nil {
+		t.Fatalf("open repositories: %v", err)
+	}
+	defer closeDatabase()
+	authService := services.NewAuthService(repositories.Users)
+	limiter := services.NewAttemptLimiter()
+	resetService := services.NewPasswordResetService(authService, limiter)
+
 	locked := loadCLIResetUser(t, databasePath, "oidc-only@example.com")
-	resetService := services.NewPasswordResetService(nil, nil)
 	if _, err := resetService.IssueResetTokenForUser(secretKey, &locked, services.PasswordResetTokenPurposeForcedOIDC, time.Hour, time.Now()); !errors.Is(err, services.ErrPasswordResetTokenInvalidPasswordState) {
 		t.Fatalf("expected the forced-OIDC token to be unbuildable without a local hash, got %v", err)
 	}
@@ -47,14 +55,7 @@ func TestResetPasswordFullRecoversAnOIDCOnlyAccountWithUnverifiableTOTP(t *testi
 		t.Fatalf("--full did not leave a temporary-password account without TOTP or links: %+v", reset)
 	}
 
-	repositories, _, closeDatabase, err := openOperatorRepositories(dbConfig, fencePath)
-	if err != nil {
-		t.Fatalf("open repositories: %v", err)
-	}
-	defer closeDatabase()
-	authService := services.NewAuthService(repositories.Users)
-	limiter := services.NewAttemptLimiter()
-	loginService := services.NewLoginService(authService, services.NewPasswordResetService(authService, limiter), limiter)
+	loginService := services.NewLoginService(authService, resetService, limiter)
 
 	result, err := loginService.Authenticate(context.Background(), secretKey, "client", "oidc-only@example.com", "TempPass2Now", time.Hour, time.Now())
 	if err != nil {
