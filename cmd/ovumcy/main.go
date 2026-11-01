@@ -200,7 +200,9 @@ func mustVerifySchemaInvariants(repositories *db.Repositories) {
 // (WEB-399) unless CALENDAR_FEED_FENCE_OPTOUT accepts the residual; with the
 // opt-out it disarms and warns, on every start, until the mount is there.
 func mustEnforceCalendarFeedRestoreFence(fence *services.CalendarFeedRestoreFence, optOut bool) {
-	message, err := enforceCalendarFeedRestoreFence(fence, optOut)
+	ctx, cancel := bootPassContext()
+	defer cancel()
+	message, err := enforceCalendarFeedRestoreFence(ctx, fence, optOut)
 	if err != nil {
 		log.Fatal(err) // codecov:ignore -- the refusals are tested through enforceCalendarFeedRestoreFence; log.Fatal exits the test binary
 	}
@@ -222,17 +224,15 @@ var errCalendarFeedFenceRequired = errors.New("calendar-feed restore fence requi
 // on the first start after the operator mounts the fence. A fence that reads
 // but cannot be written is only found inside Enforce, so its outcome is
 // checked again after it.
-func enforceCalendarFeedRestoreFence(fence *services.CalendarFeedRestoreFence, optOut bool) (string, error) {
+func enforceCalendarFeedRestoreFence(ctx context.Context, fence *services.CalendarFeedRestoreFence, optOut bool) (string, error) {
 	if !optOut {
 		if err := fence.CheckAnchor(); err != nil {
 			return "", calendarFeedFenceRefusal(err)
 		}
 	}
-	ctx, cancel := bootPassContext()
-	defer cancel()
 	outcome, err := fence.Enforce(ctx)
 	if err != nil {
-		return "", fmt.Errorf("calendar-feed restore fence failed: %w", err)
+		return "", fmt.Errorf("calendar-feed restore fence failed: %w", err) // codecov:ignore -- reachable only when the DB fails between migration and this first read
 	}
 	if outcome.Unanchored && !optOut {
 		return "", calendarFeedFenceRefusal(outcome.UnanchoredCause)

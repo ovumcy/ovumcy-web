@@ -54,6 +54,41 @@ func TestRevokeAllSessionsAndWebhookEndpointsReachesEveryAccount(t *testing.T) {
 	}
 }
 
+// TestRevokeAllSessionsAndWebhookEndpointsWritesNothingWhenEitherHalfFails pins
+// the one-transaction claim: a refused session bump reports the error, and a
+// refused endpoint clear also rolls the session bump back, so the boot retries
+// both rather than recording a restore it only half answered.
+func TestRevokeAllSessionsAndWebhookEndpointsWritesNothingWhenEitherHalfFails(t *testing.T) {
+	for _, column := range []string{"auth_session_version", "webhook_url"} {
+		t.Run(column, func(t *testing.T) {
+			repo := openWebhookRepoForTest(t)
+			user := createUserForTimezoneTest(t, repo, "restore-revoke-refused@example.com")
+			if err := repo.database.Model(&models.User{}).Where("id = ?", user.ID).
+				Updates(map[string]any{"webhook_enabled": true, "webhook_url": "sealed-endpoint"}).Error; err != nil {
+				t.Fatalf("store a webhook: %v", err)
+			}
+			before := reloadUserForWebhookRevocationTest(t, repo, user.ID)
+			if err := repo.database.Exec(`CREATE TRIGGER refuse_` + column + ` BEFORE UPDATE OF ` + column +
+				` ON users BEGIN SELECT RAISE(ABORT, 'refused'); END`).Error; err != nil {
+				t.Fatalf("create the trigger: %v", err)
+			}
+
+			counts, err := repo.RevokeAllSessionsAndWebhookEndpoints(context.Background())
+			if err == nil {
+				t.Fatal("a refused statement must surface as an error")
+			}
+			if counts != (models.RestoreRevocationCounts{}) {
+				t.Fatalf("a failed revocation must report no counts, got %+v", counts)
+			}
+			after := reloadUserForWebhookRevocationTest(t, repo, user.ID)
+			if after.AuthSessionVersion != before.AuthSessionVersion || after.WebhookURL != before.WebhookURL {
+				t.Fatalf("a failed revocation must leave the row as it was: version %d→%d, url %q→%q",
+					before.AuthSessionVersion, after.AuthSessionVersion, before.WebhookURL, after.WebhookURL)
+			}
+		})
+	}
+}
+
 func reloadUserForWebhookRevocationTest(t *testing.T, repo *UserRepository, userID uint) models.User {
 	t.Helper()
 	var user models.User
