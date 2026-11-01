@@ -179,6 +179,9 @@ func (handler *Handler) ShowOIDCIdentityLinkConfirmPage(c fiber.Ctx) error {
 	if !ok {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
+	if handler.oidcService == nil || !handler.oidcService.Enabled() {
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+	}
 	pending, err := handler.parseOIDCLinkPendingCookie(c, user.ID)
 	if err != nil {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
@@ -219,9 +222,12 @@ func (handler *Handler) ConfirmOIDCIdentityLink(c fiber.Ctx) error {
 		handler.logSecurityError(c, oidcIdentityLinkConfirmAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
-	handler.clearOIDCLinkPendingCookie(c)
-
 	linkedSessionVersion, err := handler.oidcService.ConfirmAndLinkIdentity(c.Context(), user.ID, pending.SessionVersion, pending.claims(), time.Now())
+	// A storage fault leaves the confirmation in place for a retry; every
+	// other outcome spends it.
+	if !errors.Is(err, services.ErrOIDCIdentityResolveFailed) {
+		handler.clearOIDCLinkPendingCookie(c)
+	}
 	if errors.Is(err, services.ErrAuthSessionVersionChanged) {
 		return handler.respondSignedOutRefusal(c, handler.refuseSessionRevokedDuring(c, oidcIdentityLinkConfirmAction, "link"))
 	}

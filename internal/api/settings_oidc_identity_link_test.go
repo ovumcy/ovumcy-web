@@ -412,9 +412,10 @@ func TestOIDCIdentityLinkStepupCallbackLinksNothingBeforeTheOwnerConfirms(t *tes
 
 	fixture := newOIDCStepupFixture(t, "settings-oidc-link-pending@example.com")
 	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{
-		Issuer:  "https://id.example.com",
-		Subject: "settings-pending-subject",
-		Email:   "provider-side@example.net",
+		Issuer:        "https://id.example.com",
+		Subject:       "settings-pending-subject",
+		Email:         "provider-side@example.net",
+		EmailVerified: true,
 	}
 
 	callbackResponse := runOIDCIdentityLinkCallback(t, fixture)
@@ -452,26 +453,33 @@ func TestOIDCIdentityLinkStepupCallbackLinksNothingBeforeTheOwnerConfirms(t *tes
 	}
 }
 
-// TestOIDCIdentityLinkConfirmPageShowsTheSubjectWhenTheProviderSentNoEmail
-// pins the other arm of the identity line: with no email claim the page names
-// the provider-side subject instead.
-func TestOIDCIdentityLinkConfirmPageShowsTheSubjectWhenTheProviderSentNoEmail(t *testing.T) {
+// TestOIDCIdentityLinkConfirmPageShowsTheSubjectWithoutAVerifiedEmail pins the
+// other arm of the identity line: with no email claim, or an unverified one —
+// on a self-registration provider an attacker can claim the owner's own
+// address — the page names the provider-side subject and never the email.
+func TestOIDCIdentityLinkConfirmPageShowsTheSubjectWithoutAVerifiedEmail(t *testing.T) {
 	t.Parallel()
 
-	fixture := newOIDCStepupFixture(t, "settings-oidc-link-no-email@example.com")
-	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "subject-without-email"}
-	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+	for name, email := range map[string]string{"no email": "", "unverified email": "settings-oidc-link-no-email@example.com"} {
+		fixture := newOIDCStepupFixture(t, "settings-oidc-link-no-email@example.com")
+		fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "subject-without-email", Email: email}
+		pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
 
-	request := httptest.NewRequest(http.MethodGet, oidcLinkConfirmPagePath, nil)
-	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, pendingCookie))
-	page := mustAppResponse(t, fixture.app, request)
-	defer func() { _ = page.Body.Close() }()
-	assertStatusCode(t, page, http.StatusOK)
-	assertBodyContainsAll(t, mustReadBodyString(t, page.Body),
-		bodyStringMatch{fragment: "data-oidc-link-confirm-subject", message: "expected the subject line"},
-		bodyStringMatch{fragment: "subject-without-email", message: "expected the provider-side subject on the page"},
-	)
+		request := httptest.NewRequest(http.MethodGet, oidcLinkConfirmPagePath, nil)
+		request.Header.Set("Accept-Language", "en")
+		request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, pendingCookie))
+		page := mustAppResponse(t, fixture.app, request)
+		assertStatusCode(t, page, http.StatusOK)
+		body := mustReadBodyString(t, page.Body)
+		_ = page.Body.Close()
+		assertBodyContainsAll(t, body,
+			bodyStringMatch{fragment: "data-oidc-link-confirm-subject", message: name + ": expected the subject line"},
+			bodyStringMatch{fragment: "subject-without-email", message: name + ": expected the provider-side subject on the page"},
+		)
+		if strings.Contains(body, "data-oidc-link-confirm-email") {
+			t.Fatalf("%s: the page must not name an unverified email", name)
+		}
+	}
 }
 
 // TestOIDCIdentityLinkConfirmPageWithoutAPendingLinkLandsOnSettings: the page
