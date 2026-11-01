@@ -31,6 +31,7 @@ services:
       SECRET_KEY_FILE: ${SECRET_KEY_FILE:-}
       DATABASE_URL: postgres://${POSTGRES_USER:-ovumcy}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-ovumcy}?sslmode=disable
       CALENDAR_FEED_FENCE_PATH: /app/fence/calendar-feed.fence
+      CALENDAR_FEED_FENCE_OPTOUT: ${CALENDAR_FEED_FENCE_OPTOUT:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-}
       HSTS_ENABLED: ${HSTS_ENABLED:-}
       OIDC_ENABLED: ${OIDC_ENABLED:-}
