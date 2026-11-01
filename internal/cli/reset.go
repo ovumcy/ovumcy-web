@@ -202,7 +202,8 @@ func runResetPassword(operatorUsers *services.OperatorUserService, authService *
 	_, _ = fmt.Fprintln(output, "✅ Password reset successful")
 	_, _ = fmt.Fprintln(output, "Existing auth sessions were invalidated.")
 	if opts.full {
-		_, _ = fmt.Fprintln(output, "Two-factor sign-in and the recovery code were cleared, and every linked OIDC identity was unlinked.")
+		_, _ = fmt.Fprintln(output, "Two-factor sign-in, the recovery code and any linked OIDC identities were removed.")
+		_, _ = fmt.Fprintln(output, "Under OIDC_LOGIN_MODE=oidc_only the account cannot sign in until `ovumcy link-oidc-identity` links an identity again.")
 	}
 	_, _ = fmt.Fprintln(output, "User must sign in again and reset the password before continuing.")
 
