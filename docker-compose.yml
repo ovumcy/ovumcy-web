@@ -12,6 +12,7 @@ services:
       - DB_DRIVER=${DB_DRIVER:-}
       - DB_PATH=/app/data/ovumcy.db
       - CALENDAR_FEED_FENCE_PATH=/app/fence/calendar-feed.fence
+      - CALENDAR_FEED_FENCE_OPTOUT=${CALENDAR_FEED_FENCE_OPTOUT:-}
       - DATABASE_URL=${DATABASE_URL:-}
       - DATABASE_URL_FILE=${DATABASE_URL_FILE:-}
       - COOKIE_SECURE=${COOKIE_SECURE:-}

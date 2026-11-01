@@ -694,6 +694,11 @@ async function main() {
     SECRET_KEY: process.env.SECRET_KEY ?? "0123456789abcdef0123456789abcdef",
     DB_DRIVER: db,
     DB_PATH: dbPath,
+    // The harness boots with no restore fence, which the server refuses from
+    // v2.0 unless the residual is accepted explicitly.
+    CALENDAR_FEED_FENCE_OPTOUT:
+      process.env.CALENDAR_FEED_FENCE_OPTOUT ??
+      (process.env.CALENDAR_FEED_FENCE_PATH ? "false" : "true"),
     DATABASE_URL: postgresRuntime?.dsn ?? "",
     PORT: String(appPort),
     TZ: process.env.TZ ?? "UTC",
