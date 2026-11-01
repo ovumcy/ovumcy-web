@@ -12,13 +12,21 @@ import (
 // refusingCalendarFeedFence fails every advance, standing in for the one state
 // the repository cannot produce on its own: a fence whose app_state write is
 // refused while the database serving these rows still answers.
+// calls counts Advance, the refusable form; diverged counts AdvanceOrDiverge,
+// the form a side-effect writer must use instead (WEB-414).
 type refusingCalendarFeedFence struct {
-	err   error
-	calls int
+	err      error
+	calls    int
+	diverged int
 }
 
 func (fence *refusingCalendarFeedFence) Advance(context.Context) error {
 	fence.calls++
+	return fence.err
+}
+
+func (fence *refusingCalendarFeedFence) AdvanceOrDiverge(context.Context) error {
+	fence.diverged++
 	return fence.err
 }
 
@@ -118,8 +126,8 @@ func TestAZeroOwnerRevocationNeverAdvancesTheFence(t *testing.T) {
 	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, 0, "hash", 1, "new-password-hash", "new-recovery-hash", nil); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("UpdatePasswordRecoveryCodeAndRevokeSessionsCAS must refuse a zero owner, got %v", err)
 	}
-	if fence.calls != 0 {
-		t.Fatalf("a refused zero-owner revocation must not touch the fence, got %d call(s)", fence.calls)
+	if fence.calls != 0 || fence.diverged != 0 {
+		t.Fatalf("a refused zero-owner revocation must not touch the fence, got %d+%d call(s)", fence.calls, fence.diverged)
 	}
 }
 
@@ -259,13 +267,18 @@ func TestASideEffectFenceFailureNeverRefusesTheWrite(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			user := createUserForTimezoneTest(t, repo, "post-op-fence-"+testCase.name+"@example.com")
 			repo.calendarFeedFence = fence
-			before := fence.calls
+			before := fence.diverged
 
 			if err := testCase.run(user.ID); err != nil {
 				t.Fatalf("%s must proceed past a failed fence advance, got %v", testCase.name, err)
 			}
-			if fence.calls != before+1 {
-				t.Fatalf("expected the fence to be consulted exactly once, got %d call(s)", fence.calls-before)
+			if fence.diverged != before+1 {
+				t.Fatalf("expected AdvanceOrDiverge exactly once, got %d call(s)", fence.diverged-before)
+			}
+			// Advance refuses an unwritable file and writes nothing; a writer that
+			// proceeds anyway would leave both halves agreeing across it.
+			if fence.calls != 0 {
+				t.Fatalf("a side-effect writer must never use the refusing Advance, got %d call(s)", fence.calls)
 			}
 		})
 	}
