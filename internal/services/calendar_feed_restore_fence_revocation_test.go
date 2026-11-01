@@ -79,7 +79,47 @@ func TestCalendarFeedRestoreFenceRecordsNothingWhenTheRevocationFails(t *testing
 	if _, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background()); !errors.Is(err, injected) {
 		t.Fatalf("a failed revocation must fail the boot, got %v", err)
 	}
-	if anchor.written != "" || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != "an-older-generation" {
-		t.Fatalf("a failed revocation must record no new token, so the next boot re-runs it; file %q, app_state %q", anchor.written, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
+	// The file half moves first (WEB-408); the database half must not, so the
+	// halves disagree and the next boot re-runs the revocation.
+	if stored := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; stored != "an-older-generation" || stored == anchor.value {
+		t.Fatalf("a failed revocation must leave the halves disagreeing, so the next boot re-runs it; file %q, app_state %q", anchor.value, stored)
+	}
+}
+
+// TestCalendarFeedRestoreFenceRevokesNothingWhenTheFenceCannotRecord pins the
+// WEB-408 ordering: an anchor that reads but cannot be written degrades to the
+// unanchored outcome BEFORE any session, endpoint or password is revoked. The
+// revocation used to run first, and a configured-but-missing fence volume
+// re-enters this pass on every start, so every start revoked everything again —
+// with local passwords in the revocation, every owner locked out on every start.
+func TestCalendarFeedRestoreFenceRevokesNothingWhenTheFenceCannotRecord(t *testing.T) {
+	cases := map[string]func() (*stubFenceAppState, *stubFenceAnchor){
+		"the halves disagree": func() (*stubFenceAppState, *stubFenceAnchor) {
+			return &stubFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: "an-older-generation"}},
+				&stubFenceAnchor{value: fenceTestToken, found: true, writeErr: errors.New("read-only file system")}
+		},
+		"first fenced boot over an unanchored history": func() (*stubFenceAppState, *stubFenceAnchor) {
+			return &stubFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedFenceUnanchored: "stamp"}},
+				&stubFenceAnchor{writeErr: errors.New("no such file or directory")}
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			appState, anchor := setup()
+			users := &stubFenceUserStore{disarmed: 1, revoked: models.RestoreRevocationCounts{Sessions: 4, LocalPasswords: 3}}
+			outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+			if err != nil {
+				t.Fatalf("Enforce: %v", err)
+			}
+			if !outcome.Unanchored || outcome.ContinuityBroken {
+				t.Fatalf("an unwritable fence must end unanchored, got %+v", outcome)
+			}
+			if users.revokeCalls != 0 || outcome.Revoked != (models.RestoreRevocationCounts{}) {
+				t.Fatalf("an unwritable fence must revoke nothing, got calls=%d outcome=%+v", users.revokeCalls, outcome)
+			}
+			if outcome.DisarmedFeeds != 1 {
+				t.Fatalf("an unanchored boot still disarms every feed, got %d", outcome.DisarmedFeeds)
+			}
+		})
 	}
 }

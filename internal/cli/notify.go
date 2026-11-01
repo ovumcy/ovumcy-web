@@ -54,27 +54,31 @@ type notifyServiceRunner interface {
 // secretKey decrypts each owner's stored webhook URL; defaultLanguage localizes
 // the mandatory disclaimer; location is the server timezone fallback for owners
 // with no persisted zone; blockPrivateAddresses is the off-by-default egress
-// gate.
+// gate; fenceOptOut is CALENDAR_FEED_FENCE_OPTOUT, parsed as strictly as the
+// server parses it.
 func RunNotifyCommand(
 	databaseConfig db.Config,
 	secretKey string,
 	defaultLanguage string,
 	location *time.Location,
 	blockPrivateAddresses bool,
+	fenceOptOut bool,
 	args []string,
 ) error {
-	return runNotifyOperatorCommand(databaseConfig, secretKey, defaultLanguage, location, blockPrivateAddresses, args, os.Stdout)
+	return runNotifyOperatorCommand(databaseConfig, calendarFeedFencePath(), secretKey, defaultLanguage, location, blockPrivateAddresses, fenceOptOut, args, os.Stdout)
 }
 
-// runNotifyOperatorCommand is RunNotifyCommand with its output stream injected,
-// so a test can read what the command printed instead of the process's real
-// stdout. RunNotifyCommand is its only production caller and passes os.Stdout.
+// runNotifyOperatorCommand is RunNotifyCommand with its fence path and output
+// stream injected, so a test can drive a restored database and read what the
+// command printed without touching the environment or the real stdout.
 func runNotifyOperatorCommand(
 	databaseConfig db.Config,
+	fencePath string,
 	secretKey string,
 	defaultLanguage string,
 	location *time.Location,
 	blockPrivateAddresses bool,
+	fenceOptOut bool,
 	args []string,
 	output io.Writer,
 ) error {
@@ -83,11 +87,17 @@ func runNotifyOperatorCommand(
 		return err
 	}
 
-	repositories, _, closeDatabase, err := openOperatorRepositories(databaseConfig, calendarFeedFencePath())
+	repositories, fence, closeDatabase, err := openOperatorRepositories(databaseConfig, fencePath)
 	if err != nil {
 		return err
 	}
 	defer closeDatabase()
+
+	ctx, cancel := bootstrap.PassContext()
+	defer cancel()
+	if err := confirmNotifyFenceContinuity(ctx, fencePath, fence, fenceOptOut, output); err != nil {
+		return err
+	}
 
 	i18nManager, err := i18n.NewManager(defaultLanguage)
 	if err != nil {

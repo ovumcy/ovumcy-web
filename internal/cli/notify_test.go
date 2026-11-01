@@ -325,10 +325,12 @@ const testNotifySecretKey = "0123456789abcdef0123456789abcdef"
 // with a zero-count report. This covers the DB-open + service-build path that the
 // stub-based command tests deliberately bypass.
 func TestRunNotifyCommandEndToEndZeroOwners(t *testing.T) {
-	databasePath := filepath.Join(t.TempDir(), "cli-notify-test.db")
+	databasePath := createCLIUsersDatabase(t)
 	config := db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}
+	fencePath := armOperatorFence(t, databasePath)
 
-	err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, nil)
+	var output bytes.Buffer
+	err := runNotifyOperatorCommand(config, fencePath, testNotifySecretKey, "en", time.UTC, false, false, nil, &output)
 	if err != nil {
 		t.Fatalf("zero-owner notify pass should succeed, got %v", err)
 	}
@@ -337,10 +339,12 @@ func TestRunNotifyCommandEndToEndZeroOwners(t *testing.T) {
 // TestRunNotifyCommandEndToEndDryRun proves the same real wiring honors --dry-run
 // (no request, no watermark — enforced in the service tests) and completes.
 func TestRunNotifyCommandEndToEndDryRun(t *testing.T) {
-	databasePath := filepath.Join(t.TempDir(), "cli-notify-dry.db")
+	databasePath := createCLIUsersDatabase(t)
 	config := db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}
+	fencePath := armOperatorFence(t, databasePath)
 
-	if err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, []string{"--dry-run"}); err != nil {
+	var output bytes.Buffer
+	if err := runNotifyOperatorCommand(config, fencePath, testNotifySecretKey, "en", time.UTC, false, false, []string{"--dry-run"}, &output); err != nil {
 		t.Fatalf("dry-run notify pass should succeed, got %v", err)
 	}
 }
@@ -350,7 +354,7 @@ func TestRunNotifyCommandEndToEndDryRun(t *testing.T) {
 func TestRunNotifyCommandRejectsBadArgs(t *testing.T) {
 	config := db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "unused.db")}
 
-	err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, []string{"--nope"})
+	err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, false, []string{"--nope"})
 	if err == nil || !strings.Contains(err.Error(), "usage: ovumcy notify") {
 		t.Fatalf("expected usage error for a bad flag, got %v", err)
 	}
@@ -362,7 +366,7 @@ func TestRunNotifyCommandReportsDatabaseInitFailure(t *testing.T) {
 	// An empty SQLite path fails db.Config validation inside OpenDatabase.
 	config := db.Config{Driver: db.DriverSQLite, SQLitePath: ""}
 
-	err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, nil)
+	err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, false, nil)
 	if err == nil {
 		t.Fatal("expected a database init failure, got nil")
 	}

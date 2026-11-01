@@ -160,8 +160,18 @@ example, with cron:
 
 ```cron
 # Run the Ovumcy webhook notify pass daily at 09:00 in the server's local time.
-0 9 * * * SECRET_KEY_FILE=/etc/ovumcy/secret_key DB_DRIVER=sqlite DB_PATH=/var/lib/ovumcy/ovumcy.db /usr/local/bin/ovumcy notify >> /var/log/ovumcy-notify.log 2>&1
+0 9 * * * SECRET_KEY_FILE=/etc/ovumcy/secret_key DB_DRIVER=sqlite DB_PATH=/var/lib/ovumcy/ovumcy.db CALENDAR_FEED_FENCE_PATH=/var/lib/ovumcy-fence/calendar-feed.fence /usr/local/bin/ovumcy notify >> /var/log/ovumcy-notify.log 2>&1
 ```
+
+Give it the server's own `CALENDAR_FEED_FENCE_PATH` as well. Before reading any
+endpoint the pass checks, without writing, that the restore fence agrees with
+the database, and refuses — sending nothing — when it cannot see the fence or
+when the database is a restored one the server has not started over yet: only
+the server's start clears the webhook endpoints a restore brings back. The
+bundled compose service already carries the variable. An instance running
+with `CALENDAR_FEED_FENCE_OPTOUT=true` may set it for the pass too, which lets
+the pass run without a fence but never over one that disagrees. Detail:
+[docs/self-hosted.md → Calendar Feed Restore Fence](self-hosted.md#calendar-feed-restore-fence).
 
 Adjust `DB_DRIVER`/`DB_PATH` (or `DATABASE_URL` for Postgres) and the secret
 source to match your deployment's actual environment; the same environment

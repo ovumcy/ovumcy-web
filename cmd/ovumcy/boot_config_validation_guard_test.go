@@ -245,7 +245,7 @@ func TestBootRefusesAnUnparseableSecurityBoolean(t *testing.T) {
 
 		called := false
 		handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
-			runNotify: func(db.Config, string, string, *time.Location, bool, []string) error {
+			runNotify: func(db.Config, string, string, *time.Location, bool, bool, []string) error {
 				called = true
 				return nil
 			},
@@ -261,13 +261,34 @@ func TestBootRefusesAnUnparseableSecurityBoolean(t *testing.T) {
 		}
 	})
 
+	// CALENDAR_FEED_FENCE_OPTOUT is read by notify too (WEB-408): a typo there
+	// must not turn a delivery the fence refuses into an accepted residual.
+	t.Run("notify CLI refuses the same unparseable fence opt-out", func(t *testing.T) {
+		setValidBootEnv(t)
+		t.Setenv(calendarFeedFenceOptOutEnv, "yes please")
+
+		called := false
+		handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
+			runNotify: func(db.Config, string, string, *time.Location, bool, bool, []string) error {
+				called = true
+				return nil
+			},
+		})
+		if !handled || err == nil || called {
+			t.Fatalf("expected notify to refuse %s=%q before a pass, got (%t, %v, called=%t)", calendarFeedFenceOptOutEnv, "yes please", handled, err, called)
+		}
+		if !strings.Contains(err.Error(), calendarFeedFenceOptOutEnv) {
+			t.Fatalf("expected the error to name %s, got: %v", calendarFeedFenceOptOutEnv, err)
+		}
+	})
+
 	t.Run("notify CLI still runs on a well-formed egress gate", func(t *testing.T) {
 		setValidBootEnv(t)
 		t.Setenv("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", "on")
 
 		blocked := false
 		handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
-			runNotify: func(_ db.Config, _ string, _ string, _ *time.Location, blockPrivate bool, _ []string) error {
+			runNotify: func(_ db.Config, _ string, _ string, _ *time.Location, blockPrivate bool, _ bool, _ []string) error {
 				blocked = blockPrivate
 				return nil
 			},

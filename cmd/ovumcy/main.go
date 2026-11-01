@@ -211,7 +211,7 @@ func mustEnforceCalendarFeedRestoreFence(fence *services.CalendarFeedRestoreFenc
 	}
 }
 
-const calendarFeedFenceOptOutEnv = "CALENDAR_FEED_FENCE_OPTOUT"
+const calendarFeedFenceOptOutEnv = security.CalendarFeedFenceOptOutEnv
 
 // errCalendarFeedFenceRequired is the refused boot's error, naming the
 // variable, the docs section and the opt-out.
@@ -326,9 +326,9 @@ func calendarFeedRestoreFenceStartupMessage(outcome services.CalendarFeedRestore
 		// Ahead of the plain ContinuityBroken line below, because this outcome
 		// sets both flags and only this text explains a disarm on a start where
 		// nothing was restored and no two markers disagreed.
-		return fmt.Sprintf("calendar-feed restore fence armed for the first time on a database that had already run without one: %d armed calendar feed(s) disarmed; owners re-generate subscribe URLs from settings. This is expected on the first start after you mounted the fence, and it is not a restore — while the fence was unavailable, nothing outside the database recorded a revocation, so a backup taken then cannot be told from the database it would replace. Later starts disarm nothing. Every owner was signed out (%d account(s)) and %d stored webhook endpoint(s) were cleared for the same reason; owners sign in again and re-enter a webhook URL in settings", outcome.DisarmedFeeds, outcome.Revoked.Sessions, outcome.Revoked.WebhookEndpoints)
+		return fmt.Sprintf("calendar-feed restore fence armed for the first time on a database that had already run without one: %d armed calendar feed(s) disarmed; owners re-generate subscribe URLs from settings. This is expected on the first start after you mounted the fence, and it is not a restore — while the fence was unavailable, nothing outside the database recorded a revocation, so a backup taken then cannot be told from the database it would replace. Later starts disarm nothing. Every owner was signed out (%d account(s)), %d stored webhook endpoint(s) were cleared and %d local password(s) were revoked for the same reason. An owner with a linked OIDC identity signs in through it; every other owner needs a new password from you: run `ovumcy reset-password <email>` for each account, then owners re-enter a webhook URL in settings", outcome.DisarmedFeeds, outcome.Revoked.Sessions, outcome.Revoked.WebhookEndpoints, outcome.Revoked.LocalPasswords)
 	case outcome.ContinuityBroken:
-		return fmt.Sprintf("calendar-feed restore fence: this database is not the one this instance last wrote (backup restore, or a recreated fence): %d armed calendar feed(s) disarmed; owners re-generate subscribe URLs from settings. Every owner was signed out (%d account(s)) and %d stored webhook endpoint(s) were cleared, because a restore rolls back sign-outs, password resets and webhook removals made after the backup; owners sign in again and re-enter a webhook URL in settings", outcome.DisarmedFeeds, outcome.Revoked.Sessions, outcome.Revoked.WebhookEndpoints)
+		return fmt.Sprintf("calendar-feed restore fence: this database is not the one this instance last wrote (backup restore, or a recreated fence): %d armed calendar feed(s) disarmed; owners re-generate subscribe URLs from settings. Every owner was signed out (%d account(s)), %d stored webhook endpoint(s) were cleared and %d local password(s) were revoked, because a restore rolls back sign-outs, password resets and webhook removals made after the backup. An owner with a linked OIDC identity signs in through it; every other owner needs a new password from you: run `ovumcy reset-password <email>` for each account, then owners re-enter a webhook URL in settings", outcome.DisarmedFeeds, outcome.Revoked.Sessions, outcome.Revoked.WebhookEndpoints, outcome.Revoked.LocalPasswords)
 	case outcome.FirstBoot:
 		return "calendar-feed restore fence armed: a later restore of a backup taken before a revocation will disarm calendar feeds automatically"
 	}

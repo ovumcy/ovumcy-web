@@ -29,7 +29,7 @@ type cliCommandHandlers struct {
 	runUsers            func(databaseConfig db.Config, localSignInEnabled func() (bool, error), args []string) error
 	runHealthcheck      func(port string, timeout time.Duration) error
 	runReadycheck       func(port string, timeout time.Duration) error
-	runNotify           func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error
+	runNotify           func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, fenceOptOut bool, args []string) error
 	runWebhook          func(databaseConfig db.Config, secretKey string, args []string) error
 	runRepair           func(databaseConfig db.Config, args []string) error
 	runLinkOIDCIdentity func(databaseConfig db.Config, oidcConfig security.OIDCConfig, args []string) error
@@ -161,7 +161,13 @@ func handleNotifyCommand(args []string, handlers cliCommandHandlers) (bool, erro
 	if err != nil {
 		return true, err
 	}
-	return true, handlers.runNotify(databaseConfig, secretKey, defaultLanguage, location, blockPrivateAddresses, args[1:])
+	// Strict for the same reason: a typo must not turn a refused delivery into
+	// an accepted residual.
+	fenceOptOut, err := getEnvBoolStrict(calendarFeedFenceOptOutEnv, false)
+	if err != nil {
+		return true, err
+	}
+	return true, handlers.runNotify(databaseConfig, secretKey, defaultLanguage, location, blockPrivateAddresses, fenceOptOut, args[1:])
 }
 
 // handleRepairCommand is deliberately the only subcommand that takes no secret

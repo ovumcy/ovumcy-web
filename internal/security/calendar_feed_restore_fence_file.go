@@ -31,6 +31,11 @@ const (
 // as a restore and disarms every armed feed.
 const CalendarFeedFencePathEnv = "CALENDAR_FEED_FENCE_PATH"
 
+// CalendarFeedFenceOptOutEnv names the variable that accepts running without a
+// usable fence. Declared here for the same reason: the server's boot and
+// `ovumcy notify` must honour the SAME opt-out.
+const CalendarFeedFenceOptOutEnv = "CALENDAR_FEED_FENCE_OPTOUT"
+
 // CalendarFeedFencePathRooted reports whether a configured fence path names a
 // location no working directory changes. It lives here, beside the variable's
 // name, for the same reason that name does: the server and the operator CLI

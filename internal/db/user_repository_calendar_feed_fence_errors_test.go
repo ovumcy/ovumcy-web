@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -147,6 +148,58 @@ func TestACredentialRotationSurfacesItsOwnWriteFailure(t *testing.T) {
 	}
 	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, user.ID, "password-hash", false); err == nil {
 		t.Fatal("ForceResetPasswordAndRevokeSessions must report a failed write rather than fall through to the fence")
+	}
+}
+
+// TestAWebhookWithdrawalIsRefusedWhenTheFenceCannotRecordIt pins WEB-408's
+// webhook half: a removal or a save can withdraw an endpoint, and the fence is
+// the only thing a later boot can read a restore across it from. Both advance
+// BEFORE their row write and stop on a failed advance, and a zero owner is
+// refused before the fence is touched.
+func TestAWebhookWithdrawalIsRefusedWhenTheFenceCannotRecordIt(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	ctx := context.Background()
+	user := createUserForTimezoneTest(t, repo, "webhook-fence-refuses@example.com")
+	if err := repo.database.Model(&models.User{}).Where("id = ?", user.ID).
+		Updates(map[string]any{"webhook_enabled": true, "webhook_url": "sealed-endpoint"}).Error; err != nil {
+		t.Fatalf("store a webhook: %v", err)
+	}
+	before := reloadUserForWebhookRevocationTest(t, repo, user.ID)
+
+	refused := errors.New("app_state is unavailable")
+	fence := &refusingCalendarFeedFence{err: refused}
+	repo.calendarFeedFence = fence
+
+	if err := repo.RemoveWebhookDestination(ctx, user.ID); !errors.Is(err, refused) {
+		t.Fatalf("RemoveWebhookDestination must surface the fence failure, got %v", err)
+	}
+	save := models.WebhookSettingsColumns{Enabled: false, EncryptedURL: "", ExpectedConfigVersion: before.WebhookConfigVersion}
+	if err := repo.SaveWebhookSettings(ctx, user.ID, save); !errors.Is(err, refused) {
+		t.Fatalf("SaveWebhookSettings must surface the fence failure, got %v", err)
+	}
+	if after := reloadUserForWebhookRevocationTest(t, repo, user.ID); after.WebhookURL != before.WebhookURL || !after.WebhookEnabled {
+		t.Fatalf("a refused advance must leave the endpoint standing, got url %q enabled %t", after.WebhookURL, after.WebhookEnabled)
+	}
+	if fence.calls != 2 {
+		t.Fatalf("both webhook writers must consult the fence, got %d call(s)", fence.calls)
+	}
+
+	if err := repo.RemoveWebhookDestination(ctx, 0); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("RemoveWebhookDestination must refuse a zero owner, got %v", err)
+	}
+	if err := repo.SaveWebhookSettings(ctx, 0, save); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("SaveWebhookSettings must refuse a zero owner, got %v", err)
+	}
+	if fence.calls != 2 {
+		t.Fatalf("a zero-owner webhook write must not touch the fence, got %d call(s)", fence.calls)
+	}
+
+	repo.calendarFeedFence = &refusingCalendarFeedFence{}
+	if err := repo.RemoveWebhookDestination(ctx, user.ID); err != nil {
+		t.Fatalf("RemoveWebhookDestination with a working fence: %v", err)
+	}
+	if after := reloadUserForWebhookRevocationTest(t, repo, user.ID); after.WebhookURL != "" {
+		t.Fatalf("the removal should go through once the fence records it, got %q", after.WebhookURL)
 	}
 }
 
