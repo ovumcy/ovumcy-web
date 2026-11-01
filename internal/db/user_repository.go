@@ -1741,8 +1741,8 @@ func (repo *UserRepository) SaveOnboardingStep2(ctx context.Context, userID uint
 // models.ErrAuthSessionVersionChanged; on success the stored version is exactly
 // expectedSessionVersion+1.
 //
-// On PostgreSQL the owner row is locked FOR UPDATE before anything else, and
-// the deletes run last. A day or symptom insert takes FOR KEY SHARE on that row
+// On PostgreSQL the transaction locks the owner row FOR UPDATE first, and the
+// deletes run last. A day or symptom insert takes FOR KEY SHARE on that row
 // through its foreign key, which the UPDATE's own NO KEY UPDATE lock does not
 // conflict with: with the deletes first, a row inserted by a transaction still
 // open when they ran committed after them and outlived the wipe. FOR UPDATE
