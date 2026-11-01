@@ -89,6 +89,13 @@ func TestRevokeRestoredAccessWritesNothingWhenAnyStatementFails(t *testing.T) {
 				Updates(map[string]any{"webhook_enabled": true, "webhook_url": "sealed-endpoint"}).Error; err != nil {
 				t.Fatalf("store a webhook: %v", err)
 			}
+			// An OIDC-only account too, so the session bump that runs first —
+			// over accounts with no password — has a row to be refused on.
+			oidcOnly := createUserForTimezoneTest(t, repo, "restore-revoke-refused-oidc@example.com")
+			if err := repo.database.Model(&models.User{}).Where("id = ?", oidcOnly.ID).
+				Updates(map[string]any{"password_hash": "", "local_auth_enabled": false}).Error; err != nil {
+				t.Fatalf("make an OIDC-only account: %v", err)
+			}
 			before := reloadUserForWebhookRevocationTest(t, repo, user.ID)
 			if err := repo.database.Exec(`CREATE TRIGGER refuse_` + column + ` BEFORE UPDATE OF ` + column +
 				` ON users BEGIN SELECT RAISE(ABORT, 'refused'); END`).Error; err != nil {

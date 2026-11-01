@@ -86,6 +86,51 @@ func TestCalendarFeedRestoreFenceRecordsNothingWhenTheRevocationFails(t *testing
 	}
 }
 
+// TestCalendarFeedRestoreFenceCheckContinuityReadsAndWritesNothing pins the
+// read-only gate `ovumcy notify` passes (WEB-408): the same refusals as
+// AdvanceConfirmed, and neither half written on any outcome, an agreeing pair
+// included.
+func TestCalendarFeedRestoreFenceCheckContinuityReadsAndWritesNothing(t *testing.T) {
+	readFailure := errors.New("permission denied")
+	cases := map[string]struct {
+		stored  map[string]string
+		anchor  *stubFenceAnchor
+		wantErr func(error) bool
+	}{
+		"the halves agree": {
+			stored:  map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor:  &stubFenceAnchor{value: fenceTestToken, found: true},
+			wantErr: func(err error) bool { return err == nil },
+		},
+		"the halves disagree": {
+			stored: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: "an-older-generation"},
+			anchor: &stubFenceAnchor{value: fenceTestToken, found: true},
+			wantErr: func(err error) bool {
+				var continuity *CalendarFeedFenceContinuityError
+				return errors.As(err, &continuity) && continuity.AnchorFound && continuity.StoredFound
+			},
+		},
+		"the anchor cannot be read": {
+			stored:  map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor:  &stubFenceAnchor{readErr: readFailure},
+			wantErr: func(err error) bool { return errors.Is(err, ErrCalendarFeedFenceUnreachable) && errors.Is(err, readFailure) },
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			appState := &stubFenceAppState{values: tc.stored}
+			before := appState.values[models.AppStateKeyCalendarFeedRestoreFence]
+			err := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, tc.anchor).CheckContinuity(context.Background())
+			if !tc.wantErr(err) {
+				t.Fatalf("unexpected result %v", err)
+			}
+			if tc.anchor.written != "" || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != before {
+				t.Fatalf("CheckContinuity wrote: file %q, app_state %q", tc.anchor.written, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
+			}
+		})
+	}
+}
+
 // TestCalendarFeedRestoreFenceRevokesNothingWhenTheFenceCannotRecord pins the
 // WEB-408 ordering: an anchor that reads but cannot be written degrades to the
 // unanchored outcome BEFORE any session, endpoint or password is revoked. The
