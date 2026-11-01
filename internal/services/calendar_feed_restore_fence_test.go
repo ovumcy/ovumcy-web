@@ -515,6 +515,26 @@ func TestCalendarFeedRestoreFenceAdvanceRefusesATransientFileFailure(t *testing.
 	}
 }
 
+// TestCalendarFeedRestoreFenceAdvanceProceedsOverHalvesThatAlreadyDisagree pins
+// the limit of that refusal. An instance that booted unanchored under the
+// opt-out — a fence path set, no volume behind it — holds no database half, so
+// there is no continuity a refusal could keep, and refusing would leave an
+// owner unable to revoke a leaked feed until the mount came back. The write
+// proceeds and the database half moves, which the next boot reads as the same
+// broken continuity it already would have.
+func TestCalendarFeedRestoreFenceAdvanceProceedsOverHalvesThatAlreadyDisagree(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{}}
+	anchor := &stubFenceAnchor{writeErr: errors.New("no such file or directory")}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	if err := fence.Advance(context.Background()); err != nil {
+		t.Fatalf("an owner revocation over an unanchored fence must proceed, got %v", err)
+	}
+	if appState.values[models.AppStateKeyCalendarFeedRestoreFence] == "" {
+		t.Fatal("the database half must move, so the next fenced boot reads the gap as broken continuity")
+	}
+}
+
 // TestCalendarFeedRestoreFenceAdvanceOrDivergeBreaksTheFenceWhenTheFileRefuses
 // pins the fail-closed form for a write that must not be refused (a password
 // change, an erasure). It must not be reported as durable when it is not, so

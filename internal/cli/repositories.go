@@ -145,7 +145,7 @@ func confirmOperatorFeedRevocation(ctx context.Context, fencePath string, fence 
 		}
 	}
 
-	_, _ = fmt.Fprintf(errOutput, "calendar-feed restore fence: fence advanced at %s; the removal that follows is recorded outside the database\n", fencePath)
+	_, _ = fmt.Fprintf(errOutput, "calendar-feed restore fence: fence advanced at %s; the change that follows is recorded outside the database\n", fencePath)
 	return nil
 }
 
