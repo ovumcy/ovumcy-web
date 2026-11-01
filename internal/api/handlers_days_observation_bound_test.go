@@ -20,7 +20,7 @@ import (
 // WEB-246: a period and a pregnancy-test result are observations, so every day
 // write — PUT, PATCH, the HTMX day form and the day form posted without
 // JavaScript — refuses one recorded past the bound a cycle start may be marked
-// on (today+2). A period is refused with the cycle-start refusal and its
+// on (today + services.ManualCycleStartFutureDays()). A period is refused with the cycle-start refusal and its
 // localized copy; a pregnancy-test result with a refusal and copy of its own,
 // since the write names no cycle start. The bound and the choice of refusal
 // are the services layer's; these pin that every transport answers it the
