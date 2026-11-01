@@ -177,7 +177,7 @@ func TestMigratedSchemasMatchAcrossDialects(t *testing.T) {
 
 	assertParitySchemaTablesMatch(t, sqliteSchema, postgresSchema)
 	assertParitySchemaColumnsMatch(t, sqliteSchema, postgresSchema)
-	assertParityIndexesMatch(t, sqliteIndexes, postgresIndexes)
+	assertParityIndexesMatch(t, sqliteSchema, postgresSchema, sqliteIndexes, postgresIndexes)
 }
 
 // assertParityTypeAxisResolves fails when no column of a whole schema landed in
@@ -187,8 +187,8 @@ func TestMigratedSchemasMatchAcrossDialects(t *testing.T) {
 func assertParityTypeAxisResolves(t *testing.T, schema dialectSchema, dialect string) {
 	t.Helper()
 
-	for _, table := range sortedParityNames(schema) {
-		for _, column := range sortedParityColumnNames(schema[table]) {
+	for _, table := range sortedParityKeys(schema) {
+		for _, column := range sortedParityKeys(schema[table]) {
 			if !strings.HasPrefix(schema[table][column].Family, "unknown(") {
 				return
 			}
@@ -225,6 +225,15 @@ func assertParityAnchorsResolve(t *testing.T, schema dialectSchema, indexes dial
 	ageGroup, ok := schema["users"]["age_group"]
 	if !ok || !ageGroup.HasDefault || ageGroup.Default != "" {
 		t.Errorf("%s users.age_group read as %+v, want DEFAULT '' — an empty-string default must stay distinct from no default", dialect, ageGroup)
+	}
+	// NOT NULL and "not a key" are the zero values a reader that reports
+	// nothing would also produce, so each axis is anchored on its non-zero
+	// side too: bbt is nullable by design ("not measured"), users.id is the key.
+	if bbt, ok := schema["daily_logs"]["bbt"]; !ok || !bbt.Nullable {
+		t.Errorf("%s daily_logs.bbt read as %+v, want nullable — the nullability reader reports nothing, so its comparison is vacuous", dialect, bbt)
+	}
+	if userID, ok := schema["users"]["id"]; !ok || !userID.PrimaryKey || userID.Nullable {
+		t.Errorf("%s users.id read as %+v, want PRIMARY KEY NOT NULL — the key reader reports nothing, so its comparison is vacuous", dialect, userID)
 	}
 
 	anchors := []struct {
@@ -323,13 +332,13 @@ func normalizeParityDefault(rawDefault string, family string) string {
 		value = value[:cast]
 	}
 	if len(value) >= 2 && strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
-		return strings.ReplaceAll(value[1:len(value)-1], "''", "'")
+		value = strings.ReplaceAll(value[1:len(value)-1], "''", "'")
 	}
 
 	switch lowered := strings.ToLower(value); {
-	case family == "boolean" && (lowered == "0" || lowered == "false"):
+	case family == "boolean" && (lowered == "0" || lowered == "false" || lowered == "f"):
 		return "false"
-	case family == "boolean" && (lowered == "1" || lowered == "true"):
+	case family == "boolean" && (lowered == "1" || lowered == "true" || lowered == "t"):
 		return "true"
 	case family == "temporal" && (lowered == "current_timestamp" || lowered == "now()"):
 		return "current_timestamp"
@@ -434,11 +443,20 @@ func addParityIndexFromDefinition(t *testing.T, indexes dialectIndexes, row pari
 }
 
 // addParityIndex files an index under its name, or under "unique(<keys>)" when
-// it backs a UNIQUE constraint and so carries an engine-chosen name.
+// it backs a UNIQUE constraint and so carries an engine-chosen name. A second
+// constraint over the same keys gets a "#<n>" suffix rather than overwriting
+// the first, so a duplicate on one engine stays visible. An index over a column
+// in schemaParityColumnExemptions is skipped, as the column itself is.
 func addParityIndex(indexes dialectIndexes, table string, index indexParity, name string) {
 	table = strings.ToLower(table)
 	if _, exempt := schemaParityTableExemptions[table]; exempt {
 		return
+	}
+	for entry := range schemaParityColumnExemptions {
+		exemptTable, exemptColumn, _ := strings.Cut(entry, ".")
+		if exemptTable == table && (parityExpressionMentions(index.Keys, exemptColumn) || parityExpressionMentions(index.Where, exemptColumn)) {
+			return
+		}
 	}
 	if indexes[table] == nil {
 		indexes[table] = make(map[string]indexParity)
@@ -447,7 +465,36 @@ func addParityIndex(indexes dialectIndexes, table string, index indexParity, nam
 	if key == "" {
 		key = "unique(" + index.Keys + ")"
 	}
+	for base, n := key, 2; ; n++ {
+		if _, taken := indexes[table][key]; !taken {
+			break
+		}
+		key = fmt.Sprintf("%s#%d", base, n)
+	}
 	indexes[table][key] = index
+}
+
+// parityExpressionMentions reports whether a normalized index expression uses
+// column as a whole identifier outside string literals.
+func parityExpressionMentions(expression string, column string) bool {
+	quoted := false
+	start := -1
+	for i := 0; i <= len(expression); i++ {
+		if i < len(expression) && expression[i] == '\'' {
+			quoted = !quoted
+		}
+		if i < len(expression) && !quoted && isParityIdentifierByte(expression[i]) {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		if start >= 0 && expression[start:i] == column {
+			return true
+		}
+		start = -1
+	}
+	return false
 }
 
 // parseParityIndexDefinition reads uniqueness, the key list and the partial
@@ -476,9 +523,16 @@ func parseParityIndexDefinition(definition string) (indexParity, bool) {
 		Keys:   normalizeParityIndexExpression(rest[open+1 : closing]),
 		Raw:    collapsed,
 	}
+	// Anything after the key list other than a WHERE predicate (INCLUDE,
+	// NULLS NOT DISTINCT, WITH (...)) changes what the index does and is not
+	// compared, so it is a parse failure rather than silently dropped.
 	tail := strings.TrimSpace(rest[closing+1:])
-	if strings.HasPrefix(strings.ToUpper(tail), "WHERE ") {
+	switch {
+	case tail == "":
+	case strings.HasPrefix(strings.ToUpper(tail), "WHERE "):
 		parsed.Where = normalizeParityIndexExpression(tail[len("WHERE "):])
+	default:
+		return indexParity{}, false
 	}
 	return parsed, true
 }
@@ -522,10 +576,7 @@ func normalizeParityIndexExpression(expression string) string {
 		case quoted:
 			builder.WriteByte(char)
 		case char == ':' && i+1 < len(expression) && expression[i+1] == ':':
-			i++
-			for i+1 < len(expression) && (isParityIdentifierByte(expression[i+1]) || expression[i+1] == ' ') {
-				i++
-			}
+			i = skipParityCast(expression, i+2) - 1
 		case char == '"' || char == ' ' || char == '\t' || char == '\n' || char == '\r':
 		default:
 			builder.WriteString(strings.ToLower(string(char)))
@@ -539,6 +590,30 @@ func normalizeParityIndexExpression(expression string) string {
 		normalized = normalized[1 : len(normalized)-1]
 	}
 	return normalized
+}
+
+// parityMultiWordTypeTails are the continuations Postgres prints inside one
+// cast type name; a space followed by anything else ends the cast.
+var parityMultiWordTypeTails = []string{" varying", " precision", " with time zone", " without time zone"}
+
+// skipParityCast returns the index just past the type name of a ::cast whose
+// name starts at start, consuming spaces only inside a multi-word type name, so
+// `x::text AND y` keeps its `AND y`.
+func skipParityCast(expression string, start int) int {
+	i := start
+	for i < len(expression) && isParityIdentifierByte(expression[i]) {
+		i++
+	}
+	for _, tail := range parityMultiWordTypeTails {
+		if strings.HasPrefix(strings.ToLower(expression[i:]), tail) {
+			i += len(tail)
+			break
+		}
+	}
+	if strings.HasPrefix(expression[i:], "[]") {
+		i += len("[]")
+	}
+	return i
 }
 
 func isParityIdentifierByte(char byte) bool {
@@ -623,7 +698,7 @@ func assertParitySchemaColumnsMatch(t *testing.T, sqliteSchema dialectSchema, po
 	t.Helper()
 
 	defaultExemptionsUsed := make(map[string]bool, len(schemaParityDefaultExemptions))
-	for _, table := range sortedParityNames(sqliteSchema) {
+	for _, table := range sortedParityKeys(sqliteSchema) {
 		postgresColumns, shared := postgresSchema[table]
 		if !shared {
 			continue
@@ -642,7 +717,7 @@ func assertParitySchemaColumnsMatch(t *testing.T, sqliteSchema dialectSchema, po
 		// statement often enough that the second is exactly what gets missed.
 		// Columns absent on one side are named above, so they are stepped over
 		// here rather than reported twice.
-		for _, column := range sortedParityColumnNames(sqliteColumns) {
+		for _, column := range sortedParityKeys(sqliteColumns) {
 			sqliteColumn := sqliteColumns[column]
 			postgresColumn, sharedColumn := postgresColumns[column]
 			if !sharedColumn {
@@ -684,18 +759,16 @@ func assertParitySchemaColumnsMatch(t *testing.T, sqliteSchema dialectSchema, po
 // assertParityIndexesMatch compares, within every table, the secondary indexes
 // both engines hold: which exist, and for each shared one its uniqueness, key
 // list and predicate. A missing UNIQUE index is the divergence that matters
-// most — one engine then accepts the duplicate the other refuses.
-func assertParityIndexesMatch(t *testing.T, sqliteIndexes dialectIndexes, postgresIndexes dialectIndexes) {
+// most — one engine then accepts the duplicate the other refuses. Like the
+// column pass it stays on the tables both schemas hold; a table on one engine
+// only is already named by assertParitySchemaTablesMatch.
+func assertParityIndexesMatch(t *testing.T, sqliteSchema dialectSchema, postgresSchema dialectSchema, sqliteIndexes dialectIndexes, postgresIndexes dialectIndexes) {
 	t.Helper()
 
-	tables := make(map[string]bool)
-	for table := range sqliteIndexes {
-		tables[table] = true
-	}
-	for table := range postgresIndexes {
-		tables[table] = true
-	}
-	for _, table := range sortedParityKeys(tables) {
+	for _, table := range sortedParityKeys(sqliteSchema) {
+		if _, shared := postgresSchema[table]; !shared {
+			continue
+		}
 		sqliteTable := sqliteIndexes[table]
 		postgresTable := postgresIndexes[table]
 
@@ -757,28 +830,8 @@ func parityIndexesMissingFrom(have map[string]indexParity, want map[string]index
 	return missing
 }
 
-// sortedParityNames returns the schema's table names in a stable order, so the
-// per-table comparison reports in the same sequence on every run.
-func sortedParityNames(schema dialectSchema) []string {
-	tables := make([]string, 0, len(schema))
-	for table := range schema {
-		tables = append(tables, table)
-	}
-	sort.Strings(tables)
-	return tables
-}
-
-// sortedParityColumnNames returns a table's column names in a stable order, so
-// several divergences in one table report in the same sequence on every run.
-func sortedParityColumnNames(columns map[string]columnParity) []string {
-	names := make([]string, 0, len(columns))
-	for name := range columns {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
+// sortedParityKeys returns a map's keys in a stable order, so tables, columns
+// and indexes report in the same sequence on every run.
 func sortedParityKeys[V any](entries map[string]V) []string {
 	keys := make([]string, 0, len(entries))
 	for key := range entries {
@@ -786,4 +839,51 @@ func sortedParityKeys[V any](entries map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// TestSchemaParityNormalizers pins the spelling rules the cross-dialect
+// comparison relies on, without docker: each case is a shape whose
+// mis-normalization would either hide a divergence or report a false one.
+func TestSchemaParityNormalizers(t *testing.T) {
+	expressions := []struct{ in, want string }{
+		{in: "((calendar_feed_selector <> ''::text))", want: "calendar_feed_selector<>''"},
+		{in: "a = 'x'::text AND b IS NULL", want: "a='x'andbisnull"},
+		{in: "name::character varying = 'A'", want: "name='A'"},
+		{in: "lower(TRIM(BOTH FROM email))", want: "lower(trim(email))"},
+		{in: "a != 'X Y'", want: "a<>'X Y'"},
+	}
+	for _, c := range expressions {
+		if got := normalizeParityIndexExpression(c.in); got != c.want {
+			t.Errorf("normalizeParityIndexExpression(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+
+	defaults := []struct{ in, family, want string }{
+		{in: "'0'", family: "boolean", want: "false"},
+		{in: "1", family: "boolean", want: "true"},
+		{in: "'none'::text", family: "text", want: "none"},
+		{in: "'C'", family: "text", want: "C"},
+		{in: "now()", family: "temporal", want: "current_timestamp"},
+		{in: "''", family: "text", want: ""},
+	}
+	for _, c := range defaults {
+		if got := normalizeParityDefault(c.in, c.family); got != c.want {
+			t.Errorf("normalizeParityDefault(%q, %s) = %q, want %q", c.in, c.family, got, c.want)
+		}
+	}
+
+	if _, ok := parseParityIndexDefinition("CREATE UNIQUE INDEX i ON public.t USING btree (a) INCLUDE (b)"); ok {
+		t.Error("an INCLUDE tail parsed as a plain index; it must be refused rather than dropped")
+	}
+
+	indexes := make(dialectIndexes)
+	addParityIndex(indexes, "users", indexParity{Unique: true, Keys: "email"}, "")
+	addParityIndex(indexes, "users", indexParity{Unique: true, Keys: "email"}, "")
+	if _, ok := indexes["users"]["unique(email)#2"]; !ok {
+		t.Errorf("a duplicate UNIQUE constraint collapsed into one entry: %v", sortedParityKeys(indexes["users"]))
+	}
+
+	if !parityExpressionMentions("user_id,lower(name)", "name") || parityExpressionMentions("user_id,lower(name)", "user") || parityExpressionMentions("a<>'name'", "name") {
+		t.Error("parityExpressionMentions must match whole identifiers outside string literals only")
+	}
 }
