@@ -170,21 +170,29 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		// derived that TOTP is enrolled but unverifiable — the state a
 		// SECRET_KEY rotation leaves behind, where no code the authenticator
 		// produces can ever satisfy a 2FA challenge. Both reasons route
-		// through the identical forced-reset escape hatch rather than either
-		// trapping the owner behind an unsatisfiable challenge or bypassing
-		// the factor. This branch is reached without ever checking a local
-		// password — the OIDC exchange above is the sole authentication
-		// factor — so the minted token must carry the forced-from-OIDC
-		// purpose, the one the redeem gate lets bypass the instance-wide
-		// local-sign-in toggle.
+		// through the forced reset rather than either trapping the owner
+		// behind an unsatisfiable challenge or bypassing the factor. This
+		// branch is reached without ever checking a local password — the OIDC
+		// exchange above is the sole authentication factor — so the minted
+		// token must carry the forced-from-OIDC purpose, the one the redeem
+		// gate lets bypass the instance-wide local-sign-in toggle.
+		//
+		// The token is bound to the stored password fingerprint, so an
+		// account with no local password (OIDC-provisioned) cannot be issued
+		// one and is refused here. Its way back is the operator path,
+		// `ovumcy reset-password --full` (docs/self-hosted.md): it clears the
+		// dead TOTP and the links and sets a temporary password, which the
+		// owner signs in with, changes, and then relinks the provider.
 		token, issueErr := handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &result.User, services.PasswordResetTokenPurposeForcedOIDC, resetTokenTTL, time.Now())
 		if issueErr != nil {
-			// codecov:ignore:start -- defensive: reset-token issuance fails only on an HMAC signing error
 			spec := authResetTokenCreateErrorSpec()
-			handler.logSecurityError(c, "auth.oidc_callback", spec)
+			var fields []SecurityEventField
+			if errors.Is(issueErr, services.ErrPasswordResetTokenInvalidPasswordState) {
+				fields = append(fields, securityEventField("cause", "no_local_password"))
+			}
+			handler.logSecurityError(c, "auth.oidc_callback", spec, fields...)
 			handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
-			// codecov:ignore:end
 		}
 		if err := handler.setResetPasswordCookie(c, token); err != nil {
 			// codecov:ignore:start -- defensive: the reset cookie setter fails only on an AEAD seal error
@@ -194,7 +202,7 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 			// codecov:ignore:end
 		}
-		handler.logSecurityEvent(c, "auth.oidc_callback", "reset_required")
+		handler.logSecurityEvent(c, "auth.oidc_callback", "reset_required", securityEventField("cause", result.ResetCause))
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/reset-password")
 	}
 

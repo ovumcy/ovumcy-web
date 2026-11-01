@@ -647,6 +647,9 @@ func TestOIDCLoginServiceAuthenticateRoutesUnverifiableTOTPToForcedReset(t *test
 	if result.RequiresTOTP {
 		t.Fatal("expected no TOTP challenge for an account whose secret cannot be decrypted — no code could ever satisfy it")
 	}
+	if result.ResetCause != ResetCauseTOTPUnverifiable {
+		t.Fatalf("expected cause %q, got %q", ResetCauseTOTPUnverifiable, result.ResetCause)
+	}
 }
 
 // TestOIDCLoginServiceAuthenticateRequiresTOTPWhenVerifiable is the companion

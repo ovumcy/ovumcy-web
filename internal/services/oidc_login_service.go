@@ -147,6 +147,9 @@ type OIDCLoginResult struct {
 	// unverifiable (does not decrypt). Both reasons route to the same
 	// forced-reset escape hatch; RequiresTOTP is never set alongside this.
 	RequiresPasswordReset bool
+	// ResetCause mirrors LoginResult.ResetCause: which of the two reasons
+	// set RequiresPasswordReset, "" when it is unset.
+	ResetCause string
 	// PendingLinkClaims is non-nil only when Authenticate returned
 	// ErrOIDCLinkRequiresConfirmation. The callback fails closed inline on
 	// this signal (WEB-77): it mints no cookie and issues no session. The
@@ -410,8 +413,9 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 	// rotation) routes to the same forced-reset escape hatch because the
 	// factor cannot be checked, not only when the routing flag happens to be
 	// set. RequiresTOTP is required only where TOTP is actually verifiable.
-	result.RequiresPasswordReset = result.User.MustChangePassword ||
-		(result.User.TOTPEnabled && service.totp != nil && service.totp.Unverifiable(result.User))
+	result.ResetCause = forcedResetCause(result.User.MustChangePassword,
+		result.User.TOTPEnabled && service.totp != nil && service.totp.Unverifiable(result.User))
+	result.RequiresPasswordReset = result.ResetCause != ""
 	result.RequiresTOTP = !result.RequiresPasswordReset && result.User.TOTPEnabled
 	result.Logout = service.buildLogoutState(exchange.Session, result.User.ID)
 	return result, nil

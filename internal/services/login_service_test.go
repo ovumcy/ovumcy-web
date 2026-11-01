@@ -153,6 +153,9 @@ func TestLoginServiceRoutesUnverifiableTOTPToForcedResetWithoutMustChangePasswor
 	if reset.lastPurpose != PasswordResetTokenPurposeForcedLocal {
 		t.Fatalf("expected forced-from-local purpose, got %q", reset.lastPurpose)
 	}
+	if result.ResetCause != ResetCauseTOTPUnverifiable {
+		t.Fatalf("expected cause %q, got %q", ResetCauseTOTPUnverifiable, result.ResetCause)
+	}
 }
 
 // TestLoginServiceRequiresTOTPWhenVerifiableEvenWithATOTPVerifierWired is the
@@ -231,6 +234,27 @@ func TestLoginServiceForcedResetOutranksTOTPForAnAccountWithBothFlags(t *testing
 	}
 	if !reset.called || reset.lastUserID != 21 {
 		t.Fatalf("expected reset token issuance for user 21")
+	}
+	if result.ResetCause != ResetCauseMustChangePassword {
+		t.Fatalf("expected cause %q when both flags are set, got %q", ResetCauseMustChangePassword, result.ResetCause)
+	}
+}
+
+func TestForcedResetCause(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		mustChange, unverifiable bool
+		want                     string
+	}{
+		{false, false, ""},
+		{true, false, ResetCauseMustChangePassword},
+		{false, true, ResetCauseTOTPUnverifiable},
+		{true, true, ResetCauseMustChangePassword},
+	} {
+		if got := forcedResetCause(testCase.mustChange, testCase.unverifiable); got != testCase.want {
+			t.Fatalf("forcedResetCause(%v, %v) = %q, want %q", testCase.mustChange, testCase.unverifiable, got, testCase.want)
+		}
 	}
 }
 
