@@ -101,7 +101,7 @@ func (handler *Handler) Login(c fiber.Ctx) error {
 			return handler.respondMappedError(c, spec)
 		}
 		handler.loginService.ResetAttempts(clientKey)
-		handler.logSecurityEvent(c, "auth.login", "reset_required")
+		handler.logSecurityEvent(c, "auth.login", "reset_required", securityEventField("cause", result.ResetCause))
 		if acceptsJSON(c) {
 			return handler.respondMappedError(c, passwordChangeRequiredErrorSpec())
 		}

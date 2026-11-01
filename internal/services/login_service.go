@@ -33,9 +33,31 @@ type LoginService struct {
 	totp TOTPFactorVerifier
 }
 
+// Why a sign-in was routed to the forced reset. The reset_required security
+// event carries it so an operator can tell an account they flagged from one a
+// SECRET_KEY rotation degraded to a password-only reset (WEB-401 R-A4).
+const (
+	ResetCauseMustChangePassword = "must_change_password"
+	ResetCauseTOTPUnverifiable   = "totp_unverifiable"
+)
+
+// forcedResetCause is "" when the account is not routed to the forced reset.
+// MustChangePassword outranks an unverifiable TOTP, as in the routing itself.
+func forcedResetCause(mustChangePassword bool, totpUnverifiable bool) string {
+	switch {
+	case mustChangePassword:
+		return ResetCauseMustChangePassword
+	case totpUnverifiable:
+		return ResetCauseTOTPUnverifiable
+	default:
+		return ""
+	}
+}
+
 type LoginResult struct {
 	User                  models.User
 	RequiresPasswordReset bool
+	ResetCause            string
 	ResetToken            string
 	RequiresTOTP          bool
 }
@@ -140,7 +162,7 @@ func (service *LoginService) Authenticate(
 	// the account — not only when the routing flag happens to be set.
 	totpUnverifiable := user.TOTPEnabled && service.totp != nil && service.totp.Unverifiable(user)
 
-	if user.MustChangePassword || totpUnverifiable {
+	if cause := forcedResetCause(user.MustChangePassword, totpUnverifiable); cause != "" {
 		// Authenticate only reaches this branch after AuthenticateCredentials
 		// has verified a LOCAL password, and the plain login route is
 		// Authenticate's only caller (WEB-77 removed the other one, OIDC
@@ -152,6 +174,7 @@ func (service *LoginService) Authenticate(
 			return LoginResult{}, ErrLoginResetTokenIssue
 		}
 		result.RequiresPasswordReset = true
+		result.ResetCause = cause
 		result.ResetToken = token
 		return result, nil
 	}
