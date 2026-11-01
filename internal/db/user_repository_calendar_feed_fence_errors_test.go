@@ -111,7 +111,7 @@ func TestAZeroOwnerRevocationNeverAdvancesTheFence(t *testing.T) {
 	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, 0, 1, "recovery-hash", nil); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("UpdateRecoveryCodeHashAndRevokeSessions must refuse a zero owner, got %v", err)
 	}
-	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, 0, "password-hash"); !errors.Is(err, ErrUserOwnerRequired) {
+	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, 0, "password-hash", false); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("ForceResetPasswordAndRevokeSessions must refuse a zero owner, got %v", err)
 	}
 	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, 0, "hash", 1, "new-password-hash", "new-recovery-hash", nil); !errors.Is(err, ErrUserOwnerRequired) {
@@ -145,7 +145,7 @@ func TestACredentialRotationSurfacesItsOwnWriteFailure(t *testing.T) {
 	if err := repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, user.ID, user.AuthSessionVersion, "recovery-hash", nil); err == nil {
 		t.Fatal("UpdateRecoveryCodeHashAndRevokeSessions must report a failed write rather than fall through to the fence")
 	}
-	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, user.ID, "password-hash"); err == nil {
+	if err := repo.ForceResetPasswordAndRevokeSessions(ctx, user.ID, "password-hash", false); err == nil {
 		t.Fatal("ForceResetPasswordAndRevokeSessions must report a failed write rather than fall through to the fence")
 	}
 }
@@ -177,7 +177,7 @@ func TestASideEffectFenceFailureNeverRefusesTheWrite(t *testing.T) {
 		{
 			name: "ForceResetPasswordAndRevokeSessions",
 			run: func(userID uint) error {
-				return repo.ForceResetPasswordAndRevokeSessions(ctx, userID, "password-hash")
+				return repo.ForceResetPasswordAndRevokeSessions(ctx, userID, "password-hash", false)
 			},
 		},
 		{

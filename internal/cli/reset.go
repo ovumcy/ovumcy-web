@@ -27,11 +27,18 @@ import (
 // value actually holds — a usage line naming this command is not a
 // credential, and the fix is to stop the name from looking like one rather
 // than to suppress a real finding.
-const resetUsage = "usage: ovumcy reset-password <email>|--id <id>"
+const resetUsage = "usage: ovumcy reset-password <email>|--id <id> [--full]"
+
+// resetFullFlag additionally clears TOTP and the recovery code and unlinks
+// every OIDC identity — the compromise-recovery form, since a factor an
+// attacker enrolled or linked would otherwise outlive the reset. Without it
+// the command keeps its long-standing password-only behaviour.
+const resetFullFlag = "--full"
 
 type resetPasswordOptions struct {
 	email  string
 	userID uint
+	full   bool
 }
 
 // parseResetPasswordArgs mirrors parseUsersDeleteArgs exactly (same flag
@@ -54,6 +61,11 @@ func parseResetPasswordArgs(args []string) (resetPasswordOptions, error) {
 			}
 			opts.userID = userID
 			index += consumed
+		case value == resetFullFlag:
+			if opts.full {
+				return resetPasswordOptions{}, errors.New(resetUsage)
+			}
+			opts.full = true
 		case strings.HasPrefix(value, "--"):
 			return resetPasswordOptions{}, errors.New(resetUsage)
 		default:
@@ -183,12 +195,15 @@ func runResetPassword(operatorUsers *services.OperatorUserService, authService *
 		return err
 	}
 
-	if resetErr := authService.ForceResetPasswordByID(context.Background(), target.ID, newPassword); resetErr != nil {
+	if resetErr := authService.ForceResetPasswordByID(context.Background(), target.ID, newPassword, opts.full); resetErr != nil {
 		return operatorFeedRevocationCommitted(mapResetPasswordError(resetErr, opts, normalizedEmail))
 	}
 
 	_, _ = fmt.Fprintln(output, "✅ Password reset successful")
 	_, _ = fmt.Fprintln(output, "Existing auth sessions were invalidated.")
+	if opts.full {
+		_, _ = fmt.Fprintln(output, "Two-factor sign-in and the recovery code were cleared, and every linked OIDC identity was unlinked.")
+	}
 	_, _ = fmt.Fprintln(output, "User must sign in again and reset the password before continuing.")
 
 	return nil

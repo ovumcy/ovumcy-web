@@ -153,7 +153,7 @@ func TestPasswordResetCASRollbackLeavesFeedArmedAndVersionUnchanged(t *testing.T
 func TestForceOperatorResetForceClearsFeedAtomically(t *testing.T) {
 	repo, userID := createArmedFeedUserForForceClear(t, "operator-feed-clear@example.com")
 
-	if err := repo.ForceResetPasswordAndRevokeSessions(context.Background(), userID, "operator-new-hash"); err != nil {
+	if err := repo.ForceResetPasswordAndRevokeSessions(context.Background(), userID, "operator-new-hash", false); err != nil {
 		t.Fatalf("ForceResetPasswordAndRevokeSessions: %v", err)
 	}
 
