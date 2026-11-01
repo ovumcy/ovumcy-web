@@ -29,6 +29,12 @@ func newTemplateFuncMap() template.FuncMap {
 		// The completed-cycle floor the threshold sentences name through %d: one
 		// source for every page.
 		"cycleFloor": services.FertilityMinimumCycles,
+		"observationBoundMessage": func(messages map[string]string, language string, key string) string {
+			if value, ok := lookupObservationBoundMessage(messages, language, key); ok {
+				return value
+			}
+			return key
+		},
 		"flowLabel": func(messages map[string]string, flow string) string {
 			return translateMessage(messages, services.FlowTranslationKey(flow))
 		},

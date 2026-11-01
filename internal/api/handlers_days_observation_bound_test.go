@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +11,10 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/net/html"
 )
 
 // WEB-246: a period and a pregnancy-test result are observations, so every day
@@ -31,7 +35,24 @@ const (
 
 func observationBoundDays(now time.Time) (time.Time, time.Time) {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	return today.AddDate(0, 0, 2), today.AddDate(0, 0, 3)
+	bound := services.ManualCycleStartFutureDays()
+	return today.AddDate(0, 0, bound), today.AddDate(0, 0, bound+1)
+}
+
+// observationBoundCopy is the refusal copy as the owner reads it: the plural
+// variant the bound selects, formatted with the bound itself.
+func observationBoundCopy(t *testing.T, language string, key string) string {
+	t.Helper()
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	days := services.ManualCycleStartFutureDays()
+	pattern := i18n.TranslatePlural(manager.Messages(language), language, key, days)
+	if pattern == key {
+		t.Fatalf("locale %s defines no variant of %q for %d", language, key, days)
+	}
+	return fmt.Sprintf(pattern, days)
 }
 
 func sendObservationDayWrite(t *testing.T, app *fiber.App, authCookie string, method string, day time.Time, body string) *http.Response {
@@ -145,39 +166,73 @@ func TestHTMXDayFormRefusesAnObservationPastTheBoundWithItsOwnCopy(t *testing.T)
 	_, firstRefused := observationBoundDays(now)
 
 	for name, c := range observationRefusalCases() {
-		t.Run(name, func(t *testing.T) {
+		for _, language := range []string{i18n.LangEN, i18n.LangRU} {
+			t.Run(name+" "+language, func(t *testing.T) {
+				t.Parallel()
+				app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return now }})
+				user := createOnboardingTestUser(t, database, "observation-bound-htmx-"+strings.ReplaceAll(name, " ", "-")+"-"+language+"@example.com", "StrongPass1", true)
+				authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+				form := url.Values{"flow": {models.FlowNone}}
+				for field, values := range c.typed {
+					form[field] = values
+				}
+				request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+firstRefused.Format("2006-01-02"), strings.NewReader(form.Encode()))
+				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				request.Header.Set("HX-Request", "true")
+				request.Header.Set("Accept-Language", language)
+				request.Header.Set("Cookie", authCookie)
+				bindDayWriteForTest(t, request, user.ID)
+
+				response := mustAppResponse(t, app, request)
+				assertStatusCode(t, response, http.StatusBadRequest)
+				body := mustReadBodyString(t, response.Body)
+				root := mustParseHTMLDocument(t, body)
+				if htmlFlashByKey(root, c.messageKey) == nil {
+					t.Fatalf("expected the HTMX refusal to carry flash key %q, got %s", c.messageKey, body)
+				}
+				if message := observationBoundCopy(t, language, c.messageKey); !strings.Contains(body, template.HTMLEscapeString(message)) {
+					t.Fatalf("expected the HTMX refusal to carry the copy %q, got %s", message, body)
+				}
+				entry, err := fetchLogByDateForTest(database, user.ID, firstRefused, time.UTC)
+				if err != nil {
+					t.Fatalf("load day: %v", err)
+				}
+				if entry.ID != 0 {
+					t.Fatalf("the refused write stored an entry: %+v", entry)
+				}
+			})
+		}
+	}
+}
+
+// TestSettingsImportFutureDayCopyNamesTheBound reads the restore refusal the
+// settings page hands its script: the copy states the bound the constant holds,
+// in the plural form that count takes.
+func TestSettingsImportFutureDayCopyNamesTheBound(t *testing.T) {
+	t.Parallel()
+
+	for _, language := range []string{i18n.LangEN, i18n.LangRU} {
+		t.Run(language, func(t *testing.T) {
 			t.Parallel()
-			app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return now }})
-			user := createOnboardingTestUser(t, database, "observation-bound-htmx-"+strings.ReplaceAll(name, " ", "-")+"@example.com", "StrongPass1", true)
+			app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{})
+			user := createOnboardingTestUser(t, database, "observation-bound-import-"+language+"@example.com", "StrongPass1", true)
 			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-			form := url.Values{"flow": {models.FlowNone}}
-			for field, values := range c.typed {
-				form[field] = values
-			}
-			request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+firstRefused.Format("2006-01-02"), strings.NewReader(form.Encode()))
-			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			request.Header.Set("HX-Request", "true")
-			request.Header.Set("Accept-Language", "en")
+			request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+			request.Header.Set("Accept-Language", language)
 			request.Header.Set("Cookie", authCookie)
-			bindDayWriteForTest(t, request, user.ID)
-
 			response := mustAppResponse(t, app, request)
-			assertStatusCode(t, response, http.StatusBadRequest)
-			body := mustReadBodyString(t, response.Body)
-			root := mustParseHTMLDocument(t, body)
-			if htmlFlashByKey(root, c.messageKey) == nil {
-				t.Fatalf("expected the HTMX refusal to carry flash key %q, got %s", c.messageKey, body)
+			assertStatusCode(t, response, http.StatusOK)
+			root := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+
+			section := htmlFindElement(root, func(node *html.Node) bool { return htmlAttr(node, "data-import-future-day") != "" })
+			if section == nil {
+				t.Fatal("the settings page carries no data-import-future-day")
 			}
-			if message := englishCopy(t, c.messageKey); !strings.Contains(body, template.HTMLEscapeString(message)) {
-				t.Fatalf("expected the HTMX refusal to carry the copy %q, got %s", message, body)
-			}
-			entry, err := fetchLogByDateForTest(database, user.ID, firstRefused, time.UTC)
-			if err != nil {
-				t.Fatalf("load day: %v", err)
-			}
-			if entry.ID != 0 {
-				t.Fatalf("the refused write stored an entry: %+v", entry)
+			want := observationBoundCopy(t, language, "settings.import_future_day")
+			if got := htmlAttr(section, "data-import-future-day"); got != want {
+				t.Fatalf("data-import-future-day = %q, want %q", got, want)
 			}
 		})
 	}
@@ -205,7 +260,7 @@ func TestNoJSDayFormRefusesAnObservationPastTheBoundWithItsOwnCopy(t *testing.T)
 			form := renderNoJSForm(t, ctx.app, "/calendar/day/"+iso+"?mode=edit", authCookieMap(t, ctx.authCookie), formWithFlag("data-day-editor-form"))
 
 			response := form.submit(t, ctx.app, c.typed)
-			assertRefusalPageCarrying(t, response, http.StatusUnprocessableEntity, englishCopy(t, c.messageKey), calendarLanding(iso))
+			assertRefusalPageCarrying(t, response, http.StatusUnprocessableEntity, observationBoundCopy(t, i18n.LangEN, c.messageKey), calendarLanding(iso))
 			entry, err := fetchLogByDateForTest(ctx.database, ctx.user.ID, firstRefused, time.UTC)
 			if err != nil {
 				t.Fatalf("load day: %v", err)

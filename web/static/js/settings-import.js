@@ -250,7 +250,7 @@
     futureDayMessage: readTextAttribute(
       section,
       "data-import-future-day",
-      "This file records a period or a pregnancy test more than two days ahead, so nothing was restored."
+      "This file records a period or a pregnancy test too far ahead, so nothing was restored."
     ),
     accountChangedMessage: readTextAttribute(
       section,

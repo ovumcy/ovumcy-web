@@ -11,6 +11,13 @@ import (
 const manualCycleStartFutureDays = 2
 const manualCycleStartSuggestionGapDays = 15
 
+// ManualCycleStartFutureDays is the day-observation bound: how far past today
+// a period start or a pregnancy test may be recorded. The refusal copy that
+// names the bound takes it through %d.
+func ManualCycleStartFutureDays() int {
+	return manualCycleStartFutureDays
+}
+
 var (
 	ErrManualCycleStartDateInvalid        = errors.New("manual cycle start date invalid")
 	ErrManualCycleStartReplaceRequired    = errors.New("manual cycle start replace required")
