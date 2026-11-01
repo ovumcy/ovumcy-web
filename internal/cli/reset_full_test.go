@@ -124,8 +124,8 @@ func TestResetPasswordFullClearsEveryFactorAnAttackerCouldHaveAdded(t *testing.T
 		cleared := reset.TOTPSecret == "" && !reset.TOTPEnabled && reset.TOTPLastUsedStep == 0 &&
 			reset.RecoveryCodeHash == "" && reset.RecoveryCodeRevealedAt == nil &&
 			countCLIOIDCIdentities(t, databasePath, target.ID) == 0
-		kept := reset.TOTPSecret == "sealed-totp-secret" && reset.TOTPEnabled &&
-			reset.RecoveryCodeHash == "recovery-code-hash" &&
+		kept := reset.TOTPSecret == "sealed-totp-secret" && reset.TOTPEnabled && reset.TOTPLastUsedStep == 42 &&
+			reset.RecoveryCodeHash == "recovery-code-hash" && reset.RecoveryCodeRevealedAt != nil &&
 			countCLIOIDCIdentities(t, databasePath, target.ID) == 1
 		if full && !cleared {
 			t.Fatalf("--full left a factor standing: totp=%q/%v recovery=%q identities=%d", reset.TOTPSecret, reset.TOTPEnabled, reset.RecoveryCodeHash, countCLIOIDCIdentities(t, databasePath, target.ID))
@@ -133,7 +133,7 @@ func TestResetPasswordFullClearsEveryFactorAnAttackerCouldHaveAdded(t *testing.T
 		if !full && !kept {
 			t.Fatalf("the plain reset changed a second factor: totp=%q/%v recovery=%q identities=%d", reset.TOTPSecret, reset.TOTPEnabled, reset.RecoveryCodeHash, countCLIOIDCIdentities(t, databasePath, target.ID))
 		}
-		if mentioned := strings.Contains(output.String(), "linked OIDC identity was unlinked"); mentioned != full {
+		if mentioned := strings.Contains(output.String(), "any linked OIDC identities were removed"); mentioned != full {
 			t.Fatalf("full=%v: output mentions the factor wipe=%v: %q", full, mentioned, output.String())
 		}
 
