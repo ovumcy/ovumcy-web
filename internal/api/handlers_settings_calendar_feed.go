@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -97,8 +98,11 @@ func (handler *Handler) issueCalendarFeedToken(c fiber.Ctx, mutation healthMutat
 	})
 	if err != nil {
 		// A save that failed after the seal leaves a cookie naming a selector
-		// that was never stored; retract it. Harmless when the seal itself failed.
-		handler.clearCalendarFeedRevealCookie(c)
+		// that was never stored; retract it. A failed seal stored nothing, so a
+		// pending reveal of the still-serving link is left alone.
+		if errors.Is(err, services.ErrCalendarFeedTokenPersist) {
+			handler.clearCalendarFeedRevealCookie(c)
+		}
 		return handler.failMutation(c, mutation, settingsCalendarFeedUpdateErrorSpec())
 	}
 
