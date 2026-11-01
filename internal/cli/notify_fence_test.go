@@ -29,10 +29,10 @@ func TestNotifyRefusesARestoredDatabaseUntilTheServerBoots(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "live.db")
 	config := db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}
 	owner := createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
-	if err := runWebhookCommand(config, testNotifySecretKey, []string{"set", owner.Email, "--enabled=true", "--url-stdin"}, strings.NewReader(testWebhookURLWithToken+"\n"), &bytes.Buffer{}); err != nil {
+	fencePath := armOperatorFence(t, databasePath)
+	if err := runWebhookCommandWithFence(config, testNotifySecretKey, fencePath, []string{"set", owner.Email, "--enabled=true", "--url-stdin"}, strings.NewReader(testWebhookURLWithToken+"\n"), &bytes.Buffer{}); err != nil {
 		t.Fatalf("webhook set: %v", err)
 	}
-	fencePath := armOperatorFence(t, databasePath)
 	backupPath := backupNotifySQLite(t, databasePath)
 
 	// The removal alone moves the fence: nothing else changes after the backup

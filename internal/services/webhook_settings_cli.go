@@ -197,6 +197,15 @@ func (service *WebhookSettingsCLIService) ApplyWebhookSettings(ctx context.Conte
 	return viewFromUpdate(update), nil
 }
 
+// PreviewWebhookSettings is ApplyWebhookSettings with dryRun: the same resolve,
+// merge and validation, nothing written. It is its own name so the operator
+// CLI's fence guard can tell a preview from a save by the call alone: `webhook
+// set` previews, then passes confirmOperatorFeedRevocation, and only then calls
+// ApplyWebhookSettings (WEB-414).
+func (service *WebhookSettingsCLIService) PreviewWebhookSettings(ctx context.Context, email string, patch WebhookSettingsPatch) (WebhookSettingsView, error) {
+	return service.ApplyWebhookSettings(ctx, email, patch, true)
+}
+
 // resolveOwner looks up the owner by normalized email and returns the record, a
 // host-only status view of the stored settings, and the DECRYPTED plaintext
 // endpoint URL (empty when none is configured). It centralizes the email
