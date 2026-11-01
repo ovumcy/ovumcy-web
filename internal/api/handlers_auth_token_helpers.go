@@ -102,8 +102,13 @@ func (handler *Handler) clearAuthCookie(c fiber.Ctx) {
 // code, reset token, pending 2FA challenge, the pending TOTP enrollment secret,
 // and the one-time calendar-feed subscribe URL.
 //
-// None of those is consumable without an authenticated session, so anything left
-// behind is exposure with no remaining purpose. Both TOTP cookies are
+// It runs where the session ends (logout, account deletion) and where an
+// unsupported role is refused. A session refused as expired, revoked or invalid
+// retracts the narrower clearRejectedSessionCookies set instead, which this
+// helper extends: the reset token, the pending 2FA challenge and the logout
+// bridge are consumed without a session, so only an ending or a role refusal
+// takes them. Anything left behind past an ending is exposure with no remaining
+// purpose. Both TOTP cookies are
 // session-scoped (zero expires), so an abandoned enrollment would otherwise keep
 // shipping its sealed raw secret at `path: "/"` for the rest of the browser
 // session, and the feed URL stays a live capability the sign-out does not revoke.
@@ -125,13 +130,10 @@ func (handler *Handler) clearAuthCookie(c fiber.Ctx) {
 // anyone reset a browser's rendering language with one unauthenticated request.
 // The deliberate ends clear both through clearSessionEndCookies below.
 func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
-	handler.clearAuthCookie(c)
+	handler.clearRejectedSessionCookies(c)
 	handler.clearOIDCLogoutBridgeCookie(c)
-	handler.clearRecoveryCodePageCookie(c)
 	handler.clearResetPasswordCookie(c)
 	handler.clearTOTPPendingCookie(c)
-	handler.clearTOTPSetupCookie(c)
-	handler.clearCalendarFeedRevealCookie(c)
 }
 
 // clearRejectedSessionCookies is what a refused session (expired, revoked,
