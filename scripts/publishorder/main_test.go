@@ -843,7 +843,7 @@ func TestTheSigningStepsActOnThePushedDigest(t *testing.T) {
 		},
 		{
 			step:     sbomStep,
-			contains: []string{"imagetools inspect", "{{ json .SBOM }}", ".SPDX", "steps.build.outputs.digest"},
+			contains: []string{"imagetools inspect", "{{ json .SBOM }}", `"SPDX"`, "steps.build.outputs.digest"},
 			because:  "the SBOM is promised on every published image, and this step is the only one that reads it back off the digest the promotion publishes",
 		},
 	} {
