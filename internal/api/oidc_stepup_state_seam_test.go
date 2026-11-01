@@ -256,18 +256,19 @@ func TestStepupDispatchLetsAMatchingStateReachItsCompletion(t *testing.T) {
 			purpose: "identity link",
 			email:   "stepup-seam-link@example.com",
 			reached: func(t *testing.T, harness *stepupSeamHarness, user models.User, response *http.Response) {
+				// The completion parks the identity for the owner's confirm
+				// (WEB-401); every answer the seam has is a flashed refusal.
 				assertStatusCode(t, response, http.StatusSeeOther)
-				flash := responseCookie(response.Cookies(), flashCookieName)
-				if flash == nil || strings.TrimSpace(flash.Value) == "" {
-					t.Fatal("expected the identity-link completion to flash its success")
+				if location := response.Header.Get("Location"); location != oidcLinkConfirmPagePath {
+					t.Fatalf("expected the completion to send the owner to %s, got %q — the seam answered instead of the completion", oidcLinkConfirmPagePath, location)
 				}
-				if payload := decodeFlashCookieForTest(t, flash.Value); payload.SettingsSuccess != "oidc_identity_linked" {
-					t.Fatalf("expected settings_success=oidc_identity_linked, got %+v — the seam answered instead of the completion", payload)
+				if pending := responseCookie(response.Cookies(), oidcLinkPendingCookieName); pending == nil || strings.TrimSpace(pending.Value) == "" {
+					t.Fatal("expected the identity-link completion to park the identity in the pending-link cookie")
 				}
 				// The side effect, not only the answer: the completion asked
-				// the OIDC service to link THIS owner.
+				// the OIDC service to verify THIS owner's step-up.
 				if harness.oidcStub.lastIdentityLinkUserID != user.ID {
-					t.Fatalf("expected the completion to link user %d, the service was asked for %d", user.ID, harness.oidcStub.lastIdentityLinkUserID)
+					t.Fatalf("expected the completion to verify user %d, the service was asked for %d", user.ID, harness.oidcStub.lastIdentityLinkUserID)
 				}
 			},
 		},

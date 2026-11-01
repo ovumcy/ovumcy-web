@@ -19,6 +19,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -230,6 +231,15 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 		honours: func(handler *Handler, c fiber.Ctx) bool {
 			secret, err := handler.parseTOTPSetupCookie(c, sealedExpirySweepUserID)
 			return err == nil && strings.TrimSpace(secret) != ""
+		},
+	},
+	oidcLinkPendingCookieName: {
+		mint: func(handler *Handler, c fiber.Ctx) error {
+			return handler.setOIDCLinkPendingCookie(c, sealedExpirySweepUserID, 1, security.OIDCClaims{Issuer: "https://id.example.com", Subject: "sweep-subject"})
+		},
+		honours: func(handler *Handler, c fiber.Ctx) bool {
+			pending, err := handler.parseOIDCLinkPendingCookie(c, sealedExpirySweepUserID)
+			return err == nil && pending.Subject != ""
 		},
 	},
 	oidcStateCookieName: {
