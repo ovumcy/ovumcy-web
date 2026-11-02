@@ -302,6 +302,18 @@ func TestBuildDashboardViewDataWithholdsHighFertilityBadgeWhileFertilitySuppress
 			stats: CycleStats{LastPeriodStart: mustParseDashboardServiceDay(t, "2026-01-22"), CurrentCycleDay: 31},
 		},
 		{
+			name:  "one completed cycle, awaiting more",
+			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true},
+			stats: CycleStats{CompletedCycleCount: 1, MedianCycleLength: 28, LastPeriodStart: lastPeriod, NextPeriodStart: nextPeriod},
+		},
+		{
+			// Median 28, average 30: day 29 is past the projection length but
+			// not yet past the reference length.
+			name:  "past the projection length",
+			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true},
+			stats: CycleStats{CompletedCycleCount: 4, MedianCycleLength: 28, AverageCycleLength: 30, LastPeriodStart: mustParseDashboardServiceDay(t, "2026-01-24"), CurrentCycleDay: 29},
+		},
+		{
 			name:  "pregnancy pause",
 			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true},
 			stats: CycleStats{CompletedCycleCount: 3, MedianCycleLength: 28, LastPeriodStart: lastPeriod, NextPeriodStart: nextPeriod, PregnancyPaused: true},
