@@ -219,7 +219,7 @@ func (fence *CalendarFeedRestoreFence) enforce(ctx context.Context, refuseUnanch
 
 	anchored, anchorFound, pending, err := fence.readAnchor()
 	if err != nil {
-		return fence.disarmUnanchored(ctx, err, 0, refuseUnanchored)
+		return fence.disarmUnanchored(ctx, err, refuseUnanchored)
 	}
 
 	stored, storedFound, err := fence.appState.Get(ctx, models.AppStateKeyCalendarFeedRestoreFence)
@@ -288,7 +288,7 @@ func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outco
 		return outcome, err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
 	if err := fence.anchor.Write(token); err != nil {
-		return fence.disarmUnanchored(ctx, err, 0, refuseUnanchored)
+		return fence.disarmUnanchored(ctx, err, refuseUnanchored)
 	}
 	disarmed, err := fence.users.DisarmAllCalendarFeedTokens(ctx)
 	if err != nil {
@@ -670,7 +670,7 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, refuseUnancho
 		return outcome, err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
 	if err := fence.anchor.Write(calendarFeedFenceFirstBootPrefix + token); err != nil {
-		return fence.disarmUnanchored(ctx, err, 0, refuseUnanchored)
+		return fence.disarmUnanchored(ctx, err, refuseUnanchored)
 	}
 	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
 		return outcome, err
@@ -687,7 +687,7 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, refuseUnancho
 // declared residual as any other transient anchor failure under the opt-out.
 func (fence *CalendarFeedRestoreFence) finishFirstBoot(ctx context.Context, token string, refuseUnanchored bool) (CalendarFeedRestoreFenceOutcome, error) {
 	if err := fence.anchor.Write(token); err != nil {
-		return fence.disarmUnanchored(ctx, err, 0, refuseUnanchored)
+		return fence.disarmUnanchored(ctx, err, refuseUnanchored)
 	}
 	outcome := CalendarFeedRestoreFenceOutcome{FirstBoot: true}
 	if err := fence.appState.Delete(ctx, models.AppStateKeyCalendarFeedFenceUnanchored); err != nil {
@@ -711,8 +711,8 @@ func (fence *CalendarFeedRestoreFence) storeToken(ctx context.Context, outcome C
 
 // disarmUnanchored is the fail-closed path: without a usable fence nothing can
 // prove this database still holds the revocations this instance performed, so
-// every armed feed goes. alreadyDisarmed carries the count from a disarm that
-// ran earlier in the same pass, so the reported total counts each row once.
+// every armed feed goes. Every path reaches it before any disarm of its own has
+// run, so the count it reports is its own.
 //
 // It also stamps the database, which is the only durable trace this boot can
 // leave: the fence's own token needs a half outside the database and there is
@@ -748,9 +748,7 @@ func (fence *CalendarFeedRestoreFence) storeToken(ctx context.Context, outcome C
 // first boot whose file write failed) the database is exactly as the boot found
 // it and the fence's next start with the file back reads continuity — a failed
 // boot served nothing and lost nothing — instead of a disagreement that would
-// cost every owner a subscribe URL for a restore that never happened. Reached
-// from record after a disarm that already ran, a second failed disarm leaves the
-// halves as they were too — disagreeing — and the next boot disarms again.
+// cost every owner a subscribe URL for a restore that never happened.
 //
 // A failure to write the stamp is RETURNED, not swallowed, which fails the
 // boot. That is the same answer the pass already gives every other app_state
@@ -763,15 +761,15 @@ func (fence *CalendarFeedRestoreFence) storeToken(ctx context.Context, outcome C
 //
 // With refuseUnanchored the boot is about to be refused and nothing is written
 // at all; EnforceRequired says why.
-func (fence *CalendarFeedRestoreFence) disarmUnanchored(ctx context.Context, cause error, alreadyDisarmed int64, refuseUnanchored bool) (CalendarFeedRestoreFenceOutcome, error) {
+func (fence *CalendarFeedRestoreFence) disarmUnanchored(ctx context.Context, cause error, refuseUnanchored bool) (CalendarFeedRestoreFenceOutcome, error) {
 	if refuseUnanchored {
-		return CalendarFeedRestoreFenceOutcome{Unanchored: true, UnanchoredCause: cause, DisarmedFeeds: alreadyDisarmed}, nil
+		return CalendarFeedRestoreFenceOutcome{Unanchored: true, UnanchoredCause: cause}, nil
 	}
 	disarmed, err := fence.users.DisarmAllCalendarFeedTokens(ctx)
 	outcome := CalendarFeedRestoreFenceOutcome{
 		Unanchored:      true,
 		UnanchoredCause: cause,
-		DisarmedFeeds:   alreadyDisarmed + disarmed,
+		DisarmedFeeds:   disarmed,
 	}
 	if err != nil {
 		return outcome, err
