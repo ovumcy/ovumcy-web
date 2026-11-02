@@ -138,6 +138,28 @@ type CalendarFeedRestoreFence struct {
 	// this lock too — rare and operator-driven, where the request paths run
 	// concurrently by construction.
 	writing sync.Mutex
+	// confirmedAhead is set by a successful AdvanceConfirmed and consumed by
+	// the next Advance or AdvanceOrDiverge, which then writes nothing (WEB-429).
+	// The operator write that follows the gate advances the fence again from
+	// inside its repository; the confirmed advance already precedes that write,
+	// and a second one could only add a failure — a file error there moves the
+	// database half alone, and the next boot revokes every session, webhook and
+	// local password, including the one the operator just set. Guarded by
+	// writing.
+	confirmedAhead bool
+	// batching and pending coalesce concurrent AdvanceOrDiverge calls — every
+	// sign-out runs one — into one advance per turn of writing, so N concurrent
+	// sign-outs cost at most two serialized file syncs rather than N (WEB-454).
+	batching sync.Mutex
+	pending  *calendarFeedFenceAdvanceBatch
+}
+
+// calendarFeedFenceAdvanceBatch is one coalesced AdvanceOrDiverge: every caller
+// that joined it before its leader started writing returns its result.
+type calendarFeedFenceAdvanceBatch struct {
+	done    chan struct{}
+	err     error
+	members int
 }
 
 // NewCalendarFeedRestoreFence wires the fence.
@@ -326,6 +348,9 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
 
+	if fence.consumeConfirmedAdvance() {
+		return nil
+	}
 	token, err := security.NewCalendarFeedFenceToken()
 	if err != nil {
 		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
@@ -360,10 +385,41 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 // disagreement, and no marker the database could carry would tell the two
 // apart — a restored dump carries it too. Only these writes pay it, and only
 // while the file is unwritable.
+//
+// Concurrent calls are coalesced. A caller joins the batch that is still
+// waiting for writing, or opens one; the batch's leader detaches it only once
+// it holds writing, so every member called before the advance began, which is
+// all the ordering its row write needs. A member waits for the result whatever
+// its ctx does: its caller ignores the error and writes next, so returning
+// early would put that write ahead of the advance.
 func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) error {
-	fence.writing.Lock()
-	defer fence.writing.Unlock()
+	fence.batching.Lock()
+	if batch := fence.pending; batch != nil {
+		batch.members++
+		fence.batching.Unlock()
+		<-batch.done
+		return batch.err
+	}
+	batch := &calendarFeedFenceAdvanceBatch{done: make(chan struct{}), members: 1}
+	fence.pending = batch
+	fence.batching.Unlock()
 
+	fence.writing.Lock()
+	fence.batching.Lock()
+	fence.pending = nil
+	fence.batching.Unlock()
+	batch.err = fence.advanceOrDivergeLocked(ctx)
+	fence.writing.Unlock()
+	close(batch.done)
+	return batch.err
+}
+
+// advanceOrDivergeLocked is one AdvanceOrDiverge write. The caller holds
+// fence.writing.
+func (fence *CalendarFeedRestoreFence) advanceOrDivergeLocked(ctx context.Context) error {
+	if fence.consumeConfirmedAdvance() {
+		return nil
+	}
 	token, err := security.NewCalendarFeedFenceToken()
 	if err != nil {
 		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
@@ -498,7 +554,17 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
 		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err}
 	}
+	fence.confirmedAhead = true
 	return nil
+}
+
+// consumeConfirmedAdvance reports whether a confirmed advance already covers
+// the write about to happen, and clears the mark. The caller holds
+// fence.writing.
+func (fence *CalendarFeedRestoreFence) consumeConfirmedAdvance() bool {
+	covered := fence.confirmedAhead
+	fence.confirmedAhead = false
+	return covered
 }
 
 // CheckContinuity is AdvanceConfirmed's refusal half alone: the same errors,
