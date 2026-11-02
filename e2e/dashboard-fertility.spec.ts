@@ -133,11 +133,11 @@ test.describe('Dashboard: fertility badge', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
 
-    // A recorded observation is not a prediction, so the badge shows; the
-    // slider-derived fertile window stays withheld in the same state.
+    // A recorded observation is not a prediction, so the badge shows; that the
+    // slider-derived fertile status stays withheld is pinned at the unit level
+    // (TestBuildDashboardViewDataShowsHighFertilityBadgeBeforeTheFirstCycleCompletes).
     await expect(dashboardStatusLine(page)).toBeVisible();
     await expect(page.locator('[data-fertility-badge]')).toBeVisible();
-    await expect(page.locator('[data-fertile-window]')).toHaveCount(0);
   });
 
   test('marking more than 8 consecutive period days surfaces the long-period warning once', async ({
