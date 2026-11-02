@@ -207,7 +207,15 @@ func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 		{
 			name: "lead window changed",
 			revoke: func(t *testing.T, fixture webhookRevocationFixture) {
-				if err := fixture.repo.UpdateReminderLeadDays(context.Background(), fixture.ownerID, 1); err != nil {
+				const newLeadDays = 1
+				var before models.User
+				if err := fixture.database.First(&before, fixture.ownerID).Error; err != nil {
+					t.Fatalf("load the owner before changing the lead window: %v", err)
+				}
+				if before.ReminderLeadDays == newLeadDays {
+					t.Fatalf("fixture: the lead window already is %d, so the change below is a no-op the claim could not observe", newLeadDays)
+				}
+				if err := fixture.repo.UpdateReminderLeadDays(context.Background(), fixture.ownerID, newLeadDays); err != nil {
 					t.Fatalf("change the lead window: %v", err)
 				}
 			},
