@@ -510,12 +510,13 @@ func TestRunUsersCommandSetEmailRestoresTheAccountsTheBootRepairLeavesLockedOut(
 		{userID: collided.ID, stored: collidedStored, newEmail: "second@example.com"},
 		{userID: unparseable.ID, stored: unparseableStored, newEmail: "jane.doe@example.com"},
 	}
+	fencePath := armOperatorFence(t, databasePath)
 	for _, repair := range repairs {
 		var output bytes.Buffer
 		if err := runUsersCommand(
 			db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 			[]string{"set-email", "--id", strconv.FormatUint(uint64(repair.userID), 10), repair.newEmail},
-			"",
+			fencePath,
 			strings.NewReader(""),
 			&output,
 		); err != nil {
@@ -562,12 +563,13 @@ func TestRunUsersCommandSetEmailReRunWithTheSameAddressRevokesNoSession(t *testi
 	user := createCLIUsersUser(t, databasePath, "collided-placeholder@example.com", "Collided", models.RoleOwner, true, time.Now().UTC())
 	setCLIUsersStoredEmail(t, databasePath, user.ID, "second account <dup@example.com>")
 	idArgument := strconv.FormatUint(uint64(user.ID), 10)
+	fencePath := armOperatorFence(t, databasePath)
 
 	var first bytes.Buffer
 	if err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"set-email", "--id", idArgument, "second@example.com"},
-		"",
+		fencePath,
 		strings.NewReader(""),
 		&first,
 	); err != nil {
@@ -580,6 +582,8 @@ func TestRunUsersCommandSetEmailReRunWithTheSameAddressRevokesNoSession(t *testi
 		t.Fatalf("expected the repair itself to revoke sessions, version=%d", repaired.AuthSessionVersion)
 	}
 
+	// No fence path on the re-run: the no-op returns before the operator fence
+	// gate, so it must not need the fence at all.
 	var second bytes.Buffer
 	if err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},

@@ -394,7 +394,7 @@ func TestOperatorUserServiceSetEmailByIDWritesTheCanonicalAddress(t *testing.T) 
 	}
 	service := NewOperatorUserService(repo, nil)
 
-	before, after, err := service.SetEmailByID(context.Background(), 9, "  Second@Example.com ")
+	before, after, err := service.SetEmailByID(context.Background(), 9, "  Second@Example.com ", nil)
 	if err != nil {
 		t.Fatalf("SetEmailByID() unexpected error: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestOperatorUserServiceSetEmailByIDLeavesAnUnchangedAddressAlone(t *testing
 	}
 	service := NewOperatorUserService(repo, nil)
 
-	before, after, err := service.SetEmailByID(context.Background(), 9, " Owner@Example.com ")
+	before, after, err := service.SetEmailByID(context.Background(), 9, " Owner@Example.com ", nil)
 	if err != nil {
 		t.Fatalf("SetEmailByID() unexpected error: %v", err)
 	}
@@ -488,7 +488,7 @@ func TestOperatorUserServiceSetEmailByIDErrors(t *testing.T) {
 			t.Parallel()
 
 			service := NewOperatorUserService(testCase.repo, nil)
-			_, _, err := service.SetEmailByID(context.Background(), testCase.userID, testCase.email)
+			_, _, err := service.SetEmailByID(context.Background(), testCase.userID, testCase.email, nil)
 			if !errors.Is(err, testCase.want) {
 				t.Fatalf("expected %v, got %v", testCase.want, err)
 			}

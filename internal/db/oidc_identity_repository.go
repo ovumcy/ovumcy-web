@@ -12,6 +12,9 @@ import (
 
 type OIDCIdentityRepository struct {
 	database *gorm.DB
+	// calendarFeedFence: see UserRepository. A link or unlink revokes sessions,
+	// and a restore across it would hand them back.
+	calendarFeedFence CalendarFeedFence
 }
 
 func NewOIDCIdentityRepository(database *gorm.DB) *OIDCIdentityRepository {
@@ -65,6 +68,7 @@ func (repo *OIDCIdentityRepository) CreateAndRevokeSessions(ctx context.Context,
 	if identity == nil || identity.UserID == 0 {
 		return errOIDCIdentityOwnerRequired
 	}
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := bumpAuthSessionVersionFromTx(tx, identity.UserID, expectedSessionVersion); err != nil {
 			return err
@@ -118,6 +122,7 @@ func (repo *OIDCIdentityRepository) DeleteForUserAndRevokeSessions(ctx context.C
 	if userID == 0 || identityID == 0 {
 		return false, nil
 	}
+	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := bumpAuthSessionVersionFromTx(tx, userID, expectedSessionVersion); err != nil {
 			if errors.Is(err, errOIDCIdentityOwnerRequired) {
@@ -184,6 +189,13 @@ func (repo *OIDCIdentityRepository) TouchLastUsed(ctx context.Context, identityI
 	return repo.database.WithContext(ctx).Model(&models.OIDCIdentity{}).
 		Where("id = ? AND user_id = ?", identityID, userID).
 		Update("last_used_at", usedAt).Error
+}
+
+// advanceCalendarFeedFenceBestEffort is UserRepository's, for the same reason:
+// refusing a link or unlink on a fence marker would trade a sign-in method for
+// a feed record.
+func (repo *OIDCIdentityRepository) advanceCalendarFeedFenceBestEffort(ctx context.Context) {
+	advanceFenceOrDiverge(ctx, repo.calendarFeedFence)
 }
 
 var errOIDCIdentityOwnerRequired = errors.New("oidc identity owner is required")

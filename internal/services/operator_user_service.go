@@ -144,9 +144,13 @@ func (service *OperatorUserService) deleteUser(ctx context.Context, userSummary 
 // the unique index underneath, which is what makes a concurrent create safe.
 // The write bumps auth_session_version: the address is the login identity.
 //
+// beforeWrite, when set, runs once every refusal above the write has passed and
+// immediately before it; its error refuses the write. The CLI passes the
+// operator fence gate there, so a no-op or a refused address advances nothing.
+//
 // Both summaries are returned — the row as it stood and as it now stands — so
 // the caller can show the operator exactly which account moved and from what.
-func (service *OperatorUserService) SetEmailByID(ctx context.Context, userID uint, email string) (models.OperatorUserSummary, models.OperatorUserSummary, error) {
+func (service *OperatorUserService) SetEmailByID(ctx context.Context, userID uint, email string, beforeWrite func(context.Context) error) (models.OperatorUserSummary, models.OperatorUserSummary, error) {
 	before, err := service.GetUserByID(ctx, userID)
 	if err != nil {
 		return models.OperatorUserSummary{}, models.OperatorUserSummary{}, err
@@ -174,6 +178,11 @@ func (service *OperatorUserService) SetEmailByID(ctx context.Context, userID uin
 		return models.OperatorUserSummary{}, models.OperatorUserSummary{}, ErrOperatorUserEmailExists
 	}
 
+	if beforeWrite != nil {
+		if err := beforeWrite(ctx); err != nil {
+			return models.OperatorUserSummary{}, models.OperatorUserSummary{}, err
+		}
+	}
 	changed, err := service.users.SetUserEmailByIDAndRevokeSessions(ctx, userID, before.Email, normalizedEmail)
 	if err != nil {
 		if isRegistrationUniqueConstraintError(err) {

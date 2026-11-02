@@ -336,10 +336,11 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 }
 
 // AdvanceOrDiverge is Advance for a write that proceeds whatever the fence
-// does — recovery-code rotation, a password reset, reset-token redemption,
-// clear-data, account erasure — whose feed clear is a side effect. Refusing
-// those over a calendar-feed marker would trade a credential or an erasure for
-// a feed record.
+// does — a sign-out, a password change or reset, a TOTP toggle, an OIDC link or
+// unlink, recovery-code rotation, reset-token redemption, clear-data, account
+// erasure — whose session or feed revocation must survive a restore but must
+// not wait on the fence. Refusing those over a calendar-feed marker would trade
+// a credential or an erasure for a feed record.
 //
 // So where Advance refuses on a configured but unwritable file, this moves the
 // database half on ALONE: the halves disagree, and the next boot answers with
@@ -347,7 +348,8 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 // containment, not a side effect of it: nothing outside the database recorded
 // this write, so a backup taken before it, restored, leaves the very same
 // disagreement, and no marker the database could carry would tell the two
-// apart — a restored dump carries it too. Only these rarer writes pay it.
+// apart — a restored dump carries it too. Only these writes pay it, and only
+// while the file is unwritable.
 func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()

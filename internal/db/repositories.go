@@ -27,8 +27,8 @@ func NewRepositories(database *gorm.DB) *Repositories {
 }
 
 // WithCalendarFeedFence attaches the calendar-feed restore fence to the
-// repository that changes the armed-feed set, and returns the same set so
-// production wiring stays one expression.
+// repositories that change the armed-feed set or revoke sessions, and returns
+// the same set so production wiring stays one expression.
 //
 // It is a second step rather than a NewRepositories argument because the fence
 // is built FROM these repositories — it reads and writes app_state through
@@ -40,5 +40,6 @@ func NewRepositories(database *gorm.DB) *Repositories {
 // and a guard refuses a direct call anywhere else.
 func (repositories *Repositories) WithCalendarFeedFence(fence CalendarFeedFence) *Repositories {
 	repositories.Users.calendarFeedFence = fence
+	repositories.OIDCIdentities.calendarFeedFence = fence
 	return repositories
 }

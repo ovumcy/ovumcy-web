@@ -67,7 +67,7 @@ func runUsersCommandIn(databaseConfig db.Config, localSignInEnabled func() (bool
 	case "create":
 		return runUsersCreate(service, localSignInEnabled, args[1:], input, output)
 	case "set-email":
-		return runUsersSetEmail(service, args[1:], output)
+		return runUsersSetEmail(service, fencePath, fence, args[1:], output)
 	default:
 		return errors.New("usage: ovumcy users <list|delete|create|set-email>") // codecov:ignore -- unreachable: the subcommand is validated in the switch above
 	}
@@ -405,20 +405,36 @@ const usersSetEmailUsage = "usage: ovumcy users set-email --id <id> <email>"
 // repair — the account's health history goes with it — and until this command
 // existed the runbook's "remove or re-home it deliberately" had no re-home to
 // name.
-func runUsersSetEmail(service *services.OperatorUserService, args []string, output io.Writer) error {
+//
+// The re-home revokes every session of the account, so it passes the same
+// operator fence gate as `users delete` (WEB-418): a revocation recorded only in
+// the database is one a restored backup undoes. The service runs the gate after
+// its own refusals, so a no-op or a refused address advances nothing.
+func runUsersSetEmail(service *services.OperatorUserService, fencePath string, fence *services.CalendarFeedRestoreFence, args []string, output io.Writer) error {
 	opts, err := parseUsersSetEmailArgs(args)
 	if err != nil {
 		return err
 	}
-
-	before, after, err := service.SetEmailByID(context.Background(), opts.userID, opts.email)
-	if err != nil {
-		return mapUsersSetEmailError(err, opts.userID)
-	}
-
 	if output == nil {
 		output = os.Stdout
 	}
+
+	gateErr := error(nil)
+	gatePassed := false
+	before, after, err := service.SetEmailByID(context.Background(), opts.userID, opts.email, func(ctx context.Context) error {
+		gateErr = confirmOperatorFeedRevocation(ctx, fencePath, fence, output)
+		gatePassed = gateErr == nil
+		return gateErr
+	})
+	switch {
+	case gateErr != nil:
+		return gateErr
+	case err != nil && gatePassed:
+		return operatorFeedRevocationCommitted(mapUsersSetEmailError(err, opts.userID))
+	case err != nil:
+		return mapUsersSetEmailError(err, opts.userID)
+	}
+
 	if before.Email == after.Email {
 		_, _ = fmt.Fprintf(output, "Account id=%d (role=%s) already answers to %s; nothing was changed and no session was revoked.\n", before.ID, before.Role, after.Email)
 		return nil
