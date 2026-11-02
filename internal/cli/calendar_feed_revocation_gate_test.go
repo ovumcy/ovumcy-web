@@ -111,6 +111,7 @@ func TestUsersDeleteRefusesAndDeletesNothingWithoutAConfirmedFence(t *testing.T)
 			databasePath := createCLIUsersDatabase(t)
 			createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
 			fencePath := testCase.fencePath(t, databasePath)
+			halvesBefore := readFenceHalves(t, databasePath, fencePath)
 
 			var output bytes.Buffer
 			err := runUsersCommand(
@@ -131,8 +132,56 @@ func TestUsersDeleteRefusesAndDeletesNothingWithoutAConfirmedFence(t *testing.T)
 			if remaining := listCLIUserEmails(t, databasePath); len(remaining) != 1 || remaining[0] != "owner@example.com" {
 				t.Fatalf("expected the account to survive a refused revocation, got %#v", remaining)
 			}
+			if halvesAfter := readFenceHalves(t, databasePath, fencePath); halvesAfter != halvesBefore {
+				t.Fatalf("a refused revocation must write neither fence half, before %+v after %+v", halvesBefore, halvesAfter)
+			}
 		})
 	}
+}
+
+// fenceHalves is both halves of the restore fence as a comparable value: the
+// file's bytes (or why it could not be read) and the app_state marker. Two
+// snapshots that differ mean something wrote one of them.
+type fenceHalves struct {
+	file        string
+	marker      string
+	markerFound bool
+}
+
+// readFenceHalves snapshots the fence file at fencePath and the app_state
+// marker in the database, so a refusal can be shown to have written neither.
+// A path that cannot be read snapshots as its error text, which still differs
+// from a file that appears there afterwards.
+func readFenceHalves(t *testing.T, databasePath string, fencePath string) fenceHalves {
+	t.Helper()
+
+	halves := fenceHalves{}
+	if fencePath == "" {
+		halves.file = "<no path>"
+	} else if content, err := os.ReadFile(fencePath); err != nil {
+		halves.file = "<unreadable>"
+	} else {
+		halves.file = string(content)
+	}
+
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
+	if err != nil {
+		t.Fatalf("readFenceHalves: open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("readFenceHalves: open sql db: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	var rows []models.AppState
+	if err := database.Where("key = ?", models.AppStateKeyCalendarFeedRestoreFence).Find(&rows).Error; err != nil {
+		t.Fatalf("readFenceHalves: read app_state: %v", err)
+	}
+	if len(rows) == 1 {
+		halves.marker, halves.markerFound = rows[0].Value, true
+	}
+	return halves
 }
 
 // journalingUserRepository wraps a real *db.UserRepository and journals
@@ -305,6 +354,10 @@ func TestResetPasswordRefusesWithoutAConfirmedFenceAndLeavesTheHashAlone(t *test
 
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "cli-reset-unfenced@example.com", "StrongPass1")
+	// An armed fence the shell cannot see (no path): the halves must come out of
+	// the refusal exactly as they went in, not only the account row.
+	armedFence := armOperatorFence(t, databasePath)
+	halvesBefore := readFenceHalves(t, databasePath, armedFence)
 
 	err := runResetPasswordCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
@@ -323,6 +376,9 @@ func TestResetPasswordRefusesWithoutAConfirmedFenceAndLeavesTheHashAlone(t *test
 	}
 	if unchanged.MustChangePassword {
 		t.Fatal("expected must_change_password to be untouched by a refused reset")
+	}
+	if halvesAfter := readFenceHalves(t, databasePath, armedFence); halvesAfter != halvesBefore {
+		t.Fatalf("a refused reset must write neither fence half, before %+v after %+v", halvesBefore, halvesAfter)
 	}
 }
 
@@ -433,6 +489,7 @@ func TestUsersDeleteReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testi
 	databasePath := createCLIUsersDatabase(t)
 	user := createCLIUsersUser(t, databasePath, "vanishes@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
 	fencePath := armOperatorFence(t, databasePath)
+	halvesBefore := readFenceHalves(t, databasePath, fencePath)
 
 	var output bytes.Buffer
 	err := runUsersCommand(
@@ -457,6 +514,17 @@ func TestUsersDeleteReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testi
 	}
 	if strings.Contains(err.Error(), "Nothing was changed") {
 		t.Fatalf("the fence advance already happened, so this is not a refusal: %v", err)
+	}
+
+	// The wording above is rendered unconditionally, so it cannot tell a gate
+	// that advanced from one that did not: the token itself must have moved, in
+	// both halves and to the same value.
+	halvesAfter := readFenceHalves(t, databasePath, fencePath)
+	if halvesAfter.file == halvesBefore.file || halvesAfter.marker == halvesBefore.marker {
+		t.Fatalf("the gate must have advanced both halves before the failed delete, before %+v after %+v", halvesBefore, halvesAfter)
+	}
+	if !halvesAfter.markerFound || strings.TrimSpace(halvesAfter.file) != halvesAfter.marker {
+		t.Fatalf("the advanced halves must agree, got %+v", halvesAfter)
 	}
 }
 
