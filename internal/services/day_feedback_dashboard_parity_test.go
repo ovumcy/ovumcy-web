@@ -29,12 +29,15 @@ func dayFeedbackParityUser(id uint) *models.User {
 // the day being saved arrives as a local midnight too, and in UTC alone the
 // local and the UTC anchors coincide, so a comparison that mixed them stayed
 // green there. The zones are one east of UTC (Pacific/Auckland, UTC+12/+13),
-// one west (America/Los_Angeles, UTC-7/-8) and UTC itself.
+// one west (America/Los_Angeles, UTC-7/-8) and UTC itself, plus the two west-of-
+// UTC zones whose DST jump skips a local midnight (America/Santiago 2026-09-06,
+// America/Havana 2026-03-08), where a day step taken in the zone returns the
+// previous calendar day.
 func dayFeedbackParityZones(t *testing.T) map[string]*time.Location {
 	t.Helper()
 
 	zones := map[string]*time.Location{"UTC": time.UTC}
-	for _, name := range []string{"Pacific/Auckland", "America/Los_Angeles"} {
+	for _, name := range []string{"Pacific/Auckland", "America/Los_Angeles", "America/Santiago", "America/Havana"} {
 		location, err := time.LoadLocation(name)
 		if err != nil {
 			t.Fatalf("LoadLocation(%s): %v", name, err)
