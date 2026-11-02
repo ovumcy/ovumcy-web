@@ -176,14 +176,17 @@ type calendarFeedEvent struct {
 //     (ProjectionChainSuppressed) nothing from the cycles after it is sent.
 //
 // No UID key (no SecretKey, or a user with no id) renders zero events: an event
-// that cannot carry an opaque UID is withheld, never named by its kind.
+// that cannot carry an opaque UID is withheld, never named by its kind. A blank
+// disclaimer renders zero events the same way: a nil provider or an unresolved
+// copy key arrives as "", and no event goes out without its "not medical
+// advice" text.
 func BuildCalendarFeedICS(input CalendarFeedICSInput) []byte {
 	var events []calendarFeedEvent
 	var uids *security.CalendarFeedEventUIDs
 	var detailed *CalendarFeedTitles
 	if input.User != nil {
 		var err error
-		if uids, err = security.NewCalendarFeedEventUIDs(input.SecretKey, input.User.ID); err == nil {
+		if uids, err = security.NewCalendarFeedEventUIDs(input.SecretKey, input.User.ID); err == nil && strings.TrimSpace(input.Disclaimer) != "" {
 			events = calendarFeedEvents(input)
 		}
 		if input.User.CalendarFeedDetailedTitles && input.Titles.complete() {
