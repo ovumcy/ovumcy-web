@@ -282,23 +282,6 @@ func TestRunUsersSetEmailParsesItsOwnArgumentsAndDefaultsItsWriter(t *testing.T)
 	}
 }
 
-func operatorUserServiceForCLITest(t *testing.T, databasePath string) *services.OperatorUserService {
-	t.Helper()
-
-	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		t.Fatalf("open sql db: %v", err)
-	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
-
-	repositories, _ := buildRepositories(database, "")
-	return services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
-}
-
 func TestReadDeleteConfirmation(t *testing.T) {
 	t.Parallel()
 
