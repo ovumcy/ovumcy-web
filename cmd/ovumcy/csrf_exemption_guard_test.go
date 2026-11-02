@@ -255,6 +255,7 @@ func TestCSRFDeniesEveryMutatingRouteWithoutToken(t *testing.T) {
 	app := newCSRFGuardTestApp(t)
 
 	covered := 0
+	coveredKeys := map[string]bool{}
 	for key, probePath := range mutatingRoutePathsByKey(t, app) {
 		method := strings.SplitN(key, " ", 2)[0]
 		_, exempt := csrfGuardExpectedExemptions[key]
@@ -289,9 +290,27 @@ func TestCSRFDeniesEveryMutatingRouteWithoutToken(t *testing.T) {
 			assertTransportErrorEnvelope(t, body, "csrf_refused", "forbidden")
 		})
 		covered++
+		coveredKeys[key] = true
 	}
 
 	if covered < 2 {
 		t.Fatalf("expected the CSRF matrix to cover multiple mutating routes, covered %d", covered)
 	}
+	// A registration regression that drops most routes still clears a bare
+	// count; the sign-in, credential and erasure endpoints are named.
+	for _, key := range mustBeInCSRFMatrix {
+		if !coveredKeys[key] {
+			t.Errorf("the CSRF matrix did not cover %s; the route is gone from the route table", key)
+		}
+	}
+}
+
+// mustBeInCSRFMatrix names the state-mutating routes the CSRF matrix must
+// have probed.
+var mustBeInCSRFMatrix = []string{
+	"POST /api/v1/sessions",
+	"DELETE /api/v1/users/current/2fa",
+	"POST /api/v1/users/current/data-wipe",
+	"PUT /api/v1/users/current/password",
+	"POST /api/v1/users/current/recovery-code",
 }
