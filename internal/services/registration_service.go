@@ -37,7 +37,7 @@ func (service *RegistrationService) RegistrationOpen() bool {
 	return service.mode.IsOpen()
 }
 
-func (service *RegistrationService) RegisterOwnerAccount(ctx context.Context, email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error) {
+func (service *RegistrationService) RegisterOwnerAccount(ctx context.Context, email string, rawPassword string, confirmPassword string, createdAt time.Time, language string) (models.User, string, error) {
 	if !service.RegistrationOpen() {
 		return models.User{}, "", ErrAuthRegistrationDisabled
 	}
@@ -46,6 +46,11 @@ func (service *RegistrationService) RegisterOwnerAccount(ctx context.Context, em
 	if err != nil {
 		return models.User{}, "", err
 	}
+	// The language the owner picked on the registration page is stored in the
+	// same insert as the account, so a sign-in before onboarding completes
+	// renders in it. The caller passes "" unless the request named a supported
+	// language; the credential and session fields are untouched.
+	user.InterfaceLanguage = language
 
 	if err := service.store.CreateUserWithSymptoms(ctx, &user, BuiltinSymptomRecordsForUser(0)); err != nil {
 		if isRegistrationUniqueConstraintError(err) {

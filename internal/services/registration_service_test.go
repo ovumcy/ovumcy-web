@@ -75,7 +75,7 @@ func TestRegistrationServiceRegisterOwnerAccountSuccess(t *testing.T) {
 		recoveryCode: "OVUM-ABCD-1234-EFGH",
 	})
 
-	user, recoveryCode, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow)
+	user, recoveryCode, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow, "")
 	if err != nil {
 		t.Fatalf("RegisterOwnerAccount() unexpected error: %v", err)
 	}
@@ -101,13 +101,27 @@ func TestRegistrationServiceRegisterOwnerAccountSuccess(t *testing.T) {
 	}
 }
 
+func TestRegistrationServiceRegisterOwnerAccountPersistsTheRegistrationLanguage(t *testing.T) {
+	for _, language := range []string{"ru", ""} {
+		service, store := newRegistrationServiceForTest(stubRegistrationFixture{userID: 42, recoveryCode: "OVUM-ABCD-1234-EFGH"})
+
+		user, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow, language)
+		if err != nil {
+			t.Fatalf("RegisterOwnerAccount(%q) unexpected error: %v", language, err)
+		}
+		if user.InterfaceLanguage != language || store.lastPersisted.InterfaceLanguage != language {
+			t.Fatalf("language %q: returned %q, persisted %q", language, user.InterfaceLanguage, store.lastPersisted.InterfaceLanguage)
+		}
+	}
+}
+
 func TestRegistrationServiceRegisterOwnerAccountPropagatesAuthError(t *testing.T) {
 	authErr := ErrAuthEmailExists
 	auth := &stubRegistrationAuthService{err: authErr}
 	store := &stubRegistrationStore{}
 	service := NewRegistrationService(auth, store, RegistrationModeOpen)
 
-	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow); !errors.Is(err, authErr) {
+	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow, ""); !errors.Is(err, authErr) {
 		t.Fatalf("expected auth error %v, got %v", authErr, err)
 	}
 	if !auth.called {
@@ -125,7 +139,7 @@ func TestRegistrationServiceRegisterOwnerAccountMapsSeedError(t *testing.T) {
 		recoveryCode: "OVUM-ABCD-1234-EFGH",
 	})
 
-	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow); !errors.Is(err, ErrRegistrationSeedSymptoms) {
+	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow, ""); !errors.Is(err, ErrRegistrationSeedSymptoms) {
 		t.Fatalf("expected ErrRegistrationSeedSymptoms, got %v", err)
 	}
 	if !store.called || store.lastPersisted.ID != 55 {
@@ -140,7 +154,7 @@ func TestRegistrationServiceRegisterOwnerAccountMapsUniqueViolationToEmailExists
 		recoveryCode: "OVUM-ABCD-1234-EFGH",
 	})
 
-	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow); !errors.Is(err, ErrAuthEmailExists) {
+	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow, ""); !errors.Is(err, ErrAuthEmailExists) {
 		t.Fatalf("expected ErrAuthEmailExists, got %v", err)
 	}
 }
@@ -152,7 +166,7 @@ func TestRegistrationServiceRegisterOwnerAccountMapsGenericPersistenceError(t *t
 		recoveryCode: "OVUM-ABCD-1234-EFGH",
 	})
 
-	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow); !errors.Is(err, ErrAuthRegisterFailed) {
+	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow, ""); !errors.Is(err, ErrAuthRegisterFailed) {
 		t.Fatalf("expected ErrAuthRegisterFailed, got %v", err)
 	}
 }
@@ -165,7 +179,7 @@ func TestRegistrationServiceRegisterOwnerAccountRejectsClosedMode(t *testing.T) 
 	store := &stubRegistrationStore{}
 	service := NewRegistrationService(auth, store, RegistrationModeClosed)
 
-	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow); !errors.Is(err, ErrAuthRegistrationDisabled) {
+	if _, _, err := service.RegisterOwnerAccount(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", registrationServiceTestNow, ""); !errors.Is(err, ErrAuthRegistrationDisabled) {
 		t.Fatalf("expected ErrAuthRegistrationDisabled, got %v", err)
 	}
 	if auth.called {

@@ -79,6 +79,7 @@ func newTemplateFuncMap() template.FuncMap {
 		"displayBBT": func(value *float64, unit string) string {
 			return services.FormatDayBBTForInput(value, unit)
 		},
+		"displayBBTLocalized":   services.FormatDayBBTForDisplay,
 		"temperatureUnitSymbol": services.TemperatureUnitSymbol,
 		"userIdentity":          templateUserIdentity,
 		"hasDisplayName":        templateHasDisplayName,

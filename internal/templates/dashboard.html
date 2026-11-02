@@ -539,7 +539,7 @@
       </div>
       {{end}}
       {{else}}
-      {{template "readonly_log_summary" (dict "Messages" .Messages "Log" .TodayEntry "NoDataLabel" .NoDataLabel "TemperatureUnit" .TemperatureUnit)}}
+      {{template "readonly_log_summary" (dict "Messages" .Messages "Log" .TodayEntry "NoDataLabel" .NoDataLabel "TemperatureUnit" .TemperatureUnit "Lang" .Lang)}}
       {{end}}
     </section>
   </div>
