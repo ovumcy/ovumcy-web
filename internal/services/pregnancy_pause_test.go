@@ -230,6 +230,13 @@ func TestResolvePregnancyPauseReadsTheCycleBoundaryRule(t *testing.T) {
 	if _, paused := ResolvePregnancyPause(unmarkedRun, ctx); paused {
 		t.Error("an unmarked two-day bleed after the positive test is a new cycle, yet the pause held")
 	}
+	// An uncertain mark counts as no mark (WEB-434): the run under it lifts the
+	// pause exactly as the unmarked run does, and the lone day below does not.
+	uncertainRun := append([]models.DailyLog{}, unmarkedRun...)
+	uncertainRun[1].CycleStart, uncertainRun[1].IsUncertain = true, true
+	if _, paused := ResolvePregnancyPause(uncertainRun, ctx); paused {
+		t.Error("a two-day bleed under an uncertain mark is a new cycle, yet the pause held")
+	}
 
 	for name, day := range map[string]models.DailyLog{
 		"marked spotting":       {Date: ppDay(2026, time.April, 5), IsPeriod: true, CycleStart: true, Flow: models.FlowSpotting},
