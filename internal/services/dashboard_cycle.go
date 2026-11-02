@@ -361,7 +361,18 @@ func DashboardAwaitingIrregularHistory(user *models.User, stats CycleStats) bool
 // DashboardCyclePastProjectionLength, covers the days before that band on a
 // history whose median-first projection length is shorter than its average.
 func FertilityProjectionSuppressed(user *models.User, stats CycleStats) bool {
-	return PredictionsSuppressed(user, stats) || DashboardAwaitingFirstCycle(stats) || DashboardAwaitingMoreCycles(user, stats) || DashboardCyclePastReferenceLength(user, stats) || DashboardCyclePastProjectionLength(user, stats)
+	return PredictionsSuppressed(user, stats) || DashboardAwaitingFirstCycle(stats) || DashboardAwaitingMoreCycles(user, stats) || DashboardCyclePastReferenceLength(user, stats) || DashboardCyclePastProjectionLength(user, stats) || DashboardBleedingOutsideCycleStart(stats)
+}
+
+// DashboardBleedingOutsideCycleStart is the fifth fertility-only signal: a
+// period day recorded today or yesterday that the boundary rule did not take
+// as a new start (a forced "Mark anyway", spotting, a lone day). The running
+// projection then calls fertile the same day the log calls a period, and
+// either may be wrong, so the fertile window, the peak band and the ovulation
+// date are withheld while "menstrual" stays as recorded fact (WEB-434). The
+// next-period estimate stays: it is anchored on the recorded start.
+func DashboardBleedingOutsideCycleStart(stats CycleStats) bool {
+	return stats.BleedingOutsideCycleStart
 }
 
 // DashboardCyclePastReferenceLength is the out-of-date verdict
@@ -479,6 +490,7 @@ const (
 	SuppressionReasonCycleDataStale     SuppressionReason = "cycle_data_stale"
 
 	SuppressionReasonCyclePastProjectionLength SuppressionReason = "cycle_past_projection_length"
+	SuppressionReasonBleedingOutsideCycleStart SuppressionReason = "bleeding_outside_cycle_start"
 )
 
 // PredictionSuppression is the resolved verdict of the predicates above plus the
@@ -544,6 +556,9 @@ func ResolvePredictionSuppression(user *models.User, stats CycleStats) Predictio
 	}
 	if DashboardCyclePastProjectionLength(user, stats) {
 		verdict.Reasons = append(verdict.Reasons, SuppressionReasonCyclePastProjectionLength)
+	}
+	if DashboardBleedingOutsideCycleStart(stats) {
+		verdict.Reasons = append(verdict.Reasons, SuppressionReasonBleedingOutsideCycleStart)
 	}
 	return verdict
 }

@@ -80,6 +80,8 @@ func publishedStatsCases() []publishedStatsCase {
 	outOfDate := publishedStatsBase()
 	outOfDate.CurrentCycleDay = 29
 
+	bleedingOutside := publishedStatsBase()
+	bleedingOutside.BleedingOutsideCycleStart = true
 	pastProjection := publishedStatsBase()
 	pastProjection.CurrentCycleDay = 29
 	pastProjection.AverageCycleLength = 30
@@ -182,6 +184,18 @@ func publishedStatsCases() []publishedStatsCase {
 			reason:            SuppressionReasonCyclePastProjectionLength,
 			user:              &models.User{},
 			stats:             pastProjection,
+			wantPredictions:   false,
+			wantFertility:     true,
+			wantNextPeriodSet: true,
+		},
+		{
+			// A period day recorded today or yesterday outside the episode
+			// that opened the running cycle (WEB-434).
+			name:              "bleeding outside the running cycle's opening episode",
+			signal:            "DashboardBleedingOutsideCycleStart",
+			reason:            SuppressionReasonBleedingOutsideCycleStart,
+			user:              &models.User{},
+			stats:             bleedingOutside,
 			wantPredictions:   false,
 			wantFertility:     true,
 			wantNextPeriodSet: true,

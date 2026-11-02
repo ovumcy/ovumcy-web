@@ -31,14 +31,15 @@ func cyclesCovPeriodLog(t *testing.T, date string) models.DailyLog {
 // reading of the starts to fall back on when the boundaries are empty.
 // --------------------------------------------------------------------------
 
-// TestCycles_BuildCycleStats_UncertainOnlyClustersOpenNoCycle: every cluster's
-// only cycle-start mark is uncertain, so the one boundary rule withholds all of
-// them. Before it, BuildCycleStats fell back to a looser second detector and
-// took such clusters as starts; that fallback no longer exists.
-func TestCycles_BuildCycleStats_UncertainOnlyClustersOpenNoCycle(t *testing.T) {
+// TestCycles_BuildCycleStats_UncertainMarksCountAsNoMark: an uncertain mark
+// neither opens a cycle nor withholds one (WEB-434). Each two-day run below
+// opens its cycle by the unmarked rule; the lone uncertain day on 03-15 opens
+// none and does not split the first cycle.
+func TestCycles_BuildCycleStats_UncertainMarksCountAsNoMark(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: cyclesCovDay(t, "2025-03-01"), IsPeriod: true, CycleStart: true, IsUncertain: true},
 		{Date: cyclesCovDay(t, "2025-03-02"), IsPeriod: true},
+		{Date: cyclesCovDay(t, "2025-03-15"), IsPeriod: true, CycleStart: true, IsUncertain: true},
 		// Second cluster.
 		{Date: cyclesCovDay(t, "2025-03-29"), IsPeriod: true, CycleStart: true, IsUncertain: true},
 		{Date: cyclesCovDay(t, "2025-03-30"), IsPeriod: true},
@@ -47,11 +48,11 @@ func TestCycles_BuildCycleStats_UncertainOnlyClustersOpenNoCycle(t *testing.T) {
 	now := cyclesCovDay(t, "2025-04-05")
 	stats := BuildCycleStats(logs, now, BoundaryContext{})
 
-	if !stats.LastPeriodStart.IsZero() {
-		t.Fatalf("LastPeriodStart = %s, want zero: uncertain-only clusters open no cycle", stats.LastPeriodStart.Format("2006-01-02"))
+	if got := stats.LastPeriodStart.Format("2006-01-02"); got != "2025-03-29" {
+		t.Fatalf("LastPeriodStart = %s, want 2025-03-29: a two-day run opens its cycle under an uncertain mark", got)
 	}
-	if stats.CompletedCycleCount != 0 {
-		t.Fatalf("CompletedCycleCount = %d, want 0", stats.CompletedCycleCount)
+	if stats.CompletedCycleCount != 1 || stats.LastCycleLength != 28 {
+		t.Fatalf("CompletedCycleCount = %d, LastCycleLength = %d; want 1 and 28", stats.CompletedCycleCount, stats.LastCycleLength)
 	}
 }
 

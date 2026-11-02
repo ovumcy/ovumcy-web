@@ -56,6 +56,12 @@ type CycleStats struct {
 	// writer; on stats that have not been published it is always false and
 	// means nothing.
 	CycleDataStale bool `json:"cycle_data_stale"`
+
+	// BleedingOutsideCycleStart reports a period day recorded today or
+	// yesterday outside the episode that opened the running cycle: bleeding the
+	// boundary rule did not take as a new start, which contradicts the running
+	// projection (WEB-434). BuildCycleStats is its only writer.
+	BleedingOutsideCycleStart bool `json:"-"`
 }
 
 type detectedCycle struct {
@@ -127,6 +133,7 @@ func buildCycleStats(logs []models.DailyLog, now time.Time, ctx BoundaryContext,
 	applyPredictedCycleStats(&stats)
 
 	stats.CurrentCycleDay = cycleDayAt(stats.LastPeriodStart, today)
+	stats.BleedingOutsideCycleStart = bleedingOutsideOpeningEpisode(sorted, ctx, stats.LastPeriodStart, today)
 	stats.CurrentPhase = detectCyclePhase(stats, sorted, today)
 	setFertilityStatus(&stats, today, FertilityBasisProjection)
 	return stats
