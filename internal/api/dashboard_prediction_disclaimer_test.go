@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/net/html"
@@ -18,25 +19,7 @@ import (
 // the owner, so a future template refactor cannot silently drop it from a
 // health-prediction surface.
 func TestDashboardRendersPredictionDisclaimer(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "prediction-disclaimer@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-
-	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie)
-	response := mustAppResponse(t, app, request)
-	assertStatusCode(t, response, http.StatusOK)
-
-	body := mustReadBodyString(t, response.Body)
-	for _, fragment := range []string{
-		`data-dashboard-prediction-disclaimer`,
-		"not medical advice or a method of contraception",
-	} {
-		if !strings.Contains(body, fragment) {
-			t.Fatalf("dashboard must render the prediction disclaimer fragment %q", fragment)
-		}
-	}
+	assertPredictionDisclaimerRendered(t, "/dashboard", `data-dashboard-prediction-disclaimer`, `data-dashboard-next-period`)
 }
 
 // TestStatsRendersPredictionDisclaimer extends the medical-safety labeling to
@@ -44,14 +27,14 @@ func TestDashboardRendersPredictionDisclaimer(t *testing.T) {
 // "estimates, not medical advice or a method of contraception" disclaimer must
 // be present there too and cannot be dropped by a template refactor.
 func TestStatsRendersPredictionDisclaimer(t *testing.T) {
-	assertPredictionDisclaimerRendered(t, "/stats", `data-stats-prediction-disclaimer`)
+	assertPredictionDisclaimerRendered(t, "/stats", `data-stats-prediction-disclaimer`, `data-prediction-reliability`)
 }
 
 // TestCalendarRendersPredictionDisclaimer extends the same medical-safety
 // labeling to the calendar surface (predicted period / fertility / ovulation
 // markers).
 func TestCalendarRendersPredictionDisclaimer(t *testing.T) {
-	assertPredictionDisclaimerRendered(t, "/calendar", `data-calendar-prediction-disclaimer`)
+	assertPredictionDisclaimerRendered(t, "/calendar", `data-calendar-prediction-disclaimer`, `legend-swatch-predicted`)
 }
 
 // TestSettingsEgressSurfacesRenderPredictionDisclaimer covers the two settings
@@ -194,29 +177,61 @@ func TestDashboardMarksAnInexactOvulationEstimateWithAddressableQualifiers(t *te
 	}
 }
 
-// assertPredictionDisclaimerRendered loads a predictive owner surface and pins
-// both its stable data-hook and the exact safety copy, mirroring the dashboard
-// check so every ovulation/next-period surface keeps the persistent disclaimer.
-func assertPredictionDisclaimerRendered(t *testing.T, path, hook string) {
+// assertPredictionDisclaimerRendered loads a predictive owner surface for an
+// owner whose prediction DOES render (anchor is the marker of a rendered
+// prediction: a freshly onboarded owner has none, and a page that drew no
+// prediction proves nothing about its disclaimer) and binds the safety copy to
+// the hook's own subtree in every supported locale: the hook must exist once and
+// its text must equal that locale's medical.disclaimer, so a raw key, another
+// locale's text or a sentence living only elsewhere on the page fails.
+func assertPredictionDisclaimerRendered(t *testing.T, path, hook, anchor string) {
 	t.Helper()
 
-	app, database := newOnboardingTestApp(t)
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user := createOnboardingTestUser(t, database, "prediction-disclaimer"+strings.ReplaceAll(path, "/", "-")+"@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+	updateStatsOverviewUser(t, database, user, map[string]any{
+		"cycle_length":      28,
+		"period_length":     5,
+		"last_period_start": services.AddCalendarDays(today, -6, time.UTC),
+	})
+	seedStatsOverviewCycleHistory(t, database, user, today, 6, 34, 62, 90)
 
-	request := httptest.NewRequest(http.MethodGet, path, nil)
-	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie)
-	response := mustAppResponse(t, app, request)
-	assertStatusCode(t, response, http.StatusOK)
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	languages := manager.SupportedLanguages()
+	if len(languages) < 6 {
+		t.Fatalf("expected at least the six shipped locales, got %v", languages)
+	}
+	for _, language := range languages {
+		t.Run(language, func(t *testing.T) {
+			want := normalizeHTMLText(manager.Messages(language)["medical.disclaimer"])
+			if want == "" || want == "medical.disclaimer" {
+				t.Fatalf("locale %q resolves no medical.disclaimer text (got %q)", language, want)
+			}
 
-	body := mustReadBodyString(t, response.Body)
-	for _, fragment := range []string{
-		hook,
-		"not medical advice or a method of contraception",
-	} {
-		if !strings.Contains(body, fragment) {
-			t.Fatalf("%s must render the prediction disclaimer fragment %q", path, fragment)
-		}
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.Header.Set("Accept-Language", language)
+			request.Header.Set("Cookie", authCookie)
+			response := mustAppResponse(t, app, request)
+			assertStatusCode(t, response, http.StatusOK)
+			body := mustReadBodyString(t, response.Body)
+
+			if !strings.Contains(body, anchor) {
+				t.Fatalf("fixture anchor: %s rendered no prediction (%q missing), so its disclaimer is not under test", path, anchor)
+			}
+			elements := htmlFindElements(mustParseHTMLDocument(t, body), func(node *html.Node) bool {
+				return node.Type == html.ElementNode && htmlHasAttr(node, hook)
+			})
+			if len(elements) != 1 {
+				t.Fatalf("%s must render the disclaimer hook %q exactly once, found %d", path, hook, len(elements))
+			}
+			if got := normalizeHTMLText(htmlNodeText(elements[0])); got != want {
+				t.Fatalf("%s [%s] disclaimer hook %q carries %q, want the locale's medical.disclaimer %q", path, language, hook, got, want)
+			}
+		})
 	}
 }

@@ -3,21 +3,25 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
-	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/net/html"
+	"gorm.io/gorm"
 )
 
 func TestDashboardStableHeaderRendersEnglishPredictionWindow(t *testing.T) {
-	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	// One captured instant is the handler's clock and the fixture's today, so a
+	// UTC midnight between two wall-clock reads cannot move one of them.
+	now := time.Now().UTC()
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return now }})
 	user := createOnboardingTestUser(t, database, "dashboard-date-localization@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+	today := services.DateAtLocation(now, time.UTC)
 	lastPeriodStart := today.AddDate(0, 0, -8)
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"cycle_length":      28,
@@ -46,22 +50,18 @@ func TestDashboardStableHeaderRendersEnglishPredictionWindow(t *testing.T) {
 	if header == nil {
 		t.Fatal("expected the dashboard status header")
 	}
-	nextPeriodText := dashboardElementTextByDataAttr(t, header, "data-dashboard-next-period")
-	exactWindowPattern := regexp.MustCompile(`[A-Z][a-z]{2,8} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2,8} \d{1,2}, \d{4}`)
-	if !exactWindowPattern.MatchString(nextPeriodText) {
-		t.Fatalf("expected the dashboard status header to render an English-localized next period window, got %q", nextPeriodText)
-	}
+	assertRenderedWindowIsTheContextRange(t, database, user.ID, now, header, "dashboard.next_period_days")
 	if htmlAttr(header, "data-cycle-hero-approximate") == "true" {
 		t.Fatalf("did not expect an exact stable cycle context to be marked approximate")
 	}
 }
 
 func TestDashboardEnglishRendersOvulationRangeForIrregularMode(t *testing.T) {
-	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	nowUTC := time.Now().UTC()
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{now: func() time.Time { return nowUTC }})
 	user := createOnboardingTestUser(t, database, "dashboard-irregular-ovulation@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	nowUTC := time.Now().UTC()
 	today := services.DateAtLocation(nowUTC, time.UTC)
 	cycleStarts := []time.Time{
 		today.AddDate(0, 0, -84),
@@ -102,10 +102,7 @@ func TestDashboardEnglishRendersOvulationRangeForIrregularMode(t *testing.T) {
 	if header == nil {
 		t.Fatal("expected irregular range state to keep the dashboard status header")
 	}
-	nextPeriodText := dashboardElementTextByDataAttr(t, header, "data-dashboard-next-period")
-	if !regexp.MustCompile(`[A-Z][a-z]{2,8} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2,8} \d{1,2}, \d{4}`).MatchString(nextPeriodText) {
-		t.Fatalf("expected English-localized next period range in the dashboard status header, got %q", nextPeriodText)
-	}
+	assertRenderedWindowIsTheContextRange(t, database, user.ID, nowUTC, header, "dashboard.next_period_start_window")
 	if htmlAttr(header, "data-cycle-hero-approximate") != "true" {
 		t.Fatalf("expected the irregular range header to be marked approximate")
 	}
@@ -172,6 +169,68 @@ func TestDashboardEnglishRendersSharedSparsePredictionExplanationForIrregularMod
 	}
 	if got := htmlAttr(explainer, "data-explainer-key"); got != "prediction.explainer.irregular_sparse" {
 		t.Fatalf("expected dashboard explainer key %q, got %q", "prediction.explainer.irregular_sparse", got)
+	}
+}
+
+// assertRenderedWindowIsTheContextRange parses the "<start> — <end>" the header
+// renders in English and compares the two calendar days with the range the
+// dashboard context resolved for the same owner and instant
+// (DisplayNextPeriodRangeStart/End). A shape-only pattern accepts "Foo 99, 0000";
+// here the text must name those exact days.
+func assertRenderedWindowIsTheContextRange(t *testing.T, database *gorm.DB, userID uint, now time.Time, header *html.Node, wantKey string) {
+	t.Helper()
+
+	node := dashboardElementByDataAttr(header, "data-next-period-key")
+	if node == nil || htmlAttr(node, "data-next-period-key") != wantKey {
+		t.Fatalf("expected the next-period line to carry data-next-period-key=%q", wantKey)
+	}
+	text := normalizeHTMLText(htmlNodeText(node))
+	// The suffix words of the start-window string are not part of the second date.
+	if cut := strings.Index(text, " ("); cut >= 0 {
+		text = text[:cut]
+	}
+
+	var user models.User
+	if err := database.First(&user, userID).Error; err != nil {
+		t.Fatalf("reload owner: %v", err)
+	}
+	var logs []models.DailyLog
+	if err := database.Where("user_id = ?", userID).Find(&logs).Error; err != nil {
+		t.Fatalf("load owner logs: %v", err)
+	}
+	today := services.DateAtLocation(now, time.UTC)
+	// The same derivation the dashboard service runs: stats over the two-year
+	// history window read at the request instant, then the display context.
+	stats := services.BuildCycleStatsFromLogs(&user, services.FilterLogsToStatsHistory(logs, today, time.UTC), now, time.UTC)
+	cycle := services.BuildDashboardCycleContext(&user, logs, stats, today, time.UTC)
+	wantStart, wantEnd := cycle.DisplayNextPeriodStart, cycle.DisplayNextPeriodEnd
+	if wantKey == "dashboard.next_period_start_window" {
+		if !cycle.DisplayNextPeriodUseRange {
+			t.Fatal("fixture: the dashboard context resolved no next-period range, so there is no start window to compare")
+		}
+		wantStart, wantEnd = cycle.DisplayNextPeriodRangeStart, cycle.DisplayNextPeriodRangeEnd
+	}
+
+	parts := strings.Split(text, "—")
+	if len(parts) != 2 {
+		t.Fatalf("expected a %q window, got %q", "<start> — <end>", text)
+	}
+	parse := func(raw string) time.Time {
+		raw = strings.TrimSpace(raw)
+		for _, layout := range []string{"Jan 2, 2006", "January 2, 2006"} {
+			if parsed, err := time.Parse(layout, raw); err == nil {
+				return parsed
+			}
+		}
+		t.Fatalf("window bound %q in %q is not an English date", raw, text)
+		return time.Time{}
+	}
+	gotStart, gotEnd := parse(parts[0]), parse(parts[1])
+	if got, want := services.CalendarDayKey(gotStart), services.CalendarDayKey(wantStart); got != want {
+		t.Fatalf("rendered window starts %s, the dashboard context starts it on %s (%q)", got, want, text)
+	}
+	if got, want := services.CalendarDayKey(gotEnd), services.CalendarDayKey(wantEnd); got != want {
+		t.Fatalf("rendered window ends %s, the dashboard context ends it on %s (%q)", got, want, text)
 	}
 }
 
