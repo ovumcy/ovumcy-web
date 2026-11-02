@@ -194,15 +194,7 @@ func issueAuthCookieForUser(t *testing.T, user models.User) string {
 		t.Fatalf("build auth session token: %v", err)
 	}
 
-	codec, err := newSecureCookieCodec([]byte(testAppSecretKey))
-	if err != nil {
-		t.Fatalf("init secure cookie codec: %v", err)
-	}
-	sealed, err := codec.seal(authCookieName, []byte(token))
-	if err != nil {
-		t.Fatalf("seal auth cookie token: %v", err)
-	}
-	return authCookieName + "=" + sealed
+	return authCookieName + "=" + sealAuthCookieTokenForTest(t, token)
 }
 
 var csrfTokenMetaPatternForAuthTests = regexp.MustCompile(`<meta name="csrf-token" content="([^"]+)"`)
