@@ -129,6 +129,22 @@ func TestCalendarFeedRestoreFenceOptOutFinalFileFailureBootsUnanchored(t *testin
 	}
 }
 
+// TestCalendarFeedRestoreFenceFirstBootFailsTheBootWhenTheStampCannotBeCleared
+// pins finishFirstBoot's last step: both halves already agree, so a failed
+// stamp erasure fails the boot like any other app_state failure, and the next
+// boot reads continuity.
+func TestCalendarFeedRestoreFenceFirstBootFailsTheBootWhenTheStampCannotBeCleared(t *testing.T) {
+	refused := errors.New("app_state delete refused")
+	appState := &stubFenceAppState{values: map[string]string{}, deleteErr: refused}
+	anchor := &stubFenceAnchor{}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor).Enforce(context.Background())
+	if !errors.Is(err, refused) || !outcome.FirstBoot {
+		t.Fatalf("expected the first boot to fail on the stamp erasure, got %+v, %v", outcome, err)
+	}
+	assertHalvesAgree(t, appState, anchor)
+}
+
 // TestCalendarFeedRestoreFencePendingFirstBootStillContainsARestore keeps the
 // containment side of WEB-456: a pending file token only stands for "no file
 // token yet", so a database that disagrees with it, or that carries the
