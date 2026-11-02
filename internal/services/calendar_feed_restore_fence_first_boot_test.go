@@ -106,6 +106,29 @@ func TestCalendarFeedRestoreFenceFirstBootFinalFileFailureIsCompletedNotRevoked(
 	assertHalvesAgree(t, appState, &anchor.stubFenceAnchor)
 }
 
+// TestCalendarFeedRestoreFenceOptOutFinalFileFailureBootsUnanchored pins the
+// opt-out arm of the same step: the boot serves unanchored, so it leaves the
+// stamp and no database half, and the next fenced boot takes the
+// UnanchoredHistory pass rather than finishing a first boot.
+func TestCalendarFeedRestoreFenceOptOutFinalFileFailureBootsUnanchored(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{}}
+	users := &stubFenceUserStore{}
+	anchor := &flakyFenceAnchor{failOn: 2}
+	fence := NewCalendarFeedRestoreFence(appState, users, anchor)
+
+	outcome, err := fence.Enforce(context.Background())
+	if err != nil || !outcome.Unanchored {
+		t.Fatalf("expected an unanchored boot, got %+v, %v", outcome, err)
+	}
+	if appState.has(models.AppStateKeyCalendarFeedRestoreFence) || !appState.has(models.AppStateKeyCalendarFeedFenceUnanchored) {
+		t.Fatalf("an unanchored boot drops the database half and stamps, got %v", appState.values)
+	}
+	next, err := fence.Enforce(context.Background())
+	if err != nil || !next.ContinuityBroken || !next.UnanchoredHistory {
+		t.Fatalf("expected the UnanchoredHistory pass, got %+v, %v", next, err)
+	}
+}
+
 // TestCalendarFeedRestoreFencePendingFirstBootStillContainsARestore keeps the
 // containment side of WEB-456: a pending file token only stands for "no file
 // token yet", so a database that disagrees with it, or that carries the
@@ -150,8 +173,8 @@ func TestCalendarFeedRestoreFencePendingFileRefusesOperatorAdvance(t *testing.T)
 
 	err := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor).AdvanceConfirmed(context.Background())
 	var continuity *CalendarFeedFenceContinuityError
-	if !errors.As(err, &continuity) || continuity.AnchorFound {
-		t.Fatalf("expected a continuity refusal reporting no file token, got %v", err)
+	if !errors.As(err, &continuity) || continuity.AnchorFound || continuity.StoredFound {
+		t.Fatalf("expected the not-armed-yet refusal (both halves reported absent), got %v", err)
 	}
 	if anchor.written != "" {
 		t.Fatalf("a refusal writes nothing, file got %q", anchor.written)
