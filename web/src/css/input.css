@@ -2009,6 +2009,7 @@
 
   .settings-toggle-list & {
     display: flex;
+    flex-wrap: wrap;
     width: 100%;
     justify-content: flex-start;
   }
@@ -2074,8 +2075,11 @@
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 0.22rem;
-  flex: 1 1 0%;
+  /* A 10rem basis keeps the copy beside the switch at normal text and drops
+     it under the switch at 200% text, where the beside-column is ~2 letters. */
+  flex: 1 1 10rem;
   min-width: 0;
+  overflow-wrap: break-word;
 
   & .period-toggle-main {
     max-width: 68ch;
