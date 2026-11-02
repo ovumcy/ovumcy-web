@@ -74,12 +74,20 @@ func TestRangeModeGridChainsNoFertility(t *testing.T) {
 	windowEnd := cycleContext.DisplayNextPeriodRangeEnd
 
 	maps := buildCalendarPredictionMaps(user, logs, stats, today.AddDate(1, 0, 0), now, time.UTC)
+	// Positive control: the cap must not be a blanket removal. The running
+	// cycle's own window still renders its fertile days, or the loop below holds
+	// over an empty grid.
+	runningCycleMarkers := 0
 	for _, marked := range []map[string]bool{maps.ovulation, maps.fertilityEdge, maps.fertilityPeak, maps.preFertile} {
 		for key := range marked {
+			runningCycleMarkers++
 			if CalendarDaysBetween(windowEnd, mustParseDashboardDay(t, key)) > 0 {
 				t.Errorf("range mode draws a chained fertility marker on %s, past the running cycle's window end %s", key, CalendarDayKey(windowEnd))
 			}
 		}
+	}
+	if runningCycleMarkers == 0 {
+		t.Error("range mode drew no fertile day on the running cycle, so the cap check above held over nothing")
 	}
 	if len(maps.predictedPeriod) == 0 {
 		t.Error("range mode lost its projected periods")

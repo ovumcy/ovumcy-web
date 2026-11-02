@@ -2,6 +2,12 @@ package services
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -104,22 +110,158 @@ func TestCalendarFeedSummaryMapsEveryKindToItsType(t *testing.T) {
 	}
 }
 
-func TestCalendarFeedDetailedTitlesKeepEverySuppression(t *testing.T) {
-	cases := map[string]func(input *CalendarFeedICSInput){
-		"unpredictable cycle": func(input *CalendarFeedICSInput) { input.User.UnpredictableCycle = true },
-		"pregnancy pause": func(input *CalendarFeedICSInput) {
-			input.Logs = append(input.Logs, models.DailyLog{Date: input.Now.AddDate(0, 0, -10), PregnancyTest: models.PregnancyTestPositive})
-		},
-		"overdue cycle": func(input *CalendarFeedICSInput) { input.Now = input.Now.AddDate(0, 0, 36) },
+// suppressionReasonConstants lists every SuppressionReason constant declared in
+// the predicate file, read from the source so a reason added later is a case
+// owed here rather than a silent gap.
+func suppressionReasonConstants(t *testing.T) map[SuppressionReason]string {
+	t.Helper()
+	root := predictionSuppressionRepoRoot(t)
+	source, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(predictionSuppressionPredicateFile)))
+	if err != nil {
+		t.Fatalf("read %s: %v", predictionSuppressionPredicateFile, err)
 	}
-	for name, mutate := range cases {
-		t.Run(name, func(t *testing.T) {
-			input := detailedTitlesFeedInput(t, true, testDetailedFeedTitles)
-			mutate(&input)
-			if body := string(buildTestFeedICS(input)); strings.Contains(body, "BEGIN:VEVENT") {
+	file, err := parser.ParseFile(token.NewFileSet(), predictionSuppressionPredicateFile, source, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", predictionSuppressionPredicateFile, err)
+	}
+	found := map[SuppressionReason]string{}
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			value, ok := spec.(*ast.ValueSpec)
+			if !ok || value.Type == nil || len(value.Names) != 1 || len(value.Values) != 1 {
+				continue
+			}
+			if ident, ok := value.Type.(*ast.Ident); !ok || ident.Name != "SuppressionReason" {
+				continue
+			}
+			if literal, ok := value.Values[0].(*ast.BasicLit); ok {
+				found[SuppressionReason(strings.Trim(literal.Value, `"`))] = value.Names[0].Name
+			}
+		}
+	}
+	if len(found) == 0 {
+		t.Fatal("no SuppressionReason constant found — this check read a tree nobody wrote")
+	}
+	return found
+}
+
+// TestCalendarFeedDetailedTitlesKeepEverySuppression runs every SuppressionReason
+// through the feed with the titles opted in. A whole-projection reason leaves no
+// event; a fertility-only reason leaves no ovulation event. Each case carries a
+// control one step before the signal, which must name the ovulation title, so
+// the absence is the signal's doing and not an empty fixture's.
+func TestCalendarFeedDetailedTitlesKeepEverySuppression(t *testing.T) {
+	baseInput := func(t *testing.T) CalendarFeedICSInput {
+		return detailedTitlesFeedInput(t, true, testDetailedFeedTitles)
+	}
+	lastStarts := func(t *testing.T, count int) []models.DailyLog {
+		logs := predictableFeedLogs(t)
+		return logs[len(logs)-count:]
+	}
+	parityInput := func(t *testing.T, today string) CalendarFeedICSInput {
+		user := dayFeedbackParityUser(378)
+		user.CalendarFeedDetailedTitles = true
+		return CalendarFeedICSInput{
+			User:       user,
+			Logs:       cycleStartLogs(t, "2026-06-03", "2026-06-30", "2026-07-28", "2026-08-25", "2026-09-30"),
+			Now:        mustParseDashboardDay(t, today),
+			Location:   time.UTC,
+			Disclaimer: "Predictions are estimates, not medical advice or a method of contraception.",
+			Titles:     testDetailedFeedTitles,
+		}
+	}
+	type suppressionCase struct {
+		reason   SuppressionReason
+		whole    bool
+		suppress func(t *testing.T) CalendarFeedICSInput
+		control  func(t *testing.T) CalendarFeedICSInput
+	}
+	// whole marks a reason that withholds every event, not only the fertility half.
+	cases := []suppressionCase{
+		{reason: SuppressionReasonUnpredictableCycle, whole: true, suppress: func(t *testing.T) CalendarFeedICSInput {
+			input := baseInput(t)
+			input.User.UnpredictableCycle = true
+			return input
+		}},
+		{reason: SuppressionReasonPregnancyPause, whole: true, suppress: func(t *testing.T) CalendarFeedICSInput {
+			input := baseInput(t)
+			input.Logs = append(input.Logs, models.DailyLog{Date: input.Now.AddDate(0, 0, -10), PregnancyTest: models.PregnancyTestPositive})
+			return input
+		}},
+		{reason: SuppressionReasonCycleOverdue, whole: true, suppress: func(t *testing.T) CalendarFeedICSInput {
+			input := baseInput(t)
+			input.Now = input.Now.AddDate(0, 0, 36)
+			return input
+		}},
+		{reason: SuppressionReasonIrregularNeedsData, whole: true, suppress: func(t *testing.T) CalendarFeedICSInput {
+			input := baseInput(t)
+			input.User.IrregularCycle = true
+			input.Logs = lastStarts(t, 3)
+			return input
+		}},
+		{reason: SuppressionReasonAwaitingFirstCycle, suppress: func(t *testing.T) CalendarFeedICSInput {
+			input := baseInput(t)
+			input.Logs = lastStarts(t, 1)
+			return input
+		}},
+		{reason: SuppressionReasonAwaitingMoreCycles, suppress: func(t *testing.T) CalendarFeedICSInput {
+			input := baseInput(t)
+			input.Logs = lastStarts(t, 3)
+			return input
+		}},
+		{reason: SuppressionReasonCycleDataStale, suppress: func(t *testing.T) CalendarFeedICSInput {
+			input := baseInput(t)
+			input.Now = mustParseDashboardDay(t, "2026-03-31")
+			return input
+		}},
+		{
+			reason:   SuppressionReasonCyclePastProjectionLength,
+			suppress: func(t *testing.T) CalendarFeedICSInput { return parityInput(t, "2026-10-28") },
+			control:  func(t *testing.T) CalendarFeedICSInput { return parityInput(t, "2026-10-27") },
+		},
+	}
+
+	reasonsOf := func(input CalendarFeedICSInput) []SuppressionReason {
+		today := DateAtLocation(input.Now, input.Location)
+		_, verdict := PublishedStats(input.User, BuildCycleStatsFromLogs(input.User, input.Logs, input.Now, input.Location), input.Logs, today, input.Location)
+		return verdict.Reasons
+	}
+	tabled := map[SuppressionReason]bool{}
+	for _, testCase := range cases {
+		tabled[testCase.reason] = true
+		t.Run(string(testCase.reason), func(t *testing.T) {
+			input := testCase.suppress(t)
+			if !slices.Contains(reasonsOf(input), testCase.reason) {
+				t.Fatalf("fixture: reasons %v do not name %s", reasonsOf(input), testCase.reason)
+			}
+			body := string(buildTestFeedICS(input))
+			if testCase.whole && strings.Contains(body, "BEGIN:VEVENT") {
 				t.Fatalf("the opt-in reopened a suppressed feed:\n%s", body)
 			}
+			if strings.Contains(body, "SUMMARY:Ovulation (estimate)") {
+				t.Fatalf("the opt-in named an ovulation under %s:\n%s", testCase.reason, body)
+			}
+
+			control := baseInput(t)
+			if testCase.control != nil {
+				control = testCase.control(t)
+			}
+			if slices.Contains(reasonsOf(control), testCase.reason) {
+				t.Fatalf("control: reasons %v still name %s", reasonsOf(control), testCase.reason)
+			}
+			if controlBody := string(buildTestFeedICS(control)); !strings.Contains(controlBody, "SUMMARY:Ovulation (estimate)") {
+				t.Fatalf("control: the feed without %s names no ovulation, so the absence above proves nothing:\n%s", testCase.reason, controlBody)
+			}
 		})
+	}
+	for reason, name := range suppressionReasonConstants(t) {
+		if !tabled[reason] {
+			t.Errorf("%s (%q) is a SuppressionReason with no feed case here: add its fixture", name, reason)
+		}
 	}
 }
 

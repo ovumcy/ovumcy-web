@@ -159,9 +159,11 @@ func assertFeedOvulationEvents(t *testing.T, user *models.User, logs []models.Da
 	periodEvents := 0
 	for _, event := range events {
 		switch event.kind {
-		case "ovulation":
+		case calendarFeedKindOvulation, calendarFeedKindOvulationWindow:
+			// The feed's fertility half is these two kinds: the projected day and
+			// the multi-day range that replaces it where the dashboard shows one.
 			ovulationEvents++
-		case "period":
+		case calendarFeedKindPeriod, calendarFeedKindPeriodWindow:
 			periodEvents++
 		}
 	}
