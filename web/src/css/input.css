@@ -685,8 +685,10 @@
      breakpoint the track is `auto`), and an auto track grows to its item's
      min-content: at 200% text size one long word then pushed the whole page
      wider than the phone. Letting the card shrink keeps the track in the
-     viewport and the card's own content wraps. */
+     viewport and the card's own content wraps; a single word longer than the
+     card's line ("конфиденциальности" at 320px) breaks rather than overhangs. */
   min-width: 0;
+  overflow-wrap: break-word;
   border-radius: var(--radius-card);
   border: 1px solid var(--border-hairline);
   background: var(--surface-card);
