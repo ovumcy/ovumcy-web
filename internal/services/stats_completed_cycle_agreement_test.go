@@ -76,16 +76,16 @@ func completedCycleAgreementCases(t *testing.T) []completedCycleAgreementCase {
 		{
 			name:        "middle start marked uncertain",
 			logs:        uncertainMiddle,
-			wantCycles:  []int{56},
-			wantStarts:  []string{"2026-01-01"},
-			description: "an uncertain-only cluster yields no start, so the two cycles read as one",
+			wantCycles:  []int{28, 28},
+			wantStarts:  []string{"2026-01-01", "2026-01-29"},
+			description: "an uncertain mark counts as no mark, so the four-day run still opens its cycle (WEB-434)",
 		},
 		{
 			name:        "latest start marked uncertain",
 			logs:        uncertainLast,
-			wantCycles:  []int{28},
-			wantStarts:  []string{"2026-01-01"},
-			description: "the uncertain cluster closes no cycle",
+			wantCycles:  []int{28, 28},
+			wantStarts:  []string{"2026-01-01", "2026-01-29"},
+			description: "the uncertain mark counts as no mark, so the last run still closes the cycle before it",
 		},
 	}
 }

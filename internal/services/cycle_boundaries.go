@@ -155,11 +155,9 @@ func newestBoundaryOpensClusterOf(logs []models.DailyLog, ctx BoundaryContext, d
 
 // bleedingOutsideOpeningEpisode reports a period day (spotting included) dated
 // today or yesterday that lies outside the cluster holding start, the running
-// cycle's boundary.
+// cycle's boundary. start is always one of CycleBoundaries' answers over the
+// same logs and ctx, so it lies in a cluster.
 func bleedingOutsideOpeningEpisode(logs []models.DailyLog, ctx BoundaryContext, start time.Time, today time.Time) bool {
-	if start.IsZero() {
-		return false
-	}
 	start = dateOnly(start)
 	opening := periodCluster{Start: start, End: start}
 	for _, cluster := range periodClustersWithOnboarding(logs, ctx) {
