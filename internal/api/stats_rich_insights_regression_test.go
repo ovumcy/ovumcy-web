@@ -126,6 +126,26 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 		bodyStringMatch{fragment: `data-stats-factor-context`, message: "expected stats factor context hook"},
 	)
 
+	// The literals above only prove the attribute is spelled; each id it names
+	// must resolve to an element of the page, or the chart has no description.
+	referencing := htmlFindElements(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && (htmlHasAttr(node, "aria-describedby") || htmlHasAttr(node, "aria-labelledby"))
+	})
+	resolved := 0
+	for _, node := range referencing {
+		for _, attribute := range []string{"aria-describedby", "aria-labelledby"} {
+			for _, id := range strings.Fields(htmlAttr(node, attribute)) {
+				if htmlElementByID(document, id) == nil {
+					t.Errorf("<%s %s=%q> names id %q, which no rendered element carries", node.Data, attribute, htmlAttr(node, attribute), id)
+				}
+				resolved++
+			}
+		}
+	}
+	if resolved == 0 {
+		t.Fatal("expected the stats page to carry aria references to resolve")
+	}
+
 	assertStatsBBTTableTwin(t, document)
 }
 
