@@ -381,10 +381,7 @@ func DashboardBleedingOutsideCycleStart(stats CycleStats) bool {
 // because the slider has nothing observed behind it, and a recorded observation
 // does not rest on the slider. Every other signal still holds it back.
 func FertilityObservationSuppressed(user *models.User, stats CycleStats) bool {
-	if PredictionsSuppressed(user, stats) {
-		return true
-	}
-	return !DashboardAwaitingFirstCycle(stats) && FertilityProjectionSuppressed(user, stats)
+	return PredictionsSuppressed(user, stats) || DashboardAwaitingMoreCycles(user, stats) || DashboardCyclePastReferenceLength(user, stats) || DashboardCyclePastProjectionLength(user, stats)
 }
 
 // DashboardCyclePastReferenceLength is the out-of-date verdict

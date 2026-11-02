@@ -260,7 +260,7 @@ func TestBuildDashboardViewDataShowsHighFertilityBadgeForEggWhiteMucus(t *testin
 // cycles the badge shows, while the slider-derived fertile status stays withheld.
 func TestBuildDashboardViewDataShowsHighFertilityBadgeBeforeTheFirstCycleCompletes(t *testing.T) {
 	today := mustParseDashboardServiceDay(t, "2026-02-21")
-	for _, goal := range []string{models.UsageGoalHealth, models.UsageGoalTrying} {
+	for _, goal := range []string{models.UsageGoalHealth, models.UsageGoalTrying, models.UsageGoalAvoid} {
 		t.Run(goal, func(t *testing.T) {
 			user := &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true, UsageGoal: goal}
 			viewData := buildEggWhiteBadgeViewData(t, user, today, CycleStats{
@@ -293,6 +293,13 @@ func TestBuildDashboardViewDataWithholdsHighFertilityBadgeWhileFertilitySuppress
 			name:  "irregular mode before its range exists",
 			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true, IrregularCycle: true},
 			stats: CycleStats{CompletedCycleCount: 2, MedianCycleLength: 28, LastPeriodStart: lastPeriod, NextPeriodStart: nextPeriod},
+		},
+		{
+			// Only the first-cycle floor is lifted for an observation: a first
+			// cycle already past its reference length still holds the badge back.
+			name:  "first cycle past its reference length",
+			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true},
+			stats: CycleStats{LastPeriodStart: mustParseDashboardServiceDay(t, "2026-01-22"), CurrentCycleDay: 31},
 		},
 		{
 			name:  "pregnancy pause",
