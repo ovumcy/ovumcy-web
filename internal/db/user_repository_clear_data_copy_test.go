@@ -54,8 +54,8 @@ var clearDataPreservedUserColumns = map[string]string{
 	"totp_last_used_step":       "TOTP replay guard; clearing it would let a used code replay",
 	"onboarding_completed":      "account onboarding status",
 	"interface_language":        "interface language, an account preference rather than tracked data",
-	"calendar_feed_revealed_at": "one-time reveal mark of the feed URL; kept so a cleared link is never re-shown on an old claim",
-	"calendar_feed_key_epoch":   "records the verification regime of the stored token; boot sentinel state, not owner data",
+	"calendar_feed_revealed_at": "one-time reveal consumption mark (NULL is the armed value); only SaveCalendarFeedToken clears it, so a wipe that cleared it would re-arm a reveal for a sealed cookie still held",
+	"calendar_feed_key_epoch":   "stamp of the key the stored token was minted under, written only by SaveCalendarFeedToken; the wipe clears the token so the stamp asserts nothing, and the next mint overwrites it",
 }
 
 // TestClearDataAccountsForEveryUsersColumn derives the users columns from the
@@ -64,17 +64,10 @@ var clearDataPreservedUserColumns = map[string]string{
 // later migration adds, that nobody threads through the reset map or this list,
 // fails here instead of surviving clear-data unnoticed.
 func TestClearDataAccountsForEveryUsersColumn(t *testing.T) {
-	repo := openWebhookRepoForTest(t)
-	columnTypes, err := repo.database.Migrator().ColumnTypes("users")
-	requireNoErr(t, err, "column types of users")
-	if len(columnTypes) == 0 {
-		t.Fatal("derived no users columns from the live schema; the derivation is broken, not the schema")
-	}
-	live := make(map[string]bool, len(columnTypes))
-	for _, column := range columnTypes {
-		live[column.Name()] = true
-	}
-
+	// The write recorder stays on SQLite (the wipe's column map is the same on
+	// both engines); the live columns are derived per engine, because a
+	// migration ships one file per dialect and a column only the Postgres file
+	// adds is invisible to a SQLite-derived set.
 	written := make(map[string]bool)
 	for _, write := range clearDataWritesForTest(t) {
 		if !strings.HasPrefix(write, "delete:") {
@@ -82,31 +75,43 @@ func TestClearDataAccountsForEveryUsersColumn(t *testing.T) {
 		}
 	}
 
-	for column := range written {
-		if !live[column] {
-			t.Errorf("the wipe writes %q, which is not a users column in the live schema", column)
+	forEachMigrationReplayStore(t, func(t *testing.T, store migrationReplayStore) {
+		columnTypes, err := store.open(t).Migrator().ColumnTypes("users")
+		requireNoErr(t, err, "column types of users")
+		if len(columnTypes) == 0 {
+			t.Fatal("derived no users columns from the live schema; the derivation is broken, not the schema")
 		}
-	}
-	for column, reason := range clearDataPreservedUserColumns {
-		switch {
-		case !live[column]:
-			t.Errorf("clearDataPreservedUserColumns names %q, which is not a users column in the live schema; drop the entry", column)
-		case written[column]:
-			t.Errorf("%q is listed as preserved but the wipe writes it; drop the entry", column)
-		case strings.TrimSpace(reason) == "":
-			t.Errorf("%q is preserved without a reason", column)
+		live := make(map[string]bool, len(columnTypes))
+		for _, column := range columnTypes {
+			live[column.Name()] = true
 		}
-	}
-	var unaccounted []string
-	for column := range live {
-		if _, preserved := clearDataPreservedUserColumns[column]; !written[column] && !preserved {
-			unaccounted = append(unaccounted, column)
+
+		for column := range written {
+			if !live[column] {
+				t.Errorf("the wipe writes %q, which is not a users column in the live %s schema", column, store.driver)
+			}
 		}
-	}
-	sort.Strings(unaccounted)
-	if len(unaccounted) > 0 {
-		t.Fatalf("users columns neither written by clear-data nor listed in clearDataPreservedUserColumns: %v\nreset the column in ClearAllDataAndResetSettings (and add its copy group), or list it as preserved with the reason", unaccounted)
-	}
+		for column, reason := range clearDataPreservedUserColumns {
+			switch {
+			case !live[column]:
+				t.Errorf("clearDataPreservedUserColumns names %q, which is not a users column in the live %s schema; drop the entry", column, store.driver)
+			case written[column]:
+				t.Errorf("%q is listed as preserved but the wipe writes it; drop the entry", column)
+			case strings.TrimSpace(reason) == "":
+				t.Errorf("%q is preserved without a reason", column)
+			}
+		}
+		var unaccounted []string
+		for column := range live {
+			if _, preserved := clearDataPreservedUserColumns[column]; !written[column] && !preserved {
+				unaccounted = append(unaccounted, column)
+			}
+		}
+		sort.Strings(unaccounted)
+		if len(unaccounted) > 0 {
+			t.Fatalf("%s users columns neither written by clear-data nor listed in clearDataPreservedUserColumns: %v\nreset the column in ClearAllDataAndResetSettings (and add its copy group), or list it as preserved with the reason", store.driver, unaccounted)
+		}
+	})
 }
 
 // TestClearDataCopyNamesEveryColumnTheWipeWrites records every write the wipe
