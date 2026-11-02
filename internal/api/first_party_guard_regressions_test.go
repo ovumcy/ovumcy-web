@@ -615,3 +615,99 @@ func TestHeadOnOIDCStartDoesNotMintStateCookieOrStartTheHandshake(t *testing.T) 
 		t.Fatalf("expected HEAD /auth/oidc/start to mint no state cookie, got Set-Cookie %#v", cookie)
 	}
 }
+
+// nonMutatingGETRoutes classifies the registered GET routes that persist
+// nothing server-side and spend no one-time material: pages, reads, exports and
+// probes. Cookie writes that only retract a client-side marker (the flash, the
+// OIDC logout bridge) do not make a route mutating. A GET that is in neither
+// this list, firstPartyGuardedRoutes nor shownOnceGETRoutes is unclassified, and
+// TestEveryRegisteredGETRouteIsClassified refuses it: adding a GET forces the
+// author to say which class it belongs to, instead of letting a state-mutating
+// GET sit outside both declared sets unseen.
+var nonMutatingGETRoutes = []string{
+	"GET /",
+	"GET /api/v1/days",
+	"GET /api/v1/days/:date",
+	"GET /api/v1/exports",
+	"GET /api/v1/exports/csv",
+	"GET /api/v1/exports/json",
+	"GET /api/v1/exports/summary",
+	"GET /api/v1/imports",
+	"GET /api/v1/onboarding",
+	"GET /api/v1/stats",
+	"GET /api/v1/stats/overview",
+	"GET /api/v1/symptoms",
+	"GET /api/v1/users/current",
+	"GET /auth/2fa",
+	"GET " + oidcLogoutBridgePath,
+	"GET /calendar",
+	"GET /calendar/day/:date",
+	"GET " + calendarFeedRoutePath,
+	"GET /dashboard",
+	"GET /favicon.ico",
+	"GET /forgot-password",
+	"GET /healthz",
+	"GET /login",
+	"GET /onboarding",
+	"GET /privacy",
+	"GET /readyz",
+	"GET /register",
+	"GET /reset-password",
+	"GET /settings",
+	"GET /settings/oidc/link",
+	"GET /stats",
+}
+
+// TestEveryRegisteredGETRouteIsClassified derives the GET set from the
+// registered routes, so it needs no hand-kept mirror of the table: every
+// registered GET must be named in exactly one of the guarded, shown-once or
+// non-mutating declarations, and a non-mutating entry that is no longer
+// registered, or that has since joined a mutating class, is stale.
+func TestEveryRegisteredGETRouteIsClassified(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+	registered := map[string]bool{}
+	for _, route := range app.GetRoutes() {
+		if route.Method == fiber.MethodGet {
+			registered[route.Method+" "+route.Path] = true
+		}
+	}
+	if len(registered) < 20 {
+		t.Fatalf("route discovery found only %d GET routes; recheck it", len(registered))
+	}
+
+	mutating := map[string]bool{}
+	for _, key := range firstPartyGuardedRoutes {
+		mutating[key] = true
+	}
+	for _, key := range shownOnceGETRoutes {
+		mutating[key] = true
+	}
+	nonMutating := map[string]bool{}
+	for _, key := range nonMutatingGETRoutes {
+		if nonMutating[key] {
+			t.Errorf("nonMutatingGETRoutes names %s twice", key)
+		}
+		nonMutating[key] = true
+		if mutating[key] {
+			t.Errorf("%s is declared non-mutating and also guarded or shown-once; it joined a mutating class, so drop it from nonMutatingGETRoutes", key)
+		}
+		if !registered[key] {
+			t.Errorf("nonMutatingGETRoutes names %s, which is no longer a registered GET route; the entry is stale", key)
+		}
+	}
+
+	var unclassified []string
+	for key := range registered {
+		if !mutating[key] && !nonMutating[key] {
+			unclassified = append(unclassified, key)
+		}
+	}
+	sort.Strings(unclassified)
+	if len(unclassified) > 0 {
+		t.Fatalf("registered GET route(s) with no class: %v\n"+
+			"A GET that mutates state or spends one-time material belongs in firstPartyGuardedRoutes or "+
+			"shownOnceGETRoutes (routes.go) and needs its guard; a GET that does neither belongs in nonMutatingGETRoutes.", unclassified)
+	}
+}
