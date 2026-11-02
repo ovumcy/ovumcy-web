@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -37,6 +38,11 @@ type calendarFeedRestoreFenceAnchor interface {
 	Read() (string, bool, error)
 	Write(value string) error
 }
+
+// calendarFeedFenceFirstBootPrefix marks a file token written by a first boot
+// that has not yet stored its database half (WEB-456). The prefix is outside
+// the token alphabet, so no completed token carries it. See record.
+const calendarFeedFenceFirstBootPrefix = "first-boot-pending:"
 
 // CalendarFeedRestoreFenceOutcome reports what one Enforce pass did, for the
 // operator-facing startup log line. At most one of the three outcome flags —
@@ -174,8 +180,9 @@ func (fence *CalendarFeedRestoreFence) Enforce(ctx context.Context) (CalendarFee
 // contain, while a stamp it left would make the first boot after the operator
 // fixes the mount read the gap as a restore and revoke every session, webhook
 // and local password on the instance. Every path that can reach the unanchored
-// outcome writes the file half before anything else, so the failure is always
-// found before the first write.
+// outcome writes the file half before anything else, so the failure is found
+// before the first database write — except a first boot's final file write,
+// which leaves the pending pair record describes for the next boot to finish.
 func (fence *CalendarFeedRestoreFence) EnforceRequired(ctx context.Context) (CalendarFeedRestoreFenceOutcome, error) {
 	return fence.enforce(ctx, true)
 }
@@ -188,7 +195,7 @@ func (fence *CalendarFeedRestoreFence) enforce(ctx context.Context, refuseUnanch
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
 
-	anchored, anchorFound, err := fence.anchor.Read()
+	anchored, anchorFound, pending, err := fence.readAnchor()
 	if err != nil {
 		return fence.disarmUnanchored(ctx, err, 0, refuseUnanchored)
 	}
@@ -198,6 +205,9 @@ func (fence *CalendarFeedRestoreFence) enforce(ctx context.Context, refuseUnanch
 		return CalendarFeedRestoreFenceOutcome{}, err
 	}
 
+	if pending != "" && storedFound && stored == pending {
+		return fence.finishFirstBoot(ctx, pending, refuseUnanchored)
+	}
 	if !anchorFound && !storedFound {
 		// Two very different histories look identical here, and only the stamp
 		// tells them apart: an instance that never had a fence at all, and one
@@ -505,7 +515,7 @@ func (fence *CalendarFeedRestoreFence) CheckContinuity(ctx context.Context) erro
 // confirmContinuity is the read both CheckContinuity and AdvanceConfirmed
 // refuse on. The caller holds fence.writing.
 func (fence *CalendarFeedRestoreFence) confirmContinuity(ctx context.Context) error {
-	anchored, anchorFound, err := fence.anchor.Read()
+	anchored, anchorFound, _, err := fence.readAnchor()
 	if err != nil {
 		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceUnreachable, Cause: err}
 	}
@@ -540,11 +550,39 @@ func (fence *CalendarFeedRestoreFence) unanchoredHistory(ctx context.Context) (b
 	return found, err
 }
 
-// record mints the next token and stores it in both halves, then clears the
-// unanchored stamp. A write failure on the file half is an anchor failure, not
-// a boot failure, so it degrades into the unanchored outcome — which is also
-// the path a first boot with no mount takes, since a missing directory reads as
-// "no token" and only fails on write.
+// readAnchor is anchor.Read with a first boot's pending token taken apart: a
+// pending file token reads as no file token at all (found false), and the
+// token it stands for is returned separately for the one comparison that may
+// finish that first boot.
+func (fence *CalendarFeedRestoreFence) readAnchor() (anchored string, found bool, pending string, err error) {
+	anchored, found, err = fence.anchor.Read()
+	if err != nil || !found {
+		return anchored, found, "", err
+	}
+	if token, isPending := strings.CutPrefix(anchored, calendarFeedFenceFirstBootPrefix); isPending {
+		return "", false, token, nil
+	}
+	return anchored, true, "", nil
+}
+
+// record is the first boot: it mints the next token and stores it in both
+// halves, then clears the unanchored stamp. A write failure on the file half is
+// an anchor failure, not a boot failure, so it degrades into the unanchored
+// outcome — which is also the path a first boot with no mount takes, since a
+// missing directory reads as "no token" and only fails on write.
+//
+// The file half is written twice: first as a PENDING token, then — after the
+// database half holds the token — as the token itself (WEB-456). A lone file
+// token beside an empty database is what restoring a pre-fence backup looks
+// like, so a first boot that wrote the plain token and then failed its database
+// write left the next boot revoking every session, webhook and local password
+// on an instance that never served. A pending token reads as "no file token
+// yet" instead: beside an empty, unstamped database the next boot is a first
+// boot again; beside the very token it carries, the next boot only finishes
+// the file. Neither state can follow a boot that served, because no boot serves
+// until the plain token is in the file, so a pending token vouches for nothing
+// a restore could have rolled back. Everywhere else it is no token: beside a
+// different database token or the unanchored stamp the full pass still runs.
 //
 // The stamp is erased LAST, after both halves already hold the new token, and
 // unconditionally rather than only when one was found: a crash between the two
@@ -558,10 +596,28 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome Calen
 	if err != nil {
 		return outcome, err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
-	if err := fence.anchor.Write(token); err != nil {
+	if err := fence.anchor.Write(calendarFeedFenceFirstBootPrefix + token); err != nil {
 		return fence.disarmUnanchored(ctx, err, disarmed, refuseUnanchored)
 	}
-	return fence.storeToken(ctx, outcome, token)
+	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
+		return outcome, err
+	}
+	return fence.finishFirstBoot(ctx, token, refuseUnanchored)
+}
+
+// finishFirstBoot replaces a first boot's pending file token with the token the
+// database half already holds, then clears the unanchored stamp. A failed file
+// write here is an anchor failure like any other: refused under
+// EnforceRequired, with the pending pair left for the next boot to finish.
+func (fence *CalendarFeedRestoreFence) finishFirstBoot(ctx context.Context, token string, refuseUnanchored bool) (CalendarFeedRestoreFenceOutcome, error) {
+	if err := fence.anchor.Write(token); err != nil {
+		return fence.disarmUnanchored(ctx, err, 0, refuseUnanchored)
+	}
+	outcome := CalendarFeedRestoreFenceOutcome{FirstBoot: true}
+	if err := fence.appState.Delete(ctx, models.AppStateKeyCalendarFeedFenceUnanchored); err != nil {
+		return outcome, err
+	}
+	return outcome, nil
 }
 
 // storeToken is record's database half: the token the file already holds,
