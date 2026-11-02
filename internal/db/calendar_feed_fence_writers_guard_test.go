@@ -4,10 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/constant"
-	"go/parser"
-	"go/token"
 	"go/types"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -64,26 +61,34 @@ var calendarFeedFenceAdvanceCalls = map[string]bool{
 // The set is derived from the file rather than re-listed: a hand-written mirror
 // of the writers would agree with itself while a new writer went unguarded.
 func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
-	const path = "user_repository.go"
-
-	source, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
+	// The whole package, type-checked: a writer in another file, or one that
+	// names the column through a constant, is as much a writer as one spelling
+	// the literal in user_repository.go. Columns are recognised by their
+	// resolved constant value and by the models.User field, never by a literal
+	// in one file; the advance is matched by the function it resolves to.
+	pkg := loadTypedDBPackage(t)
+	info := pkg.TypesInfo
+	accessColumns := map[string]bool{}
+	for _, column := range calendarFeedAccessColumns {
+		accessColumns[strings.Trim(column, `"`)] = true
 	}
-	fileSet := token.NewFileSet()
-	parsed, err := parser.ParseFile(fileSet, path, source, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse %s: %v", path, err)
+	accessFields := map[types.Object]bool{}
+	for _, field := range []string{"CalendarFeedSelector", "CalendarFeedVerifierHash", "CalendarFeedVerifierMAC"} {
+		accessFields[userModelField(t, pkg, field)] = true
 	}
 
 	writers := map[string]bool{}
 	advances := map[string]bool{}
 	advancesFirst := map[string]bool{}
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Body == nil {
-			continue
+	var functions []*ast.FuncDecl
+	for _, file := range pkg.Syntax {
+		for _, declaration := range file.Decls {
+			if function, ok := declaration.(*ast.FuncDecl); ok && function.Body != nil {
+				functions = append(functions, function)
+			}
 		}
+	}
+	for _, function := range functions {
 		name := function.Name.Name
 
 		// Positions come from the AST, never from the body text. A doc comment
@@ -106,31 +111,39 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		if !functionIssuesAWrite(function) {
 			continue
 		}
+		markColumn := func(node ast.Node) {
+			if at := int(node.Pos()); columnAt < 0 || at < columnAt {
+				columnAt = at
+			}
+		}
 		ast.Inspect(function.Body, func(node ast.Node) bool {
 			switch typed := node.(type) {
 			case *ast.CallExpr:
-				selector, ok := typed.Fun.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
 				at := int(typed.Pos())
-				if calendarFeedFenceAdvanceCalls[selector.Sel.Name] && (advanceAt < 0 || at < advanceAt) {
-					advanceAt = at
-				}
-				if selector.Sel.Name == "Transaction" && (transactionAt < 0 || at < transactionAt) {
-					transactionAt = at
-				}
-			case *ast.BasicLit:
-				if typed.Kind != token.STRING {
-					return true
-				}
-				for _, column := range calendarFeedAccessColumns {
-					if typed.Value != column {
-						continue
+				if callee, ok := typeutil.Callee(info, typed).(*types.Func); ok {
+					if callee.Pkg() == pkg.Types && calendarFeedFenceAdvanceCalls[callee.Name()] && (advanceAt < 0 || at < advanceAt) {
+						advanceAt = at
 					}
-					if at := int(typed.Pos()); columnAt < 0 || at < columnAt {
-						columnAt = at
+					if callee.Name() == "Transaction" && (transactionAt < 0 || at < transactionAt) {
+						transactionAt = at
 					}
+				}
+			case *ast.KeyValueExpr:
+				if key, ok := typed.Key.(*ast.Ident); ok && accessFields[info.Uses[key]] {
+					markColumn(typed)
+				}
+			case *ast.AssignStmt:
+				for _, target := range typed.Lhs {
+					if selector, ok := target.(*ast.SelectorExpr); ok && accessFields[info.Uses[selector.Sel]] {
+						markColumn(typed)
+					}
+				}
+			case ast.Expr:
+				// Any expression whose constant value is a feed access column: a
+				// literal, a named constant, or a constant expression.
+				if value := info.Types[typed].Value; value != nil && value.Kind() == constant.String &&
+					accessColumns[constant.StringVal(value)] {
+					markColumn(typed)
 				}
 			}
 			return true
