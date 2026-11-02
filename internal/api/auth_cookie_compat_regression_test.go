@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -8,10 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -80,7 +82,8 @@ func TestAuthMiddlewareRejectsRevokedAuthSessionCookieAfterForcedResetForHTML(t 
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "forced-reset-stale-html@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	forceResetPasswordHash(t, database, user.ID, "EvenStronger2")
+	assertCompatCookieOpensDashboard(t, app, authCookie)
+	revokeSessionsThroughRepository(t, database, user.ID)
 
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Cookie", authCookie)
@@ -111,7 +114,8 @@ func TestAuthMiddlewareRejectsRevokedAuthSessionCookieForAPI(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "forced-reset-stale-api@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	forceResetPasswordHash(t, database, user.ID, "EvenStronger2")
+	assertCompatCookieOpensDashboard(t, app, authCookie)
+	revokeSessionsThroughRepository(t, database, user.ID)
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/stats/overview", nil)
 	request.Header.Set("Accept", "application/json")
@@ -153,22 +157,40 @@ func buildLegacyJWTForUser(t *testing.T, user models.User) string {
 	return signed
 }
 
-func forceResetPasswordHash(t *testing.T, database *gorm.DB, userID uint, password string) {
+// revokeSessionsThroughRepository revokes by the version bump alone. A forced
+// reset would also set must_change_password, which ResolveAuthSession refuses
+// on before it ever compares versions, so a test revoking that way stays green
+// with the version compare deleted.
+func revokeSessionsThroughRepository(t *testing.T, database *gorm.DB, userID uint) {
 	t.Helper()
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		t.Fatalf("hash forced-reset password: %v", err)
+	if err := db.NewUserRepository(database).BumpAuthSessionVersion(context.Background(), userID); err != nil {
+		t.Fatalf("bump auth session version: %v", err)
 	}
+	var reloaded models.User
+	if err := database.First(&reloaded, userID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if reloaded.MustChangePassword {
+		t.Fatal("the revocation must be the version bump alone: must_change_password is set, so the version compare is not what refuses")
+	}
+}
 
-	updateResult := database.Model(&models.User{}).
-		Where("id = ?", userID).
-		Updates(map[string]any{
-			"password_hash":        string(passwordHash),
-			"must_change_password": true,
-		})
-	if err := updateResult.Error; err != nil {
-		t.Fatalf("mark user forced-reset state: %v", err)
+// assertCompatCookieOpensDashboard is the 200 anchor taken before a
+// revocation: without it a later refusal could come from a cookie that never
+// opened anything.
+func assertCompatCookieOpensDashboard(t *testing.T, app *fiber.App, authCookie string) {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Cookie", authCookie)
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("dashboard anchor request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("anchor: a freshly issued auth cookie must open /dashboard, got %d", response.StatusCode)
 	}
 }
 

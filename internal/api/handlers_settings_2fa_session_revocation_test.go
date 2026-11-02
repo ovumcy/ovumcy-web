@@ -23,6 +23,7 @@ import (
 func TestVerifyTOTP2FAEnrollment_BumpsSessionVersion(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-enable-bumps-sv@example.com")
 	otherSessionCookie := ctx.authCookie
+	assertAuthCookieOpensDashboard(t, ctx, otherSessionCookie, "pre-enable cookie before the toggle")
 
 	key, err := getTOTPServiceForTest(ctx.database).GenerateSetupKey("Ovumcy", ctx.user.Email)
 	if err != nil {
@@ -61,16 +62,8 @@ func TestVerifyTOTP2FAEnrollment_BumpsSessionVersion(t *testing.T) {
 		t.Fatal("enable handler must reissue ovumcy_auth so the originating session stays alive")
 	}
 
-	otherProbe := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	otherProbe.Header.Set("Cookie", otherSessionCookie)
-	otherResp, err := ctx.app.Test(otherProbe, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("other-session probe: %v", err)
-	}
-	defer func() { _ = otherResp.Body.Close() }()
-	if otherResp.StatusCode == http.StatusOK {
-		t.Fatalf("pre-toggle cookie still accepted on /dashboard (status=%d); session-version bump did not invalidate it", otherResp.StatusCode)
-	}
+	assertAuthCookieIsRevoked(t, ctx, otherSessionCookie, "pre-enable cookie")
+	assertAuthCookieOpensDashboard(t, ctx, authCookieName+"="+refreshed.Value, "reissued cookie after enable")
 }
 
 // TestDisableTOTP2FA_BumpsSessionVersion captures the matching contract for
@@ -85,6 +78,7 @@ func TestDisableTOTP2FA_BumpsSessionVersion(t *testing.T) {
 	ctx.refreshAuthCookie(t)
 	preDisableCookie := ctx.authCookie
 	preDisableVersion := ctx.user.AuthSessionVersion
+	assertAuthCookieOpensDashboard(t, ctx, preDisableCookie, "pre-disable cookie before the toggle")
 
 	form := url.Values{"password": {"StrongPass1"}}
 	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", form, nil)
@@ -106,14 +100,6 @@ func TestDisableTOTP2FA_BumpsSessionVersion(t *testing.T) {
 		t.Fatal("disable handler must reissue ovumcy_auth so the originating session stays alive")
 	}
 
-	otherProbe := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	otherProbe.Header.Set("Cookie", preDisableCookie)
-	otherResp, err := ctx.app.Test(otherProbe, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("other-session probe: %v", err)
-	}
-	defer func() { _ = otherResp.Body.Close() }()
-	if otherResp.StatusCode == http.StatusOK {
-		t.Fatalf("pre-toggle cookie still accepted on /dashboard (status=%d); session-version bump did not invalidate it", otherResp.StatusCode)
-	}
+	assertAuthCookieIsRevoked(t, ctx, preDisableCookie, "pre-disable cookie")
+	assertAuthCookieOpensDashboard(t, ctx, authCookieName+"="+refreshed.Value, "reissued cookie after disable")
 }

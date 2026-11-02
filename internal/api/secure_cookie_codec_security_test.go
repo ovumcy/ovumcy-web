@@ -22,21 +22,7 @@ func TestSecureCookieCodecRoundtripsAllKnownPurposes(t *testing.T) {
 		t.Fatalf("new secure cookie codec: %v", err)
 	}
 
-	purposes := []string{
-		authCookieName,
-		flashCookieName,
-		exemptFlashCookieName,
-		recoveryCodeCookieName,
-		calendarFeedRevealCookieName,
-		registerPickupCookieName,
-		resetPasswordCookieName,
-		oidcStateCookieName,
-		oidcStepupCookieName,
-		oidcStepupContinuationCookieName,
-		oidcLogoutBridgeCookieName,
-		totpPendingCookieName,
-		totpSetupCookieName,
-	}
+	purposes := declaredSealedCookiePurposes(t)
 	plaintext := []byte(`{"hello":"world","n":42}`)
 
 	for _, purpose := range purposes {
@@ -67,35 +53,51 @@ func TestSecureCookieCodecRejectsCrossPurposeOpen(t *testing.T) {
 		t.Fatalf("new secure cookie codec: %v", err)
 	}
 
-	sealed, err := codec.seal(authCookieName, []byte("payload-for-auth"))
-	if err != nil {
-		t.Fatalf("seal under auth purpose: %v", err)
-	}
-
-	otherPurposes := []string{
-		flashCookieName,
-		exemptFlashCookieName,
-		recoveryCodeCookieName,
-		calendarFeedRevealCookieName,
-		registerPickupCookieName,
-		resetPasswordCookieName,
-		oidcStateCookieName,
-		oidcStepupCookieName,
-		oidcStepupContinuationCookieName,
-		oidcLogoutBridgeCookieName,
-		totpPendingCookieName,
-		totpSetupCookieName,
-	}
-	for _, purpose := range otherPurposes {
-
-		t.Run("opened_as_"+purpose, func(t *testing.T) {
-			t.Parallel()
-
-			if _, err := codec.open(purpose, sealed); !errors.Is(err, errInvalidSecureCookieValue) {
-				t.Fatalf("expected AAD-binding to reject cross-purpose open as %q, got %v", purpose, err)
+	// Every ordered pair of declared purposes, not just auth-sealed-then-opened-
+	// elsewhere: a purpose whose AAD collapsed onto another's in only one
+	// direction (a prefix match, a shared label) would pass a one-way probe.
+	purposes := declaredSealedCookiePurposes(t)
+	for _, sealPurpose := range purposes {
+		sealed, err := codec.seal(sealPurpose, []byte("payload-for-"+sealPurpose))
+		if err != nil {
+			t.Fatalf("seal under %q: %v", sealPurpose, err)
+		}
+		for _, openPurpose := range purposes {
+			if openPurpose == sealPurpose {
+				continue
 			}
-		})
+			t.Run("sealed_as_"+sealPurpose+"_opened_as_"+openPurpose, func(t *testing.T) {
+				t.Parallel()
+
+				if _, err := codec.open(openPurpose, sealed); !errors.Is(err, errInvalidSecureCookieValue) {
+					t.Fatalf("expected AAD-binding to reject a %q value opened as %q, got %v", sealPurpose, openPurpose, err)
+				}
+			})
+		}
 	}
+}
+
+// declaredSealedCookiePurposes is the roster of purposes the package actually
+// seals under, read from its own sealedCookieSpec declarations rather than
+// kept by hand, so a purpose added later is judged here without anyone
+// remembering to list it. The roster's completeness against every cookie-name
+// constant is the sweep's cross-check, not this helper's.
+func declaredSealedCookiePurposes(t *testing.T) []string {
+	t.Helper()
+
+	purposes := sealedCookieRosterFrom(t, parseSealedCookiePackageFiles(t))
+	for _, anchor := range []string{authCookieName, oidcLinkPendingCookieName, totpSetupCookieName} {
+		found := false
+		for _, purpose := range purposes {
+			if purpose == anchor {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("the derived sealed-cookie roster %v lacks %q: the derivation is measuring the wrong set", purposes, anchor)
+		}
+	}
+	return purposes
 }
 
 func TestSecureCookieCodecRejectsTamperedCiphertext(t *testing.T) {
