@@ -256,6 +256,29 @@ func TestBuildDashboardViewDataShowsHighFertilityBadgeForEggWhiteMucus(t *testin
 	}
 }
 
+// A recorded egg-white observation is not a prediction: at zero completed
+// cycles the badge shows, while the slider-derived fertile status stays withheld.
+func TestBuildDashboardViewDataShowsHighFertilityBadgeBeforeTheFirstCycleCompletes(t *testing.T) {
+	today := mustParseDashboardServiceDay(t, "2026-02-21")
+	for _, goal := range []string{models.UsageGoalHealth, models.UsageGoalTrying} {
+		t.Run(goal, func(t *testing.T) {
+			user := &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true, UsageGoal: goal}
+			viewData := buildEggWhiteBadgeViewData(t, user, today, CycleStats{
+				LastPeriodStart: mustParseDashboardServiceDay(t, "2026-02-10"),
+			})
+			if !viewData.CycleContext.AwaitingFirstCycle || !viewData.CycleContext.FertilitySuppressed {
+				t.Fatalf("fixture must be the zero-completed-cycle floor")
+			}
+			if viewData.ShowFertilityStatus {
+				t.Fatalf("slider-derived fertility status must stay withheld at zero completed cycles")
+			}
+			if !viewData.ShowHighFertilityBadge {
+				t.Fatalf("recorded egg-white observation must show its badge at zero completed cycles")
+			}
+		})
+	}
+}
+
 func TestBuildDashboardViewDataWithholdsHighFertilityBadgeWhileFertilitySuppressed(t *testing.T) {
 	today := mustParseDashboardServiceDay(t, "2026-02-21")
 	lastPeriod := mustParseDashboardServiceDay(t, "2026-02-10")
@@ -266,11 +289,6 @@ func TestBuildDashboardViewDataWithholdsHighFertilityBadgeWhileFertilitySuppress
 		user  *models.User
 		stats CycleStats
 	}{
-		{
-			name:  "first cycle, trying to conceive",
-			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true, UsageGoal: models.UsageGoalTrying},
-			stats: CycleStats{LastPeriodStart: lastPeriod},
-		},
 		{
 			name:  "irregular mode before its range exists",
 			user:  &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true, IrregularCycle: true},

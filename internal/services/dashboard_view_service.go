@@ -199,7 +199,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	)
 	visibility := dashboardOwnerVisibilityState(user, today, now, location)
 	timingFrame := resolveDashboardTimingFrame(user, cycleContext, visibility)
-	showHighFertilityBadge := dashboardHighFertilityBadge(user, cycleContext, todayLog)
+	showHighFertilityBadge := dashboardHighFertilityBadge(user, stats, todayLog)
 	showSpottingCycleWarning := dashboardSpottingCycleWarning(logs, todayLog, today, location)
 	reminderBanner := DashboardReminderBanner{}
 	if IsOwnerUser(user) {
@@ -408,12 +408,15 @@ func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.
 	}
 }
 
-// dashboardHighFertilityBadge is a fertility claim, so it waits for the verdict
-// the cycle context already resolved: while the fertility half is withheld the
-// header says "held back", and today's mucus alone must not contradict it.
-func dashboardHighFertilityBadge(user *models.User, cycleContext DashboardCycleContext, todayLog models.DailyLog) bool {
+// dashboardHighFertilityBadge waits for the observation verdict: while the
+// fertility half is withheld the header says "held back", and today's mucus
+// alone must not contradict it. The one exception is the first-cycle floor: it
+// withholds what the onboarding slider would project, and a recorded egg-white
+// observation is not a projection, so it shows there. Every other withholding
+// (stale, past the projection length, thin history) keeps the badge back.
+func dashboardHighFertilityBadge(user *models.User, stats CycleStats, todayLog models.DailyLog) bool {
 	return IsOwnerUser(user) &&
-		!cycleContext.FertilitySuppressed &&
+		!FertilityObservationSuppressed(user, stats) &&
 		NormalizeDayCervicalMucus(todayLog.CervicalMucus) == models.CervicalMucusEggWhite
 }
 

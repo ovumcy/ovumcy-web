@@ -125,7 +125,7 @@ test.describe('Dashboard: fertility badge', () => {
     await expect(fertilityBadge).toContainText(localeText('en', 'dashboard.high_fertility_badge'));
   });
 
-  test('eggwhite cervical mucus shows no badge while the account has no completed cycle', async ({
+  test('eggwhite cervical mucus shows the badge while the account has no completed cycle', async ({
     page,
   }) => {
     await registerAndSetEggwhiteToday(page, 'fertility-no-history', 0);
@@ -133,10 +133,11 @@ test.describe('Dashboard: fertility badge', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
 
-    // The status line itself renders (the phase item is always there), so an
-    // absent badge is the withheld state and not a page that failed to load.
+    // A recorded observation is not a prediction, so the badge shows; the
+    // slider-derived fertile window stays withheld in the same state.
     await expect(dashboardStatusLine(page)).toBeVisible();
-    await expect(page.locator('[data-fertility-badge]')).toHaveCount(0);
+    await expect(page.locator('[data-fertility-badge]')).toBeVisible();
+    await expect(page.locator('[data-fertile-window]')).toHaveCount(0);
   });
 
   test('marking more than 8 consecutive period days surfaces the long-period warning once', async ({
