@@ -465,7 +465,10 @@ func TestOnboardingWriteRoutesLetOnlyAClientWithoutAPageOmitTheBinding(t *testin
 // (the account's current password, or a code bound to the account's own sealed
 // setup cookie), so a page of another account cannot send it for the account
 // now signed in; or it writes only after a fresh provider sign-in as the
-// session account's own identity; or it changes no setting and no data.
+// session account's own identity; or it changes no setting and no data. A
+// reason names the check that refuses the cross-account case, never what the
+// route does not do: "stores nothing on the account" was false for every
+// step-up start, each of which writes the sealed step-up cookie.
 var unguardedMutationReasons = map[string]string{
 	"DELETE /api/v1/users/current":                     "erases the account; demands the current password",
 	"PUT /api/v1/users/current/password":               "changes the credential; demands the current password",
