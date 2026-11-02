@@ -33,31 +33,24 @@ func mr3cycCluster(logs []models.DailyLog, start time.Time, days int, cycleStart
 }
 
 // TestMR3Cycles_ObservedStartsNotOverwrittenByDetected pins that an uncertain
-// cycle-start mark opens no cycle. Three clusters are logged; the middle cluster
-// is an explicit-but-uncertain cycle start, which CycleBoundaries deliberately
-// does not treat as a boundary. The start list is therefore 2 starts -> 1
-// completed cycle, not 3 starts -> 2 completed cycles; if the uncertain cluster
-// were counted, the completed-cycle count / median would diverge.
+// cycle-start mark counts as no mark (WEB-434). Three four-day clusters are
+// logged; the middle one carries an explicit-but-uncertain mark, and its run
+// still opens a cycle by the unmarked rule: 3 starts -> 2 completed cycles of
+// 30 days. Were the mark a veto, the count would read 1 cycle of 60.
 func TestMR3Cycles_ObservedStartsNotOverwrittenByDetected(t *testing.T) {
 	logs := []models.DailyLog{}
-	// Cluster A: regular start on Jan 1.
 	logs = mr3cycCluster(logs, mr3cycDay(2026, time.January, 1), 4, false, false)
-	// Cluster B: ~30 days later, explicit cycle start but UNCERTAIN -> skipped
-	// by CycleBoundaries (an uncertain mark opens no cycle).
 	logs = mr3cycCluster(logs, mr3cycDay(2026, time.January, 31), 4, true, true)
-	// Cluster C: another ~30 days later, regular start.
 	logs = mr3cycCluster(logs, mr3cycDay(2026, time.March, 2), 4, false, false)
 
 	now := mr3cycDay(2026, time.March, 10)
 	stats := BuildCycleStats(logs, now, BoundaryContext{})
 
-	// Observed starts = {Jan 1, Mar 2} -> 1 completed cycle of 60 days.
-	if stats.CompletedCycleCount != 1 {
-		t.Fatalf("expected 1 completed cycle from observed starts, got %d", stats.CompletedCycleCount)
+	if stats.CompletedCycleCount != 2 {
+		t.Fatalf("expected 2 completed cycles, got %d", stats.CompletedCycleCount)
 	}
-	// Jan 1 -> Mar 2 2026 is 60 days.
-	if stats.MedianCycleLength != 60 {
-		t.Fatalf("expected median cycle length 60 from observed starts, got %d", stats.MedianCycleLength)
+	if stats.MedianCycleLength != 30 {
+		t.Fatalf("expected median cycle length 30, got %d", stats.MedianCycleLength)
 	}
 }
 

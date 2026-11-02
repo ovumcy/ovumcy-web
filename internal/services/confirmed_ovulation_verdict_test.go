@@ -69,6 +69,12 @@ func confirmedVerdictRows() []confirmedVerdictRow {
 			*stats = atToday(*stats, *today)
 			stats.AverageCycleLength = 30
 		}},
+		// Bleeding recorded outside the opening episode puts the PROJECTED window
+		// in doubt; a day the temperatures already confirmed is behind it and
+		// recorded, so it survives like the other fertility-only tiers.
+		{signal: "DashboardBleedingOutsideCycleStart", wantKept: true, suppress: func(_ *models.User, stats *CycleStats, _ *time.Time) {
+			stats.BleedingOutsideCycleStart = true
+		}},
 	}
 }
 

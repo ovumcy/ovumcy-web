@@ -59,6 +59,7 @@ var predictionSuppressionSignals = map[string]string{
 	"FertilityProjectionSuppressed":      "the fertility gate",
 	"ProjectionChainSuppressed":          "the chained-period gate",
 	"DashboardCyclePastProjectionLength": "running cycle past its projection length, before the out-of-date band",
+	"DashboardBleedingOutsideCycleStart": "a period day today or yesterday outside the running cycle's opening episode",
 }
 
 // predictionSuppressionPredicateFile declares the predicates, so it is the one
