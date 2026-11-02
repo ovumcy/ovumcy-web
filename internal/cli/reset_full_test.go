@@ -57,6 +57,9 @@ func seedSecondFactors(t *testing.T, databasePath string, userID uint, subject s
 		"totp_last_used_step":       42,
 		"recovery_code_hash":        "recovery-code-hash",
 		"recovery_code_revealed_at": revealedAt,
+		"webhook_url":               "sealed-webhook-url",
+		"webhook_enabled":           true,
+		"webhook_last_delivered_at": revealedAt,
 	}).Error; err != nil {
 		t.Fatalf("seed second factors: %v", err)
 	}
@@ -88,9 +91,11 @@ func countCLIOIDCIdentities(t *testing.T, databasePath string, userID uint) int6
 
 // TestResetPasswordFullClearsEveryFactorAnAttackerCouldHaveAdded is the
 // compromise-recovery row: `reset-password --full` clears TOTP and the
-// recovery code and unlinks every OIDC identity of the target, together with
-// the password reset and the auth_session_version bump, and touches no other
-// account. The plain form keeps all three, as it always has.
+// recovery code, unlinks every OIDC identity and withdraws the webhook
+// endpoint of the target (WEB-428: an endpoint an intruder set is an egress
+// channel `ovumcy notify` would keep posting to), together with the password
+// reset and the auth_session_version bump, and touches no other account. The
+// plain form keeps all four, as it always has.
 func TestResetPasswordFullClearsEveryFactorAnAttackerCouldHaveAdded(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		databasePath := createCLIResetDatabase(t)
@@ -123,22 +128,26 @@ func TestResetPasswordFullClearsEveryFactorAnAttackerCouldHaveAdded(t *testing.T
 		}
 		cleared := reset.TOTPSecret == "" && !reset.TOTPEnabled && reset.TOTPLastUsedStep == 0 &&
 			reset.RecoveryCodeHash == "" && reset.RecoveryCodeRevealedAt == nil &&
-			countCLIOIDCIdentities(t, databasePath, target.ID) == 0
+			countCLIOIDCIdentities(t, databasePath, target.ID) == 0 &&
+			reset.WebhookURL == "" && !reset.WebhookEnabled && reset.WebhookLastDeliveredAt == nil &&
+			reset.WebhookConfigVersion > target.WebhookConfigVersion
 		kept := reset.TOTPSecret == "sealed-totp-secret" && reset.TOTPEnabled && reset.TOTPLastUsedStep == 42 &&
 			reset.RecoveryCodeHash == "recovery-code-hash" && reset.RecoveryCodeRevealedAt != nil &&
-			countCLIOIDCIdentities(t, databasePath, target.ID) == 1
+			countCLIOIDCIdentities(t, databasePath, target.ID) == 1 &&
+			reset.WebhookURL == "sealed-webhook-url" && reset.WebhookEnabled && reset.WebhookConfigVersion == target.WebhookConfigVersion
 		if full && !cleared {
-			t.Fatalf("--full left a factor standing: totp=%q/%v recovery=%q identities=%d", reset.TOTPSecret, reset.TOTPEnabled, reset.RecoveryCodeHash, countCLIOIDCIdentities(t, databasePath, target.ID))
+			t.Fatalf("--full left a factor standing: totp=%q/%v recovery=%q identities=%d webhook=%q/%v v%d->v%d", reset.TOTPSecret, reset.TOTPEnabled, reset.RecoveryCodeHash, countCLIOIDCIdentities(t, databasePath, target.ID), reset.WebhookURL, reset.WebhookEnabled, target.WebhookConfigVersion, reset.WebhookConfigVersion)
 		}
 		if !full && !kept {
-			t.Fatalf("the plain reset changed a second factor: totp=%q/%v recovery=%q identities=%d", reset.TOTPSecret, reset.TOTPEnabled, reset.RecoveryCodeHash, countCLIOIDCIdentities(t, databasePath, target.ID))
+			t.Fatalf("the plain reset changed a second factor: totp=%q/%v recovery=%q identities=%d webhook=%q/%v", reset.TOTPSecret, reset.TOTPEnabled, reset.RecoveryCodeHash, countCLIOIDCIdentities(t, databasePath, target.ID), reset.WebhookURL, reset.WebhookEnabled)
 		}
-		if mentioned := strings.Contains(output.String(), "any linked OIDC identities were removed"); mentioned != full {
+		if mentioned := strings.Contains(output.String(), "the webhook endpoint were removed"); mentioned != full {
 			t.Fatalf("full=%v: output mentions the factor wipe=%v: %q", full, mentioned, output.String())
 		}
 
 		other := loadCLIResetUser(t, databasePath, "bystander@example.com")
 		if other.TOTPSecret != "sealed-totp-secret" || other.RecoveryCodeHash != "recovery-code-hash" ||
+			other.WebhookURL != "sealed-webhook-url" || !other.WebhookEnabled ||
 			other.AuthSessionVersion != bystander.AuthSessionVersion || countCLIOIDCIdentities(t, databasePath, bystander.ID) != 1 {
 			t.Fatalf("full=%v: the reset reached another account: %+v", full, other)
 		}
