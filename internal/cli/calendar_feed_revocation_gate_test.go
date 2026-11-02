@@ -208,12 +208,11 @@ func (repo *journalingUserRepository) DeleteAccountAndRelatedData(ctx context.Co
 // internal ordering changes — only a wrapper actually sitting on the call
 // runUsersDelete makes can.
 //
-// DeleteAccountAndRelatedData's own best-effort post-op advance
-// (internal/db/user_repository.go's advanceCalendarFeedFence, called again
-// right after the row is gone) writes the SAME fence a second time, through
-// the calendarFeedFence the journalingUserRepository's embedded
-// *db.UserRepository was built with — so the expected journal captures BOTH
-// advances, one on each side of the row write.
+// DeleteAccountAndRelatedData calls the repository's own best-effort advance
+// on the SAME fence the gate just confirmed. The confirmed advance already
+// covers that write, so the second one writes nothing (WEB-429): a file error
+// there would move the database half alone and cost every owner the next
+// boot's full revocation. The journal therefore holds exactly one advance.
 func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 	journal := []string{}
 	appState := &fakeConfirmFenceAppState{
@@ -244,7 +243,7 @@ func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 		t.Fatalf("runUsersDelete: %v", err)
 	}
 
-	want := []string{"anchor", "app_state", "row-deleted", "anchor", "app_state"}
+	want := []string{"anchor", "app_state", "row-deleted"}
 	if len(journal) != len(want) {
 		t.Fatalf("expected the fence to advance before the row write, got %v, want %v", journal, want)
 	}
@@ -281,11 +280,10 @@ func (repo *journalingPasswordResetRepository) ForceResetPasswordAndRevokeSessio
 // whose halves are fakes only so the test can journal WHEN each write
 // happened.
 //
-// ForceResetPasswordAndRevokeSessions carries the same best-effort
-// post-op advance DeleteAccountAndRelatedData does (both call
-// advanceCalendarFeedFenceBestEffort), so the expected journal has the same
-// shape: the gate's own advance, the credential write, then that write's own
-// advance.
+// ForceResetPasswordAndRevokeSessions calls the same best-effort advance
+// DeleteAccountAndRelatedData does, and the gate's confirmed advance covers it
+// the same way (WEB-429), so the journal has the same shape: the gate's
+// advance, then the credential write, and no second advance.
 func TestResetPasswordAdvancesTheFenceBeforeTheRow(t *testing.T) {
 	journal := []string{}
 	appState := &fakeConfirmFenceAppState{
@@ -318,7 +316,7 @@ func TestResetPasswordAdvancesTheFenceBeforeTheRow(t *testing.T) {
 		t.Fatalf("runResetPassword: %v", err)
 	}
 
-	want := []string{"anchor", "app_state", "row-write", "anchor", "app_state"}
+	want := []string{"anchor", "app_state", "row-write"}
 	if len(journal) != len(want) {
 		t.Fatalf("expected the fence to advance before the row write, got %v, want %v", journal, want)
 	}
