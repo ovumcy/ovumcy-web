@@ -37,7 +37,20 @@ func TestSettingsPageForOIDCOnlyAccountShowsLocalPasswordSetup(t *testing.T) {
 	)
 	assertBodyNotContainsAll(t, rendered,
 		bodyStringMatch{fragment: `name="current_password"`, message: "did not expect current-password field before local auth is enabled"},
-		bodyStringMatch{fragment: "Regenerate recovery code", message: "did not expect recovery-code regeneration button before local auth is enabled"},
+		bodyStringMatch{fragment: `action="/api/v1/users/current/recovery-code"`, message: "did not expect the recovery-code regeneration form before local auth is enabled"},
+	)
+
+	// Positive anchor: the same page for an account that has a local password
+	// must render the regeneration form under the exact hook asserted absent
+	// above, so the negative cannot pass over a renamed or dead hook.
+	localCtx := newSettingsSecurityTestContext(t, "settings-local-regen-anchor@example.com")
+	localRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	localRequest.Header.Set("Accept-Language", "en")
+	localRequest.Header.Set("Cookie", localCtx.authCookie)
+	localResponse := mustAppResponse(t, localCtx.app, localRequest)
+	assertStatusCode(t, localResponse, http.StatusOK)
+	assertBodyContainsAll(t, mustReadBodyString(t, localResponse.Body),
+		bodyStringMatch{fragment: `action="/api/v1/users/current/recovery-code"`, message: "expected the recovery-code regeneration form for a local-auth account"},
 	)
 }
 

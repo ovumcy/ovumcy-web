@@ -346,15 +346,26 @@ func TestVerifyTOTPLogin_ValidCode_IssuesSessionAndRedirects(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusSeeOther {
-		t.Errorf("status = %d, want 303", resp.StatusCode)
+		t.Fatalf("status = %d, want 303", resp.StatusCode)
+	}
+	if location := resp.Header.Get("Location"); location != "/" {
+		t.Errorf("Location = %q, want the post-login landing \"/\"", location)
 	}
 	authCookie := responseCookie(resp.Cookies(), authCookieName)
 	if authCookie == nil || authCookie.Value == "" {
-		t.Error("expected auth cookie after successful TOTP verification")
+		t.Fatal("expected auth cookie after successful TOTP verification")
 	}
-	pendingAfter := responseCookie(resp.Cookies(), totpPendingCookieName)
-	if pendingAfter != nil && pendingAfter.Value != "" && pendingAfter.Expires.After(time.Now()) {
-		t.Error("expected pending cookie to be cleared after successful TOTP")
+	assertTOTPCookieCleared(t, resp, totpPendingCookieName)
+
+	probe := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	probe.Header.Set("Cookie", authCookieName+"="+authCookie.Value)
+	probeResp, err := app.Test(probe, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("dashboard probe: %v", err)
+	}
+	defer func() { _ = probeResp.Body.Close() }()
+	if probeResp.StatusCode != http.StatusOK {
+		t.Errorf("issued auth cookie /dashboard status = %d, want 200", probeResp.StatusCode)
 	}
 }
 
