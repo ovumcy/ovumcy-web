@@ -642,7 +642,6 @@ var nonMutatingGETRoutes = []string{
 	"GET " + oidcLogoutBridgePath,
 	"GET /calendar",
 	"GET /calendar/day/:date",
-	"GET " + calendarFeedRoutePath,
 	"GET /dashboard",
 	"GET /favicon.ico",
 	"GET /forgot-password",
@@ -658,23 +657,61 @@ var nonMutatingGETRoutes = []string{
 	"GET /stats",
 }
 
+// tokenAuthenticatedPollGETRoutes classifies the GET routes that are
+// authenticated by a capability token alone and persist a bounded server-side
+// mark. Each is cross-site by design (a calendar client, not a browser page, is
+// the caller), so none can sit behind the first-party guard, and none spends
+// one-time material.
+var tokenAuthenticatedPollGETRoutes = map[string]string{
+	// Capability-token authenticated, writes only the coarse
+	// calendar_feed_last_polled_on mark (markPolled), cross-site by design.
+	"GET " + calendarFeedRoutePath: "calendar feed poll",
+}
+
+// registeredGETRouteVariants builds the app under every configuration that
+// changes which GET routes the router registers, and returns the union. The
+// default build leaves OIDC off and the response mode at form_post, so a GET
+// registered only under OIDC_RESPONSE_MODE=query would otherwise never be
+// classified.
+func registeredGETRouteVariants(t *testing.T) map[string]bool {
+	t.Helper()
+
+	formPost := newStubOIDCWorkflowService(true)
+	query := newStubOIDCWorkflowService(true)
+	query.responseMode = security.OIDCResponseModeQuery
+
+	variants := []onboardingTestAppOptions{
+		{},
+		{oidcService: formPost, oidcEnabled: true},
+		{oidcService: query, oidcEnabled: true},
+	}
+	registered := map[string]bool{}
+	for _, options := range variants {
+		app, _ := newOnboardingTestAppWithOptions(t, options)
+		for _, route := range app.GetRoutes() {
+			if route.Method == fiber.MethodGet {
+				registered[route.Method+" "+route.Path] = true
+			}
+		}
+	}
+	return registered
+}
+
 // TestEveryRegisteredGETRouteIsClassified derives the GET set from the
-// registered routes, so it needs no hand-kept mirror of the table: every
-// registered GET must be named in exactly one of the guarded, shown-once or
-// non-mutating declarations, and a non-mutating entry that is no longer
-// registered, or that has since joined a mutating class, is stale.
+// registered routes, so it needs no hand-kept mirror of the table: every GET
+// registered under any route-table variant must be named in exactly one of the
+// guarded, shown-once, token-poll or non-mutating declarations, and a
+// non-mutating or token-poll entry that is no longer registered, or that has
+// since joined a mutating class, is stale.
 func TestEveryRegisteredGETRouteIsClassified(t *testing.T) {
 	t.Parallel()
 
-	app, _ := newOnboardingTestApp(t)
-	registered := map[string]bool{}
-	for _, route := range app.GetRoutes() {
-		if route.Method == fiber.MethodGet {
-			registered[route.Method+" "+route.Path] = true
-		}
-	}
+	registered := registeredGETRouteVariants(t)
 	if len(registered) < 20 {
 		t.Fatalf("route discovery found only %d GET routes; recheck it", len(registered))
+	}
+	if !registered["GET /auth/oidc/callback"] {
+		t.Fatal("the query-mode variant did not register GET /auth/oidc/callback; the variant sweep is not reaching the OIDC-only routes")
 	}
 
 	mutating := map[string]bool{}
@@ -693,14 +730,29 @@ func TestEveryRegisteredGETRouteIsClassified(t *testing.T) {
 		if mutating[key] {
 			t.Errorf("%s is declared non-mutating and also guarded or shown-once; it joined a mutating class, so drop it from nonMutatingGETRoutes", key)
 		}
+		if _, ok := tokenAuthenticatedPollGETRoutes[key]; ok {
+			t.Errorf("%s is declared both non-mutating and token-poll; it writes a poll mark, so it is not non-mutating", key)
+		}
 		if !registered[key] {
 			t.Errorf("nonMutatingGETRoutes names %s, which is no longer a registered GET route; the entry is stale", key)
+		}
+	}
+	for key, reason := range tokenAuthenticatedPollGETRoutes {
+		if reason == "" {
+			t.Errorf("tokenAuthenticatedPollGETRoutes entry %s carries no reason", key)
+		}
+		if mutating[key] {
+			t.Errorf("%s is declared token-poll and also guarded or shown-once; drop it from tokenAuthenticatedPollGETRoutes", key)
+		}
+		if !registered[key] {
+			t.Errorf("tokenAuthenticatedPollGETRoutes names %s, which is no longer a registered GET route; the entry is stale", key)
 		}
 	}
 
 	var unclassified []string
 	for key := range registered {
-		if !mutating[key] && !nonMutating[key] {
+		_, polled := tokenAuthenticatedPollGETRoutes[key]
+		if !mutating[key] && !nonMutating[key] && !polled {
 			unclassified = append(unclassified, key)
 		}
 	}
