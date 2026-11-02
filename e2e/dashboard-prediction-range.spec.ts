@@ -2,6 +2,7 @@ import { expect, test } from './support/fixtures';
 import { displayDatesIn } from './support/date-field-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import { localeText } from './support/locale-helpers';
+import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import {
   isoToday,
   markCycleStartViaAPI,
@@ -30,10 +31,24 @@ test.describe('Dashboard prediction range', () => {
     // Completed cycle lengths: 30, 25, 30. Population StdDev ≈ 2.36 → span
     // = 2 days. Max-min spread = 5, below the IsIrregularCycleSpread
     // threshold of 7, so no irregularity notice fires.
-    for (const offset of [-90, -35, -5]) {
+    const onboardingAnchorOffset = -60;
+    const cycleStartOffsets = [-90, onboardingAnchorOffset, -35, -5];
+    for (const offset of cycleStartOffsets.filter((value) => value !== onboardingAnchorOffset)) {
       await markCycleStartViaAPI(page, shiftISODate(today, offset));
     }
+    // The projected start is the last start plus the median completed cycle
+    // length (dates are median-first); derive it from the seeded starts so the
+    // assertion below follows the fixture instead of a typed day count.
+    const completedLengths = cycleStartOffsets
+      .slice(1)
+      .map((offset, index) => offset - cycleStartOffsets[index])
+      .sort((a, b) => a - b);
+    const medianLength = completedLengths[Math.floor(completedLengths.length / 2)];
+    const daysToProjectedStart = cycleStartOffsets[cycleStartOffsets.length - 1] + medianLength;
 
+    // The page reads "today" from the request timezone; pin it to the browser's
+    // so the rendered dates and the dates computed here share one calendar day.
+    await setRequestTimezoneFromBrowser(page);
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
 
@@ -46,8 +61,15 @@ test.describe('Dashboard prediction range', () => {
     const renderedDates = await displayDatesIn(page, nextPeriodText);
     expect(renderedDates, `regular user with variability should see a range: ${nextPeriodText}`)
       .toHaveLength(2);
+    const projectedStart = shiftISODate(today, daysToProjectedStart);
     expect(renderedDates[0] > today).toBeTruthy();
     expect(renderedDates[1] > renderedDates[0]).toBeTruthy();
+    // The window must contain the day the fixture projects, so two ordered
+    // dates drawn from the wrong anchor no longer pass.
+    expect(
+      renderedDates[0] <= projectedStart && projectedStart <= renderedDates[1],
+      `window ${renderedDates[0]}..${renderedDates[1]} must contain ${projectedStart}`,
+    ).toBeTruthy();
 
     // The range names the quantity it shows, so a regular owner gets no
     // explainer sentence under it. Absence of the block is the state: the
