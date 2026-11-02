@@ -30,6 +30,15 @@ var preSessionV1Mutations = []string{
 	"POST /api/v1/password-resets/redeem",
 }
 
+// mustBeInUnsupportedRoleMatrix names the authenticated credential and
+// erasure routes the matrix must have probed.
+var mustBeInUnsupportedRoleMatrix = []string{
+	"DELETE /api/v1/users/current/2fa",
+	"POST /api/v1/users/current/data-wipe",
+	"PUT /api/v1/users/current/password",
+	"POST /api/v1/users/current/recovery-code",
+}
+
 // TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route is a forward-looking
 // defense-in-depth matrix: it iterates every route registered on the Fiber app
 // — both /api/v1/* JSON routes and server-rendered page routes — and asserts
@@ -115,6 +124,7 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 	authCookie := issueAuthCookieForUser(t, user)
 
 	covered := 0
+	coveredKeys := map[string]bool{}
 	for _, route := range app.GetRoutes() {
 		if route.Method == http.MethodHead {
 			continue
@@ -148,10 +158,19 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 			}
 		})
 		covered++
+		coveredKeys[key] = true
 	}
 
 	if covered == 0 {
 		t.Fatal("expected at least one authenticated route to be covered by the unsupported-role matrix; recheck route discovery")
+	}
+	// A registration regression that drops most routes still leaves a non-zero
+	// count; the credential and erasure endpoints are named so losing any of
+	// them from the matrix reddens it.
+	for _, key := range mustBeInUnsupportedRoleMatrix {
+		if !coveredKeys[key] {
+			t.Errorf("the unsupported-role matrix did not cover %s; it was dropped from the route table or wrongly listed as public", key)
+		}
 	}
 }
 
