@@ -94,7 +94,7 @@ func TestOperatorRevocationWithoutAConfirmedFenceIsRefusedRatherThanLost(t *test
 	ctx := context.Background()
 	_, serverRepositories, serverFence, _ := newOperatorRevocationFixture(t)
 
-	if _, err := serverFence.Enforce(ctx); err != nil {
+	if _, err := serverFence.EnforceRequired(ctx); err != nil {
 		t.Fatalf("first-boot Enforce: %v", err)
 	}
 	owner := createArmedOwner(t, ctx, serverRepositories, "owner@example.com")
@@ -138,7 +138,7 @@ func TestOperatorRevocationAfterAnUnbootedRestoreDoesNotMaskTheDiscontinuity(t *
 	ctx := context.Background()
 	_, serverRepositories, serverFence, fencePath := newOperatorRevocationFixture(t)
 
-	if _, err := serverFence.Enforce(ctx); err != nil {
+	if _, err := serverFence.EnforceRequired(ctx); err != nil {
 		t.Fatalf("first-boot Enforce: %v", err)
 	}
 	owner := createArmedOwner(t, ctx, serverRepositories, "owner@example.com")
@@ -163,7 +163,7 @@ func TestOperatorRevocationAfterAnUnbootedRestoreDoesNotMaskTheDiscontinuity(t *
 	}
 
 	// The very next boot must still see the discontinuity and disarm.
-	outcome, err := serverFence.Enforce(ctx)
+	outcome, err := serverFence.EnforceRequired(ctx)
 	if err != nil {
 		t.Fatalf("Enforce after the refused revocation: %v", err)
 	}

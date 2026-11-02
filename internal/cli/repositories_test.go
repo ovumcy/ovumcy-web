@@ -41,7 +41,7 @@ func armOperatorFence(t *testing.T, databasePath string) string {
 	defer func() { _ = sqlDB.Close() }()
 
 	_, fence := buildRepositories(database, fencePath)
-	if _, err := fence.Enforce(context.Background()); err != nil {
+	if _, err := fence.EnforceRequired(context.Background()); err != nil {
 		t.Fatalf("armOperatorFence: Enforce: %v", err)
 	}
 	return fencePath

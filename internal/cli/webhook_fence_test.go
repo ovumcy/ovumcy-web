@@ -153,7 +153,7 @@ func TestWebhookSetAdvancesTheServersFenceBeforeTheWithdrawal(t *testing.T) {
 	}
 	defer func() { _ = sqlDB.Close() }()
 	_, fence := buildRepositories(database, fencePath)
-	outcome, err := fence.Enforce(context.Background())
+	outcome, err := fence.EnforceRequired(context.Background())
 	if err != nil {
 		t.Fatalf("Enforce: %v", err)
 	}
