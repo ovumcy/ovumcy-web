@@ -84,8 +84,9 @@ func TestRecoveryCodeRotationSurfacesAFailedStatementAndWritesNothing(t *testing
 
 type recoveryRotationUnderTest struct {
 	name string
-	// advancesFence is whether the committed write clears the calendar feed and
-	// therefore advances the restore fence.
+	// advancesFence is whether the write advances the restore fence. Every
+	// rotation here does since WEB-418: each revokes sessions, and a restore
+	// across one must still read as a restore.
 	advancesFence bool
 	rotate        func(repo *UserRepository, user models.User, beforeCommit func(int) error) error
 }
@@ -101,7 +102,8 @@ func recoveryRotationsUnderTest() []recoveryRotationUnderTest {
 			},
 		},
 		{
-			name: "local password setup",
+			name:          "local password setup",
+			advancesFence: true,
 			rotate: func(repo *UserRepository, user models.User, beforeCommit func(int) error) error {
 				return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, user.AuthSessionVersion, "rotated-hash", "rotated-recovery", false, beforeCommit)
 			},

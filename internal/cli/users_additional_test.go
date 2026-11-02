@@ -261,19 +261,22 @@ func TestRunUsersSetEmailParsesItsOwnArgumentsAndDefaultsItsWriter(t *testing.T)
 
 	// The parse runs before the service is touched, so a nil service here is
 	// an assertion in itself: reaching past it would panic.
-	if err := runUsersSetEmail(nil, []string{"--id", "7"}, &bytes.Buffer{}); err == nil || err.Error() != usersSetEmailUsage {
+	if err := runUsersSetEmail(nil, "", nil, []string{"--id", "7"}, &bytes.Buffer{}); err == nil || err.Error() != usersSetEmailUsage {
 		t.Fatalf("expected the usage error, got %v", err)
 	}
 
 	databasePath := createCLIUsersDatabase(t)
 	user := createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
-	service := operatorUserServiceForCLITest(t, databasePath)
+	fencePath := armOperatorFence(t, databasePath)
 
 	// A nil writer means "the process's stdout", which is what the exported
 	// entry point passes; the write itself is proven by the row it moved.
-	if err := runUsersSetEmail(service, []string{"--id", strconv.FormatUint(uint64(user.ID), 10), "renamed@example.com"}, nil); err != nil {
-		t.Fatalf("runUsersSetEmail with a nil writer returned error: %v", err)
-	}
+	withNotifyRepositories(t, databasePath, fencePath, func(repositories *db.Repositories, fence *services.CalendarFeedRestoreFence) {
+		service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
+		if err := runUsersSetEmail(service, fencePath, fence, []string{"--id", strconv.FormatUint(uint64(user.ID), 10), "renamed@example.com"}, nil); err != nil {
+			t.Fatalf("runUsersSetEmail with a nil writer returned error: %v", err)
+		}
+	})
 	if got := loadCLIUsersRow(t, databasePath, user.ID).Email; got != "renamed@example.com" {
 		t.Fatalf("expected the repair to land, got %q", got)
 	}
