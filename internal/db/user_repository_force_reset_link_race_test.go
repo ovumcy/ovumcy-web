@@ -24,9 +24,16 @@ func TestForceResetFullDeletesAnIdentityLinkedConcurrentlyOnPostgres(t *testing.
 	repos := NewRepositories(database)
 	ctx := context.Background()
 
-	for index, linkFirst := range []bool{true, false} {
+	for _, order := range []struct {
+		email     string
+		linkFirst bool
+	}{
+		{email: "link-first@example.com", linkFirst: true},
+		{email: "reset-first@example.com", linkFirst: false},
+	} {
+		linkFirst := order.linkFirst
 		user := &models.User{
-			Email:            []string{"link-first@example.com", "reset-first@example.com"}[index],
+			Email:            order.email,
 			PasswordHash:     "hash",
 			RecoveryCodeHash: "recovery",
 			TOTPEnabled:      true,
@@ -137,16 +144,16 @@ func raceLinkAgainstFullReset(t *testing.T, database *gorm.DB, repos *Repositori
 	}
 	released = true
 
-	for _, wait := range []struct {
-		name string
-		done chan error
-		into *error
-	}{{"link", linked, &linkErr}, {"reset", reset, &resetErr}} {
-		select {
-		case *wait.into = <-wait.done:
-		case <-time.After(15 * time.Second):
-			t.Fatalf("%s did not finish after the owner row was released", wait.name)
-		}
+	return awaitWriter(t, "link", linked), awaitWriter(t, "reset", reset)
+}
+
+func awaitWriter(t *testing.T, name string, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(15 * time.Second):
+		t.Fatalf("%s did not finish after the owner row was released", name)
+		return nil
 	}
-	return linkErr, resetErr
 }
