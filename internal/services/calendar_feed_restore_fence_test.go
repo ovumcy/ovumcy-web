@@ -857,9 +857,9 @@ func (s *countingFenceUserStore) RevokeRestoredAccess(_ context.Context) (models
 
 // TestCalendarFeedRestoreFenceEnforceFailsTheBootWhenTheMarkerCannotBeStored
 // pins the boot pass's DATABASE arm, the one failure class Enforce is supposed
-// to escalate rather than absorb. The file half has already been written when
-// this happens, so the halves now disagree and the next boot would disarm
-// anyway — but the boot must still fail loudly here, because a database that
+// to escalate rather than absorb. The file half already holds a pending token
+// when this happens, which the next boot reads as a first boot again
+// (WEB-456) — but the boot must still fail loudly here, because a database that
 // cannot record a marker after migrations have run is not one this instance
 // should start serving from.
 func TestCalendarFeedRestoreFenceEnforceFailsTheBootWhenTheMarkerCannotBeStored(t *testing.T) {
