@@ -352,33 +352,80 @@ func TestResetPasswordAdvancesTheFenceBeforeTheRow(t *testing.T) {
 func TestResetPasswordRefusesWithoutAConfirmedFenceAndLeavesTheHashAlone(t *testing.T) {
 	t.Parallel()
 
-	databasePath := createCLIResetDatabase(t)
-	createCLIResetUser(t, databasePath, "cli-reset-unfenced@example.com", "StrongPass1")
-	// An armed fence the shell cannot see (no path): the halves must come out of
-	// the refusal exactly as they went in, not only the account row.
-	armedFence := armOperatorFence(t, databasePath)
-	halvesBefore := readFenceHalves(t, databasePath, armedFence)
-
-	err := runResetPasswordCommand(
-		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		[]string{"cli-reset-unfenced@example.com"},
-		"",
-		func() ([]byte, error) { return []byte("EvenStronger2"), nil },
-		io.Discard,
-	)
-	if err == nil || !strings.Contains(err.Error(), "Nothing was changed") {
-		t.Fatalf("expected the reset to be refused, got %v", err)
+	cases := []struct {
+		name string
+		// arrange returns the path the command is given and the path whose file
+		// half is snapshotted (they differ when the shell has no path at all).
+		arrange   func(t *testing.T, databasePath string) (commandPath string, observedPath string)
+		wantState string
+	}{
+		{
+			// An armed fence the shell cannot see (no path).
+			name: "an armed fence the shell has no path to",
+			arrange: func(t *testing.T, databasePath string) (string, string) {
+				return "", armOperatorFence(t, databasePath)
+			},
+			wantState: "is not set in this shell",
+		},
+		{
+			// A path IS given, so the refusal comes from the confirm step
+			// itself, after it has read both halves.
+			name: "the file and the database marker disagree",
+			arrange: func(t *testing.T, databasePath string) (string, string) {
+				fencePath := armOperatorFence(t, databasePath)
+				if err := os.WriteFile(fencePath, []byte("a-different-generation\n"), 0o600); err != nil {
+					t.Fatalf("rewrite fence file: %v", err)
+				}
+				return fencePath, fencePath
+			},
+			wantState: "hold different tokens",
+		},
+		{
+			name: "neither half holds a token",
+			arrange: func(t *testing.T, _ string) (string, string) {
+				fencePath := filepath.Join(t.TempDir(), "calendar-feed.fence")
+				return fencePath, fencePath
+			},
+			wantState: "nor the database holds a marker",
+		},
 	}
 
-	unchanged := loadCLIResetUser(t, databasePath, "cli-reset-unfenced@example.com")
-	if bcrypt.CompareHashAndPassword([]byte(unchanged.PasswordHash), []byte("StrongPass1")) != nil {
-		t.Fatal("expected the stored password hash to be untouched by a refused reset")
-	}
-	if unchanged.MustChangePassword {
-		t.Fatal("expected must_change_password to be untouched by a refused reset")
-	}
-	if halvesAfter := readFenceHalves(t, databasePath, armedFence); halvesAfter != halvesBefore {
-		t.Fatalf("a refused reset must write neither fence half, before %+v after %+v", halvesBefore, halvesAfter)
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			databasePath := createCLIResetDatabase(t)
+			createCLIResetUser(t, databasePath, "cli-reset-unfenced@example.com", "StrongPass1")
+			commandPath, observedPath := testCase.arrange(t, databasePath)
+			// The halves must come out of the refusal exactly as they went in,
+			// not only the account row.
+			halvesBefore := readFenceHalves(t, databasePath, observedPath)
+
+			err := runResetPasswordCommand(
+				db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+				[]string{"cli-reset-unfenced@example.com"},
+				commandPath,
+				func() ([]byte, error) { return []byte("EvenStronger2"), nil },
+				io.Discard,
+			)
+			if err == nil || !strings.Contains(err.Error(), "Nothing was changed") {
+				t.Fatalf("expected the reset to be refused, got %v", err)
+			}
+			if !strings.Contains(err.Error(), testCase.wantState) {
+				t.Fatalf("expected the refusal to contain %q (it must stop at the fence gate), got %v", testCase.wantState, err)
+			}
+
+			unchanged := loadCLIResetUser(t, databasePath, "cli-reset-unfenced@example.com")
+			if bcrypt.CompareHashAndPassword([]byte(unchanged.PasswordHash), []byte("StrongPass1")) != nil {
+				t.Fatal("expected the stored password hash to be untouched by a refused reset")
+			}
+			if unchanged.MustChangePassword {
+				t.Fatal("expected must_change_password to be untouched by a refused reset")
+			}
+			if halvesAfter := readFenceHalves(t, databasePath, observedPath); halvesAfter != halvesBefore {
+				t.Fatalf("a refused reset must write neither fence half, before %+v after %+v", halvesBefore, halvesAfter)
+			}
+		})
 	}
 }
 
