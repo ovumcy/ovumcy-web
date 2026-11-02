@@ -464,11 +464,12 @@ func TestOnboardingWriteRoutesLetOnlyAClientWithoutAPageOmitTheBinding(t *testin
 // need it. Each one either demands a credential the request itself carries
 // (the account's current password, or a code bound to the account's own sealed
 // setup cookie), so a page of another account cannot send it for the account
-// now signed in, or it changes no setting and no data.
+// now signed in; or it writes only after a fresh provider sign-in as the
+// session account's own identity; or it changes no setting and no data.
 var unguardedMutationReasons = map[string]string{
 	"DELETE /api/v1/users/current":                     "erases the account; demands the current password",
 	"PUT /api/v1/users/current/password":               "changes the credential; demands the current password",
-	"POST /api/v1/users/current/password/step-up":      "starts a provider re-authentication; stores nothing on the account",
+	"POST /api/v1/users/current/password/step-up":      "seals a password for the session account; it is written only after a fresh provider sign-in as that account's own identity",
 	"POST /api/v1/users/current/recovery-code":         "regenerates the recovery code; demands the current password",
 	"PUT /api/v1/users/current/2fa":                    "verifies a code against the owner-bound sealed enrollment cookie",
 	"DELETE /api/v1/users/current/2fa":                 "disables two-factor; demands the current password",
