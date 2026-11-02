@@ -375,7 +375,7 @@ var calendarFeedFenceConfirmRefusals = map[calendarFeedFenceConfirmState]calenda
 	},
 	calendarFeedFenceStateNeverArmed: {
 		sentence: func(fencePath string, _ error) string {
-			return "neither " + security.CalendarFeedFencePathEnv + " at " + fencePath + " nor the database holds a marker."
+			return "neither " + security.CalendarFeedFencePathEnv + " at " + fencePath + " nor the database holds a marker, or the server's first start with this fence has not finished."
 		},
 		remedy: giveTheServerAWritableFence,
 	},

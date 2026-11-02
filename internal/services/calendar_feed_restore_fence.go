@@ -440,8 +440,9 @@ func (err *CalendarFeedFenceStepError) Unwrap() []error {
 // is willing to move forward from: both already holding the SAME token.
 // AnchorFound and StoredFound report which half(s) held one, because the
 // operator remedy differs by shape: both false means the server has not booted
-// with this fence since it last held a token — never at all, or an unfenced
-// start dropped the database half and the file went with the volume — and
+// with this fence since it last held a token — never at all, an unfenced start
+// dropped the database half and the file went with the volume, or a first boot
+// left its pending pair unfinished (WEB-456) — and
 // arming it is Enforce's job on that next boot, never this method's — while any
 // other combination is the same disagreement a restored backup produces. Either way AdvanceConfirmed writes
 // nothing: a caller that cannot prove continuity must refuse, not guess which
