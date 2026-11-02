@@ -225,7 +225,7 @@ func (fence *CalendarFeedRestoreFence) enforce(ctx context.Context, refuseUnanch
 			return CalendarFeedRestoreFenceOutcome{}, err
 		}
 		if !unanchoredHistory {
-			return fence.record(ctx, CalendarFeedRestoreFenceOutcome{FirstBoot: true}, 0, refuseUnanchored)
+			return fence.record(ctx, refuseUnanchored)
 		}
 		return fence.revokeRestored(ctx, CalendarFeedRestoreFenceOutcome{ContinuityBroken: true, UnanchoredHistory: true}, refuseUnanchored)
 	}
@@ -515,7 +515,7 @@ func (fence *CalendarFeedRestoreFence) CheckContinuity(ctx context.Context) erro
 // confirmContinuity is the read both CheckContinuity and AdvanceConfirmed
 // refuse on. The caller holds fence.writing.
 func (fence *CalendarFeedRestoreFence) confirmContinuity(ctx context.Context) error {
-	anchored, anchorFound, _, err := fence.readAnchor()
+	anchored, anchorFound, pending, err := fence.readAnchor()
 	if err != nil {
 		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceUnreachable, Cause: err}
 	}
@@ -525,6 +525,11 @@ func (fence *CalendarFeedRestoreFence) confirmContinuity(ctx context.Context) er
 		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceMarkerUnavailable, Cause: err}
 	}
 
+	if pending != "" && storedFound && stored == pending {
+		// An unfinished first boot is the "not armed yet" shape: the server has
+		// not completed a boot with this fence, and its next start finishes it.
+		return &CalendarFeedFenceContinuityError{}
+	}
 	if !continuityHolds(anchorFound, storedFound, anchored, stored) {
 		return &CalendarFeedFenceContinuityError{AnchorFound: anchorFound, StoredFound: storedFound}
 	}
@@ -591,13 +596,14 @@ func (fence *CalendarFeedRestoreFence) readAnchor() (anchored string, found bool
 // records erases — while the reverse order would clear the evidence first and
 // let a crash before the token write leave a database that ran unanchored with
 // nothing left saying so. Fail closed on the way in, tidy up on the way out.
-func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome CalendarFeedRestoreFenceOutcome, disarmed int64, refuseUnanchored bool) (CalendarFeedRestoreFenceOutcome, error) {
+func (fence *CalendarFeedRestoreFence) record(ctx context.Context, refuseUnanchored bool) (CalendarFeedRestoreFenceOutcome, error) {
+	outcome := CalendarFeedRestoreFenceOutcome{FirstBoot: true}
 	token, err := security.NewCalendarFeedFenceToken()
 	if err != nil {
 		return outcome, err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
 	if err := fence.anchor.Write(calendarFeedFenceFirstBootPrefix + token); err != nil {
-		return fence.disarmUnanchored(ctx, err, disarmed, refuseUnanchored)
+		return fence.disarmUnanchored(ctx, err, 0, refuseUnanchored)
 	}
 	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
 		return outcome, err
@@ -609,6 +615,9 @@ func (fence *CalendarFeedRestoreFence) record(ctx context.Context, outcome Calen
 // database half already holds, then clears the unanchored stamp. A failed file
 // write here is an anchor failure like any other: refused under
 // EnforceRequired, with the pending pair left for the next boot to finish.
+// Under CALENDAR_FEED_FENCE_OPTOUT it disarms, drops the database half and
+// stamps, so the next fenced boot takes the UnanchoredHistory pass — the same
+// declared residual as any other transient anchor failure under the opt-out.
 func (fence *CalendarFeedRestoreFence) finishFirstBoot(ctx context.Context, token string, refuseUnanchored bool) (CalendarFeedRestoreFenceOutcome, error) {
 	if err := fence.anchor.Write(token); err != nil {
 		return fence.disarmUnanchored(ctx, err, 0, refuseUnanchored)
@@ -620,8 +629,9 @@ func (fence *CalendarFeedRestoreFence) finishFirstBoot(ctx context.Context, toke
 	return outcome, nil
 }
 
-// storeToken is record's database half: the token the file already holds,
-// then the unanchored stamp's erasure, in that order.
+// storeToken is revokeRestored's database half: the token the file already
+// holds, then the unanchored stamp's erasure, in that order. The first boot
+// does not use it; record says why.
 func (fence *CalendarFeedRestoreFence) storeToken(ctx context.Context, outcome CalendarFeedRestoreFenceOutcome, token string) (CalendarFeedRestoreFenceOutcome, error) {
 	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
 		return outcome, err
