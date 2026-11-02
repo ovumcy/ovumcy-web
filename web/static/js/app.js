@@ -2255,6 +2255,17 @@
     return !(parsed && isAccountChangedNoticeKey(parsed.key));
   }
 
+  // A refused save is reported in the status region at the foot of the form,
+  // which on a desktop viewport can sit below the fold while the chosen value
+  // stays highlighted as if it had been saved. The notice is scrolled to the
+  // nearest edge of the viewport (no jump when it is already on screen), so a
+  // failure is at least as visible as the success toast.
+  function revealDaySaveNotice(notice) {
+    if (notice && typeof notice.scrollIntoView === "function") {
+      notice.scrollIntoView({ block: "nearest" });
+    }
+  }
+
   function renderDaySaveFailure(form, message, origin, messageKey) {
     var target = form && form.querySelector ? form.querySelector(".save-status") : null;
     if (!target || !message) {
@@ -2292,6 +2303,7 @@
       notice.appendChild(daySaveConflictChoice(form, "mine", "data-day-conflict-keep-label", "Keep mine"));
       notice.appendChild(daySaveConflictChoice(form, "theirs", "data-day-conflict-take-label", "Take theirs"));
       target.replaceChildren(notice);
+      revealDaySaveNotice(notice);
       return true;
     }
 
@@ -2301,6 +2313,7 @@
       // either. The entry stays in the form, untouched. The read-side key is the
       // dashboard's header refresh, refused for the same reason.
       target.replaceChildren(notice);
+      revealDaySaveNotice(notice);
       return true;
     }
 
@@ -2319,6 +2332,7 @@
     notice.appendChild(retry);
 
     target.replaceChildren(notice);
+    revealDaySaveNotice(notice);
     return true;
   }
 

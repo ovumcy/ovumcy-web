@@ -24,8 +24,12 @@ type CalendarLegend struct {
 	// solid dot alone, for a view that draws no unconfirmed projection.
 	OvulationTentative bool
 	OvulationEstimate  bool
-	Today              bool
-	LoggedEntry        bool
+	// PreFertile is true when a cell resolves to the pre-fertile fill itself:
+	// a pre-fertile day that no higher rung of the cell ladder (period, start
+	// window, projected bleeding, ovulation, fertile window) repaints.
+	PreFertile  bool
+	Today       bool
+	LoggedEntry bool
 }
 
 // Any reports whether the legend has an entry at all, so the template can leave
@@ -33,7 +37,7 @@ type CalendarLegend struct {
 func (legend CalendarLegend) Any() bool {
 	return legend.PeriodRecorded || legend.PredictedPeriod || legend.StartWindow ||
 		legend.Fertility || legend.PredictedPeriodInFertility ||
-		legend.OvulationTentative || legend.OvulationEstimate ||
+		legend.PreFertile || legend.OvulationTentative || legend.OvulationEstimate ||
 		legend.Today || legend.LoggedEntry
 }
 
@@ -49,8 +53,19 @@ func BuildCalendarLegend(days []CalendarDayState) CalendarLegend {
 		legend.PredictedPeriodInFertility = legend.PredictedPeriodInFertility || day.IsPredictedFertileOverlap || (day.IsPredictedStartWindow && inFertileWindow)
 		legend.OvulationTentative = legend.OvulationTentative || day.IsTentativeOvulation
 		legend.OvulationEstimate = legend.OvulationEstimate || day.IsOvulation
+		legend.PreFertile = legend.PreFertile || paintsPreFertile(day)
 		legend.Today = legend.Today || day.IsToday
 		legend.LoggedEntry = legend.LoggedEntry || day.HasData || day.HasSex
 	}
 	return legend
+}
+
+// paintsPreFertile mirrors the cell ladder: pre-fertile is its lowest rung, so
+// a day carrying any state above it paints that state, and a legend entry for
+// pre-fertile would explain a fill no cell wears.
+func paintsPreFertile(day CalendarDayState) bool {
+	return day.IsPreFertile && !day.IsPeriod && !day.IsPredictedStartWindow &&
+		!day.IsPredictedFertileOverlap && !day.IsPredicted &&
+		!day.IsTentativeOvulation && !day.IsOvulation &&
+		!day.IsFertilityPeak && !day.IsFertilityEdge && !day.IsFertility
 }

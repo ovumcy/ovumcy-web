@@ -95,6 +95,7 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 		} else if state.IsPreFertile {
 			cellClass += " calendar-cell-pre-fertile"
 			stateKey = "pre-fertile"
+			stateNames = []string{"calendar.legend.pre_fertile"}
 		}
 		if !state.InMonth {
 			cellClass += " calendar-cell-out"

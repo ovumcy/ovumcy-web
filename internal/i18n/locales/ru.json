@@ -595,6 +595,7 @@
   "calendar.legend.predicted_period": "Прогноз: дни месячных",
   "calendar.legend.start_window": "Прогноз: окно начала",
   "calendar.legend.fertility": "Фертильное окно (оценка)",
+  "calendar.legend.pre_fertile": "Дни перед фертильным окном (оценка)",
   "calendar.legend.predicted_period_in_fertility": "Прогноз месячных внутри фертильного окна",
   "calendar.legend.ovulation_group": "Предполагаемая овуляция (штрих — сдвиг температуры ещё не подтверждён)",
   "calendar.legend.ovulation_estimate": "Предполагаемая овуляция",

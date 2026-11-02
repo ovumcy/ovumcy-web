@@ -584,6 +584,7 @@
   "calendar.legend.predicted_period": "Vorhergesagte Periodentage",
   "calendar.legend.start_window": "Vorhergesagtes Startfenster",
   "calendar.legend.fertility": "Fruchtbares Fenster (Schätzung)",
+  "calendar.legend.pre_fertile": "Tage vor dem fruchtbaren Fenster (Schätzung)",
   "calendar.legend.predicted_period_in_fertility": "Vorhergesagte Periode im fruchtbaren Fenster",
   "calendar.legend.ovulation_group": "Geschätzter Eisprung (Strich: noch keine Temperaturverschiebung)",
   "calendar.legend.ovulation_estimate": "Geschätzter Eisprung",

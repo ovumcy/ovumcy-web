@@ -423,7 +423,7 @@ func TestBuildCalendarDaysMapsStateToTemplateClasses(t *testing.T) {
 // the ovulation mark and the logged-entry markers (WEB-227). Each name is the
 // legend's own entry for that concept, so the two can never disagree — except
 // the fertile window, which the name calls an estimate the way the ovulation
-// mark does; a tier the legend does not list (pre-fertile) adds nothing.
+// mark does; pre-fertile has a legend entry of its own and names it.
 func TestBuildCalendarDaysNamesWhatTheCellDraws(t *testing.T) {
 	handler := &Handler{}
 	days := handler.buildCalendarDays([]services.CalendarDayState{
@@ -450,7 +450,7 @@ func TestBuildCalendarDaysNamesWhatTheCellDraws(t *testing.T) {
 		{"calendar.legend.start_window"},
 		{"calendar.legend.predicted_period_in_fertility"},
 		{"calendar.legend.predicted_period"},
-		nil,
+		{"calendar.legend.pre_fertile"},
 		nil,
 	}
 	for index, day := range days {
