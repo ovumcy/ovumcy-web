@@ -584,6 +584,7 @@
   "calendar.legend.predicted_period": "Días de periodo previstos",
   "calendar.legend.start_window": "Ventana de inicio prevista",
   "calendar.legend.fertility": "Ventana fértil (estimación)",
+  "calendar.legend.pre_fertile": "Días antes de la ventana fértil (estimación)",
   "calendar.legend.predicted_period_in_fertility": "Periodo previsto dentro de la ventana fértil",
   "calendar.legend.ovulation_group": "Ovulación estimada (guion: aún sin cambio térmico)",
   "calendar.legend.ovulation_estimate": "Ovulación estimada",

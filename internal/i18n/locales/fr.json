@@ -731,6 +731,7 @@
   "calendar.legend.predicted_period": "Jours de règles prédits",
   "calendar.legend.start_window": "Fenêtre de début prédite",
   "calendar.legend.fertility": "Fenêtre fertile (estimation)",
+  "calendar.legend.pre_fertile": "Jours avant la fenêtre fertile (estimation)",
   "calendar.legend.predicted_period_in_fertility": "Règles prédites dans la fenêtre fertile",
   "calendar.legend.ovulation_group": "Ovulation estimée (tiret : pas encore de hausse de température)",
   "calendar.legend.ovulation_estimate": "Ovulation estimée",

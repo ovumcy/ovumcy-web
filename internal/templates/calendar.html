@@ -91,6 +91,9 @@
         {{if .CalendarLegend.PredictedPeriodInFertility}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-overlap-period-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period_in_fertility"}}</span>
         {{end}}
+        {{if .CalendarLegend.PreFertile}}
+        <span class="legend-item" data-legend-key="calendar.legend.pre_fertile"><span class="legend-swatch legend-swatch-pre-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.pre_fertile"}}</span>
+        {{end}}
         {{if .CalendarLegend.OvulationTentative}}
         <span class="legend-item"><span class="calendar-ovulation-dot" aria-hidden="true"></span><span class="calendar-ovulation-dash" aria-hidden="true"></span>{{t .Messages "calendar.legend.ovulation_group"}}</span>
         {{else if .CalendarLegend.OvulationEstimate}}

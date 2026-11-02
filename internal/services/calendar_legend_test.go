@@ -26,7 +26,9 @@ func TestBuildCalendarLegendNamesOnlyTheStatesTheGridCarries(t *testing.T) {
 		{name: "today", day: CalendarDayState{IsToday: true}, want: CalendarLegend{Today: true}},
 		{name: "logged entry", day: CalendarDayState{HasData: true}, want: CalendarLegend{LoggedEntry: true}},
 		{name: "logged sex", day: CalendarDayState{HasSex: true}, want: CalendarLegend{LoggedEntry: true}},
-		{name: "a flag the grid never paints is not an entry", day: CalendarDayState{IsPreFertile: true}, want: CalendarLegend{}},
+		{name: "pre-fertile day", day: CalendarDayState{IsPreFertile: true}, want: CalendarLegend{PreFertile: true}},
+		{name: "pre-fertile day repainted by the fertile window", day: CalendarDayState{IsPreFertile: true, IsFertilityEdge: true}, want: CalendarLegend{Fertility: true}},
+		{name: "pre-fertile day repainted by a projected period", day: CalendarDayState{IsPreFertile: true, IsPredicted: true}, want: CalendarLegend{PredictedPeriod: true}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
