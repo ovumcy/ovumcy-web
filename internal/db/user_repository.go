@@ -1396,9 +1396,14 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context,
 // the same write that resets the credential and revokes sessions.
 //
 // clearSecondFactors is `reset-password --full`: the same UPDATE also clears
-// TOTP and the recovery code, and the same transaction deletes every linked
-// OIDC identity, so a factor an attacker enrolled or linked does not survive a
-// compromise recovery. The delete runs after the UPDATE, which holds the owner
+// TOTP and the recovery code and withdraws the webhook endpoint, and the same
+// transaction deletes every linked OIDC identity, so a factor an attacker
+// enrolled or linked, or an endpoint they pointed reminders at, does not
+// survive a compromise recovery. The endpoint is withdrawn, not merely
+// disabled (WEB-428): a disabled row keeps the intruder's URL one toggle away
+// from posting again, and the config-version bump is what makes a delivery
+// pass that already read the old row discard its claim, as RevokeRestoredAccess
+// does for the same columns. The delete runs after the UPDATE, which holds the owner
 // row lock, so a concurrent link either committed before it (and is deleted
 // here) or fails its session-version compare-and-set after it. Regression:
 // TestForceResetFullDeletesAnIdentityLinkedConcurrentlyOnPostgres.
@@ -1434,6 +1439,10 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 				"totp_last_used_step":       0,
 				"recovery_code_hash":        "",
 				"recovery_code_revealed_at": nil,
+				"webhook_enabled":           false,
+				"webhook_url":               "",
+				"webhook_last_delivered_at": nil,
+				"webhook_config_version":    gorm.Expr("webhook_config_version + 1"),
 			})
 		}
 		result := query.Updates(columns)

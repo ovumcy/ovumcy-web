@@ -109,10 +109,14 @@ func TestEnforceCalendarFeedRestoreFenceRefusesTheBootWithoutAFence(t *testing.T
 	}
 }
 
-// TestEnforceCalendarFeedRestoreFenceRefusesAnUnwritableFence covers the
-// second refusal: a fence that reads but cannot be written is only found
-// inside Enforce, and is refused there too.
-func TestEnforceCalendarFeedRestoreFenceRefusesAnUnwritableFence(t *testing.T) {
+// TestEnforceCalendarFeedRestoreFenceRefusesAnUnwritableFenceWithoutCostingTheNextBoot
+// covers the second refusal across two boots (WEB-427): a fence that reads but
+// cannot be written is only found inside the pass, and is refused there too,
+// still without writing anything. The operator then fixes the mount, and the
+// next boot is the upgrade's first boot — not a restore — so every owner keeps
+// their password and session. A stamp left by the refused boot made that boot
+// revoke every local sign-in on the instance.
+func TestEnforceCalendarFeedRestoreFenceRefusesAnUnwritableFenceWithoutCostingTheNextBoot(t *testing.T) {
 	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "fence-unwritable.db")})
 	if err != nil {
 		t.Fatalf("OpenDatabase: %v", err)
@@ -120,14 +124,34 @@ func TestEnforceCalendarFeedRestoreFenceRefusesAnUnwritableFence(t *testing.T) {
 	t.Cleanup(func() { closeDatabase(database) })
 	// A parent directory that does not exist: the read finds no token yet on
 	// every platform, and the write, which never creates the parent, fails.
-	fencePath := filepath.Join(t.TempDir(), "absent", "calendar-feed.fence")
-	_, fence := bootstrap.BuildRepositories(database, fencePath)
+	fenceDir := filepath.Join(t.TempDir(), "absent")
+	fencePath := filepath.Join(fenceDir, "calendar-feed.fence")
+	repositories, fence := bootstrap.BuildRepositories(database, fencePath)
+	owner := seedOwner(t, repositories, "fence-upgrade@example.com", 14)
 
-	if err := fence.CheckAnchor(); err != nil {
-		t.Fatalf("this fence must pass the read-only pre-check so the refusal comes from Enforce, got %v", err)
-	}
 	if _, err := enforceCalendarFeedRestoreFence(context.Background(), fence, false); !errors.Is(err, errCalendarFeedFenceRequired) {
 		t.Fatalf("an unwritable fence must refuse the boot, got %v", err)
+	}
+	if _, found, err := repositories.AppState.Get(context.Background(), models.AppStateKeyCalendarFeedFenceUnanchored); err != nil || found {
+		t.Fatalf("a refused boot must not stamp the database (found=%v, err=%v)", found, err)
+	}
+
+	if err := os.Mkdir(fenceDir, 0o700); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if _, err := enforceCalendarFeedRestoreFence(context.Background(), fence, false); err != nil {
+		t.Fatalf("the boot after the mount is fixed must start, got %v", err)
+	}
+	if storedFenceMarker(t, repositories) == "" {
+		t.Fatal("the boot after the mount is fixed must record the fence")
+	}
+	after, err := repositories.Users.FindByID(context.Background(), owner.ID)
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if after.PasswordHash != owner.PasswordHash || !after.LocalAuthEnabled || after.AuthSessionVersion != owner.AuthSessionVersion {
+		t.Fatalf("a refused boot must not cost the next boot a revocation (hash kept=%v, local=%v, session version %d -> %d)",
+			after.PasswordHash == owner.PasswordHash, after.LocalAuthEnabled, owner.AuthSessionVersion, after.AuthSessionVersion)
 	}
 }
 

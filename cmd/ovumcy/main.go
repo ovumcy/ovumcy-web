@@ -218,19 +218,18 @@ const calendarFeedFenceOptOutEnv = security.CalendarFeedFenceOptOutEnv
 var errCalendarFeedFenceRequired = errors.New("calendar-feed restore fence required")
 
 // enforceCalendarFeedRestoreFence is mustEnforceCalendarFeedRestoreFence
-// without the exit. The anchor is checked BEFORE Enforce so a refused boot
-// writes nothing: Enforce's unanchored path disarms and stamps the database,
-// and a stamp from a boot that never served would cost every owner a sign-in
-// on the first start after the operator mounts the fence. A fence that reads
-// but cannot be written is only found inside Enforce, so its outcome is
-// checked again after it.
+// without the exit. A refused boot writes nothing: Enforce's unanchored path
+// disarms and stamps the database, and a stamp from a boot that never served
+// would cost every owner a sign-in on the first start after the operator
+// mounts the fence. A fence that reads but cannot be written is only found
+// inside the pass, so without the opt-out the pass runs as EnforceRequired,
+// which refuses that fence before its first write too (WEB-427).
 func enforceCalendarFeedRestoreFence(ctx context.Context, fence *services.CalendarFeedRestoreFence, optOut bool) (string, error) {
-	if !optOut {
-		if err := fence.CheckAnchor(); err != nil {
-			return "", calendarFeedFenceRefusal(err)
-		}
+	enforce := fence.EnforceRequired
+	if optOut {
+		enforce = fence.Enforce
 	}
-	outcome, err := fence.Enforce(ctx)
+	outcome, err := enforce(ctx)
 	if err != nil {
 		return "", fmt.Errorf("calendar-feed restore fence failed: %w", err) // codecov:ignore -- reachable only when the DB fails between migration and this first read
 	}
