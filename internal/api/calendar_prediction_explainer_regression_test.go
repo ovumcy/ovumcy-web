@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/net/html"
@@ -85,6 +86,48 @@ func TestCalendarRendersSharedPredictionExplainerKeys(t *testing.T) {
 	}
 	if got := htmlAttr(explainer, "data-explainer-secondary-key"); got != "prediction.explainer.factor_context" {
 		t.Fatalf("expected secondary explainer key %q, got %q", "prediction.explainer.factor_context", got)
+	}
+
+	// The key attributes name what the template meant; the paragraphs must read
+	// that key's own translation in every locale.
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	languages := manager.SupportedLanguages()
+	if len(languages) < 6 {
+		t.Fatalf("expected at least the six shipped locales, got %v", languages)
+	}
+	for _, language := range languages {
+		t.Run(language, func(t *testing.T) {
+			localized := httptest.NewRequest(http.MethodGet, "/calendar?month="+today.Format("2006-01")+"&day="+today.Format("2006-01-02"), nil)
+			localized.Header.Set("Accept-Language", language)
+			localized.Header.Set("Cookie", authCookie)
+			localizedResponse := mustAppResponse(t, app, localized)
+			assertStatusCode(t, localizedResponse, http.StatusOK)
+			page := mustParseHTMLDocument(t, mustReadBodyString(t, localizedResponse.Body))
+			block := htmlFindElement(page, htmlNodeHasAttr("data-calendar-prediction-explainer"))
+			if block == nil {
+				t.Fatal("expected calendar prediction explainer block")
+			}
+			paragraphs := htmlFindElements(block, func(node *html.Node) bool {
+				return node.Type == html.ElementNode && node.Data == "p"
+			})
+			keys := []string{"prediction.explainer.irregular_ranges", "prediction.explainer.factor_context"}
+			if len(paragraphs) != len(keys) {
+				t.Fatalf("expected %d explainer paragraphs, got %d", len(keys), len(paragraphs))
+			}
+			messages := manager.Messages(language)
+			for index, key := range keys {
+				want := normalizeHTMLText(messages[key])
+				if want == "" || want == key {
+					t.Fatalf("locale %q has no translation for %s", language, key)
+				}
+				if got := normalizeHTMLText(htmlNodeText(paragraphs[index])); got != want {
+					t.Fatalf("[%s] the paragraph behind %s reads %q, want the locale's translation %q", language, key, got, want)
+				}
+			}
+		})
 	}
 }
 
