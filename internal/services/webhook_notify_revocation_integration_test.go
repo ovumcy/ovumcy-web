@@ -131,8 +131,59 @@ func (fixture webhookRevocationFixture) runPass(t *testing.T, revoke func()) (No
 	return report, deliverer
 }
 
+// revokingDeliverer performs a revocation while the first POST is on the wire:
+// after the claim has been won, before the delivery mark is written.
+type revokingDeliverer struct {
+	stubDeliverer
+	revoke func()
+	done   bool
+}
+
+func (deliverer *revokingDeliverer) Deliver(ctx context.Context, decryptedURL string, payload WebhookPayload) error {
+	err := deliverer.stubDeliverer.Deliver(ctx, decryptedURL, payload)
+	if !deliverer.done {
+		deliverer.done = true
+		deliverer.revoke()
+	}
+	return err
+}
+
+// TestAFullResetWhileAClaimedPOSTIsOnTheWireCreditsNoDelivery is WEB-457's
+// check of the epoch `reset-password --full` bumps. A claim the pass already
+// won cannot be recalled, so the POST in flight still lands; what the bump
+// must stop is the pass crediting that POST to the configuration the operator
+// just withdrew. The enabled flag the reset also clears is not consulted by
+// the delivery mark, so the epoch is the only thing refusing it here.
+func TestAFullResetWhileAClaimedPOSTIsOnTheWireCreditsNoDelivery(t *testing.T) {
+	fixture := newWebhookRevocationFixture(t, "wh-full-reset-in-flight")
+	deliverer := &revokingDeliverer{revoke: func() {
+		if err := fixture.repo.ForceResetPasswordAndRevokeSessions(context.Background(), fixture.ownerID, "operator-set-hash", true); err != nil {
+			t.Fatalf("force a full reset: %v", err)
+		}
+	}}
+	service := NewWebhookNotifyService(fixture.repo, &revokingLogReader{logs: fixture.logs}, stubDecryptor{}, deliverer,
+		stubDisclaimer{text: "Predictions are estimates, not medical advice or a method of contraception."})
+
+	if _, err := service.RunOnce(context.Background(), fixture.now, time.UTC, false); err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if delivered := deliverer.deliveries(); len(delivered) != 1 {
+		t.Fatalf("fixture: the claimed POST should have left before the reset, got %d deliveries", len(delivered))
+	}
+	var after models.User
+	if err := fixture.database.First(&after, fixture.ownerID).Error; err != nil {
+		t.Fatalf("reload owner: %v", err)
+	}
+	if after.WebhookURL != "" || after.WebhookEnabled {
+		t.Fatalf("fixture: the full reset should have withdrawn the endpoint, got %q/%t", after.WebhookURL, after.WebhookEnabled)
+	}
+	if after.WebhookLastDeliveredAt != nil {
+		t.Fatalf("a POST claimed under the configuration the reset withdrew was credited as delivered at %v", after.WebhookLastDeliveredAt)
+	}
+}
+
 // TestNotifyPassDeliversWhenTheConfigurationStands is the positive control for
-// the three revocation cases below. Without it each of them would pass just as
+// the revocation cases below. Without it each of them would pass just as
 // well against a fixture that was never due, a decryptor that never resolved, or
 // a claim predicate that refuses everything.
 func TestNotifyPassDeliversWhenTheConfigurationStands(t *testing.T) {
@@ -248,6 +299,16 @@ func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 				}
 				if err := fixture.repo.ClearAllDataAndResetSettings(context.Background(), fixture.ownerID, current.AuthSessionVersion); err != nil {
 					t.Fatalf("clear all data: %v", err)
+				}
+			},
+		},
+		{
+			// `ovumcy reset-password --full` (WEB-428, WEB-457): the operator
+			// withdraws an endpoint an intruder may have set while a pass holds it.
+			name: "operator full reset",
+			revoke: func(t *testing.T, fixture webhookRevocationFixture) {
+				if err := fixture.repo.ForceResetPasswordAndRevokeSessions(context.Background(), fixture.ownerID, "operator-set-hash", true); err != nil {
+					t.Fatalf("force a full reset: %v", err)
 				}
 			},
 		},

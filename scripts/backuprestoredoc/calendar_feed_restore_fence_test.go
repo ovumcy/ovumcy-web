@@ -2,6 +2,7 @@ package backuprestoredoc
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -351,7 +352,9 @@ func runFenceGapScenario(t *testing.T, instance runbookInstance) {
 // assertUnanchoredBoot is a start with no fence configured at all. It runs the
 // same two passes main runs, in main's order, and asserts the fence reports
 // itself unavailable rather than quietly arming: a run in which this boot found
-// a usable fence would be measuring the wrong instance entirely.
+// a usable fence would be measuring the wrong instance entirely. Only an
+// instance with CALENDAR_FEED_FENCE_OPTOUT boots like this, so it is the one
+// helper here that runs Enforce rather than EnforceRequired.
 func assertUnanchoredBoot(t *testing.T, repos *db.Repositories) {
 	t.Helper()
 
@@ -421,12 +424,17 @@ func armRunbookCalendarFeed(t *testing.T, repos *db.Repositories) armedRunbookFe
 // bootCalendarFeedPasses runs the two boot passes main runs, in main's order,
 // against this database. Both are here on purpose: the sentinel's presence is
 // what makes the final assertion — that it reports nothing while the fence
-// disarms — mean something.
+// disarms — mean something. It is a default boot, without
+// CALENDAR_FEED_FENCE_OPTOUT, so the fence runs as EnforceRequired and an
+// unanchored outcome is the refusal main would exit on.
 func bootCalendarFeedPasses(t *testing.T, repos *db.Repositories, fencePath string) services.CalendarFeedRestoreFenceOutcome {
 	t.Helper()
 
 	fence := services.NewCalendarFeedRestoreFence(repos.AppState, repos.Users, security.NewCalendarFeedFenceFile(fencePath))
-	fenceOutcome, err := fence.Enforce(context.Background())
+	fenceOutcome, err := fence.EnforceRequired(context.Background())
+	if err == nil && fenceOutcome.Unanchored {
+		err = fmt.Errorf("a default boot refuses an unusable fence: %w", fenceOutcome.UnanchoredCause)
+	}
 	if err != nil {
 		t.Fatalf("the restore fence failed: %v", err)
 	}

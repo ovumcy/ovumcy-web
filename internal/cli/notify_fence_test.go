@@ -64,7 +64,7 @@ func TestNotifyRefusesARestoredDatabaseUntilTheServerBoots(t *testing.T) {
 	}
 
 	withNotifyRepositories(t, databasePath, fencePath, func(_ *db.Repositories, fence *services.CalendarFeedRestoreFence) {
-		outcome, err := fence.Enforce(context.Background())
+		outcome, err := fence.EnforceRequired(context.Background())
 		if err != nil || !outcome.ContinuityBroken {
 			t.Fatalf("server boot over the restore: outcome %+v, err %v", outcome, err)
 		}
