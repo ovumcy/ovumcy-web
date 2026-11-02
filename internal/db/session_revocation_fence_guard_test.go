@@ -103,7 +103,8 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 		if object == nil {
 			t.Fatalf("internal/models declares no %s", name)
 		}
-		rowTypes = append(rowTypes, types.NewPointer(object.Type()))
+		// gorm deletes from a pointer or a value alike.
+		rowTypes = append(rowTypes, object.Type(), types.NewPointer(object.Type()))
 	}
 	isRevocationRow := func(expr ast.Expr) bool {
 		kind := info.TypeOf(expr)
