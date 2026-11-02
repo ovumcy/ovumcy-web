@@ -158,7 +158,9 @@ func TestNotifyPassDeliversWhenTheConfigurationStands(t *testing.T) {
 // replacement and a removal all go through the settings save, which deliberately
 // leaves the watermarks alone, so the stale snapshot's compare-and-set still
 // held; a clear-data wipe NULLs them, which re-opened the first-ever-send branch
-// outright.
+// outright. The cases are the disable, the replacement, the endpoint removal,
+// the lead-window change (every one of them a settings write that leaves the
+// watermarks alone) and the clear-data wipe.
 func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -191,6 +193,22 @@ func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 					ExpectedConfigVersion: 1,
 				}); err != nil {
 					t.Fatalf("replace the endpoint: %v", err)
+				}
+			},
+		},
+		{
+			name: "endpoint removed",
+			revoke: func(t *testing.T, fixture webhookRevocationFixture) {
+				if err := fixture.repo.RemoveWebhookDestination(context.Background(), fixture.ownerID); err != nil {
+					t.Fatalf("remove the endpoint: %v", err)
+				}
+			},
+		},
+		{
+			name: "lead window changed",
+			revoke: func(t *testing.T, fixture webhookRevocationFixture) {
+				if err := fixture.repo.UpdateReminderLeadDays(context.Background(), fixture.ownerID, 1); err != nil {
+					t.Fatalf("change the lead window: %v", err)
 				}
 			},
 		},

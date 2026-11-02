@@ -535,6 +535,78 @@ func TestCalendarFeedRestoreFenceAdvanceProceedsOverHalvesThatAlreadyDisagree(t 
 	}
 }
 
+// TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing tables
+// every shape of the two halves under an unwritable fence file. Only the pair
+// that agrees on one token is continuity worth keeping, so only it refuses;
+// every other shape (a token mismatch, either half alone, an unreadable file)
+// proceeds and moves the database half, because refusing there would block an
+// owner revoking a leaked feed on a restored-but-unbooted database. A gate that
+// refuses whenever both halves hold a token, ignoring equality, fails the
+// mismatch row; one that refuses on any present half fails the one-half rows.
+func TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing(t *testing.T) {
+	const olderToken = "an-older-generation"
+	cases := []struct {
+		name        string
+		stored      map[string]string
+		anchor      *stubFenceAnchor
+		wantRefused bool
+	}{
+		{
+			name:        "the halves agree is the one pair that refuses",
+			stored:      map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor:      &stubFenceAnchor{value: fenceTestToken, found: true},
+			wantRefused: true,
+		},
+		{
+			name:   "the tokens differ",
+			stored: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: olderToken},
+			anchor: &stubFenceAnchor{value: fenceTestToken, found: true},
+		},
+		{
+			name:   "only the database half has a token",
+			stored: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor: &stubFenceAnchor{},
+		},
+		{
+			name:   "only the file half has a token",
+			stored: map[string]string{},
+			anchor: &stubFenceAnchor{value: fenceTestToken, found: true},
+		},
+		{
+			name:   "the file cannot be read",
+			stored: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor: &stubFenceAnchor{value: fenceTestToken, found: true, readErr: errors.New("permission denied")},
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			testCase.anchor.writeErr = errors.New("no space left on device")
+			appState := &stubFenceAppState{values: testCase.stored}
+			before := testCase.stored[models.AppStateKeyCalendarFeedRestoreFence]
+			fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, testCase.anchor)
+
+			err := fence.Advance(context.Background())
+			after := appState.values[models.AppStateKeyCalendarFeedRestoreFence]
+			if testCase.wantRefused {
+				if !errors.Is(err, ErrCalendarFeedFenceWriteFailed) {
+					t.Fatalf("agreeing halves under an unwritable file must refuse, got %v", err)
+				}
+				if after != before {
+					t.Fatalf("a refused advance must leave the database half alone, %q -> %q", before, after)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("halves that are not an agreeing pair must not block the write, got %v", err)
+			}
+			if after == "" || after == before {
+				t.Fatalf("the database half must move to a fresh token, %q -> %q", before, after)
+			}
+		})
+	}
+}
+
 // TestCalendarFeedRestoreFenceAdvanceOrDivergeBreaksTheFenceWhenTheFileRefuses
 // pins the fail-closed form for a write that must not be refused (a password
 // change, an erasure). It must not be reported as durable when it is not, so
