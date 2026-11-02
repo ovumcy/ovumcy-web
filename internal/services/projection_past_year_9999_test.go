@@ -229,10 +229,11 @@ func TestCalendarFeedLeavesOutAnEventWhoseEndPassesYear9999(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			body := string(buildTestFeedICS(CalendarFeedICSInput{
-				User:     lateYear9999Owner(),
-				Logs:     lateYear9999Starts(t, tc.lastStart),
-				Now:      mustParseDashboardDay(t, "9999-12-29"),
-				Location: time.UTC,
+				User:       lateYear9999Owner(),
+				Logs:       lateYear9999Starts(t, tc.lastStart),
+				Now:        mustParseDashboardDay(t, "9999-12-29"),
+				Location:   time.UTC,
+				Disclaimer: "estimate only",
 			}))
 			values := icsDateValues(body)
 			for _, value := range values {

@@ -428,36 +428,38 @@ func cmpStringSets(a, b []string) string {
 	return ""
 }
 
-// TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent records the
-// current behaviour when the localized disclaimer resolves to "": the builder has
-// no runtime guard, so every VEVENT is still written, each with an empty
-// DESCRIPTION line. This CONTRADICTS the documented invariant that every event
-// carries the medical-safety disclaimer: the invariant currently rests on the
-// locale catalogue never resolving to "" (guarded by a catalogue sweep), not on
-// this builder. The test pins the gap so closing it (suppress the feed, or refuse
-// the empty text) is a deliberate change that updates it.
-func TestBuildCalendarFeedICSWithAnEmptyDisclaimerStillEmitsEveryEvent(t *testing.T) {
+// TestBuildCalendarFeedICSRefusesABlankDisclaimer: when the localized
+// disclaimer resolves to "" (a nil provider, an unresolved copy key) or to
+// whitespace, the builder renders a well-formed feed with ZERO events instead of
+// events whose DESCRIPTION is empty. The control is the same input with a real
+// disclaimer, which must project events carrying it.
+func TestBuildCalendarFeedICSRefusesABlankDisclaimer(t *testing.T) {
 	input := CalendarFeedICSInput{
-		User:       predictableFeedUser(t, "2026-03-02"),
-		Logs:       predictableFeedLogs(t),
-		Now:        mustParseDashboardDay(t, "2026-03-20"),
-		Location:   time.UTC,
-		Disclaimer: "",
-	}
-
-	body := string(buildTestFeedICS(input))
-	events := strings.Count(body, "BEGIN:VEVENT")
-	if events == 0 {
-		t.Fatalf("fixture: the feed must project events:\n%s", body)
-	}
-	if got := strings.Count(body, "\r\nDESCRIPTION:\r\n"); got != events {
-		t.Fatalf("pinned: an empty disclaimer is currently emitted as an empty DESCRIPTION on every event (%d of %d); closing the gap should update this test\n%s", got, events, body)
+		User:     predictableFeedUser(t, "2026-03-02"),
+		Logs:     predictableFeedLogs(t),
+		Now:      mustParseDashboardDay(t, "2026-03-20"),
+		Location: time.UTC,
 	}
 
 	input.Disclaimer = "estimate only"
 	control := string(buildTestFeedICS(input))
+	events := strings.Count(control, "BEGIN:VEVENT")
+	if events == 0 {
+		t.Fatalf("fixture: the feed must project events:\n%s", control)
+	}
 	if got := strings.Count(control, "\r\nDESCRIPTION:estimate only\r\n"); got != events {
 		t.Fatalf("control: a non-empty disclaimer reaches every event: %d of %d", got, events)
+	}
+
+	for _, blank := range []string{"", "   ", "\t\n"} {
+		input.Disclaimer = blank
+		body := string(buildTestFeedICS(input))
+		if got := strings.Count(body, "BEGIN:VEVENT"); got != 0 {
+			t.Fatalf("a blank disclaimer %q still published %d events:\n%s", blank, got, body)
+		}
+		if !strings.HasPrefix(body, "BEGIN:VCALENDAR\r\n") || !strings.HasSuffix(body, "END:VCALENDAR\r\n") {
+			t.Fatalf("a refused feed must stay a well-formed VCALENDAR:\n%s", body)
+		}
 	}
 }
 
