@@ -23,35 +23,93 @@ import (
 func TestWebhookSetRefusesWithoutAConfirmedFence(t *testing.T) {
 	t.Parallel()
 
-	databasePath := createCLIWebhookDatabase(t)
-	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
-	fencePath := webhookTestFence(t, databasePath)
-	if err := runWebhookCommandWithFence(sqliteConfig(databasePath), testWebhookSecretKey, fencePath,
-		[]string{"set", owner.Email, "--enabled=true", "--url-stdin"}, strings.NewReader(testWebhookURLWithToken+"\n"), &bytes.Buffer{}); err != nil {
-		t.Fatalf("arm the webhook through a confirmed fence: %v", err)
+	// Every flag that changes what notify may deliver is a revoking write, so
+	// each is tried on its own: a gate skipped for one patch shape (wrapped in a
+	// condition on the flag it inspects) refuses the others and passes this
+	// table everywhere but that row.
+	revoking := []struct {
+		name          string
+		flag          string
+		stdin         string
+		startDisabled bool
+	}{
+		{name: "clear the endpoint", flag: "--clear-url"},
+		{name: "disable", flag: "--enabled=false"},
+		{name: "turn the period reminder off", flag: "--notify-period=false"},
+		{name: "turn the ovulation reminder off", flag: "--notify-ovulation=false"},
+		{name: "replace the endpoint", flag: "--url-stdin", stdin: "https://other.example/topic-xyz?token=tk_OTHERVALUE456\n"},
+		{name: "arm a disabled webhook", flag: "--enabled=true", startDisabled: true},
+		{name: "change the lead window", flag: "--reminder-lead-days=9"},
 	}
-	before := loadWebhookRow(t, databasePath, owner.ID)
+	// The fence a shell can present when it cannot be confirmed: none at all,
+	// and a file whose token the database marker does not hold.
+	fences := []struct {
+		name string
+		path func(t *testing.T, databasePath string) string
+	}{
+		{name: "no fence path", path: func(*testing.T, string) string { return "" }},
+		{name: "the file and the marker disagree", path: func(t *testing.T, databasePath string) string {
+			fencePath := webhookTestFence(t, databasePath)
+			if err := os.WriteFile(fencePath, []byte("a-different-generation\n"), 0o600); err != nil {
+				t.Fatalf("rewrite fence file: %v", err)
+			}
+			return fencePath
+		}},
+	}
 
-	for _, args := range [][]string{
-		{"set", owner.Email, "--clear-url"},
-		{"set", owner.Email, "--enabled=false"},
-		{"set", owner.Email, "--notify-period=false"},
-	} {
-		err := runWebhookCommandWithFence(sqliteConfig(databasePath), testWebhookSecretKey, "", args, strings.NewReader(""), &bytes.Buffer{})
-		if err == nil || !strings.Contains(err.Error(), security.CalendarFeedFencePathEnv) || !strings.Contains(err.Error(), "Nothing was changed") {
-			t.Fatalf("%v without a fence path must refuse and name the variable, got %v", args, err)
-		}
-		after := loadWebhookRow(t, databasePath, owner.ID)
-		if after.WebhookURL != before.WebhookURL || after.WebhookEnabled != before.WebhookEnabled ||
-			after.WebhookNotifyPeriod != before.WebhookNotifyPeriod || after.WebhookConfigVersion != before.WebhookConfigVersion {
-			t.Fatalf("%v: a refused set must leave the row untouched", args)
+	for _, flag := range revoking {
+		for _, shape := range fences {
+			t.Run(flag.name+"/"+shape.name, func(t *testing.T) {
+				t.Parallel()
+
+				databasePath := createCLIWebhookDatabase(t)
+				owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
+				armed := webhookTestFence(t, databasePath)
+				if err := runWebhookCommandWithFence(sqliteConfig(databasePath), testWebhookSecretKey, armed,
+					[]string{"set", owner.Email, "--enabled=true", "--url-stdin"}, strings.NewReader(testWebhookURLWithToken+"\n"), &bytes.Buffer{}); err != nil {
+					t.Fatalf("arm the webhook through a confirmed fence: %v", err)
+				}
+				if flag.startDisabled {
+					if err := runWebhookCommandWithFence(sqliteConfig(databasePath), testWebhookSecretKey, armed,
+						[]string{"set", owner.Email, "--enabled=false"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+						t.Fatalf("disable the webhook through a confirmed fence: %v", err)
+					}
+				}
+				fencePath := shape.path(t, databasePath)
+				before := loadWebhookRow(t, databasePath, owner.ID)
+				halvesBefore := readFenceHalves(t, databasePath, fencePath)
+
+				err := runWebhookCommandWithFence(sqliteConfig(databasePath), testWebhookSecretKey, fencePath,
+					[]string{"set", owner.Email, flag.flag}, strings.NewReader(flag.stdin), &bytes.Buffer{})
+				if err == nil || !strings.Contains(err.Error(), "Nothing was changed") {
+					t.Fatalf("%s must refuse at the gate, got %v", flag.flag, err)
+				}
+				if fencePath == "" && !strings.Contains(err.Error(), security.CalendarFeedFencePathEnv) {
+					t.Fatalf("%s without a fence path must name the variable, got %v", flag.flag, err)
+				}
+				after := loadWebhookRow(t, databasePath, owner.ID)
+				if after.WebhookURL != before.WebhookURL || after.WebhookEnabled != before.WebhookEnabled ||
+					after.WebhookNotifyPeriod != before.WebhookNotifyPeriod || after.WebhookNotifyOvulation != before.WebhookNotifyOvulation ||
+					after.ReminderLeadDays != before.ReminderLeadDays || after.WebhookConfigVersion != before.WebhookConfigVersion {
+					t.Fatalf("%s: a refused set must leave the row untouched", flag.flag)
+				}
+				if halvesAfter := readFenceHalves(t, databasePath, fencePath); halvesAfter != halvesBefore {
+					t.Fatalf("%s: a refused set must write neither fence half, before %+v after %+v", flag.flag, halvesBefore, halvesAfter)
+				}
+			})
 		}
 	}
 
-	if err := runWebhookCommandWithFence(sqliteConfig(databasePath), testWebhookSecretKey, "",
-		[]string{"set", owner.Email, "--clear-url", "--dry-run"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
-		t.Fatalf("a dry run writes nothing and needs no fence, got %v", err)
-	}
+	t.Run("a dry run needs no fence", func(t *testing.T) {
+		t.Parallel()
+
+		databasePath := createCLIWebhookDatabase(t)
+		owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
+		if err := runWebhookCommandWithFence(sqliteConfig(databasePath), testWebhookSecretKey, "",
+			[]string{"set", owner.Email, "--clear-url", "--dry-run"}, strings.NewReader(""), &bytes.Buffer{}); err != nil {
+			t.Fatalf("a dry run writes nothing and needs no fence, got %v", err)
+		}
+	})
 }
 
 // TestWebhookSetAdvancesTheServersFenceBeforeTheWithdrawal is the other half:
