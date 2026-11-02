@@ -199,8 +199,27 @@ func TestNotifyPassCannotDeliverAfterTheOwnerRevoked(t *testing.T) {
 		{
 			name: "endpoint removed",
 			revoke: func(t *testing.T, fixture webhookRevocationFixture) {
+				var before models.User
+				if err := fixture.database.First(&before, fixture.ownerID).Error; err != nil {
+					t.Fatalf("load the owner before removing the endpoint: %v", err)
+				}
 				if err := fixture.repo.RemoveWebhookDestination(context.Background(), fixture.ownerID); err != nil {
 					t.Fatalf("remove the endpoint: %v", err)
+				}
+				var removed models.User
+				if err := fixture.database.First(&removed, fixture.ownerID).Error; err != nil {
+					t.Fatalf("reload the owner after removing the endpoint: %v", err)
+				}
+				if removed.WebhookConfigVersion <= before.WebhookConfigVersion {
+					t.Fatalf("a removal must advance the revocation epoch: version %d -> %d", before.WebhookConfigVersion, removed.WebhookConfigVersion)
+				}
+				// The removal also switches delivery off, which alone refuses the
+				// claim whatever the counter does. Put the armed columns back,
+				// leaving the counter where the removal moved it, so the epoch is
+				// the only thing between the stale snapshot and a delivery.
+				if err := fixture.database.Model(&models.User{}).Where("id = ?", fixture.ownerID).
+					Updates(map[string]any{"webhook_enabled": true, "webhook_url": ownerEndpoint}).Error; err != nil {
+					t.Fatalf("re-arm the columns the removal cleared: %v", err)
 				}
 			},
 		},
