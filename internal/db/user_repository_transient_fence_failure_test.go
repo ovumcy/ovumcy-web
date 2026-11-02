@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
@@ -51,7 +52,7 @@ func TestATransientFenceWriteFailureRevokesNoPasswordOnTheNextBoot(t *testing.T)
 			fence := services.NewCalendarFeedRestoreFence(repositories.AppState, repositories.Users, file)
 			repositories = repositories.WithCalendarFeedFence(fence)
 			repo := repositories.Users
-			if outcome, err := fence.Enforce(ctx); err != nil || !outcome.FirstBoot {
+			if outcome, err := fence.EnforceRequired(ctx); err != nil || !outcome.FirstBoot {
 				t.Fatalf("first boot: %+v, %v", outcome, err)
 			}
 
@@ -81,7 +82,7 @@ func TestATransientFenceWriteFailureRevokesNoPasswordOnTheNextBoot(t *testing.T)
 				t.Fatalf("a refused write must leave the row untouched, got selector %q url %q", after.CalendarFeedSelector, after.WebhookURL)
 			}
 
-			outcome, err := fence.Enforce(ctx)
+			outcome, err := fence.EnforceRequired(ctx)
 			if err != nil {
 				t.Fatalf("Enforce: %v", err)
 			}
@@ -97,8 +98,81 @@ func TestATransientFenceWriteFailureRevokesNoPasswordOnTheNextBoot(t *testing.T)
 			if err := repo.ClearCalendarFeedToken(ctx, user.ID); err != nil {
 				t.Fatalf("retry ClearCalendarFeedToken: %v", err)
 			}
-			if outcome, err := fence.Enforce(ctx); err != nil || outcome != (services.CalendarFeedRestoreFenceOutcome{}) {
+			if outcome, err := fence.EnforceRequired(ctx); err != nil || outcome != (services.CalendarFeedRestoreFenceOutcome{}) {
 				t.Fatalf("the boot after the retry must read continuity, got %+v, %v", outcome, err)
+			}
+		})
+	}
+}
+
+// TestASignOutOverAFailingFenceFileDivergesAndTheNextBootRevokes is the
+// diverge path of AdvanceOrDiverge end to end (WEB-454), on both dialects: a
+// sign-out that meets a failing fence file is NOT refused, moves the database
+// half of the fence alone, and the next boot reads the disagreement as broken
+// continuity and refuses the cookie the sign-out revoked. A writer that
+// swallowed the failure and left both halves agreeing would leave that boot a
+// no-op.
+func TestASignOutOverAFailingFenceFileDivergesAndTheNextBootRevokes(t *testing.T) {
+	dialects := map[string]func(t *testing.T) *gorm.DB{
+		"sqlite": func(t *testing.T) *gorm.DB {
+			return openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "diverging-fence.db"))
+		},
+		"postgres": func(t *testing.T) *gorm.DB {
+			return openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t))
+		},
+	}
+	secret := []byte("diverging-fence-test-secret-k001")
+	for name, open := range dialects {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			repositories := NewRepositories(open(t))
+			file := &failingOnceFenceFile{CalendarFeedFenceFile: security.NewCalendarFeedFenceFile(filepath.Join(t.TempDir(), "calendar-feed.fence"))}
+			fence := services.NewCalendarFeedRestoreFence(repositories.AppState, repositories.Users, file)
+			repositories = repositories.WithCalendarFeedFence(fence)
+			if outcome, err := fence.EnforceRequired(ctx); err != nil || !outcome.FirstBoot {
+				t.Fatalf("first boot: %+v, %v", outcome, err)
+			}
+
+			user := createUserForTimezoneTest(t, repositories.Users, "diverging-fence@example.com")
+			auth := services.NewAuthService(repositories.Users)
+			now := time.Now()
+			cookie, _, err := auth.BuildAuthSessionTokenWithSessionID(secret, user.ID, user.Role, user.AuthSessionVersion, time.Hour, now)
+			if err != nil {
+				t.Fatalf("mint a cookie: %v", err)
+			}
+			fileBefore, _, err := file.Read()
+			if err != nil {
+				t.Fatalf("read the fence file: %v", err)
+			}
+
+			file.failNext = true
+			if err := repositories.Users.BumpAuthSessionVersion(ctx, user.ID); err != nil {
+				t.Fatalf("a sign-out must not be refused over the fence file, got %v", err)
+			}
+			if after := reloadUserForWebhookRevocationTest(t, repositories.Users, user.ID); after.AuthSessionVersion <= user.AuthSessionVersion {
+				t.Fatalf("the sign-out must still revoke, session version stayed %d", after.AuthSessionVersion)
+			}
+			fileAfter, _, err := file.Read()
+			if err != nil {
+				t.Fatalf("read the fence file: %v", err)
+			}
+			stored, _, err := repositories.AppState.Get(ctx, models.AppStateKeyCalendarFeedRestoreFence)
+			if err != nil {
+				t.Fatalf("read the database half: %v", err)
+			}
+			if fileAfter != fileBefore || stored == fileAfter {
+				t.Fatalf("the failed file write must leave the file where it was and move the database half alone: file moved %t, halves agree %t", fileAfter != fileBefore, stored == fileAfter)
+			}
+
+			outcome, err := fence.EnforceRequired(ctx)
+			if err != nil {
+				t.Fatalf("Enforce: %v", err)
+			}
+			if !outcome.ContinuityBroken || outcome.Revoked.Sessions == 0 {
+				t.Fatalf("the boot after a diverged sign-out must run the full pass, got %+v", outcome)
+			}
+			if _, _, err := auth.ResolveAuthSession(ctx, secret, cookie, now); !errors.Is(err, services.ErrAuthSessionTokenRevoked) {
+				t.Fatalf("the signed-out cookie must not resolve after the boot, got %v", err)
 			}
 		})
 	}

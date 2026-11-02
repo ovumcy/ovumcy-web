@@ -2,15 +2,19 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"gorm.io/gorm"
 )
+
+var restoreAcrossRevocationSecret = []byte("restore-across-revocation-key-01")
 
 // restoreSnapshot is what a backup holds of one account: its row, its linked
 // identities, and the database half of the fence.
@@ -70,8 +74,9 @@ func restoreRestoreSnapshot(t *testing.T, database *gorm.DB, snapshot restoreSna
 // TOTP enable or disable, a password change, an OIDC link or unlink — and the
 // backup is restored. Before the fix the fence halves still agreed, the boot
 // read continuity, and the restored row accepted the cookie, password or second
-// factor the revocation had replaced. The boot must read the restore and move
-// the session version past every cookie the backup's version would accept.
+// factor the revocation had replaced. The boot must read the restore, and a
+// cookie minted at the backup's session version — which the restored row
+// resolves again — must stop resolving.
 func TestARestoreAcrossASessionOrCredentialRevocationRevokesOnTheNextBoot(t *testing.T) {
 	dialects := map[string]func(t *testing.T) *gorm.DB{
 		"sqlite": func(t *testing.T) *gorm.DB {
@@ -157,9 +162,11 @@ func TestARestoreAcrossASessionOrCredentialRevocationRevokesOnTheNextBoot(t *tes
 			file := security.NewCalendarFeedFenceFile(filepath.Join(t.TempDir(), "calendar-feed.fence"))
 			fence := services.NewCalendarFeedRestoreFence(repositories.AppState, repositories.Users, file)
 			repositories = repositories.WithCalendarFeedFence(fence)
-			if outcome, err := fence.Enforce(ctx); err != nil || !outcome.FirstBoot {
+			if outcome, err := fence.EnforceRequired(ctx); err != nil || !outcome.FirstBoot {
 				t.Fatalf("first boot: %+v, %v", outcome, err)
 			}
+			auth := services.NewAuthService(repositories.Users)
+			now := time.Now()
 
 			// Sequential on one database: each boot below leaves the halves
 			// agreeing again, which is the state the next case starts from.
@@ -172,26 +179,30 @@ func TestARestoreAcrossASessionOrCredentialRevocationRevokesOnTheNextBoot(t *tes
 					}
 					backup := takeRestoreSnapshot(t, database, user.ID)
 					f.user = backup.user
+					cookie, _, err := auth.BuildAuthSessionTokenWithSessionID(restoreAcrossRevocationSecret, user.ID, backup.user.Role, backup.user.AuthSessionVersion, time.Hour, now)
+					if err != nil {
+						t.Fatalf("mint the cookie the backup's session version accepts: %v", err)
+					}
 
 					if err := revocation.revoke(ctx, f); err != nil {
 						t.Fatalf("revoke: %v", err)
 					}
 					restoreRestoreSnapshot(t, database, backup)
-					if restored := reloadUserForWebhookRevocationTest(t, repositories.Users, user.ID); restored.AuthSessionVersion != backup.user.AuthSessionVersion {
-						t.Fatalf("fixture: the restore should bring back session version %d, got %d", backup.user.AuthSessionVersion, restored.AuthSessionVersion)
+					if _, _, err := auth.ResolveAuthSession(ctx, restoreAcrossRevocationSecret, cookie, now); err != nil {
+						t.Fatalf("fixture: before the boot, the restored row should accept the revoked cookie again, got %v", err)
 					}
 
-					outcome, err := fence.Enforce(ctx)
+					outcome, err := fence.EnforceRequired(ctx)
 					if err != nil {
 						t.Fatalf("Enforce: %v", err)
 					}
 					if !outcome.ContinuityBroken || outcome.Revoked.LocalSignIns == 0 {
 						t.Fatalf("the boot over a restore across a %s must read the restore and revoke, got %+v", revocation.name, outcome)
 					}
-					after := reloadUserForWebhookRevocationTest(t, repositories.Users, user.ID)
-					if after.AuthSessionVersion <= backup.user.AuthSessionVersion {
-						t.Fatalf("a cookie at the backup's session version %d must be refused, stored version is %d", backup.user.AuthSessionVersion, after.AuthSessionVersion)
+					if _, _, err := auth.ResolveAuthSession(ctx, restoreAcrossRevocationSecret, cookie, now); !errors.Is(err, services.ErrAuthSessionTokenRevoked) {
+						t.Fatalf("the cookie the %s revoked must not resolve after the boot, got %v", revocation.name, err)
 					}
+					after := reloadUserForWebhookRevocationTest(t, repositories.Users, user.ID)
 					if after.PasswordHash != "" || after.LocalAuthEnabled {
 						t.Fatal("the restored password must not sign in after the boot")
 					}

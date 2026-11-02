@@ -274,6 +274,99 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 	}
 }
 
+// persistenceWriteMethods are the gorm and database/sql calls that write. A
+// session or credential write made through any of them outside this package
+// would never reach the guard above, which reads this package alone.
+var persistenceWriteMethods = map[string]map[string]bool{
+	"gorm.io/gorm": {
+		"Create": true, "CreateInBatches": true, "Save": true, "FirstOrCreate": true,
+		"Update": true, "Updates": true, "UpdateColumn": true, "UpdateColumns": true,
+		"Delete": true, "Exec": true,
+	},
+	"database/sql": {"Exec": true, "ExecContext": true},
+}
+
+// TestNoPackageOutsideDBWritesThroughThePersistenceLayer widens the session
+// writer guard to the module (WEB-454). That guard resolves writers in
+// internal/db only, so a revocation column written from a service, the CLI or
+// a command would escape it unseen. Rather than repeat the column analysis per
+// package, this pins the premise it rests on: no non-test package outside
+// internal/db reaches a gorm or database/sql write at all.
+func TestNoPackageOutsideDBWritesThroughThePersistenceLayer(t *testing.T) {
+	const module = "github.com/ovumcy/ovumcy-web"
+	listed, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedImports, Dir: "../.."}, "./...")
+	if err != nil {
+		t.Fatalf("list the module: %v", err)
+	}
+	var candidates []string
+	for _, pkg := range listed {
+		for _, packageError := range pkg.Errors {
+			t.Fatalf("%s does not load: %v", pkg.PkgPath, packageError)
+		}
+		for importPath := range pkg.Imports {
+			if persistenceWriteMethods[importPath] != nil {
+				candidates = append(candidates, pkg.PkgPath)
+				break
+			}
+		}
+	}
+	sort.Strings(candidates)
+	// Anti-vacuity: the db package must be among the importers, and the
+	// matcher must resolve its writes, or a scan that finds nothing elsewhere
+	// proves nothing.
+	if !containsString(candidates, module+"/internal/db") || !containsString(candidates, module+"/internal/cli") {
+		t.Fatalf("the importer scan missed internal/db or internal/cli: %v", candidates)
+	}
+
+	typed, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Dir:  "../..",
+	}, candidates...)
+	if err != nil {
+		t.Fatalf("type-check the importers: %v", err)
+	}
+	writesInDB := 0
+	var violations []string
+	for _, pkg := range typed {
+		for _, packageError := range pkg.Errors {
+			t.Fatalf("%s does not type-check: %v", pkg.PkgPath, packageError)
+		}
+		for _, file := range pkg.Syntax {
+			ast.Inspect(file, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				callee, ok := typeutil.Callee(pkg.TypesInfo, call).(*types.Func)
+				if !ok || callee.Pkg() == nil || !persistenceWriteMethods[callee.Pkg().Path()][callee.Name()] {
+					return true
+				}
+				if pkg.PkgPath == module+"/internal/db" {
+					writesInDB++
+					return true
+				}
+				violations = append(violations, fmt.Sprintf("%s calls %s.%s outside internal/db, where the session writer guard cannot see it", pkg.Fset.Position(call.Pos()), callee.Pkg().Path(), callee.Name()))
+				return true
+			})
+		}
+	}
+	if writesInDB == 0 {
+		t.Fatal("the matcher resolved no write inside internal/db: it is not measuring what it claims")
+	}
+	for _, violation := range violations {
+		t.Error(violation)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
 // fenceAdvanceMethods resolves the repositories' fence advances to their
 // declarations. Both repositories that revoke must carry the best-effort form.
 func fenceAdvanceMethods(t *testing.T, pkg *packages.Package) map[types.Object]bool {
