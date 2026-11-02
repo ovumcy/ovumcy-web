@@ -3,11 +3,13 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -99,6 +101,57 @@ func TestWebhookSetAdvancesTheServersFenceBeforeTheWithdrawal(t *testing.T) {
 	}
 	if outcome != (services.CalendarFeedRestoreFenceOutcome{}) {
 		t.Fatalf("the server's next boot must read continuity, got %+v", outcome)
+	}
+}
+
+// failingWebhookSaveRepository refuses the save alone, so a test can reach the
+// one state no real database produces on cue: the fence confirmed and advanced,
+// then the account write failing.
+type failingWebhookSaveRepository struct {
+	*db.UserRepository
+	err error
+}
+
+func (repo failingWebhookSaveRepository) SaveWebhookSettings(context.Context, uint, models.WebhookSettingsColumns) error {
+	return repo.err
+}
+
+// TestWebhookSetReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced pins the
+// message after the gate: the fence moved in both halves and the row did not,
+// so the operator must hear both, not a bare "configure webhook" error that
+// reads as "nothing happened".
+func TestWebhookSetReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIWebhookDatabase(t)
+	owner := createCLIWebhookOwner(t, databasePath, "owner@example.com")
+	database, err := db.OpenDatabase(sqliteConfig(databasePath))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	users := db.NewRepositories(database).Users
+	refused := errors.New("disk I/O error")
+	settings := services.NewWebhookSettingsService(failingWebhookSaveRepository{UserRepository: users, err: refused}, []byte(testWebhookSecretKey))
+	service := services.NewWebhookSettingsCLIService(users, settings)
+
+	appState := &fakeConfirmFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: confirmFenceTestToken}}
+	anchor := &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true}
+	fence := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
+
+	disabled := false
+	err = runWebhookSet(service, "/app/fence/calendar-feed.fence", fence,
+		webhookSetOptions{email: owner.Email, enabled: &disabled}, services.WebhookSettingsPatch{Enabled: &disabled}, &bytes.Buffer{})
+	if !errors.Is(err, refused) || !strings.Contains(err.Error(), "already advanced") {
+		t.Fatalf("a save failing after the gate must name both the cause and the advanced fence, got %v", err)
+	}
+	if anchor.written == "" || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != anchor.written {
+		t.Fatal("the gate must have advanced both halves before the failed save")
 	}
 }
 
