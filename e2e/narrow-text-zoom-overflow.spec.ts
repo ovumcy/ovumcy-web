@@ -29,9 +29,13 @@ async function seedRussianAccountWithCycles(page: Page, prefix: string): Promise
   await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
 }
 
+/** Every collapsible section open too: the settings toggle rows only overflow expanded. */
 async function zoomTextTo200(page: Page): Promise<void> {
   await page.evaluate(() => {
     document.documentElement.style.fontSize = '32px';
+    document.querySelectorAll('details').forEach((section) => {
+      section.open = true;
+    });
   });
 }
 
