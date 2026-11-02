@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -13,10 +12,17 @@ import (
 // by every mint and rotate, never left from the previous link. Cited by
 // SECURITY.md's Calendar Feed Subscription rows.
 
+// It runs on both engines: each dialect ships its own ADD COLUMN, and a populated
+// users table is what its NOT NULL DEFAULT has to fill.
 func TestMigration043LeavesEveryUpgradedFeedNeutral(t *testing.T) {
+	forEachMigrationReplayStore(t, func(t *testing.T, store migrationReplayStore) {
+		assertMigration043LeavesEveryUpgradedFeedNeutral(t, store)
+	})
+}
+
+func assertMigration043LeavesEveryUpgradedFeedNeutral(t *testing.T, store migrationReplayStore) {
 	const column = "calendar_feed_detailed_titles"
-	databasePath := filepath.Join(t.TempDir(), "ovumcy-migration-043.db")
-	database := openSQLiteForMigrationBootstrapTest(t, databasePath)
+	database := store.open(t)
 	repo := NewUserRepository(database)
 
 	user := createUserForTimezoneTest(t, repo, "migration-043@example.com")
@@ -32,24 +38,12 @@ func TestMigration043LeavesEveryUpgradedFeedNeutral(t *testing.T) {
 	if err := database.Exec(`DELETE FROM schema_migrations WHERE version = ?`, "043").Error; err != nil {
 		t.Fatalf("delete the migration 043 record: %v", err)
 	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		t.Fatalf("get sql db handle: %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("close sql db: %v", err)
-	}
+	closeForMigrationReplay(t, database)
 
-	reopened, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: databasePath})
-	if err != nil {
-		t.Fatalf("expected migration 043 to apply to a populated users table: %v", err)
-	}
-	reopenedSQLDB, err := reopened.DB()
-	if err != nil {
-		t.Fatalf("get reopened sql db handle: %v", err)
-	}
-	t.Cleanup(func() { _ = reopenedSQLDB.Close() })
-	assertAllEmbeddedMigrationsApplied(t, reopened)
+	// store.open fails the test itself when the migration cannot apply to the
+	// populated users table.
+	reopened := store.open(t)
+	store.assertMigrationsApplied(t, reopened)
 
 	upgraded, err := NewUserRepository(reopened).FindByID(context.Background(), user.ID)
 	if err != nil {

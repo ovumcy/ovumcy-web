@@ -160,28 +160,19 @@ func TestMigration019CanonicalizesNonUTCDateFields(t *testing.T) {
 // the whole table would satisfy the "NULL rows are gone" half on its own. The
 // re-run also proves runner idempotency: the DELETE lands on a database where it
 // has already been applied once.
+//
+// It runs on both engines: the two dialects ship separate files, and the
+// Postgres predicate would otherwise only ever meet an empty table.
 func TestMigration033PurgesUnattributedOIDCLogoutStates(t *testing.T) {
-	databasePath := filepath.Join(t.TempDir(), "ovumcy-033.db")
-	database := openSQLiteForMigrationBootstrapTest(t, databasePath)
+	forEachMigrationReplayStore(t, func(t *testing.T, store migrationReplayStore) {
+		assertMigration033PurgesUnattributedOIDCLogoutStates(t, store)
+	})
+}
 
-	if err := database.Exec(
-		`INSERT INTO users (email, password_hash, role, created_at)
-		 VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-		"logout-state-owner@example.com",
-		"test-hash",
-		"owner",
-	).Error; err != nil {
-		t.Fatalf("insert logout-state owner: %v", err)
-	}
+func assertMigration033PurgesUnattributedOIDCLogoutStates(t *testing.T, store migrationReplayStore) {
+	database := store.open(t)
 
-	var owner struct {
-		ID uint `gorm:"column:id"`
-	}
-	if err := database.Raw(
-		`SELECT id FROM users WHERE email = ?`, "logout-state-owner@example.com",
-	).Scan(&owner).Error; err != nil {
-		t.Fatalf("load logout-state owner id: %v", err)
-	}
+	owner := createUserForTimezoneTest(t, NewUserRepository(database), "logout-state-owner@example.com")
 	if owner.ID == 0 {
 		t.Fatal("expected non-zero logout-state owner id")
 	}
@@ -221,15 +212,10 @@ func TestMigration033PurgesUnattributedOIDCLogoutStates(t *testing.T) {
 		t.Fatalf("delete migration 033 record: %v", err)
 	}
 
-	sqlDB, err := database.DB()
-	if err != nil {
-		t.Fatalf("get sql db handle: %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("close sql db: %v", err)
-	}
+	closeForMigrationReplay(t, database)
 
-	reopened := openSQLiteForMigrationBootstrapTest(t, databasePath)
+	reopened := store.open(t)
+	store.assertMigrationsApplied(t, reopened)
 
 	if remaining := countOIDCLogoutStatesWithNullUser(t, reopened); remaining != 0 {
 		t.Fatalf("expected migration 033 to purge every NULL-user_id logout state, %d left", remaining)

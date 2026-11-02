@@ -35,12 +35,106 @@ var clearDataCopyGroups = map[string][]string{
 	"sessions": {"auth_session_version"},
 }
 
+// clearDataPreservedUserColumns lists every users column ClearAllDataAndResetSettings
+// deliberately leaves alone, each with the one-line reason. Together with the
+// columns the wipe writes it must cover the whole live users table.
+var clearDataPreservedUserColumns = map[string]string{
+	"id":                        "primary key of the account the wipe keeps",
+	"email":                     "login identity; clear-data erases tracked data, not the account",
+	"display_name":              "account profile, not tracked health data",
+	"role":                      "account role; the wipe does not change who the owner is",
+	"created_at":                "account creation timestamp",
+	"password_hash":             "local credential; the wipe re-authenticates with it and keeps it",
+	"recovery_code_hash":        "local credential kept with the account",
+	"recovery_code_revealed_at": "one-time reveal mark of the kept recovery code; clearing it would re-offer the code",
+	"must_change_password":      "operator-set account flag, independent of tracked data",
+	"local_auth_enabled":        "sign-in method of the account",
+	"totp_enabled":              "second-factor state of the account",
+	"totp_secret":               "second-factor secret of the account",
+	"totp_last_used_step":       "TOTP replay guard; clearing it would let a used code replay",
+	"onboarding_completed":      "account onboarding status",
+	"interface_language":        "interface language, an account preference rather than tracked data",
+	"calendar_feed_revealed_at": "one-time reveal mark of the feed URL; kept so a cleared link is never re-shown on an old claim",
+	"calendar_feed_key_epoch":   "records the verification regime of the stored token; boot sentinel state, not owner data",
+}
+
+// TestClearDataAccountsForEveryUsersColumn derives the users columns from the
+// live schema and requires each to be either written by the wipe or listed in
+// clearDataPreservedUserColumns with a reason. A health or preference column a
+// later migration adds, that nobody threads through the reset map or this list,
+// fails here instead of surviving clear-data unnoticed.
+func TestClearDataAccountsForEveryUsersColumn(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	columnTypes, err := repo.database.Migrator().ColumnTypes("users")
+	requireNoErr(t, err, "column types of users")
+	if len(columnTypes) == 0 {
+		t.Fatal("derived no users columns from the live schema; the derivation is broken, not the schema")
+	}
+	live := make(map[string]bool, len(columnTypes))
+	for _, column := range columnTypes {
+		live[column.Name()] = true
+	}
+
+	written := make(map[string]bool)
+	for _, write := range clearDataWritesForTest(t) {
+		if !strings.HasPrefix(write, "delete:") {
+			written[write] = true
+		}
+	}
+
+	for column := range written {
+		if !live[column] {
+			t.Errorf("the wipe writes %q, which is not a users column in the live schema", column)
+		}
+	}
+	for column, reason := range clearDataPreservedUserColumns {
+		switch {
+		case !live[column]:
+			t.Errorf("clearDataPreservedUserColumns names %q, which is not a users column in the live schema; drop the entry", column)
+		case written[column]:
+			t.Errorf("%q is listed as preserved but the wipe writes it; drop the entry", column)
+		case strings.TrimSpace(reason) == "":
+			t.Errorf("%q is preserved without a reason", column)
+		}
+	}
+	var unaccounted []string
+	for column := range live {
+		if _, preserved := clearDataPreservedUserColumns[column]; !written[column] && !preserved {
+			unaccounted = append(unaccounted, column)
+		}
+	}
+	sort.Strings(unaccounted)
+	if len(unaccounted) > 0 {
+		t.Fatalf("users columns neither written by clear-data nor listed in clearDataPreservedUserColumns: %v\nreset the column in ClearAllDataAndResetSettings (and add its copy group), or list it as preserved with the reason", unaccounted)
+	}
+}
+
 // TestClearDataCopyNamesEveryColumnTheWipeWrites records every write the wipe
 // issues and requires it to be exactly the union of clearDataCopyGroups, then
 // requires every group to have copy in every locale and in the template. A column
 // added to (or dropped from) the reset map without a matching copy change fails
 // here, so the settings page cannot under- or over-name what clear-data does.
 func TestClearDataCopyNamesEveryColumnTheWipeWrites(t *testing.T) {
+	written := clearDataWritesForTest(t)
+
+	var named []string
+	for _, writes := range clearDataCopyGroups {
+		named = append(named, writes...)
+	}
+	sort.Strings(named)
+	sort.Strings(written)
+	if !slices.Equal(written, named) {
+		t.Fatalf("clear-data writes and the copy groups disagree\nwritten: %v\nnamed:   %v", written, named)
+	}
+
+	assertClearDataCopyIsRendered(t)
+}
+
+// clearDataWritesForTest runs ClearAllDataAndResetSettings on a fresh account and
+// returns every write it issued: a users column it set, or "delete:<table>" for
+// a table it deleted from. An update of any other table fails the test.
+func clearDataWritesForTest(t *testing.T) []string {
+	t.Helper()
 	repo := openWebhookRepoForTest(t)
 	user := createUserForTimezoneTest(t, repo, "clear-data-copy@example.com")
 	version := storedSessionVersionForTest(t, repo, user.ID)
@@ -72,17 +166,11 @@ func TestClearDataCopyNamesEveryColumnTheWipeWrites(t *testing.T) {
 	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID, version); err != nil {
 		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
 	}
+	return written
+}
 
-	var named []string
-	for _, writes := range clearDataCopyGroups {
-		named = append(named, writes...)
-	}
-	sort.Strings(named)
-	sort.Strings(written)
-	if !slices.Equal(written, named) {
-		t.Fatalf("clear-data writes and the copy groups disagree\nwritten: %v\nnamed:   %v", written, named)
-	}
-
+func assertClearDataCopyIsRendered(t *testing.T) {
+	t.Helper()
 	template, err := os.ReadFile(filepath.Join("..", "templates", "components", "settings_danger_zone.html"))
 	if err != nil {
 		t.Fatalf("read danger-zone template: %v", err)
