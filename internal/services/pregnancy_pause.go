@@ -13,8 +13,8 @@ import (
 // Pause is active when a positive pregnancy test exists and no cycle starts
 // strictly after it. "A cycle starts" is CycleBoundaries' answer over the same
 // logs and context, never a raw IsPeriod+CycleStart flag: an unmarked bleeding
-// run that the rule counts lifts the pause, while a spotting day or an
-// uncertain mark — which open no cycle anywhere else — does not. A boundary on
+// run that the rule counts lifts the pause, while a spotting day or a lone
+// day under an uncertain mark (which counts as no mark) does not. A boundary on
 // the same calendar day as the positive test does not lift the pause — the
 // positive result wins ties. Stored dates are canonical UTC-midnight (migration
 // 019 + DailyLog.BeforeSave), and both sides are compared as calendar days.

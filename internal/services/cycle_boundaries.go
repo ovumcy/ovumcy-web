@@ -64,10 +64,9 @@ func OnboardingBoundaryDay(ctx BoundaryContext) time.Time {
 
 // periodDay is one calendar day that counts toward a bleeding episode.
 type periodDay struct {
-	day       time.Time
-	spotting  bool
-	explicit  bool
-	uncertain bool
+	day      time.Time
+	spotting bool
+	explicit bool
 }
 
 type periodCluster struct {
@@ -118,8 +117,9 @@ func periodClustersWithOnboarding(logs []models.DailyLog, ctx BoundaryContext) [
 // The start is the earliest qualifying day (an explicit mark wins over the
 // run): spotting days and days before it are not the start. Spotting never
 // opens a cycle, even when marked. A cluster that does not qualify starts no
-// cycle and does not split the cycle around it. A cluster whose only explicit
-// mark is uncertain is withheld the same way.
+// cycle and does not split the cycle around it. A mark the owner flagged as
+// uncertain ("Mark anyway" after the short-gap warning) counts as no mark: the
+// cluster qualifies, or not, by the unmarked rules above (WEB-434).
 //
 // The onboarding start is a boundary of its own: it joins the grouping as an
 // explicit non-spotting day, so a logged cluster it falls inside or adjoins
@@ -153,6 +153,36 @@ func newestBoundaryOpensClusterOf(logs []models.DailyLog, ctx BoundaryContext, d
 	return false
 }
 
+// bleedingOutsideOpeningEpisode reports a period day (spotting included) dated
+// today or yesterday that lies outside the cluster holding start, the running
+// cycle's boundary.
+func bleedingOutsideOpeningEpisode(logs []models.DailyLog, ctx BoundaryContext, start time.Time, today time.Time) bool {
+	if start.IsZero() {
+		return false
+	}
+	start = dateOnly(start)
+	opening := periodCluster{Start: start, End: start}
+	for _, cluster := range periodClustersWithOnboarding(logs, ctx) {
+		if !start.Before(cluster.Start) && !start.After(cluster.End) {
+			opening = cluster
+			break
+		}
+	}
+	for _, logEntry := range logs {
+		if !logEntry.IsPeriod {
+			continue
+		}
+		day := dateOnly(logEntry.Date)
+		if sinceDay := CalendarDaysBetween(day, today); sinceDay != 0 && sinceDay != 1 {
+			continue
+		}
+		if day.Before(opening.Start) || day.After(opening.End) {
+			return true
+		}
+	}
+	return false
+}
+
 // latestBoundaryOnOrBefore is the newest boundary dated on or before day, zero
 // when there is none.
 func latestBoundaryOnOrBefore(starts []time.Time, day time.Time) time.Time {
@@ -165,20 +195,10 @@ func latestBoundaryOnOrBefore(starts []time.Time, day time.Time) time.Time {
 }
 
 func (cluster periodCluster) boundary(today time.Time) (time.Time, bool) {
-	sawUncertain := false
 	for _, entry := range cluster.days {
-		if entry.spotting {
-			continue
-		}
-		if entry.explicit {
+		if !entry.spotting && entry.explicit {
 			return entry.day, true
 		}
-		if entry.uncertain {
-			sawUncertain = true
-		}
-	}
-	if sawUncertain {
-		return time.Time{}, false
 	}
 
 	for index, entry := range cluster.days {
@@ -209,15 +229,13 @@ func periodDaysOf(logs []models.DailyLog) []periodDay {
 			continue
 		}
 		entry := periodDay{
-			day:       dateOnly(logEntry.Date),
-			spotting:  isSpottingDay(logEntry),
-			explicit:  logEntry.CycleStart && !logEntry.IsUncertain,
-			uncertain: logEntry.CycleStart && logEntry.IsUncertain,
+			day:      dateOnly(logEntry.Date),
+			spotting: isSpottingDay(logEntry),
+			explicit: logEntry.CycleStart && !logEntry.IsUncertain,
 		}
 		if last := len(days) - 1; last >= 0 && days[last].day.Equal(entry.day) {
 			days[last].spotting = days[last].spotting && entry.spotting
 			days[last].explicit = days[last].explicit || entry.explicit
-			days[last].uncertain = days[last].uncertain || entry.uncertain
 			continue
 		}
 		days = append(days, entry)

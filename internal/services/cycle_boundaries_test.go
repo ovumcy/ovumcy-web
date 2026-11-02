@@ -75,6 +75,13 @@ func TestCycleBoundariesRules(t *testing.T) {
 		logs := []models.DailyLog{{Date: boundaryDay(time.September, 1), IsPeriod: true, CycleStart: true, IsUncertain: true, Flow: models.FlowLight}}
 		assertBoundaries(t, logs, ctx)
 	})
+	t.Run("an uncertain mark withholds nothing the unmarked rules open", func(t *testing.T) {
+		run := boundaryPeriodRun(boundaryDay(time.September, 1), 2, models.FlowMedium)
+		run[0].CycleStart, run[0].IsUncertain = true, true
+		assertBoundaries(t, run, ctx, "2026-09-01")
+		lone := []models.DailyLog{{Date: today, IsPeriod: true, CycleStart: true, IsUncertain: true, Flow: models.FlowMedium}}
+		assertBoundaries(t, lone, ctx, "2026-10-05")
+	})
 	t.Run("a lone day today or yesterday opens, three days ago does not", func(t *testing.T) {
 		for _, testCase := range []struct {
 			date time.Time
@@ -202,10 +209,12 @@ func TestCycleBoundariesMergesADayLoggedTwice(t *testing.T) {
 	marked := entry(10, models.FlowMedium)
 	marked.CycleStart = true
 	assertBoundaries(t, []models.DailyLog{entry(10, models.FlowMedium), marked}, ctx, "2026-09-10")
-	// So is an uncertain mark, which withholds the run it sits in.
+	// An uncertain mark on either entry counts as no mark: the run still opens.
 	uncertain := marked
 	uncertain.IsUncertain = true
-	assertBoundaries(t, []models.DailyLog{entry(10, models.FlowMedium), uncertain, entry(11, models.FlowMedium)}, ctx)
+	assertBoundaries(t, []models.DailyLog{entry(10, models.FlowMedium), uncertain, entry(11, models.FlowMedium)}, ctx, "2026-09-10")
+	// A plain mark beside it on the same date is still the day's mark.
+	assertBoundaries(t, []models.DailyLog{uncertain, marked}, ctx, "2026-09-10")
 }
 
 type onboardingImportUsers struct {

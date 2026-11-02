@@ -47,8 +47,9 @@ The cycle starts on the earliest qualifying day of the episode, and an explicit
 mark wins over the run. Spotting never opens a cycle, even when marked: a day
 whose flow is spotting, or whose only bleeding signal is the Spotting symptom
 with no flow chosen. A lone bleeding day that qualifies under none of the above
-starts no cycle and does not split the cycle around it. An episode whose only
-mark is "uncertain" is held back the same way. A history that records each
+starts no cycle and does not split the cycle around it. A start marked as
+uncertain ("Mark anyway" after the short-gap warning) counts as no mark: the
+episode opens a cycle, or not, by the unmarked rules above. A history that records each
 period as a single unmarked day older than yesterday therefore holds no cycles
 for those periods; marking each such day as a cycle start restores them.
 
@@ -83,8 +84,8 @@ it lies outside that range.
 The pregnancy pause reads the same rule without the today-or-yesterday
 allowance: a positive test pauses predictions until a boundary falls on a later
 calendar day, so a marked start or an unmarked two-day bleed lifts it, while a
-single bleeding day (even one dated today), a spotting day or an uncertain mark
-does not.
+single bleeding day (even one dated today or marked as an uncertain start) or a
+spotting day does not.
 
 ## The model
 
@@ -426,6 +427,15 @@ and the phase keep measuring the reference length; the late-cycle notice stands
 from the first withheld day. Irregular range mode is not affected: its ovulation
 range is placed from the recorded start across the shortest and longest observed
 cycles. Calendar and feed stop chaining further periods from the same day.
+
+A period day recorded today or yesterday outside the episode that opened the
+running cycle — bleeding the boundary rule did not take as a new start, such as a
+start marked as uncertain, a spotting day or a lone day — contradicts the running
+projection: the log calls the day a period while the projection may call it
+fertile. On those two days the fertility half is withheld on every surface, with
+the wire reason `bleeding_outside_cycle_start`; the phase stays "menstrual" on the
+recorded day and the next-period estimate stays. From the day after, the bleed is
+history and the projection stands again.
 
 Three further signals withhold **every** projected date, the next period included,
 on every one of those surfaces: unpredictable-cycle mode (the settings toggle

@@ -553,6 +553,8 @@ Read this before the first start of v2.0.0 on a database a v1.9.x release wrote.
 - **`RATE_LIMIT_*` values outside the new ranges fall back to the default.** v1.9.2 applied any positive number; now each has a ceiling and a window range ([Advanced knobs](#advanced-knobs)), and a value outside it is logged at boot and replaced by the default. A budget widened past its ceiling therefore comes back at the stricter default. Read the startup log for `invalid RATE_LIMIT_` lines.
 - **Webhook delivery to private addresses is blocked by default under open registration** (`WEBHOOK_BLOCK_PRIVATE_ADDRESSES`, see [Advanced knobs](#advanced-knobs)). An open instance whose owners deliver to a LAN ntfy, Gotify or Home Assistant sets it to `false` or closes registration.
 
+- **`GET /api/v1/stats/overview` can name a new suppression reason, `bleeding_outside_cycle_start`.** It is published on the day a period is recorded outside the episode that opened the running cycle, and the day after, while the fertile window and the ovulation date are withheld. A client that branches on `suppression.reasons` should treat an unknown value as "withheld" rather than as an error. In the same release a start marked with "Mark anyway" (an uncertain start) counts as no mark instead of withholding the bleeding episode it sits in, so cycle starts recomputed from an existing history can move ([docs/cycle-prediction.md](cycle-prediction.md)).
+
 ### Downgrade Caveats
 
 Migrations are forward-only. There is no `down.sql` and no automated rollback path.
