@@ -31,7 +31,7 @@
         {{/* Re-authentication is one field and one button, so they sit on one
              row rather than stacking three blocks deep. */}}
         <div class="settings-form-actions">
-          <div class="min-w-0 flex-1 space-y-1 sm:max-w-xs">
+          <div class="settings-reauth-field space-y-1 sm:max-w-xs">
             {{template "password_toggle_field" (dict
               "Messages" .Messages
               "LabelKey" "settings.delete_account.password"
@@ -86,7 +86,7 @@
         {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
 
         <div class="settings-form-actions">
-          <div class="min-w-0 flex-1 space-y-1 sm:max-w-xs">
+          <div class="settings-reauth-field space-y-1 sm:max-w-xs">
             {{template "password_toggle_field" (dict
               "Messages" .Messages
               "LabelKey" "settings.delete_account.password"
