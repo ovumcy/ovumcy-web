@@ -1044,9 +1044,12 @@
     scroll-padding-bottom: var(--mobile-tabbar-safe-space);
   }
 
-  /* Inline text links get a ~40px hit area. Vertical padding on an inline box
-     widens the box that takes the tap without moving the lines around it. */
+  /* Inline text links get a ~40px hit area. As inline-block the padding takes
+     layout room: on a plain inline box it overhung the neighbouring lines, and
+     two links on consecutive lines stole each other's taps. */
   .inline-link {
+    display: inline-block;
+    max-width: 100%;
     padding-block: 0.65rem;
   }
 
