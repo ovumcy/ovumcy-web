@@ -128,11 +128,15 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		})
 	}
 
-	t.Run("postgres", func(t *testing.T) {
-		// startPostgresTestConfig skips the subtest when docker is unavailable;
-		// the sqlite arm above still runs, so the guard never goes vacuous.
-		assertAccountErasureLeavesNoUserScopedRows(t, openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t)), accountErasuresUnderTest()["operator"])
-	})
+	// The owner erasure takes the claim row lock first on Postgres, so it is swept
+	// there too, on its own fresh database per erasure.
+	for name, erase := range accountErasuresUnderTest() {
+		t.Run("postgres/"+name, func(t *testing.T) {
+			// startPostgresTestConfig skips the subtest when docker is unavailable;
+			// the sqlite arm above still runs, so the guard never goes vacuous.
+			assertAccountErasureLeavesNoUserScopedRows(t, openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t)), erase)
+		})
+	}
 }
 
 type accountErasure func(repos *Repositories, user *models.User) error

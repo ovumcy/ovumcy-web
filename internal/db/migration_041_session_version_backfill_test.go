@@ -17,24 +17,27 @@ import (
 // The surviving unaffected rows are the positive anchor -- a migration that
 // clamped every row to 1 would satisfy the "no row is <= 0 afterward" half on
 // its own.
+//
+// It runs on both engines: the Postgres file carries its own predicate
+// (WHERE auth_session_version <= 0) that an empty table would never exercise.
 func TestMigration041BackfillsLegacyAuthSessionVersionToOne(t *testing.T) {
-	databasePath := filepath.Join(t.TempDir(), "ovumcy-041.db")
-	database := openSQLiteForMigrationBootstrapTest(t, databasePath)
+	forEachMigrationReplayStore(t, func(t *testing.T, store migrationReplayStore) {
+		assertMigration041BackfillsLegacyAuthSessionVersionToOne(t, store)
+	})
+}
+
+func assertMigration041BackfillsLegacyAuthSessionVersionToOne(t *testing.T, store migrationReplayStore) {
+	database := store.open(t)
 
 	seed := func(email string, version int) uint {
 		t.Helper()
+		user := createUserForTimezoneTest(t, NewUserRepository(database), email)
 		if err := database.Exec(
-			`INSERT INTO users (email, password_hash, role, created_at, auth_session_version)
-			 VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)`,
-			email, "test-hash", "owner", version,
+			`UPDATE users SET auth_session_version = ? WHERE id = ?`, version, user.ID,
 		).Error; err != nil {
 			t.Fatalf("seed %s at version %d: %v", email, version, err)
 		}
-		var userID uint
-		if err := database.Raw(`SELECT id FROM users WHERE email = ?`, email).Scan(&userID).Error; err != nil || userID == 0 {
-			t.Fatalf("resolve %s: %v (id %d)", email, err, userID)
-		}
-		return userID
+		return user.ID
 	}
 
 	zero := seed("legacy-zero-041@example.com", 0)
@@ -45,16 +48,10 @@ func TestMigration041BackfillsLegacyAuthSessionVersionToOne(t *testing.T) {
 	if err := database.Exec(`DELETE FROM schema_migrations WHERE version = ?`, "041").Error; err != nil {
 		t.Fatalf("delete the migration 041 record: %v", err)
 	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		t.Fatalf("get sql db handle: %v", err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatalf("close sql db: %v", err)
-	}
+	closeForMigrationReplay(t, database)
 
-	reopened := openSQLiteForMigrationBootstrapTest(t, databasePath)
-	assertAllEmbeddedMigrationsApplied(t, reopened)
+	reopened := store.open(t)
+	store.assertMigrationsApplied(t, reopened)
 
 	readVersion := func(userID uint) int {
 		t.Helper()
