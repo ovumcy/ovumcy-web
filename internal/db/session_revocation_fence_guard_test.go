@@ -45,6 +45,7 @@ var revocationRowTypes = []string{"User", "OIDCIdentity"}
 var exemptRevocationWriters = map[string]string{
 	"updateFromAuthSessionVersionTx":                "the compare-and-set primitive, run inside its caller's transaction: the advance must precede that transaction, so it is the caller's, and the caller is a writer here",
 	"bumpAuthSessionVersionFromTx":                  "the same primitive without columns, for the OIDC link and unlink transactions, which advance before opening them",
+	"deleteAccountChildRowsTx":                      "the erasure's child-row sweep, run inside the transaction of DeleteAccountAndRelatedData or DeleteAccountFromAuthSessionVersion, both of which advance before opening it",
 	"UserRepository.RevokeRestoredAccess":           "the fence's own ContinuityBroken pass: the fence records a fresh token in both halves right after it, so an advance here would write a token in the middle of Enforce",
 	"UserRepository.RenormalizeUserEmail":           "respells the same mailbox under a compare-and-set; a restore returns the old spelling of the same login identity, which revokes and grants nothing",
 	"UserRepository.UpgradePasswordHashCAS":         "rehashes the password just verified; a restore returns an older hash of the same password",
@@ -93,15 +94,27 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 	for _, field := range revocationUserFields {
 		fields[userModelField(t, pkg, field)] = true
 	}
-	rowTypes := map[types.Type]bool{}
+	// Compared with types.Identical, never as map keys: every *types.Pointer is
+	// its own instance, so a pointer-keyed lookup would never match.
+	var rowTypes []types.Type
 	models := pkg.Imports["github.com/ovumcy/ovumcy-web/internal/models"]
 	for _, name := range revocationRowTypes {
 		object := models.Types.Scope().Lookup(name)
 		if object == nil {
 			t.Fatalf("internal/models declares no %s", name)
 		}
-		rowTypes[types.NewPointer(object.Type())] = true
+		rowTypes = append(rowTypes, types.NewPointer(object.Type()))
 	}
+	isRevocationRow := func(expr ast.Expr) bool {
+		kind := info.TypeOf(expr)
+		for _, row := range rowTypes {
+			if kind != nil && types.Identical(kind, row) {
+				return true
+			}
+		}
+		return false
+	}
+	rowDeleters := map[string]bool{}
 
 	column := func(expr ast.Expr) string {
 		value := info.Types[expr].Value
@@ -165,8 +178,9 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 								earliest(&writeAt, typed.Pos())
 							}
 						case "Delete":
-							if len(typed.Args) > 0 && rowTypes[info.TypeOf(typed.Args[0])] {
+							if len(typed.Args) > 0 && isRevocationRow(typed.Args[0]) {
 								earliest(&writeAt, typed.Pos())
+								rowDeleters[name] = true
 							}
 						}
 					}
@@ -219,6 +233,11 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 		}
 	}
 
+	// The row-removal arm is anti-vacuous on its own: the unlink must be found
+	// as a row deleter, not only through the CAS primitive it also calls.
+	if !rowDeleters["OIDCIdentityRepository.DeleteForUserAndRevokeSessions"] {
+		t.Fatalf("the scan did not find the OIDC unlink among the row deleters (%v): the Delete arm resolves nothing", sortedNamesOf(rowDeleters))
+	}
 	for _, required := range loadBearingRevocationWriters {
 		if _, found := writers[required]; !found {
 			t.Fatalf("the scan did not find %s among the session and credential writers (%v): it is not measuring what it claims", required, sortedPositionNames(writers))

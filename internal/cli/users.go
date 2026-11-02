@@ -419,17 +419,17 @@ func runUsersSetEmail(service *services.OperatorUserService, fencePath string, f
 		output = os.Stdout
 	}
 
-	gateErr := error(nil)
-	gatePassed := false
+	var gateErr error
+	gateRan := false
 	before, after, err := service.SetEmailByID(context.Background(), opts.userID, opts.email, func(ctx context.Context) error {
+		gateRan = true
 		gateErr = confirmOperatorFeedRevocation(ctx, fencePath, fence, output)
-		gatePassed = gateErr == nil
 		return gateErr
 	})
 	switch {
 	case gateErr != nil:
 		return gateErr
-	case err != nil && gatePassed:
+	case err != nil && gateRan:
 		return operatorFeedRevocationCommitted(mapUsersSetEmailError(err, opts.userID))
 	case err != nil:
 		return mapUsersSetEmailError(err, opts.userID)
