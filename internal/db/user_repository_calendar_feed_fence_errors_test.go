@@ -126,6 +126,30 @@ func TestAZeroOwnerRevocationNeverAdvancesTheFence(t *testing.T) {
 	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, 0, "hash", 1, "new-password-hash", "new-recovery-hash", nil); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("UpdatePasswordRecoveryCodeAndRevokeSessionsCAS must refuse a zero owner, got %v", err)
 	}
+	// So do the session and credential writers (WEB-418).
+	if err := repo.BumpAuthSessionVersion(ctx, 0); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("BumpAuthSessionVersion must refuse a zero owner, got %v", err)
+	}
+	if err := repo.UpdatePasswordAndRevokeSessions(ctx, 0, 1, "password-hash", false); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("UpdatePasswordAndRevokeSessions must refuse a zero owner, got %v", err)
+	}
+	if err := repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, 0, 1, "password-hash", "recovery-hash", false, nil); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("UpdatePasswordRecoveryCodeAndRevokeSessions must refuse a zero owner, got %v", err)
+	}
+	if err := repo.UpdateTOTPFieldsAndRevokeSessions(ctx, 0, 1, "", false, 0); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("UpdateTOTPFieldsAndRevokeSessions must refuse a zero owner, got %v", err)
+	}
+	if _, err := repo.SetUserEmailByIDAndRevokeSessions(ctx, 0, "from@example.com", "to@example.com"); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("SetUserEmailByIDAndRevokeSessions must refuse a zero owner, got %v", err)
+	}
+	identities := NewOIDCIdentityRepository(repo.database)
+	identities.calendarFeedFence = fence
+	if err := identities.CreateAndRevokeSessions(ctx, &models.OIDCIdentity{Issuer: "https://issuer.example", Subject: "zero"}, 1); err == nil {
+		t.Fatal("CreateAndRevokeSessions must refuse a zero owner")
+	}
+	if deleted, err := identities.DeleteForUserAndRevokeSessions(ctx, 0, 1, 1, true); deleted || err != nil {
+		t.Fatalf("DeleteForUserAndRevokeSessions must write nothing for a zero owner, got %t, %v", deleted, err)
+	}
 	if fence.calls != 0 || fence.diverged != 0 {
 		t.Fatalf("a refused zero-owner revocation must not touch the fence, got %d+%d call(s)", fence.calls, fence.diverged)
 	}

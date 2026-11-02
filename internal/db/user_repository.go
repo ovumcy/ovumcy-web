@@ -260,6 +260,9 @@ func (repo *UserRepository) RenormalizeUserEmail(ctx context.Context, userID uin
 // belongs to the account, not to the address, and the owner keeps the manual
 // rotate control.
 func (repo *UserRepository) SetUserEmailByIDAndRevokeSessions(ctx context.Context, userID uint, fromEmail string, toEmail string) (bool, error) {
+	if err := requireUserOwnerID(userID); err != nil {
+		return false, err
+	}
 	repo.advanceCalendarFeedFenceBestEffort(ctx)
 	result := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND email = ?", userID, fromEmail).
