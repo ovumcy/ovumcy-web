@@ -395,6 +395,8 @@
   display: flex;
   flex-wrap: nowrap;
   overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
   gap: 0.4rem;
   padding: 0.5rem;
   border-radius: var(--radius-card);
@@ -513,7 +515,11 @@
   /* The mobile row does not wrap, so a pill must keep its own width instead of
      being squeezed until its label breaks. */
   flex: none;
-  white-space: nowrap;
+  /* Normal spacing with a row-width cap: the label stays on one line while it
+     fits, and wraps inside the pill when 200% text size makes it wider than
+     the row, instead of pushing the page sideways. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
   min-height: 2.25rem;
   padding: 0.35rem 0.7rem;
   border-radius: var(--radius-pill);
@@ -524,6 +530,10 @@
 }
 
 @utility nav-link {
+  /* A long label ("Политика конфиденциальности") at 200% text size is wider
+     than a 320px row: wrap it inside the pill instead of widening the page. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
   border-radius: var(--radius-pill);
   padding: 0.52rem 1rem;
   font-size: var(--text-sm);
@@ -671,6 +681,12 @@
   grouped, it is a rectangle and does not get one.
 */
 @utility card {
+  /* A card is often a grid item with no template of its own (below the first
+     breakpoint the track is `auto`), and an auto track grows to its item's
+     min-content: at 200% text size one long word then pushed the whole page
+     wider than the phone. Letting the card shrink keeps the track in the
+     viewport and the card's own content wraps. */
+  min-width: 0;
   border-radius: var(--radius-card);
   border: 1px solid var(--border-hairline);
   background: var(--surface-card);
@@ -694,6 +710,8 @@
 /* The quiet level: a card nested inside a card, which is why it neither lifts
    nor casts a shadow. */
 @utility card-quiet {
+  min-width: 0;
+  overflow-wrap: anywhere;
   border-radius: var(--radius-card);
   border: 1px solid var(--border-hairline);
   background: var(--card-quiet-surface);
@@ -844,6 +862,8 @@
 @utility dashboard-status-line {
   margin: 0;
   flex: 1 1 14rem;
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -856,6 +876,11 @@
   display: inline-flex;
   align-items: center;
   gap: 0.34rem;
+  /* A date range ("15.11.2026 – 25.11.2026 (…)") at 200% text size wraps at its
+     spaces; the cap keeps an item that cannot wrap inside the row. */
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 
   /* A "Label: value" item keeps its label whole ("Next period:" never splits
      across lines) by wrapping the VALUE onto its own line rather than shrinking
@@ -1000,11 +1025,37 @@
   }
 }
 
-/* The late-cycle quick links are inline text; give them a 24px hit area. */
+/* The late-cycle quick links are inline text; give them a 24px hit area, and a
+   40px one on touch widths. */
 [data-dashboard-late-cycle-actions] .inline-link {
   display: inline-flex;
   align-items: center;
   min-height: 1.5rem;
+}
+
+@media (max-width: 640px) {
+  /* Keyboard focus scrolls the focused control into view against the scroller's
+     scroll-padding, and on a phone that scroller is the document, not <main>:
+     padding set on <main> never applied, so a focused link, chip or footer link
+     came to rest under the floating tab bar. */
+  :root:has(.main-with-mobile-nav) {
+    scroll-padding-bottom: var(--mobile-tabbar-safe-space);
+  }
+
+  /* Inline text links get a ~40px hit area. Vertical padding on an inline box
+     widens the box that takes the tap without moving the lines around it. */
+  .inline-link {
+    padding-block: 0.65rem;
+  }
+
+  [data-dashboard-late-cycle-actions] .inline-link {
+    padding-block: 0;
+    min-height: 2.5rem;
+  }
+
+  .symptom-more-summary {
+    min-height: 2.5rem;
+  }
 }
 
 @utility dashboard-status-header {
@@ -2367,6 +2418,10 @@
 
 @utility symptom-more-summary {
   display: inline-flex;
+  /* A long label at 200% text size wraps inside the pill rather than pushing
+     the page wider than the phone. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
   align-items: center;
   gap: 0.45rem;
   border-radius: var(--radius-pill);
@@ -3380,6 +3435,18 @@
     & .save-status {
       flex-basis: 100%;
     }
+  }
+}
+
+/* The password field of a re-authentication row. On a wide screen it shares the
+   row with its button; on a phone it takes the whole line, so the button wraps
+   below it instead of squeezing the field to a sliver beside an oval button. */
+@utility settings-reauth-field {
+  min-width: 0;
+  flex: 1 1 0%;
+
+  @media (max-width: 640px) {
+    flex-basis: 100%;
   }
 }
 
@@ -4657,8 +4724,6 @@
        tie, so the declaration never applied. The clearance that actually meets
        the floating bar is `footer-with-mobile-nav`, below. The scroll-* rules
        here do apply — they set no property a utility on this element also sets. */
-    scroll-padding-bottom: var(--mobile-tabbar-safe-space);
-
     & .card {
       scroll-margin-bottom: var(--mobile-tabbar-safe-space);
     }
