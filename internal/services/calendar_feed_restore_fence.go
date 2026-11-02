@@ -54,7 +54,8 @@ type CalendarFeedRestoreFenceOutcome struct {
 	// cannot compare equal on its return. The database is stamped as having
 	// booted this way, which is what lets the first boot that finally has a
 	// fence — with both halves empty — tell this history from a fresh
-	// installation.
+	// installation. All of that is Enforce's; from EnforceRequired the same
+	// outcome means nothing was written at all, because the boot is refused.
 	Unanchored bool
 	// UnanchoredCause carries why, for the startup line only. Never nil when
 	// Unanchored is true.
@@ -138,7 +139,9 @@ func NewCalendarFeedRestoreFence(appState calendarFeedRestoreFenceAppState, user
 	return &CalendarFeedRestoreFence{appState: appState, users: users, anchor: anchor}
 }
 
-// Enforce performs the boot-time check.
+// Enforce performs the boot-time check for an instance that runs with
+// CALENDAR_FEED_FENCE_OPTOUT; every other boot runs EnforceRequired, which
+// refuses the anchor failures described below instead of booting through them.
 //
 // Two failure classes are deliberately kept apart. A DATABASE error is returned
 // and fails the boot, exactly as the sibling sentinel's does: a database that
@@ -244,8 +247,9 @@ func (fence *CalendarFeedRestoreFence) enforce(ctx context.Context, refuseUnanch
 // instead of revoking and then failing to record — which, on a fence volume
 // that is configured but missing, used to repeat the whole revocation on every
 // start, and with passwords in it would lock every owner out on every start.
-// That degraded boot disarms feeds as every unanchored boot does, and is
-// refused outright unless CALENDAR_FEED_FENCE_OPTOUT accepts the residual.
+// That degraded boot is refused outright, writing nothing (EnforceRequired),
+// unless CALENDAR_FEED_FENCE_OPTOUT accepts the residual; with the opt-out it
+// disarms feeds as every unanchored boot does.
 func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outcome CalendarFeedRestoreFenceOutcome, refuseUnanchored bool) (CalendarFeedRestoreFenceOutcome, error) {
 	token, err := security.NewCalendarFeedFenceToken()
 	if err != nil {
