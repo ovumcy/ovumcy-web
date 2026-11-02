@@ -78,7 +78,7 @@ func TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback(t *testing.T) {
 	}
 }
 
-func TestAuthMiddlewareRejectsRevokedAuthSessionCookieAfterForcedResetForHTML(t *testing.T) {
+func TestAuthMiddlewareRejectsRevokedAuthSessionCookieAfterSessionVersionBumpForHTML(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "forced-reset-stale-html@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
@@ -140,6 +140,67 @@ func TestAuthMiddlewareRejectsRevokedAuthSessionCookieForAPI(t *testing.T) {
 	}
 	if clearedCookie.Value != "" {
 		t.Fatalf("expected cleared auth cookie value, got %q", clearedCookie.Value)
+	}
+}
+
+// TestAuthMiddlewareRejectsAnIssuedCookieOnceMustChangePasswordIsSet pins the
+// forced-reset arm of ResolveAuthSession on its own: only must_change_password
+// moves, the session version is asserted untouched, so the version compare
+// cannot be what refuses the cookie.
+func TestAuthMiddlewareRejectsAnIssuedCookieOnceMustChangePasswordIsSet(t *testing.T) {
+	cases := []struct {
+		name       string
+		path       string
+		accept     string
+		wantStatus int
+	}{
+		{name: "html", path: "/dashboard", wantStatus: http.StatusSeeOther},
+		{name: "api", path: "/api/v1/stats/overview", accept: "application/json", wantStatus: http.StatusUnauthorized},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			user := createOnboardingTestUser(t, database, "flag-only-"+tc.name+"@example.com", "StrongPass1", true)
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			assertCompatCookieOpensDashboard(t, app, authCookie)
+
+			var before models.User
+			if err := database.First(&before, user.ID).Error; err != nil {
+				t.Fatalf("load user: %v", err)
+			}
+			if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("must_change_password", true).Error; err != nil {
+				t.Fatalf("set must_change_password: %v", err)
+			}
+			var after models.User
+			if err := database.First(&after, user.ID).Error; err != nil {
+				t.Fatalf("reload user: %v", err)
+			}
+			if !after.MustChangePassword {
+				t.Fatal("fixture: must_change_password was not set")
+			}
+			if after.AuthSessionVersion != before.AuthSessionVersion {
+				t.Fatalf("fixture: the session version moved (%d -> %d), so the version compare could refuse the cookie", before.AuthSessionVersion, after.AuthSessionVersion)
+			}
+
+			request := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			if tc.accept != "" {
+				request.Header.Set("Accept", tc.accept)
+			}
+			request.Header.Set("Cookie", authCookie)
+			response, err := app.Test(request, testConfigNoTimeout)
+			if err != nil {
+				t.Fatalf("request with flagged account cookie failed: %v", err)
+			}
+			defer func() { _ = response.Body.Close() }()
+
+			if response.StatusCode != tc.wantStatus {
+				t.Fatalf("expected status %d for a cookie of an account flagged must_change_password, got %d", tc.wantStatus, response.StatusCode)
+			}
+			cleared := responseCookie(response.Cookies(), authCookieName)
+			if cleared == nil || cleared.Value != "" {
+				t.Fatal("expected the refused cookie to be cleared")
+			}
+		})
 	}
 }
 

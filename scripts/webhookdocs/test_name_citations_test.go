@@ -14,13 +14,15 @@ import (
 // citation naming nothing while the row kept reading as evidenced (the notify
 // fence row cited two tests that were called something else). This sweep
 // resolves every backticked `Test…` name in both documents against the test
-// functions the repository defines. A name that is only a PREFIX of a defined
-// test resolves too: a row may cite a family (`TestNotify`) deliberately. The
+// functions the repository defines. Resolution is exact: a name that is only a
+// PREFIX of a defined test does not resolve, since a renamed test would stay
+// green behind one longer sibling. A row cites a family deliberately by ending
+// the name in `*` inside the backticks (`TestNotify*`). The
 // documents are read in full, not by section, so a row added anywhere joins.
 
 var (
 	backtickedSpan   = regexp.MustCompile("`([^`\n]+)`")
-	leadingTestIdent = regexp.MustCompile(`^Test[A-Za-z0-9_]*`)
+	leadingTestIdent = regexp.MustCompile(`^Test[A-Za-z0-9_]*\*?`)
 	definedTestFunc  = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]*)\(`)
 )
 
@@ -43,13 +45,14 @@ func citedTestNames(doc string) []string {
 }
 
 // danglingTestCitations lists the cited names that are neither a defined test
-// nor a prefix of one.
+// nor, for a name marked as a family with a trailing `*`, a prefix of one.
 func danglingTestCitations(doc string, defined []string) []string {
 	dangling := []string{}
 	for _, name := range citedTestNames(doc) {
 		resolved := false
+		family := strings.HasSuffix(name, "*")
 		for _, candidate := range defined {
-			if strings.HasPrefix(candidate, name) {
+			if candidate == name || (family && strings.HasPrefix(candidate, strings.TrimSuffix(name, "*"))) {
 				resolved = true
 				break
 			}
@@ -107,22 +110,25 @@ func TestEveryTestNameTheSecurityDocsCiteResolvesToADefinedTest(t *testing.T) {
 			t.Fatalf("%s cites no test at all: the extractor is measuring nothing", rel)
 		}
 		for _, name := range danglingTestCitations(doc, defined) {
-			t.Errorf("%s cites `%s`, which is neither a defined Go test function nor a prefix of one: rename the citation to the test that exists, or restore the test", rel, name)
+			t.Errorf("%s cites `%s`, which is not a defined Go test function (a trailing * marks a deliberate family): rename the citation to the test that exists, or restore the test", rel, name)
 		}
 	}
 }
 
 // TestDanglingTestCitationsFlagsOnlyUnresolvedNames drives the sweep's own
 // classifier: a renamed citation must be flagged, an exact name, a subtest
-// suffix and a deliberate prefix must resolve, and prose that merely starts
-// with "Test" inside a longer span is read by its leading identifier.
+// suffix and a `*`-marked family must resolve, an unmarked prefix of a defined
+// test (a renamed citation) and a family matching nothing must be flagged, and
+// prose that merely starts with "Test" inside a longer span is read by its
+// leading identifier.
 func TestDanglingTestCitationsFlagsOnlyUnresolvedNames(t *testing.T) {
 	defined := []string{"TestRealThing", "TestFamilyOne", "TestFamilyTwo"}
-	doc := "| `TestRealThing`, `TestRealThing/sub case`, `TestFamily`, `TestGoneThing`, `TestRealThing` | x |\n" +
+	doc := "| `TestRealThing`, `TestRealThing/sub case`, `TestFamily*`, `TestGoneThing`, `TestFamily`, `TestNoSuch*`, `TestRealThing` | x |\n" +
 		"and `not a test`, `Test` alone"
 
 	got := danglingTestCitations(doc, defined)
-	if len(got) != 1 || got[0] != "TestGoneThing" {
-		t.Fatalf("danglingTestCitations = %v, want exactly [TestGoneThing]", got)
+	want := []string{"TestFamily", "TestGoneThing", "TestNoSuch*"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("danglingTestCitations = %v, want exactly %v", got, want)
 	}
 }
