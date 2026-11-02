@@ -5,7 +5,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/services"
 	"gorm.io/gorm"
 )
 
@@ -25,6 +27,32 @@ func TestSessionRejectionRetractsSessionOnlyHandoffsButKeepsPreSessionOnes(t *te
 			authCookie: func(t *testing.T, _ *gorm.DB) string {
 				t.Helper()
 				return authCookieName + "=not-a-sealed-value"
+			},
+		},
+		{
+			name: "sealed decode failure",
+			authCookie: func(t *testing.T, _ *gorm.DB) string {
+				t.Helper()
+				return authCookieName + "=" + secureCookieVersion + ".not-an-aead-payload"
+			},
+		},
+		{
+			name: "invalid claims",
+			authCookie: func(t *testing.T, _ *gorm.DB) string {
+				t.Helper()
+				return authCookieName + "=" + sealAuthCookieTokenForTest(t, "not-a-signed-session-token")
+			},
+		},
+		{
+			name: "expired token",
+			authCookie: func(t *testing.T, database *gorm.DB) string {
+				t.Helper()
+				user := createOnboardingTestUser(t, database, "reject-retract-expired@example.com", "StrongPass1", true)
+				token, _, err := services.NewAuthService(nil).BuildAuthSessionTokenWithSessionID([]byte(testAppSecretKey), user.ID, user.Role, user.AuthSessionVersion, time.Hour, time.Now().Add(-2*time.Hour))
+				if err != nil {
+					t.Fatalf("build expired auth session token: %v", err)
+				}
+				return authCookieName + "=" + sealAuthCookieTokenForTest(t, token)
 			},
 		},
 		{
@@ -71,4 +99,17 @@ func TestSessionRejectionRetractsSessionOnlyHandoffsButKeepsPreSessionOnes(t *te
 			}
 		})
 	}
+}
+
+func sealAuthCookieTokenForTest(t *testing.T, token string) string {
+	t.Helper()
+	codec, err := newSecureCookieCodec([]byte(testAppSecretKey))
+	if err != nil {
+		t.Fatalf("init secure cookie codec: %v", err)
+	}
+	sealed, err := codec.seal(authCookieName, []byte(token))
+	if err != nil {
+		t.Fatalf("seal auth cookie token: %v", err)
+	}
+	return sealed
 }

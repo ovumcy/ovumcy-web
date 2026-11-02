@@ -2,6 +2,8 @@ package api
 
 import (
 	"fmt"
+	"go/ast"
+	"go/types"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,6 +19,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/net/html"
+	"golang.org/x/tools/go/packages"
 	"gorm.io/gorm"
 )
 
@@ -471,7 +474,7 @@ var unguardedMutationReasons = map[string]string{
 	"DELETE /api/v1/users/current/2fa":                 "disables two-factor; demands the current password",
 	"POST /api/v1/users/current/data-wipe/validate":    "checks the password; writes nothing",
 	"POST /api/v1/users/current/data-wipe":             "erases the data; demands the current password",
-	"POST /api/v1/users/current/oidc/link/step-up":     "starts a provider re-authentication; stores nothing on the account",
+	"POST /api/v1/users/current/oidc/link/step-up":     "starts the identity-link re-authentication; demands the current password",
 	"POST /api/v1/users/current/oidc/link/confirm":     "links only the identity in the owner-bound sealed pending-link cookie",
 	"DELETE /api/v1/users/current/oidc/identities/:id": "unlinks an identity; demands the current password",
 	"DELETE /api/v1/sessions/current":                  "signs out; changes no setting and no data",
@@ -541,8 +544,15 @@ func TestEveryStateChangingV1RouteIsAccountBoundOrNamedWithItsReason(t *testing.
 	for _, write := range append(settingsWriteCases(fixture), onboardingWriteCases(fixture)...) {
 		cased[write.route] = true
 	}
-	for route := range boundRoutesDrivenElsewhere {
+	declared := declaredAPITestFunctions(t)
+	if !declared["TestEveryStateChangingV1RouteIsAccountBoundOrNamedWithItsReason"] || boundRoutesDrivenElsewhere[erasureStepupLoadBearingRoute] == "" {
+		t.Fatalf("the test resolver must see this sweep's own declaration and %s must name its driving test; resolved %d test(s)", erasureStepupLoadBearingRoute, len(declared))
+	}
+	for route, name := range boundRoutesDrivenElsewhere {
 		cased[route] = true
+		if !declared[name] {
+			t.Errorf("%s is driven by %s, which this package does not declare as a test", route, name)
+		}
 	}
 	var bound []string
 	for route := range cased {
@@ -581,6 +591,63 @@ func TestEveryStateChangingV1RouteIsAccountBoundOrNamedWithItsReason(t *testing.
 			t.Errorf("%s is named as exempt but the router no longer registers it", key)
 		}
 	}
+}
+
+const erasureStepupLoadBearingRoute = "POST /api/v1/users/current/data-wipe/step-up"
+
+// declaredAPITestFunctions type-checks this package with its tests and returns
+// the name of every top-level func(*testing.T) named Test… it declares,
+// resolved through types.Info, so a name that survives only in a comment, a
+// string or a helper's signature does not count.
+func declaredAPITestFunctions(t *testing.T) map[string]bool {
+	t.Helper()
+
+	root, err := moduleRootForBarrier()
+	if err != nil {
+		t.Fatalf("locate module root: %v", err)
+	}
+	config := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+		Dir:   root,
+		Tests: true,
+	}
+	loaded, err := packages.Load(config, "./internal/api")
+	if err != nil {
+		t.Fatalf("type-check the api package with its tests: %v", err)
+	}
+	var withTests *packages.Package
+	for _, pkg := range loaded {
+		if pkg.PkgPath == apiPackagePath && strings.HasSuffix(pkg.ID, ".test]") {
+			withTests = pkg
+		}
+	}
+	if withTests == nil {
+		t.Fatal("the load returned no test variant of the api package")
+	}
+	for _, packageError := range withTests.Errors {
+		t.Fatalf("the api package with its tests does not type-check: %v", packageError)
+	}
+
+	declared := map[string]bool{}
+	for _, file := range withTests.Syntax {
+		for _, decl := range file.Decls {
+			funcDecl, ok := decl.(*ast.FuncDecl)
+			if !ok || funcDecl.Recv != nil || !strings.HasPrefix(funcDecl.Name.Name, "Test") {
+				continue
+			}
+			function, ok := withTests.TypesInfo.Defs[funcDecl.Name].(*types.Func)
+			if !ok || !strings.HasSuffix(withTests.Fset.Position(function.Pos()).Filename, "_test.go") {
+				continue
+			}
+			signature, ok := function.Type().(*types.Signature)
+			if ok && signature.Results().Len() == 0 && signature.Params().Len() == 1 &&
+				types.TypeString(signature.Params().At(0).Type(), nil) == "*testing.T" {
+				declared[function.Name()] = true
+			}
+		}
+	}
+	return declared
 }
 
 func routeListHas(values []string, want string) bool {
