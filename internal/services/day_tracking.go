@@ -148,6 +148,21 @@ func FormatDayBBTForInput(value *float64, unit string) string {
 	return fmt.Sprintf("%.2f", *normalized)
 }
 
+// FormatDayBBTForDisplay is the read-only form of a day's temperature: the
+// account's unit, the language's decimal separator and the one precision the
+// stats page prints, so a summary and a chart never disagree. The editor field
+// keeps FormatDayBBTForInput, a machine-parsable value.
+func FormatDayBBTForDisplay(language string, value *float64, unit string) string {
+	normalized := normalizeStoredDayBBT(value)
+	if normalized == nil {
+		return ""
+	}
+	if NormalizeTemperatureUnit(unit) == TemperatureUnitFahrenheit {
+		return FormatLocalizedNumber(language, roundTemperatureValue(celsiusToFahrenheit(*normalized)))
+	}
+	return FormatLocalizedNumber(language, *normalized)
+}
+
 // ParseDayBBTRawWithUnit parses a raw temperature form field into a nullable
 // stored value. An empty field means "not measured" and yields nil; a parsed
 // value is normalized (and unit-converted) and returned as a pointer.

@@ -18,7 +18,7 @@ import (
 )
 
 type RegistrationWorkflowService interface {
-	RegisterOwnerAccount(ctx context.Context, email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error)
+	RegisterOwnerAccount(ctx context.Context, email string, rawPassword string, confirmPassword string, createdAt time.Time, language string) (models.User, string, error)
 	RegistrationOpen() bool
 }
 

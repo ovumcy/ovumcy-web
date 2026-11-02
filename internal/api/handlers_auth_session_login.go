@@ -44,6 +44,7 @@ func (handler *Handler) Register(c fiber.Ctx) error {
 		credentials.Password,
 		credentials.ConfirmPassword,
 		now,
+		handler.onboardingAccountLanguage(c),
 	)
 	if err != nil {
 		if errors.Is(err, services.ErrAuthEmailExists) {

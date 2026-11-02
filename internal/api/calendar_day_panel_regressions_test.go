@@ -51,8 +51,46 @@ func TestCalendarDayPanelReadonlySummaryShowsSavedBBT(t *testing.T) {
 	if !strings.Contains(rendered, "BBT") {
 		t.Fatalf("expected BBT label in calendar day summary, got %q", rendered)
 	}
-	if !strings.Contains(rendered, "36.75 °C") {
-		t.Fatalf("expected saved BBT value in calendar day summary, got %q", rendered)
+	if !strings.Contains(rendered, "36.8 °C") {
+		t.Fatalf("expected saved BBT value at the stats precision in calendar day summary, got %q", rendered)
+	}
+}
+
+// TestCalendarDayPanelSummaryPrintsBBTWithTheLanguageSeparator keeps the
+// read-only summary on the number format the stats page uses: the decimal comma
+// outside en and one decimal, in the account's unit.
+func TestCalendarDayPanelSummaryPrintsBBTWithTheLanguageSeparator(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-bbt-ru-f@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"track_bbt":        true,
+		"temperature_unit": services.TemperatureUnitFahrenheit,
+	}).Error; err != nil {
+		t.Fatalf("enable BBT tracking: %v", err)
+	}
+	if err := database.Create(&models.DailyLog{
+		UserID: user.ID,
+		Date:   time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC),
+		BBT:    new(37.0),
+		Notes:  "tracked",
+	}).Error; err != nil {
+		t.Fatalf("create daily log: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	request := httptest.NewRequest(http.MethodGet, "/calendar/day/2026-02-17", nil)
+	request.Header.Set("Accept-Language", "ru")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	rendered := mustReadBodyString(t, response.Body)
+	if !strings.Contains(rendered, "98,6 °F") {
+		t.Fatalf("expected the ru summary to read 98,6 °F, got %q", rendered)
+	}
+	if strings.Contains(rendered, "98.60 °F") {
+		t.Fatalf("the summary still prints the input format: %q", rendered)
 	}
 }
 
