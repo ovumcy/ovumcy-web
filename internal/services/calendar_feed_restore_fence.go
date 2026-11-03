@@ -391,11 +391,12 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 // it holds writing, so every member called before the advance began, which is
 // all the ordering its row write needs. A member waits for the result whatever
 // its ctx does: its caller ignores the error and writes next, so returning
-// early would put that write ahead of the advance. For the same reason the
-// write itself ignores the leader's cancellation: a client that hung up on its
-// own sign-out must not fail the database half for every member and diverge
-// the halves. The lock and the batch are released on every exit, a panic
-// included, or each later session writer would wait forever.
+// early would put that write ahead of the advance. The write runs under the
+// leader's ctx, as every fence write runs under its caller's: a cancelled
+// leader fails the database half for the whole batch, which diverges the
+// halves — fail closed, the same outcome that leader alone would have had.
+// The lock and the batch are released on every exit, a panic included, or
+// each later session writer would wait forever.
 func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) error {
 	fence.batching.Lock()
 	if batch := fence.pending; batch != nil {
@@ -416,7 +417,7 @@ func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) err
 	fence.batching.Lock()
 	fence.pending = nil
 	fence.batching.Unlock()
-	batch.err = fence.advanceOrDivergeLocked(context.WithoutCancel(ctx))
+	batch.err = fence.advanceOrDivergeLocked(ctx)
 	return batch.err
 }
 
