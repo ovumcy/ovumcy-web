@@ -12,26 +12,52 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-// TestSettingsPageRendersNoPartOfTheStoredEndpointPath tests the invariant on
-// the page, not the projection: the settings page shows at most the host of a
-// stored endpoint. A Telegram bot URL carries its token in the first path
-// segment, which an earlier masking rule rendered in clear.
-func TestSettingsPageRendersNoPartOfTheStoredEndpointPath(t *testing.T) {
-	owner := newSettingsSecurityTestContext(t, "egress-destination-telegram@example.com")
-	seedEgressRow(t, owner.database, owner.user.ID, egressRenderRow{
-		webhookURLPlaintext: "https://api.telegram.org/bot123456789:AAFixtureTokenValue0000/sendMessage?chat_id=42",
-		webhookEnabled:      true,
-		notifyPeriod:        true,
-	})
-
-	body := fetchPageBody(t, owner.app, "/settings", owner.authCookie)
-	if !strings.Contains(body, "api.telegram.org") {
-		t.Fatal("the settings page no longer names the stored host")
+// TestSettingsPageRendersOnlyAMaskedStoredEndpointPath tests the invariant on
+// the page, not the projection: the settings page shows host[:port] and a
+// masked path of a stored endpoint. A Telegram bot URL carries its token in the
+// first path segment, which a position-only masking rule would render in clear.
+func TestSettingsPageRendersOnlyAMaskedStoredEndpointPath(t *testing.T) {
+	cases := []struct {
+		name  string
+		email string
+		raw   string
+		want  string
+		leaks []string
+	}{
+		{
+			name:  "telegram",
+			email: "egress-destination-telegram@example.com",
+			raw:   "https://api.telegram.org/bot123456789:AAFixtureTokenValue0000/sendMessage?chat_id=42",
+			want:  "api.telegram.org/…/sage",
+			leaks: []string{"123456789", "AAFixtureTokenValue0000", "sendMessage", "chat_id", "bot1"},
+		},
+		{
+			name:  "slack",
+			email: "egress-destination-slack@example.com",
+			raw:   "https://hooks.slack.com/services/T000/B000/XXXXabcd",
+			want:  "hooks.slack.com/services/…/abcd",
+			leaks: []string{"T000", "B000", "XXXX"},
+		},
 	}
-	for _, leak := range []string{"123456789", "AAFixtureTokenValue0000", "sendMessage", "chat_id", "api.telegram.org/"} {
-		if strings.Contains(body, leak) {
-			t.Fatalf("the settings page rendered %q from the stored endpoint", leak)
-		}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			owner := newSettingsSecurityTestContext(t, testCase.email)
+			seedEgressRow(t, owner.database, owner.user.ID, egressRenderRow{
+				webhookURLPlaintext: testCase.raw,
+				webhookEnabled:      true,
+				notifyPeriod:        true,
+			})
+
+			body := fetchPageBody(t, owner.app, "/settings", owner.authCookie)
+			if !strings.Contains(body, ">"+testCase.want+"</span>") {
+				t.Fatalf("the settings page no longer renders the masked destination %q", testCase.want)
+			}
+			for _, leak := range testCase.leaks {
+				if strings.Contains(body, leak) {
+					t.Fatalf("the settings page rendered %q from the stored endpoint", leak)
+				}
+			}
+		})
 	}
 }
 
