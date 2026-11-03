@@ -314,6 +314,16 @@ func (service *WebhookNotifyService) processOwner(
 	due, watermarkSuppressed := decideDueReminders(&user, settings, dayLogs, now, ownerLocation)
 	report.SkippedIdempotent += watermarkSuppressed
 
+	// No reminder leaves without its "not medical advice" text, the rule the
+	// calendar feed applies to a blank disclaimer. Nothing is claimed, so every
+	// watermark stays where it was and the reminder goes out on the first pass
+	// after the copy resolves. The dry-run preview withholds too: it shows what
+	// would be sent. The line names the owner id and the locale only.
+	if len(due) > 0 && strings.TrimSpace(service.localized.Disclaimer(record.InterfaceLanguage)) == "" {
+		log.Printf("webhook notify withheld: reason=disclaimer_blank owner id=%d locale=%q", record.ID, record.InterfaceLanguage)
+		return
+	}
+
 	// Destination HOST only, for the dry-run preview and any host-scoped logging.
 	// Never keep or print more of the URL than this.
 	host := hostOnly(decryptedURL)

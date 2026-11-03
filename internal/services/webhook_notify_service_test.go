@@ -85,13 +85,11 @@ func (stub stubDisclaimer) Message(_ string, key string) string {
 	}
 }
 
-// TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest records the
-// current behaviour when the localized disclaimer resolves to "": buildPayload has
-// no runtime guard, so the reminder still goes out with Disclaimer "" beside an
-// intact title, message and date. This CONTRADICTS the documented invariant that
-// every payload carries the disclaimer: the invariant currently rests on the
-// catalogue never resolving to "" (TestMedicalDisclaimerIsNonEmptyInEveryShippedLocale),
-// not on this builder. The test pins the gap so closing it is a deliberate change.
+// TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest pins that
+// buildPayload carries the disclaimer verbatim, "" included: the builder is not
+// the gate. A payload with a blank disclaimer never leaves, because the pass
+// withholds the owner's reminders before it builds one
+// (TestNotifyWithholdsEveryReminderWhenTheDisclaimerIsBlank).
 func TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest(t *testing.T) {
 	service := &WebhookNotifyService{localized: stubDisclaimer{text: ""}}
 	reminder := DueReminder{
@@ -102,7 +100,7 @@ func TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest(t *testing
 
 	payload := service.buildPayload(reminder, "")
 	if payload.Disclaimer != "" {
-		t.Fatalf("pinned: an empty disclaimer is currently sent as-is (got %q); closing the gap should update this test", payload.Disclaimer)
+		t.Fatalf("the builder carries the resolved disclaimer verbatim, got %q", payload.Disclaimer)
 	}
 	if payload.Title != "Period reminder" || payload.Message != "Estimated next period around 2026-04-09." {
 		t.Fatalf("title and message are unaffected by the disclaimer: %q / %q", payload.Title, payload.Message)
@@ -473,6 +471,56 @@ func TestNotifyDisclaimerPresentInEveryPayload(t *testing.T) {
 		if !seenKinds[kind] {
 			t.Fatalf("anchor: expected a %q delivery, got kinds %v", kind, seenKinds)
 		}
+	}
+}
+
+// TestNotifyWithholdsEveryReminderWhenTheDisclaimerIsBlank: a disclaimer that
+// resolves to "" (a missing copy key) sends no reminder of either kind, claims no
+// watermark, and previews nothing on a dry run, as the calendar feed renders no
+// event. Once the copy resolves, the next pass sends both.
+func TestNotifyWithholdsEveryReminderWhenTheDisclaimerIsBlank(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	periodOwner := dueRecord(1, "https://a.example/hook", now, 26)
+	periodOwner.WebhookNotifyOvulation = true
+	ovulationOwner := dueRecord(2, "https://b.example/hook", now, 12)
+	ovulationOwner.WebhookNotifyOvulation = true
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{periodOwner, ovulationOwner}}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{
+		1: {periodStartLog(1, *periodOwner.LastPeriodStart)},
+		2: completedCycleStartLogs(2, *ovulationOwner.LastPeriodStart),
+	}}
+
+	for _, blank := range []string{"", "  \n"} {
+		deliverer := &stubDeliverer{}
+		service := NewWebhookNotifyService(repo, logs, stubDecryptor{}, deliverer, stubDisclaimer{text: blank})
+		for _, dryRun := range []bool{true, false} {
+			report, err := service.RunOnce(context.Background(), now, time.UTC, dryRun)
+			if err != nil {
+				t.Fatalf("RunOnce: %v", err)
+			}
+			if report.Due != 0 || report.Sent != 0 || report.Failed != 0 || len(report.DryRunPreview) != 0 {
+				t.Fatalf("disclaimer %q dryRun=%v: expected nothing due or previewed, got %+v", blank, dryRun, report)
+			}
+		}
+		if got := len(deliverer.deliveries()); got != 0 {
+			t.Fatalf("disclaimer %q: expected no delivery, got %d", blank, got)
+		}
+		if got := len(repo.writes()); got != 0 {
+			t.Fatalf("disclaimer %q: expected no watermark claim, got %d", blank, got)
+		}
+	}
+
+	deliverer := &stubDeliverer{}
+	report, err := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer).RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	seenKinds := map[string]bool{}
+	for _, delivery := range deliverer.deliveries() {
+		seenKinds[delivery.payload.Type] = true
+	}
+	if report.Sent != 2 || !seenKinds[DueReminderTypePeriod] || !seenKinds[DueReminderTypeOvulation] {
+		t.Fatalf("anchor: a resolved disclaimer sends both withheld reminders, got sent=%d kinds=%v", report.Sent, seenKinds)
 	}
 }
 
