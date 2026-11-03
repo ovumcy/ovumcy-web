@@ -684,13 +684,13 @@ test.describe('Calendar page', () => {
     await registerOwnerOnCalendar(page, 'calendar-cycle-start-policy-scope');
 
     const todayISO = await todayISOFromCalendar(page);
-    const tomorrowISO = shiftISODate(todayISO, 1);
-    const month = tomorrowISO.slice(0, 7);
+    const dayISO = todayISO;
+    const month = dayISO.slice(0, 7);
 
-    await page.goto(`/calendar?month=${month}&day=${tomorrowISO}`);
-    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${tomorrowISO}`));
+    await page.goto(`/calendar?month=${month}&day=${dayISO}`);
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${dayISO}`));
 
-    const manualStartForm = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"]`);
+    const manualStartForm = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${dayISO}"]`);
     await expect(manualStartForm).toBeVisible();
 
     // Structural guard: the policy node must be reachable from the form's parent,
@@ -705,7 +705,7 @@ test.describe('Calendar page', () => {
     // short-gap cycle start (HTTP < 400) instead of the silent 400.
     await manualStartForm.locator('[data-day-cycle-start-button]').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
-    // The onboarding start is a logged cycle start, so marking tomorrow first
+    // The onboarding start is a logged cycle start, so marking today first
     // asks to replace it, then warns about the short gap.
     await expect(page.locator('#confirm-modal')).toContainText('already marked a cycle start');
     await page.locator('#confirm-modal-accept').click();
@@ -715,7 +715,7 @@ test.describe('Calendar page', () => {
       page.waitForRequest((candidate) => {
         return (
           candidate.method() === 'POST' &&
-          candidate.url().includes(`/api/v1/days/${tomorrowISO}/cycle-start?source=calendar`)
+          candidate.url().includes(`/api/v1/days/${dayISO}/cycle-start?source=calendar`)
         );
       }),
       page.locator('#confirm-modal-accept').click(),
@@ -723,7 +723,7 @@ test.describe('Calendar page', () => {
     const cycleStartResponse = await cycleStartRequest.response();
     expect(
       cycleStartResponse,
-      `expected a response for POST /api/v1/days/${tomorrowISO}/cycle-start?source=calendar`
+      `expected a response for POST /api/v1/days/${dayISO}/cycle-start?source=calendar`
     ).not.toBeNull();
     expect(cycleStartResponse!.status()).toBeLessThan(400);
   });
@@ -934,42 +934,42 @@ test.describe('Calendar page', () => {
     await registerOwnerOnCalendar(page, 'calendar-cycle-start-policy-withdata');
 
     const todayISO = await todayISOFromCalendar(page);
-    const tomorrowISO = shiftISODate(todayISO, 1);
-    const month = tomorrowISO.slice(0, 7);
+    const dayISO = todayISO;
+    const month = dayISO.slice(0, 7);
 
-    // Give tomorrow a NON-period, non-cycle-start entry (a note) so its summary
+    // Give today a non-cycle-start entry (a note) so its summary
     // view renders the with-data branch. The onboarding anchor stays
-    // last_period_start = today-3, so tomorrow is still a 4-day short gap and
+    // last_period_start = today-3, so today is a 3-day short gap and
     // manual cycle start stays allowed. Saving the note through the normal day
-    // editor writes it on tomorrow's cell regardless of the runner timezone.
+    // editor writes it on today's cell regardless of the runner timezone.
     const noteText = `calendar-withdata-${Date.now()}`;
-    const dayEditorForm = await openCalendarDayEditor(page, tomorrowISO);
+    const dayEditorForm = await openCalendarDayEditor(page, dayISO);
     await openCalendarNotes(dayEditorForm);
     await dayEditorForm.locator('#calendar-notes').fill(noteText);
     const [saveRequest] = await Promise.all([
       page.waitForRequest(
         (candidate) =>
-          candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${tomorrowISO}`),
+          candidate.method() === 'PATCH' && candidate.url().includes(`/api/v1/days/${dayISO}`),
       ),
       dayEditorForm.locator('button[data-save-button]').click(),
     ]);
     const saveResponse = await saveRequest.response();
-    expect(saveResponse, `expected a response for PATCH /api/v1/days/${tomorrowISO}`).not.toBeNull();
+    expect(saveResponse, `expected a response for PATCH /api/v1/days/${dayISO}`).not.toBeNull();
     expect(
       saveResponse!.ok(),
-      `PATCH /api/v1/days/${tomorrowISO} failed with ${saveResponse!.status()}`
+      `PATCH /api/v1/days/${dayISO} failed with ${saveResponse!.status()}`
     ).toBeTruthy();
 
-    // Reload the summary (non-edit) view for tomorrow. It now renders the
+    // Reload the summary (non-edit) view for today. It now renders the
     // with-data branch: the logged note is shown by owner_log_summary, which the
     // "no entry" branch never renders — proof we are on the {{if .HasDayData}}
     // path — and the "edit entry" affordance sits next to the cycle-start form.
-    await page.goto(`/calendar?month=${month}&day=${tomorrowISO}`);
-    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${tomorrowISO}`));
+    await page.goto(`/calendar?month=${month}&day=${dayISO}`);
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${dayISO}`));
     await expect(page.locator('#day-editor')).toContainText(noteText);
-    await expect(page.locator(`[data-day-editor-open="${tomorrowISO}"]`).first()).toBeVisible();
+    await expect(page.locator(`[data-day-editor-open="${dayISO}"]`).first()).toBeVisible();
 
-    const manualStartForm = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"]`);
+    const manualStartForm = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${dayISO}"]`);
     await expect(manualStartForm).toBeVisible();
 
     // Structural guard, identical to the no-data regression: the policy node
@@ -985,7 +985,7 @@ test.describe('Calendar page', () => {
     // short-gap cycle start (HTTP < 400) instead of the silent 400.
     await manualStartForm.locator('[data-day-cycle-start-button]').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
-    // The onboarding start is a logged cycle start, so marking tomorrow first
+    // The onboarding start is a logged cycle start, so marking today first
     // asks to replace it, then warns about the short gap.
     await expect(page.locator('#confirm-modal')).toContainText('already marked a cycle start');
     await page.locator('#confirm-modal-accept').click();
@@ -995,7 +995,7 @@ test.describe('Calendar page', () => {
       page.waitForRequest((candidate) => {
         return (
           candidate.method() === 'POST' &&
-          candidate.url().includes(`/api/v1/days/${tomorrowISO}/cycle-start?source=calendar`)
+          candidate.url().includes(`/api/v1/days/${dayISO}/cycle-start?source=calendar`)
         );
       }),
       page.locator('#confirm-modal-accept').click(),
@@ -1003,7 +1003,7 @@ test.describe('Calendar page', () => {
     const cycleStartResponse = await cycleStartRequest.response();
     expect(
       cycleStartResponse,
-      `expected a response for POST /api/v1/days/${tomorrowISO}/cycle-start?source=calendar`
+      `expected a response for POST /api/v1/days/${dayISO}/cycle-start?source=calendar`
     ).not.toBeNull();
     expect(cycleStartResponse!.status()).toBeLessThan(400);
   });
