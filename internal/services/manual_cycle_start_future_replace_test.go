@@ -22,7 +22,11 @@ func replaceStoredStartOn(t *testing.T, email string, mark time.Time, now time.T
 	if user.LastPeriodStart == nil {
 		t.Fatal("stored start was cleared")
 	}
-	old, found := startMoveRowOn(startMoveListLogs(t, repositories, userID), "2026-09-14")
+	logs := startMoveListLogs(t, repositories, userID)
+	if marked, found := startMoveRowOn(logs, CalendarDayKey(mark)); !found || !marked.CycleStart {
+		t.Fatalf("%s was not marked: %+v", CalendarDayKey(mark), marked)
+	}
+	old, found := startMoveRowOn(logs, "2026-09-14")
 	return dateOnly(*user.LastPeriodStart), found && old.CycleStart
 }
 
