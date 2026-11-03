@@ -209,6 +209,19 @@ func TestWebhookDestinationDisplayNeverShowsATelegramToken(t *testing.T) {
 	}
 }
 
+// url.Parse refuses a broken escape before a path reaches the mask, so this arm
+// is pinned on the segment check itself: an undecodable segment fails closed.
+func TestCredentialShapedSegmentFailsClosedOnABrokenEscape(t *testing.T) {
+	t.Parallel()
+
+	if !isCredentialShapedSegment("hooks%zz") {
+		t.Fatal("a segment whose escape does not decode is shown in clear")
+	}
+	if isCredentialShapedSegment("services") {
+		t.Fatal("a plain route name is treated as a credential")
+	}
+}
+
 // The heading names a route as switched on while this instance runs no reminder
 // pass, and the row beside it says the instance sends nothing from here. Both are
 // true together only because the heading is worded as a statement about the
