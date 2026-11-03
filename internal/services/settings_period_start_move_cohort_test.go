@@ -109,6 +109,14 @@ func TestSettingsStartMoveKeepsALegacyStampedFill(t *testing.T) {
 
 	logs := startMoveListLogs(t, repositories, user.ID)
 	for _, day := range want {
+		if day == "2026-09-14" {
+			// The old start's own row carried the logged start mark; with the mark
+			// moved it is bare and goes. Its legacy-stamped neighbours stay.
+			if startMoveHasPeriodDay(logs, day) {
+				t.Errorf("the old start row %s kept its place after the mark moved", day)
+			}
+			continue
+		}
 		if !startMoveHasPeriodDay(logs, day) {
 			t.Errorf("legacy-stamped fill day %s was deleted by the start move", day)
 		}

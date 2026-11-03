@@ -438,6 +438,19 @@ func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate, clear
 			keep[CalendarDayKey(day)] = true
 		}
 	}
+	if today := DateAtLocation(settings.now, settings.location); !today.IsZero() && newStart.After(CalendarDay(today, time.UTC)) {
+		// Mirrors onboarding's bound: a start the owner has not reached writes no day.
+		move.MarkDay = time.Time{}
+	}
+	if clearOld && !oldStart.IsZero() {
+		// The start is being corrected, with auto-fill on or off: its logged
+		// mark moves to the new date. A row left with nothing else is removed,
+		// unless the new period's own range covers it.
+		move.ReleaseStart = oldStart
+		if !keep[CalendarDayKey(oldStart)] {
+			move.ReleaseIsBare = isBareLoggedStartDay
+		}
+	}
 	if clearOld && !oldStart.IsZero() && stored.AutoPeriodFill {
 		span := periodFillLength(stored.PeriodLength)
 		move.ClearFrom = oldStart
@@ -447,6 +460,17 @@ func planPeriodStartMove(stored models.User, settings CycleSettingsUpdate, clear
 		}
 	}
 	return move, true
+}
+
+// isBareLoggedStartDay reports whether a logged cycle-start day carries nothing
+// beyond the start itself once its mark is off: a period day with no flow
+// beyond the default, no symptom, note, mood, BBT, mucus, test, sex activity or
+// cycle factor. The provenance mark (hand-entered or auto-filled) is not data.
+func isBareLoggedStartDay(entry models.DailyLog) bool {
+	entry.CycleStart = false
+	entry.IsUncertain = false
+	entry.AutoFilled = nil
+	return IsAutoFilledPeriodCandidate(entry, "")
 }
 
 // oldStartFillRun picks, out of the rows dated in the old start's fill range,
