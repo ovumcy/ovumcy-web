@@ -38,7 +38,7 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button type="submit" class="btn-primary">{{t .Messages "settings.oidc_link.confirm.submit"}}</button>
       </form>
-      <form action="/api/v1/users/current/oidc/link/cancel" method="post" data-oidc-link-cancel-form>
+      <form action="/api/v1/users/current/oidc/link/cancel" method="post">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button type="submit" class="btn-secondary">{{t .Messages "settings.oidc_link.confirm.cancel"}}</button>
       </form>
