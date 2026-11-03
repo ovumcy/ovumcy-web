@@ -736,7 +736,11 @@ test.describe('Dashboard: today editor', () => {
       ),
       (async () => {
         await manualStartButton.click();
-        await expect(page.locator('#confirm-modal')).toBeVisible();
+        // The onboarding start is a logged cycle start, so marking today first
+        // asks to replace it, then warns about the short gap.
+        await expect(page.locator('#confirm-modal')).toContainText('already marked a cycle start');
+        await page.locator('#confirm-modal-accept').click();
+        await expect(page.locator('#confirm-modal')).toContainText('days have passed since the previous cycle');
         await page.locator('#confirm-modal-accept').click();
       })(),
     ]);
