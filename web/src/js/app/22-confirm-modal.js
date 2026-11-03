@@ -101,6 +101,10 @@
       if (!source || !source.getAttribute) {
         return;
       }
+      // 22b-clear-data-confirm.js checks the password before this confirm opens.
+      if (source.hasAttribute("data-password-precheck-action")) {
+        return;
+      }
 
       var acceptLabel = source.getAttribute("data-confirm-accept") || "";
       event.preventDefault();

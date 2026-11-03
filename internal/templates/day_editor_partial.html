@@ -191,7 +191,7 @@
   {{end}}
   {{else if .IsOwner}}
     {{if .HasDayData}}
-    {{template "owner_log_summary" (dict "Messages" .Messages "Log" .Log "Symptoms" .Symptoms "SelectedSymptomID" .SelectedSymptomID "NoDataLabel" .NoDataLabel "TemperatureUnit" .TemperatureUnit "Lang" .Lang)}}
+    {{template "owner_log_summary" (dict "Messages" .Messages "Log" .Log "Symptoms" .Symptoms "SelectedSymptomID" .SelectedSymptomID "NoDataLabel" .NoDataLabel "TemperatureUnit" .TemperatureUnit "Lang" .Lang "ShowBBT" .ShowBBTField)}}
     <div class="flex flex-wrap items-center gap-3">
       <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}" data-action-weight="primary">{{t .Messages "calendar.edit_entry"}}</button>
       {{if .AllowManualCycleStart}}

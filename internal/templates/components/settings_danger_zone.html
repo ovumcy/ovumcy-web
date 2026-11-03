@@ -80,6 +80,15 @@
         hx-swap="innerHTML"
         hx-confirm="{{t .Messages "settings.confirm_delete_account"}}"
         data-confirm-accept="{{t .Messages "settings.delete_account.submit"}}"
+        {{/* The owner-only clear-data pre-check checks the same password, so a
+             wrong one is reported before the irreversible confirm opens. */}}
+        {{if eq .CurrentUser.Role "owner"}}
+        data-password-precheck-action="/api/v1/users/current/data-wipe/validate"
+        data-password-precheck-status-target="#delete-account-feedback"
+        data-password-precheck-invalid-password="{{t .Messages "settings.error.invalid_password"}}"
+        data-password-precheck-request-failed="{{t .Messages "common.error.request_failed"}}"
+        data-password-precheck-too-many="{{t .Messages "common.error.too_many_requests"}}"
+        {{end}}
         class="space-y-4">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="_method" value="DELETE">

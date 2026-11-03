@@ -52,12 +52,15 @@
     </ul>
   </div>
 
-  {{if or (ne .Log.SexActivity "none") (hasBBT .Log.BBT) (ne .Log.CervicalMucus "none") (ne .Log.PregnancyTest "none")}}
+  {{/* A stored reading stays out of the summary while BBT tracking is off,
+       the same switch that hides the editor's field (ShowBBT). */}}
+  {{$showBBT := and .ShowBBT (hasBBT .Log.BBT)}}
+  {{if or (ne .Log.SexActivity "none") $showBBT (ne .Log.CervicalMucus "none") (ne .Log.PregnancyTest "none")}}
   <div class="grid gap-3 sm:grid-cols-2">
     {{if ne .Log.SexActivity "none"}}
     <p><span class="journal-muted">{{t .Messages "dashboard.sex"}}{{t .Messages "common.colon"}}</span> {{sexActivityLabel .Messages .Log.SexActivity}}</p>
     {{end}}
-    {{if hasBBT .Log.BBT}}
+    {{if $showBBT}}
     <p><span class="journal-muted">{{t .Messages "dashboard.bbt"}}{{t .Messages "common.colon"}}</span> {{displayBBTLocalized .Lang .Log.BBT .TemperatureUnit}} {{temperatureUnitSymbol .TemperatureUnit}}</p>
     {{end}}
     {{if ne .Log.CervicalMucus "none"}}

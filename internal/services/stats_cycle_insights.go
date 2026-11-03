@@ -295,10 +295,13 @@ func buildCurrentCycleBBTChart(language string, stats CycleStats, logs []models.
 // cycle does not. The readings themselves are recorded facts and stay on the
 // chart under every one of them.
 func buildOwnerCurrentCycleBBTChart(user *models.User, language string, stats CycleStats, logs []models.DailyLog, now time.Time, location *time.Location) StatsBBTChartViewData {
-	chart := buildCurrentCycleBBTChart(language, stats, logs, now, location)
+	// BBT tracking off hides the editor's field, so the chart, its readings
+	// hint and its table go with it (WEB-451); stored readings stay in the
+	// data and the export.
 	if !TrackingVisibilityForUser(user).ShowBBTField {
-		chart.ReadingCount, chart.ReadingsRequired = 0, 0
+		return StatsBBTChartViewData{}
 	}
+	chart := buildCurrentCycleBBTChart(language, stats, logs, now, location)
 	chart.ShiftNotAssessed = ConfirmedOvulationWithheld(user, stats)
 	if _, confirmed := ConfirmedCurrentCycleOvulation(user, logs, stats, DateAtLocation(now, location), location); !confirmed {
 		chart.Baseline, chart.HasBaseline = 0, false
