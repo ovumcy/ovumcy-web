@@ -1798,6 +1798,9 @@ func (repo *UserRepository) UpdateCycleSettingsMovingPeriodStart(ctx context.Con
 // row the move's predicate calls bare once the mark is off is deleted; one that
 // carries other data keeps it. Every read and write is scoped to userID.
 func releaseOldPeriodStart(tx *gorm.DB, userID uint, move models.PeriodStartMove) error {
+	if err := requireUserOwnerID(userID); err != nil {
+		return err
+	}
 	var rows []models.DailyLog
 	if err := tx.Where("user_id = ? AND date >= ? AND date < ?", userID, move.ReleaseStart, move.ReleaseStart.AddDate(0, 0, 1)).
 		Find(&rows).Error; err != nil {
