@@ -93,6 +93,12 @@ func (handler *Handler) clearSealedCookie(c fiber.Ctx, spec sealedCookieSpec) {
 	})
 }
 
+// withdrawSealedCookie drops a Set-Cookie for the spec queued earlier in this
+// response, leaving the browser's copy exactly as the request carried it.
+func withdrawSealedCookie(c fiber.Ctx, spec sealedCookieSpec) {
+	c.Response().Header.DelCookie(spec.name)
+}
+
 func (handler *Handler) sealCookieValue(cookieName string, plaintext []byte) (string, error) {
 	codec, err := handler.cookieCodec()
 	if err != nil {

@@ -24,8 +24,9 @@
   mount a separate `ovumcy_fence` volume for it, and the image points `CALENDAR_FEED_FENCE_PATH`
   there by default. Take that volume from the updated compose file for your stack. Never include it
   in a backup and never restore it beside the database — a fence restored together with the
-  database agrees with it and detects nothing. Losing it is cheap by design: it holds no health data
-  and no secrets, and the cost is one round of re-generated subscribe URLs.
+  database agrees with it and detects nothing. It holds no health data and no secrets, but losing it
+  reads as a restore: the next start disarms every feed, signs every owner out, clears every webhook
+  endpoint and revokes every local password, once.
 
   **Run the operator CLI where the server's fence is visible.** `ovumcy reset-password` and
   `ovumcy users delete` both remove calendar-feed access, and now confirm and advance the same

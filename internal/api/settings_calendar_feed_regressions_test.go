@@ -804,6 +804,29 @@ func TestCalendarFeedHandlersMapServiceErrorsTo500(t *testing.T) {
 	}
 }
 
+// TestCalendarFeedSaveFailureKeepsThePendingRevealOfTheServingLink is WEB-433 H3:
+// a rotate whose save fails after the seal must not touch the browser's reveal
+// cookie. The link that cookie names still serves, so clearing it would lose an
+// unseen URL; the never-stored selector's cookie must not reach the browser.
+func TestCalendarFeedSaveFailureKeepsThePendingRevealOfTheServingLink(t *testing.T) {
+	app := newFailingCalendarFeedHandlerApp(t)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/calendar-feed/rotate", strings.NewReader(""))
+	request.Header.Set("Accept", "application/json")
+	request.AddCookie(&http.Cookie{Name: calendarFeedRevealCookieName, Value: "pending-reveal-of-the-serving-link"})
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500 on a failed save, got %d", response.StatusCode)
+	}
+	if cookie := responseCookie(response.Cookies(), calendarFeedRevealCookieName); cookie != nil {
+		t.Fatalf("a failed save must leave the reveal cookie as the browser holds it, got Set-Cookie %q (max-age %d)", cookie.Value, cookie.MaxAge)
+	}
+}
+
 // extractFeedTokenFromURL pulls the <token> out of a …/calendar/feed/<token>.ics
 // URL so a test can drive the feed endpoint with it.
 func extractFeedTokenFromURL(t *testing.T, feedURL string) string {

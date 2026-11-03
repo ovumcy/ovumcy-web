@@ -97,11 +97,11 @@ func (handler *Handler) issueCalendarFeedToken(c fiber.Ctx, mutation healthMutat
 		return handler.setCalendarFeedRevealCookie(c, user.ID, selector, calendarFeedSubscribeURL(c, token), rotated)
 	})
 	if err != nil {
-		// A save that failed after the seal leaves a cookie naming a selector
-		// that was never stored; retract it. A failed seal stored nothing, so a
-		// pending reveal of the still-serving link is left alone.
+		// A save that failed after the seal queued a cookie naming a selector
+		// that was never stored; withdraw it rather than clearing the browser's
+		// copy, which may hold the unseen reveal of the link that keeps serving.
 		if errors.Is(err, services.ErrCalendarFeedTokenPersist) {
-			handler.clearCalendarFeedRevealCookie(c)
+			withdrawSealedCookie(c, calendarFeedRevealCookieSpec)
 		}
 		return handler.failMutation(c, mutation, settingsCalendarFeedUpdateErrorSpec())
 	}
