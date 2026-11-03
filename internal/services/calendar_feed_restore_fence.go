@@ -476,13 +476,12 @@ func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context
 	return nil
 }
 
-// refusalWaiver reports whether confirmContinuity's answer waives
-// AdvanceOrRefuse's refusal, and whether the database half is then recorded.
-// The refusal is waived over a disagreement the next boot reads whatever a
-// restore does in between: a file that holds a token other than the
-// database's, or a database half already dropped (an unanchored opt-out boot,
-// an unfinished first boot); the database half moves alone there, as in
-// Advance. A file that reads as absent is NOT one — an unmounted fence volume
+// refusalWaiver reports whether confirmContinuity's answer waives the refusal
+// of Advance or AdvanceOrRefuse, and whether the database half is then
+// recorded. The refusal is waived over a disagreement the next boot reads
+// whatever a restore does in between: a file that holds a token other than
+// the database's, or a database half already dropped (an unanchored opt-out
+// boot, an unfinished first boot); the database half moves alone there. A file that reads as absent is NOT one — an unmounted fence volume
 // reads exactly so, and once it is mounted again its old token agrees with a
 // restored pre-write backup — and neither is a read that failed outright
 // (WEB-464), unless the database half is already gone: an unanchored opt-out
@@ -564,7 +563,7 @@ var ErrCalendarFeedFenceUnreachable = errors.New("calendar feed restore fence: c
 var ErrCalendarFeedFenceMarkerUnavailable = errors.New("calendar feed restore fence: could not read the database marker")
 
 // ErrCalendarFeedFenceHalfAdvanced is returned by AdvanceConfirmed — and by
-// AdvanceOrRefuse and AdvanceOrDiverge — when the
+// Advance, AdvanceOrRefuse and AdvanceOrDiverge — when the
 // file half was written and the database half then could not be. It is the
 // one error out of that method after which something HAS changed: the file is
 // ahead of app_state, so the server's next boot reads that as a restore and
