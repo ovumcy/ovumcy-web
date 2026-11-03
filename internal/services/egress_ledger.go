@@ -196,8 +196,9 @@ type EgressWebhookLedger struct {
 	NotifyOvulation bool
 	// Host is at most a hostname, and only in a state that opened the ciphertext.
 	Host string
-	// Destination is host[:port] and never any part of the path, for the owner's
-	// own page (see webhookDestinationDisplay). Present exactly when Host is.
+	// Destination is host[:port] plus a masked path (a route segment, an ellipsis,
+	// the last four characters), for the owner's own page (see
+	// webhookDestinationDisplay). Present exactly when Host is.
 	Destination string
 	// LastDeliveredAt is the ONLY delivery evidence, and it comes only from
 	// webhook_last_delivered_at, written after a 2xx. It is suppressed in every

@@ -427,7 +427,9 @@ const (
 // or userinfo).
 //
 // Destination is the one wider line, for the owner's settings page only:
-// host[:port], never any part of the path (see webhookDestinationDisplay). Host remains
+// host[:port] plus a masked path -- never the whole path, query or userinfo (see
+// webhookDestinationDisplay). It is rendered into the page HTML only, never a
+// JSON response or a log line. Host remains
 // the value every other surface and every state decision uses.
 type WebhookURLDisplay struct {
 	Readability WebhookURLReadability
