@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -45,8 +46,9 @@ func TestCalendarDaySummaryHidesTheBBTLineWhileTrackingIsOff(t *testing.T) {
 			assertStatusCode(t, response, http.StatusOK)
 			rendered := mustReadBodyString(t, response.Body)
 
-			if got := strings.Contains(rendered, "36.4"); got != tc.wantBBT {
-				t.Fatalf("expected the BBT reading in the summary=%v, got %v in %q", tc.wantBBT, got, rendered)
+			line := regexp.MustCompile(`BBT:</span>\s*36\.4\s`).MatchString(rendered)
+			if line != tc.wantBBT {
+				t.Fatalf("expected the summary's BBT line=%v, got %v in %q", tc.wantBBT, line, rendered)
 			}
 		})
 	}

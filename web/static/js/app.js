@@ -1171,16 +1171,24 @@
 
       validateAction = String(source.getAttribute("data-password-precheck-action") || "").trim();
       event.preventDefault();
+      // One pre-check and one confirm at a time: a second click while either
+      // is open would otherwise queue a second DELETE behind the first.
+      if (source.dataset.passwordPrecheckPending === "1") {
+        return;
+      }
+      source.dataset.passwordPrecheckPending = "1";
       validateSettingsPassword(source, validateAction, passwordPrecheckStatusTarget(source), passwordPrecheckMessages(source, "data-password-precheck-invalid-password", "data-password-precheck-request-failed", "data-password-precheck-too-many"))
         .then(function (validated) {
           if (!validated) {
-            return;
+            return false;
           }
-          return openClearDataConfirm(event.detail.question, source.getAttribute("data-confirm-accept") || "").then(function (confirmed) {
-            if (confirmed) {
-              event.detail.issueRequest(true);
-            }
-          });
+          return openClearDataConfirm(event.detail.question, source.getAttribute("data-confirm-accept") || "");
+        })
+        .then(function (confirmed) {
+          source.dataset.passwordPrecheckPending = "";
+          if (confirmed) {
+            event.detail.issueRequest(true);
+          }
         });
     });
   }
