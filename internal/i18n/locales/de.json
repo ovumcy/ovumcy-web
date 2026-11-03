@@ -884,6 +884,7 @@
   "warning.future_date": "Dieses Datum liegt in der Zukunft. Die Daten könnten ungenau sein.",
   "warning.future_cycle_start": "Vorhersagen werden neu berechnet, sobald dieser Tag erreicht ist.",
   "cycle start replace required": "Bestätigen Sie, dass der bereits markierte Zyklusbeginn ersetzt werden soll.",
+  "cycle start mark on the day": "Dieser Tag kann Ihren gespeicherten Zyklusbeginn erst ersetzen, wenn er gekommen ist. Markieren Sie ihn an diesem Tag.",
   "cycle start confirmation required": "Bestätigen Sie, dass Sie einen Zyklusbeginn mit kurzem Abstand markieren möchten.",
   "common.not_available": "-",
   "phases.unknown": "Unbekannt",

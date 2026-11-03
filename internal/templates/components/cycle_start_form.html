@@ -20,8 +20,13 @@
        Active      — whether the control paints as the primary action; the
                      empty-day branch passes false rather than the day's flag.
        Conflict, ConflictDate, ShortGap, PreviousDate, Implantation — the
-                     manual cycle-start policy this day was evaluated under. */}}
+                     manual cycle-start policy this day was evaluated under.
+       MarkOnTheDay — a future day whose mark would replace the stored start;
+                     the server refuses it, so the notice stands in for the form. */}}
 {{define "cycle_start_form"}}
+{{- if .MarkOnTheDay}}
+<p class="journal-muted text-sm" data-cycle-start-on-the-day data-notice-key="cycle start mark on the day">{{t .Messages "cycle start mark on the day"}}</p>
+{{- else}}
 <form
   action="{{.Endpoint}}"
   method="post"
@@ -71,4 +76,5 @@
   data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
   data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
   data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
+{{- end}}
 {{end}}

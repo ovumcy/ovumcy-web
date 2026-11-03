@@ -22,10 +22,17 @@ var (
 	ErrManualCycleStartDateInvalid        = errors.New("manual cycle start date invalid")
 	ErrManualCycleStartReplaceRequired    = errors.New("manual cycle start replace required")
 	ErrManualCycleStartConfirmationNeeded = errors.New("manual cycle start confirmation needed")
+	// ErrManualCycleStartMarkOnTheDay refuses a future-day mark that would
+	// replace the stored start: a cycle start is recorded on its day, and the
+	// stored start never moves into the future.
+	ErrManualCycleStartMarkOnTheDay = errors.New("manual cycle start mark on the day")
 )
 
 type ManualCycleStartPolicy struct {
-	ConflictDate          time.Time
+	ConflictDate time.Time
+	// MarkOnTheDay is set when the mark is on a future day and would replace
+	// the stored start; the mark is refused, whatever the options say.
+	MarkOnTheDay          bool
 	PreviousStart         time.Time
 	ShortGapDays          int
 	PotentialImplantation bool
@@ -115,6 +122,9 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 	targetDay := DateAtLocation(day, location)
 	policy := ManualCycleStartPolicy{
 		ConflictDate: findCompetingCycleStart(logs, targetDay, location),
+	}
+	if !policy.ConflictDate.IsZero() && targetDay.After(DateAtLocation(now, location)) {
+		policy.MarkOnTheDay = storedStartCompetes(user, logs, targetDay, location)
 	}
 
 	previousStart := LatestCycleStartAnchorBeforeOrOn(user, logs, AddCalendarDays(targetDay, -1, location), location)
@@ -246,6 +256,29 @@ func cycleStartGapSuggestsNewCycle(user *models.User, logs []models.DailyLog, lo
 	targetDay := DateAtLocation(day.In(location), location)
 	gapDays := CalendarDaysBetween(anchor, targetDay)
 	return gapDays >= manualCycleStartSuggestionGapDays
+}
+
+// storedStartCompetes reports whether the stored start is a marked day the
+// mark on day would clear: the replace whose stored-start move is gated on today.
+func storedStartCompetes(user *models.User, logs []models.DailyLog, day time.Time, location *time.Location) bool {
+	if user == nil || user.LastPeriodStart == nil || user.LastPeriodStart.IsZero() {
+		return false
+	}
+	stored := dateOnly(*user.LastPeriodStart)
+	clusterStart, clusterEnd, ok := manualCycleStartClusterBounds(logs, day, location)
+	if !ok {
+		return false
+	}
+	for _, logEntry := range logs {
+		if !logEntry.CycleStart || !dateOnly(logEntry.Date).Equal(stored) {
+			continue
+		}
+		logDay := CalendarDay(logEntry.Date, location)
+		if !sameCalendarDay(logDay, day) && withinPeriodCluster(logDay, clusterStart, clusterEnd) {
+			return true
+		}
+	}
+	return false
 }
 
 func findCompetingCycleStart(logs []models.DailyLog, day time.Time, location *time.Location) time.Time {

@@ -993,6 +993,9 @@ func (service *DayService) loadManualCycleStartPolicy(ctx context.Context, userI
 }
 
 func validateManualCycleStartOptions(policy ManualCycleStartPolicy, options ManualCycleStartOptions) error {
+	if policy.MarkOnTheDay {
+		return ErrManualCycleStartMarkOnTheDay
+	}
 	if !policy.ConflictDate.IsZero() && !options.ReplaceExisting {
 		return ErrManualCycleStartReplaceRequired
 	}

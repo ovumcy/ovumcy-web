@@ -927,6 +927,7 @@
   "warning.future_cycle_start": "Les prédictions seront recalculées à l'arrivée de ce jour.",
 
   "cycle start replace required": "Confirmez le remplacement du début de cycle déjà marqué.",
+  "cycle start mark on the day": "Ce jour ne pourra remplacer votre début de cycle enregistré qu'une fois arrivé. Marquez-le le jour même.",
   "cycle start confirmation required": "Confirmez le marquage d'un début de cycle avec un écart court.",
 
 
