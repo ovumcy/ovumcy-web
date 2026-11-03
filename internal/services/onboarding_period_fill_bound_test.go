@@ -139,18 +139,18 @@ func TestOnboardingCompletesWithoutFillWhenTheStartIsAfterTheOwnersToday(t *test
 	requirePeriodDays(t, got)
 }
 
-// TestOnboardingWithAutoFillOffWritesNoPeriodDay holds the toggle-off branch on
-// the new bound: whether the period is still running or already over, an owner
-// who switched auto-fill off gets no seeded day, and onboarding still completes
-// on the step-1 date.
-func TestOnboardingWithAutoFillOffWritesNoPeriodDay(t *testing.T) {
+// TestOnboardingWithAutoFillOffWritesOnlyTheStartDay holds the toggle-off branch
+// on the new bound: whether the period is still running or already over, an
+// owner who switched auto-fill off gets no seeded fill day, only the start day
+// they entered, and onboarding still completes on the step-1 date.
+func TestOnboardingWithAutoFillOffWritesOnlyTheStartDay(t *testing.T) {
 	for _, start := range []time.Time{
 		time.Date(2026, time.March, 18, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC),
 	} {
 		t.Run(start.Format("2006-01-02"), func(t *testing.T) {
 			got := onboardWithAutoPeriodFill(t, start, onboardingFillNow, time.UTC, false)
-			requirePeriodDays(t, got)
+			requirePeriodDays(t, got, start.Format("2006-01-02"))
 		})
 	}
 }

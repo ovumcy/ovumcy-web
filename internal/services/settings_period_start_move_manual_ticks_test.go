@@ -49,7 +49,11 @@ func (fixture manualTickFixture) tickByHand(t *testing.T, day time.Time, hoursAf
 	// a marked hand tick is kept by the mark alone, so only an unmarked one
 	// shows the onboarding cohort is what tells it from the fill.
 	entry.AutoFilled = nil
-	if !IsAutoFilledPeriodCandidate(entry, "") {
+	// Onboarding logs its own start day with the cycle-start mark, so that one
+	// day carries it whoever ticked it; every other mark would fail the check.
+	bare := entry
+	bare.CycleStart = false
+	if !IsAutoFilledPeriodCandidate(bare, "") {
 		t.Fatalf("fixture: the hand tick on %s is not bare, so it cannot tell the fill apart: %+v", day.Format("2006-01-02"), entry)
 	}
 	stamp := time.Now().UTC().Add(time.Duration(hoursAfterOnboarding) * time.Hour)

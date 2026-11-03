@@ -484,7 +484,16 @@ func oldStartFillRun(entries []models.DailyLog, oldStart time.Time, span int, ke
 	for offset := range span {
 		key := CalendarDayKey(oldStart.AddDate(0, 0, offset))
 		entry, found := byDay[key]
-		if !found || !IsAutoFilledPeriodCandidate(entry, "") {
+		if !found {
+			break
+		}
+		// Onboarding marks the first day of its fill as the logged cycle start;
+		// that mark is the fill's own, so the first day is judged without it.
+		candidate := entry
+		if offset == 0 {
+			candidate.CycleStart = false
+		}
+		if !IsAutoFilledPeriodCandidate(candidate, "") {
 			break
 		}
 		if offset == 0 {
