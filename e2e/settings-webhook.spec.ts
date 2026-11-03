@@ -33,8 +33,8 @@ import {
 
 const EGRESS_CARD = '#settings-egress';
 const WEBHOOK_ENDPOINT = 'https://hooks.example.com/ovumcy/e2e-endpoint';
-// The ledger shows host[:port] only, never any part of the path.
-const WEBHOOK_HOST = 'hooks.example.com';
+// The ledger shows host[:port] plus a masked path: first segment, "/…/", last 4 characters.
+const WEBHOOK_DESTINATION = 'hooks.example.com/ovumcy/…/oint';
 
 async function registerOwnerAndOpenSettings(page: Page, prefix: string): Promise<void> {
   const credentials = createCredentials(prefix);
@@ -153,7 +153,7 @@ test.describe('Settings: webhook reminders (egress ledger)', () => {
     // toggles the owner set are what persist independently of that: they are
     // read straight back from storage.
     await expectWebhookState(page, 'outbound_disabled');
-    await expect(section.locator('[data-egress-webhook-host]')).toHaveText(WEBHOOK_HOST);
+    await expect(section.locator('[data-egress-webhook-host]')).toHaveText(WEBHOOK_DESTINATION);
     await expect(section.locator('input[name="webhook_enabled"]')).toBeChecked();
     await expect(section.locator('input[name="webhook_notify_period"]')).toBeChecked();
     await expect(webhookURLField(page)).toHaveValue('');
@@ -165,7 +165,7 @@ test.describe('Settings: webhook reminders (egress ledger)', () => {
     await saveWebhookSettings(page);
     await reopenSettings(page);
     await expectWebhookState(page, 'outbound_disabled');
-    await expect(section.locator('[data-egress-webhook-host]')).toHaveText(WEBHOOK_HOST);
+    await expect(section.locator('[data-egress-webhook-host]')).toHaveText(WEBHOOK_DESTINATION);
 
     // The dedicated remove control (a separate hx-delete form, not a checkbox
     // on the save) is the only way to clear it, and it also forces delivery
@@ -222,7 +222,7 @@ test.describe('Settings: webhook reminders (egress ledger)', () => {
     // defect — and the host is still shown, so Cancel did not withdraw it
     // behind the owner's back.
     await expectWebhookState(page, 'outbound_disabled');
-    await expect(section.locator('[data-egress-webhook-host]')).toHaveText(WEBHOOK_HOST);
+    await expect(section.locator('[data-egress-webhook-host]')).toHaveText(WEBHOOK_DESTINATION);
 
     // Positive anchor: the same control, accepted, really does withdraw — so
     // the assertions above prove Cancel is inert, not that the control is dead.
