@@ -504,19 +504,29 @@ func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context
 // restored pre-write backup — and neither is a read that failed outright
 // (WEB-464), unless the database half is already gone: an unanchored opt-out
 // boot drops it, and with no token there is nothing a restore could make
-// agree. That waiver records nothing, because a recorded token would make the
-// next write refuse. The caller holds fence.writing.
+// agree. A waiver over a dropped database half records nothing, because a
+// recorded token would make the next write refuse; an unfinished first boot,
+// which reads the same from confirmContinuity but still holds the pending
+// token, is recorded so the next boot reads the disagreement. The caller holds
+// fence.writing.
 func (fence *CalendarFeedRestoreFence) refusalWaiver(ctx context.Context, err error) (waived, record bool) {
 	var continuity *CalendarFeedFenceContinuityError
-	if errors.As(err, &continuity) {
-		durable := continuity.AnchorFound || !continuity.StoredFound
-		return durable, durable
+	switch {
+	case errors.As(err, &continuity) && continuity.AnchorFound:
+		return true, true
+	case errors.As(err, &continuity) && continuity.StoredFound:
+		return false, false
+	case continuity == nil && !errors.Is(err, ErrCalendarFeedFenceUnreachable):
+		return false, false
 	}
-	if errors.Is(err, ErrCalendarFeedFenceUnreachable) {
-		_, storedFound, getErr := fence.appState.Get(ctx, models.AppStateKeyCalendarFeedRestoreFence)
-		return getErr == nil && !storedFound, false
+	_, storedFound, getErr := fence.appState.Get(ctx, models.AppStateKeyCalendarFeedRestoreFence)
+	if getErr != nil {
+		return false, false
 	}
-	return false, false
+	if continuity == nil {
+		return !storedFound, false
+	}
+	return true, storedFound
 }
 
 // writeAnchorRetrying writes token to the file half, retrying a failed write

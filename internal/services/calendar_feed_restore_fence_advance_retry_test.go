@@ -151,6 +151,24 @@ func TestAdvanceOrRefuseOverAnUnreadableFenceFileRefusesOnlyWhileATokenRemains(t
 	}
 }
 
+// TestAdvanceOrRefuseOverAMissingMountAndADroppedTokenKeepsProceeding pins the
+// opt-out shape: no file, no database token, every write failing. Each write
+// proceeds and records nothing, so the next is not refused.
+func TestAdvanceOrRefuseOverAMissingMountAndADroppedTokenKeepsProceeding(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{}}
+	anchor := &stubFenceAnchor{writeErr: errors.New("no such file or directory")}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := fence.AdvanceOrRefuse(context.Background()); err != nil {
+			t.Fatalf("attempt %d over a dropped token must proceed, got %v", attempt, err)
+		}
+	}
+	if len(appState.values) != 0 {
+		t.Fatalf("a waived write over a dropped token must record nothing, got %v", appState.values)
+	}
+}
+
 // TestAdvanceOrRefuseTypesADatabaseFailureAfterTheFile pins that the one
 // refusal after which something changed is told apart from a caller's own
 // write error.
