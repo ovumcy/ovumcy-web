@@ -30,17 +30,13 @@ import (
 // moment the shared predicate gains a disjunct or is narrowed to let a recorded
 // observation through.
 type DashboardCycleContext struct {
-	CycleDayReference  int
-	CycleDayWarning    bool
-	LateCycle          LateCycleNotice
-	CycleDataStale     bool
-	PredictionDisabled bool
-	PregnancyPaused    bool
-	// PregnancyTestDate is the positive test that holds the pause, so the
-	// explainer can name it and link the calendar day where it is removed.
-	PregnancyTestDate time.Time
-	// BleedingOutsideCycleStart carries the fertility-only signal of the same
-	// name, so the explainer can say why the fertile half is withheld.
+	CycleDayReference           int
+	CycleDayWarning             bool
+	LateCycle                   LateCycleNotice
+	CycleDataStale              bool
+	PredictionDisabled          bool
+	PregnancyPaused             bool
+	PregnancyTestDate           time.Time
 	BleedingOutsideCycleStart   bool
 	DisplayNextPeriodStart      time.Time
 	DisplayNextPeriodEnd        time.Time

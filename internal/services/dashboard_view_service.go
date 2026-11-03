@@ -63,42 +63,39 @@ type DashboardViewService struct {
 // form posts it back. TodayHasData, TodayEntryExists and every other reader
 // keep the stored row, TodayLog.
 type DashboardViewData struct {
-	Stats                      CycleStats
-	CycleContext               DashboardCycleContext
-	CycleHero                  DashboardCycleHero
-	ReminderBanner             DashboardReminderBanner
-	Today                      time.Time
-	Yesterday                  time.Time
-	YesterdayMonth             string
-	FormattedDate              string
-	TodayLog                   models.DailyLog
-	TodayEntry                 models.DailyLog
-	TodayPeriodFromStoredStart bool
-	TodayHasData               bool
-	TodayEntryExists           bool
-	Symptoms                   []models.SymptomType
-	PrimarySymptoms            []models.SymptomType
-	ExtraSymptoms              []models.SymptomType
-	HasExtraSymptoms           bool
-	SelectedSymptomID          map[uint]bool
-	ShowYesterdayJump          bool
-	ShowSexChip                bool
-	ShowBBTField               bool
-	ShowCervicalMucus          bool
-	ShowCycleFactors           bool
-	ShowNotesField             bool
-	MoreFieldsOpen             bool
-	ShowOvulationEstimate      bool
-	ShowFirstCycleBridge       bool
-	ShowMoreCyclesBridge       bool
-	ShowFertilityStatus        bool
-	ShowBBTInVisibleTier       bool
-	AllowManualCycleStart      bool
-	ManualCycleStartPolicy     ManualCycleStartPolicy
-	ShowHighFertilityBadge     bool
-	// HighFertilityBadgeObserved words the badge as the observation it is
-	// before the first completed cycle, where the fertile window it would
-	// otherwise name is withheld.
+	Stats                             CycleStats
+	CycleContext                      DashboardCycleContext
+	CycleHero                         DashboardCycleHero
+	ReminderBanner                    DashboardReminderBanner
+	Today                             time.Time
+	Yesterday                         time.Time
+	YesterdayMonth                    string
+	FormattedDate                     string
+	TodayLog                          models.DailyLog
+	TodayEntry                        models.DailyLog
+	TodayPeriodFromStoredStart        bool
+	TodayHasData                      bool
+	TodayEntryExists                  bool
+	Symptoms                          []models.SymptomType
+	PrimarySymptoms                   []models.SymptomType
+	ExtraSymptoms                     []models.SymptomType
+	HasExtraSymptoms                  bool
+	SelectedSymptomID                 map[uint]bool
+	ShowYesterdayJump                 bool
+	ShowSexChip                       bool
+	ShowBBTField                      bool
+	ShowCervicalMucus                 bool
+	ShowCycleFactors                  bool
+	ShowNotesField                    bool
+	MoreFieldsOpen                    bool
+	ShowOvulationEstimate             bool
+	ShowFirstCycleBridge              bool
+	ShowMoreCyclesBridge              bool
+	ShowFertilityStatus               bool
+	ShowBBTInVisibleTier              bool
+	AllowManualCycleStart             bool
+	ManualCycleStartPolicy            ManualCycleStartPolicy
+	ShowHighFertilityBadge            bool
 	HighFertilityBadgeObserved        bool
 	ShowMissedDaysLink                bool
 	MissedDay                         time.Time
@@ -205,6 +202,12 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	visibility := dashboardOwnerVisibilityState(user, today, now, location)
 	timingFrame := resolveDashboardTimingFrame(user, cycleContext, visibility)
 	showHighFertilityBadge := dashboardHighFertilityBadge(user, stats, todayLog)
+	// Before the first completed cycle the badge words the observation it is,
+	// not the fertile window the header withholds.
+	highFertilityBadgeObserved := showHighFertilityBadge && cycleContext.AwaitingFirstCycle
+	// The first-cycle explainer already says the window waits for the first
+	// completed cycle; the bridge saying it again was the same sentence twice.
+	showFirstCycleBridge := timingFrame.ShowFirstCycleBridge && predictionExplanation.PrimaryKey != predictionExplainerAwaitingFirstCycleKey
 	showSpottingCycleWarning := dashboardSpottingCycleWarning(logs, todayLog, today, location)
 	reminderBanner := DashboardReminderBanner{}
 	if IsOwnerUser(user) {
@@ -227,43 +230,40 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	cycleContext.MovedWindow = movedWindow
 
 	return DashboardViewData{
-		Stats:                      publishedStats,
-		CycleContext:               cycleContext,
-		CycleHero:                  BuildDashboardCycleHero(user, confirmedStats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: location}),
-		ReminderBanner:             reminderBanner,
-		Today:                      today,
-		Yesterday:                  yesterday,
-		YesterdayMonth:             yesterday.Format("2006-01"),
-		FormattedDate:              LocalizedDashboardDate(language, today),
-		TodayLog:                   todayLog,
-		TodayEntry:                 todayEntry,
-		TodayPeriodFromStoredStart: todayPeriodFromStoredStart,
-		TodayHasData:               DayHasData(todayLog),
-		TodayEntryExists:           todayLog.ID != 0,
-		Symptoms:                   rankedSymptoms,
-		PrimarySymptoms:            primarySymptoms,
-		ExtraSymptoms:              extraSymptoms,
-		HasExtraSymptoms:           len(extraSymptoms) > 0,
-		SelectedSymptomID:          selectedSymptomID,
-		ShowYesterdayJump:          !yesterdayHasData,
-		ShowSexChip:                visibility.ShowSexChip,
-		ShowBBTField:               visibility.ShowBBTField,
-		ShowCervicalMucus:          visibility.ShowCervicalMucus,
-		ShowCycleFactors:           visibility.ShowCycleFactors,
-		ShowNotesField:             visibility.ShowNotesField,
-		MoreFieldsOpen:             dashboardMoreFieldsHoldData(todayLog, visibility, timingFrame.BBTInVisibleTier),
-		ShowOvulationEstimate:      timingFrame.ShowOvulationEstimate,
-		// The first-cycle explainer below the header already says the window
-		// waits for the first completed cycle; the bridge saying it again in the
-		// status line was the same sentence twice.
-		ShowFirstCycleBridge:              timingFrame.ShowFirstCycleBridge && predictionExplanation.PrimaryKey != predictionExplainerAwaitingFirstCycleKey,
+		Stats:                             publishedStats,
+		CycleContext:                      cycleContext,
+		CycleHero:                         BuildDashboardCycleHero(user, confirmedStats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: location}),
+		ReminderBanner:                    reminderBanner,
+		Today:                             today,
+		Yesterday:                         yesterday,
+		YesterdayMonth:                    yesterday.Format("2006-01"),
+		FormattedDate:                     LocalizedDashboardDate(language, today),
+		TodayLog:                          todayLog,
+		TodayEntry:                        todayEntry,
+		TodayPeriodFromStoredStart:        todayPeriodFromStoredStart,
+		TodayHasData:                      DayHasData(todayLog),
+		TodayEntryExists:                  todayLog.ID != 0,
+		Symptoms:                          rankedSymptoms,
+		PrimarySymptoms:                   primarySymptoms,
+		ExtraSymptoms:                     extraSymptoms,
+		HasExtraSymptoms:                  len(extraSymptoms) > 0,
+		SelectedSymptomID:                 selectedSymptomID,
+		ShowYesterdayJump:                 !yesterdayHasData,
+		ShowSexChip:                       visibility.ShowSexChip,
+		ShowBBTField:                      visibility.ShowBBTField,
+		ShowCervicalMucus:                 visibility.ShowCervicalMucus,
+		ShowCycleFactors:                  visibility.ShowCycleFactors,
+		ShowNotesField:                    visibility.ShowNotesField,
+		MoreFieldsOpen:                    dashboardMoreFieldsHoldData(todayLog, visibility, timingFrame.BBTInVisibleTier),
+		ShowOvulationEstimate:             timingFrame.ShowOvulationEstimate,
+		ShowFirstCycleBridge:              showFirstCycleBridge,
 		ShowMoreCyclesBridge:              timingFrame.ShowMoreCyclesBridge,
 		ShowFertilityStatus:               !cycleContext.FertilitySuppressed,
 		ShowBBTInVisibleTier:              timingFrame.BBTInVisibleTier,
 		AllowManualCycleStart:             visibility.AllowManualCycleStart,
 		ManualCycleStartPolicy:            cycleStart.Policy,
 		ShowHighFertilityBadge:            showHighFertilityBadge,
-		HighFertilityBadgeObserved:        showHighFertilityBadge && cycleContext.AwaitingFirstCycle,
+		HighFertilityBadgeObserved:        highFertilityBadgeObserved,
 		ShowMissedDaysLink:                showMissedDaysLink,
 		MissedDay:                         missedDay,
 		ShowCycleStartSuggestion:          cycleStart.ShowSuggestion,
