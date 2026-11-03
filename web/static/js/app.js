@@ -3908,6 +3908,20 @@
     return normalized;
   }
 
+  // The field shows the language's own decimal separator (the server renders
+  // 98,6 for a Russian page); parsing and range checks run on the dotted form.
+  function temperatureInputSeparator(input) {
+    return input.getAttribute("data-temperature-separator") === "," ? "," : ".";
+  }
+
+  function formatTemperatureNumber(value, separator) {
+    var text = value.toFixed(2);
+    if (text.indexOf(".") !== -1) {
+      text = text.replace(/0+$/, "").replace(/\.$/, "");
+    }
+    return text.replace(".", separator);
+  }
+
   function parseTemperatureNumber(raw) {
     var value = Number(raw);
     return isFinite(value) ? value : NaN;
@@ -3920,11 +3934,13 @@
 
     var maxLength = temperatureInputMaxLength(input);
     var raw = String(input.value || "");
-    var sanitized = normalizeTemperatureInputText(raw, maxLength);
+    var separator = temperatureInputSeparator(input);
+    var canonical = normalizeTemperatureInputText(raw, maxLength);
+    var sanitized = canonical.replace(".", separator);
     var minValue = Number(input.getAttribute("data-temperature-min"));
     var maxValue = Number(input.getAttribute("data-temperature-max"));
     var errorMessage = String(input.getAttribute("data-temperature-range-error") || "");
-    var numeric = parseTemperatureNumber(sanitized);
+    var numeric = parseTemperatureNumber(canonical);
 
     if (sanitized !== raw) {
       input.value = sanitized;
@@ -3956,7 +3972,7 @@
       return false;
     }
 
-    input.value = numeric.toFixed(2);
+    input.value = formatTemperatureNumber(numeric, separator);
     input.dataset.temperatureLastValid = input.value;
     input.setCustomValidity("");
     input.setAttribute("aria-invalid", "false");

@@ -88,7 +88,8 @@
     {{template "temperature_input_field" (dict
       "Messages" .Messages
       "FieldID" "calendar-bbt"
-      "Value" (displayBBT .Log.BBT .TemperatureUnit)
+      "Lang" .Lang
+      "Value" (displayBBT .Lang .Log.BBT .TemperatureUnit)
       "TemperatureUnit" .TemperatureUnit
       "TemperatureInputMin" .TemperatureInputMin
       "TemperatureInputMax" .TemperatureInputMax

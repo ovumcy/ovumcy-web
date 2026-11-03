@@ -148,10 +148,31 @@ func FormatDayBBTForInput(value *float64, unit string) string {
 	return fmt.Sprintf("%.2f", *normalized)
 }
 
+// FormatDayBBTForInputLocalized is the editor field's value: the account's unit
+// at two decimals with trailing zeros trimmed (98.60 reads 98,6, 36.75 stays
+// 36,75) and the language's decimal separator, so the field shows the form the
+// owner typed. Every reader of the field takes either separator: the save
+// parses a comma (ParseDayBBTRawWithUnit) and the field script keeps the
+// separator named by data-temperature-separator.
+func FormatDayBBTForInputLocalized(language string, value *float64, unit string) string {
+	text := FormatDayBBTForInput(value, unit)
+	if text == "" {
+		return ""
+	}
+	text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
+	return localizeDecimalSeparator(language, text)
+}
+
+// TemperatureInputSeparator is the decimal separator the editor field keeps for
+// a language, named on the field for its script.
+func TemperatureInputSeparator(language string) string {
+	return decimalSeparatorFor(language)
+}
+
 // FormatDayBBTForDisplay is the read-only form of a day's temperature: the
 // account's unit, the language's decimal separator and the one precision the
 // stats page prints, so a summary and a chart never disagree. The editor field
-// keeps FormatDayBBTForInput, a machine-parsable value.
+// has its own form, FormatDayBBTForInputLocalized.
 func FormatDayBBTForDisplay(language string, value *float64, unit string) string {
 	normalized := normalizeStoredDayBBT(value)
 	if normalized == nil {

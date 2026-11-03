@@ -400,7 +400,8 @@
         {{$bbtField := dict
           "Messages" .Messages
           "FieldID" "dashboard-bbt"
-          "Value" (displayBBT .TodayEntry.BBT .TemperatureUnit)
+          "Lang" .Lang
+          "Value" (displayBBT .Lang .TodayEntry.BBT .TemperatureUnit)
           "TemperatureUnit" .TemperatureUnit
           "TemperatureInputMin" .TemperatureInputMin
           "TemperatureInputMax" .TemperatureInputMax
