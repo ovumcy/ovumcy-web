@@ -481,8 +481,9 @@ func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context
 // recorded. The refusal is waived over a disagreement the next boot reads
 // whatever a restore does in between: a file that holds a token other than
 // the database's, or a database half already dropped (an unanchored opt-out
-// boot, an unfinished first boot); the database half moves alone there. A file that reads as absent is NOT one — an unmounted fence volume
-// reads exactly so, and once it is mounted again its old token agrees with a
+// boot, an unfinished first boot); the database half moves alone there. A
+// file that reads as absent is NOT one — an unmounted fence volume reads
+// exactly so, and once it is mounted again its old token agrees with a
 // restored pre-write backup — and neither is a read that failed outright
 // (WEB-464), unless the database half is already gone: an unanchored opt-out
 // boot drops it, and with no token there is nothing a restore could make
