@@ -661,15 +661,9 @@ test.describe('Calendar page', () => {
     await expect(onTheDay.first()).toBeVisible();
     await expect(onTheDay.first()).toHaveText(localeText('en', 'cycle start mark on the day'));
     await expect(page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"]`)).toHaveCount(0);
-    // The notice has its own hook and declares the key it renders — the same
-    // element dashboard-warnings.spec.ts pins, so the two specs can no longer
-    // describe it two different ways.
-    const futureNotice = page.locator('#day-editor [data-future-cycle-start-notice]');
-    await expect(futureNotice.first()).toBeVisible();
-    await expect(futureNotice.first()).toHaveAttribute(
-      'data-notice-key',
-      'warning.future_cycle_start'
-    );
+    // The future-prediction notice would contradict the refusal, so it stays
+    // off here; dashboard-warnings.spec.ts pins it where a future mark is open.
+    await expect(page.locator('#day-editor [data-future-cycle-start-notice]')).toHaveCount(0);
   });
 
   test('summary-view manual cycle start exposes its policy node so the confirm modal opens', async ({
@@ -681,14 +675,20 @@ test.describe('Calendar page', () => {
     // the cycle-start form inside the same wrapper. When it was placed outside the
     // wrapper the lookup returned null, the short-gap confirm modal never opened,
     // and the POST failed with a silent 400.
-    await registerOwnerOnCalendar(page, 'calendar-cycle-start-policy-scope');
-
-    const todayISO = await todayISOFromCalendar(page);
-    const dayISO = todayISO;
+    // Onboarded at today-3 without auto-period-fill, so today is an empty,
+    // non-future day 3 days after the stored start: the {{else}} no-entry
+    // branch, and still the replace + short-gap chain.
+    const dayISO = await todayISOFromBrowser(page);
+    await registerAndOnboardOnDate(page, 'calendar-cycle-start-policy-scope', shiftISODate(dayISO, -3));
     const month = dayISO.slice(0, 7);
 
     await page.goto(`/calendar?month=${month}&day=${dayISO}`);
     await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${dayISO}`));
+    // Pin the branch: only the no-entry view offers "Add entry".
+    await expect(page.locator('#day-editor')).toContainText(localeText('en', 'calendar.no_entry'));
+    await expect(page.locator(`#day-editor [data-day-editor-open="${dayISO}"]`)).toHaveText(
+      localeText('en', 'calendar.add_entry')
+    );
 
     const manualStartForm = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${dayISO}"]`);
     await expect(manualStartForm).toBeVisible();

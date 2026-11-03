@@ -156,7 +156,7 @@
     "ShortGap" .ManualCycleStartShortGap
     "PreviousDate" .ManualCycleStartPreviousDate
     "Implantation" .ManualCycleStartPotentialImplantation)}}
-  {{if .ShowFutureCycleStartNotice}}
+  {{if and .ShowFutureCycleStartNotice (not .ManualCycleStartMarkOnTheDay)}}
   <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
   {{end}}
   {{/* The question beside the period toggle already asks this; the hint stays
@@ -216,7 +216,7 @@
         "Implantation" .ManualCycleStartPotentialImplantation)}}
       {{end}}
     </div>
-    {{if .ShowFutureCycleStartNotice}}
+    {{if and .ShowFutureCycleStartNotice (not .ManualCycleStartMarkOnTheDay)}}
     <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
     {{end}}
     {{if .ShowCycleStartSuggestion}}
@@ -253,7 +253,7 @@
           "Implantation" .ManualCycleStartPotentialImplantation)}}
         {{end}}
       </div>
-      {{if .ShowFutureCycleStartNotice}}
+      {{if and .ShowFutureCycleStartNotice (not .ManualCycleStartMarkOnTheDay)}}
       <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
       {{end}}
       {{if .ShowCycleStartSuggestion}}
