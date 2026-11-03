@@ -367,6 +367,7 @@
   "settings.success.profile_name_cleared": "Nom de profil supprimé.",
   "settings.success.data_cleared": "Toutes les données de suivi ont été effacées avec succès.",
   "settings.success.oidc_identity_linked": "Identité OIDC associée avec succès.",
+  "settings.success.oidc_link_cancelled": "Association de l'identité OIDC annulée.",
   "settings.success.oidc_identity_unlinked": "Identité OIDC dissociée. Vos autres appareils ont été déconnectés.",
   "settings.success.tracking_updated": "Paramètres de suivi mis à jour.",
 

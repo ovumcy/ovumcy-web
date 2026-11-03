@@ -4038,6 +4038,36 @@ paths:
                 error: "csrf_refused"
                 error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
 
+  /api/v1/users/current/oidc/link/cancel:
+    post:
+      tags: [settings]
+      summary: Decline the OIDC identity a finished link step-up returned (owner only).
+      description: |
+        The Cancel form on `/settings/oidc/link`. It clears the sealed
+        pending-link cookie, so the declined identity can no longer be
+        confirmed from that page; nothing is linked and the session is kept.
+        The body carries only the CSRF token. A JSON caller gets
+        `{"ok": true}`, a form submit lands on `/settings` with a flash. With
+        no pending link the answer is the same.
+      responses:
+        '200':
+          description: Pending link cleared (JSON callers).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '303':
+          description: Form submit — redirect to `/settings` with a flash.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '403':
+          description: The caller is not the owner, or the request was refused before the handler runs (CSRF) with the `csrf_refused` key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
+
   /api/v1/users/current/oidc/identities/{id}:
     delete:
       tags: [settings]

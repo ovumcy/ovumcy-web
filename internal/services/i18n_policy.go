@@ -250,6 +250,7 @@ var settingsStatusTranslationKeys = map[string]string{
 	"profile_name_cleared":    "settings.success.profile_name_cleared",
 	"data_cleared":            "settings.success.data_cleared",
 	"oidc_identity_linked":    "settings.success.oidc_identity_linked",
+	"oidc_link_cancelled":     "settings.success.oidc_link_cancelled",
 	"oidc_identity_unlinked":  "settings.success.oidc_identity_unlinked",
 	"symptom_created":         "settings.symptoms.success.created",
 	"symptom_updated":         "settings.symptoms.success.updated",

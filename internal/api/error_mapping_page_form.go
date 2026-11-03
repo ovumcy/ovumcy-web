@@ -180,7 +180,8 @@ func settingsFormBackPath(path string) (string, bool) {
 		// The confirm form lives on /settings/oidc/link, but every refusal
 		// spends or outlives the pending link that page needs, so it lands on
 		// settings.
-		"/api/v1/users/current/oidc/link/confirm":
+		"/api/v1/users/current/oidc/link/confirm",
+		"/api/v1/users/current/oidc/link/cancel":
 		return "/settings", true
 	case "/api/v1/users/current/2fa":
 		// Enrolling and disabling both live on the second-factor page.

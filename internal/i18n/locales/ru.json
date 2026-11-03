@@ -340,6 +340,7 @@
   "settings.success.profile_name_cleared": "Имя профиля удалено.",
   "settings.success.data_cleared": "Все данные трекинга успешно очищены.",
   "settings.success.oidc_identity_linked": "Личность OIDC успешно привязана.",
+  "settings.success.oidc_link_cancelled": "Привязка личности OIDC отменена.",
   "settings.success.oidc_identity_unlinked": "Личность OIDC отвязана. На других устройствах сеанс завершён.",
   "settings.symptoms.success.created": "Пользовательский симптом добавлен.",
   "settings.symptoms.success.updated": "Пользовательский симптом обновлён.",

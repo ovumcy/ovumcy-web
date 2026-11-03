@@ -78,6 +78,7 @@ func TestPlainPageFormBackPathAdmitsOnlyBrowserFormPostsItCanLinkBackFrom(t *tes
 		{name: "local password step-up form", method: http.MethodPost, target: "/api/v1/users/current/password/step-up", accept: browser, want: "true /settings"},
 		{name: "recovery code form", method: http.MethodPost, target: "/api/v1/users/current/recovery-code", accept: browser, want: "true /settings"},
 		{name: "identity link step-up form", method: http.MethodPost, target: "/api/v1/users/current/oidc/link/step-up", accept: browser, want: "true /settings"},
+		{name: "identity link cancel form", method: http.MethodPost, target: "/api/v1/users/current/oidc/link/cancel", accept: browser, want: "true /settings"},
 		{name: "identity unlink form", method: http.MethodPost, target: "/api/v1/users/current/oidc/identities/7", accept: browser, body: "_method=DELETE", want: "true /settings"},
 		{name: "identity unlink id never reaches the link", method: http.MethodPost, target: "/api/v1/users/current/oidc/identities/%3Cscript%3E?source=calendar", accept: browser, body: "_method=DELETE", want: "true /settings"},
 		{name: "identity collection has no id", method: http.MethodPost, target: "/api/v1/users/current/oidc/identities/", accept: browser, body: "_method=DELETE", want: "false "},

@@ -115,12 +115,19 @@ func readOIDCLinkPendingCookie(t *testing.T, response *http.Response) string {
 // fixture's session, with or without the CSRF token.
 func postOIDCIdentityLinkConfirm(t *testing.T, fixture *oidcStepupFixture, authCookie string, pendingCookie string, withCSRF bool) *http.Response {
 	t.Helper()
+	return postOIDCIdentityLinkInterstitialForm(t, fixture, "/api/v1/users/current/oidc/link/confirm", authCookie, pendingCookie, withCSRF)
+}
+
+// postOIDCIdentityLinkInterstitialForm sends one of the interstitial's two
+// forms, confirm or cancel, as a browser form submit.
+func postOIDCIdentityLinkInterstitialForm(t *testing.T, fixture *oidcStepupFixture, path string, authCookie string, pendingCookie string, withCSRF bool) *http.Response {
+	t.Helper()
 	csrfCookie, csrfToken := loadSettingsCSRFContext(t, fixture.app, authCookie)
 	form := url.Values{}
 	if withCSRF {
 		form.Set("csrf_token", csrfToken)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/confirm", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(authCookie, csrfCookie), pendingCookie))
 	return mustAppResponse(t, fixture.app, request)
@@ -609,6 +616,140 @@ func TestOIDCIdentityLinkConfirmRefusesWithoutAPendingLinkOfThisAccount(t *testi
 		if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != settingsOIDCReauthStaleErrorSpec().Key {
 			t.Fatalf("%s: expected %q, got %q", name, settingsOIDCReauthStaleErrorSpec().Key, payload.SettingsError)
 		}
+	}
+}
+
+// TestOIDCIdentityLinkConfirmFromAnEarlierSessionVersionAnswersStale is
+// WEB-430's repro: the link is parked at one session version, a revocation this
+// device survives (a password change re-issues its cookie) moves the account
+// to the next, and the confirm arrives on the re-issued session. The pending
+// link is stale: nothing is linked, the stale refusal asks for a new step-up,
+// and the live session is kept rather than signed out.
+func TestOIDCIdentityLinkConfirmFromAnEarlierSessionVersionAnswersStale(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-confirm-lagging@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "lagging-pending-subject"}
+	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+
+	bumped := storedAuthSessionVersion(t, fixture.database, fixture.user.ID) + 1
+	if err := fixture.database.Model(&models.User{}).Where("id = ?", fixture.user.ID).UpdateColumn("auth_session_version", bumped).Error; err != nil {
+		t.Fatalf("bump the session version: %v", err)
+	}
+	reissuedUser := fixture.user
+	reissuedUser.AuthSessionVersion = bumped
+	reissuedAuthCookie := issueAuthCookieForUser(t, reissuedUser)
+
+	response := postOIDCIdentityLinkConfirm(t, fixture, reissuedAuthCookie, pendingCookie, true)
+	defer func() { _ = response.Body.Close() }()
+
+	if fixture.oidcStub.lastConfirmLinkUserID != 0 {
+		t.Fatalf("a pending link from an earlier session version must link nothing, linked for user %d", fixture.oidcStub.lastConfirmLinkUserID)
+	}
+	if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/settings" {
+		t.Fatalf("expected a 303 to /settings, got %d to %q", response.StatusCode, response.Header.Get("Location"))
+	}
+	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	if flashCookie == nil {
+		t.Fatal("expected a refusal flash")
+	}
+	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != settingsOIDCReauthStaleErrorSpec().Key || payload.AuthError != "" {
+		t.Fatalf("expected settings error %q and no auth error, got settings=%q auth=%q", settingsOIDCReauthStaleErrorSpec().Key, payload.SettingsError, payload.AuthError)
+	}
+	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil {
+		t.Fatalf("the live session must be kept, but the response set the auth cookie to %v", authCookie)
+	}
+	if spent := responseCookie(response.Cookies(), oidcLinkPendingCookieName); spent == nil || strings.TrimSpace(spent.Value) != "" {
+		t.Fatalf("expected the stale pending link to be cleared, got %v", spent)
+	}
+	if got := storedAuthSessionVersion(t, fixture.database, fixture.user.ID); got != bumped {
+		t.Fatalf("a refused confirm must write nothing, stored version moved from %d to %d", bumped, got)
+	}
+}
+
+// pendingCookieAfter is the pending-link cookie a browser sends on its next
+// request: the one it held, unless the response replaced or cleared it.
+func pendingCookieAfter(response *http.Response, held string) string {
+	cookie := responseCookie(response.Cookies(), oidcLinkPendingCookieName)
+	switch {
+	case cookie == nil:
+		return held
+	case strings.TrimSpace(cookie.Value) == "":
+		return ""
+	default:
+		return cookie.Name + "=" + cookie.Value
+	}
+}
+
+// TestOIDCIdentityLinkCancelRetractsThePendingLink is WEB-431's repro: the
+// owner declines the identity on the interstitial, and a later visit to the
+// page within the pending link's lifetime offers no confirm form, nor does a
+// replayed confirm link anything.
+func TestOIDCIdentityLinkCancelRetractsThePendingLink(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-cancel@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "declined-subject"}
+	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+
+	// Positive control: before the cancel the page offers both forms.
+	request := httptest.NewRequest(http.MethodGet, oidcLinkConfirmPagePath, nil)
+	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, pendingCookie))
+	page := mustAppResponse(t, fixture.app, request)
+	assertStatusCode(t, page, http.StatusOK)
+	assertBodyContainsAll(t, mustReadBodyString(t, page.Body),
+		bodyStringMatch{fragment: `action="/api/v1/users/current/oidc/link/confirm"`, message: "expected the confirm form before the cancel"},
+		bodyStringMatch{fragment: `action="/api/v1/users/current/oidc/link/cancel"`, message: "expected Cancel to be a form posting to the cancel endpoint"},
+	)
+	_ = page.Body.Close()
+
+	cancel := postOIDCIdentityLinkInterstitialForm(t, fixture, "/api/v1/users/current/oidc/link/cancel", fixture.authCookie, pendingCookie, true)
+	_ = cancel.Body.Close()
+	if cancel.StatusCode != http.StatusSeeOther || cancel.Header.Get("Location") != "/settings" {
+		t.Fatalf("expected the cancel to 303 to /settings, got %d to %q", cancel.StatusCode, cancel.Header.Get("Location"))
+	}
+	flashCookie := responseCookie(cancel.Cookies(), flashCookieName)
+	if flashCookie == nil || decodeFlashCookieForTest(t, flashCookie.Value).SettingsSuccess != "oidc_link_cancelled" {
+		t.Fatal("expected the oidc_link_cancelled flash")
+	}
+	if authCookie := responseCookie(cancel.Cookies(), authCookieName); authCookie != nil {
+		t.Fatalf("the cancel must leave the session alone, got %v", authCookie)
+	}
+	nextPending := pendingCookieAfter(cancel, pendingCookie)
+
+	request = httptest.NewRequest(http.MethodGet, oidcLinkConfirmPagePath, nil)
+	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, nextPending))
+	page = mustAppResponse(t, fixture.app, request)
+	_ = page.Body.Close()
+	if page.StatusCode != http.StatusSeeOther || page.Header.Get("Location") != "/settings" {
+		t.Fatalf("expected the page to have no pending link after the cancel (303 to /settings), got %d to %q", page.StatusCode, page.Header.Get("Location"))
+	}
+
+	confirm := postOIDCIdentityLinkConfirm(t, fixture, fixture.authCookie, nextPending, true)
+	_ = confirm.Body.Close()
+	if fixture.oidcStub.lastConfirmLinkUserID != 0 {
+		t.Fatalf("a confirm after the cancel must link nothing, linked for user %d", fixture.oidcStub.lastConfirmLinkUserID)
+	}
+}
+
+// TestOIDCIdentityLinkCancelRefusesWithoutCSRF: the cancel is a state change
+// like the confirm, so a post without the page's CSRF token is refused before
+// the handler and the pending link stays as it was.
+func TestOIDCIdentityLinkCancelRefusesWithoutCSRF(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-cancel-csrf@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "cancel-csrf-subject"}
+	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+
+	response := postOIDCIdentityLinkInterstitialForm(t, fixture, "/api/v1/users/current/oidc/link/cancel", fixture.authCookie, pendingCookie, false)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected the CSRF middleware to refuse the cancel with 403, got %d", response.StatusCode)
+	}
+	if pendingCookieAfter(response, pendingCookie) != pendingCookie {
+		t.Fatal("a refused cancel must leave the pending link in place")
 	}
 }
 

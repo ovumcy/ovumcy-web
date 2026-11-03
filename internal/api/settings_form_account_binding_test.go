@@ -480,6 +480,7 @@ var unguardedMutationReasons = map[string]string{
 	"POST /api/v1/users/current/data-wipe":             "erases the data; demands the current password",
 	"POST /api/v1/users/current/oidc/link/step-up":     "starts the identity-link re-authentication; demands the current password",
 	"POST /api/v1/users/current/oidc/link/confirm":     "links only the identity in the owner-bound sealed pending-link cookie",
+	"POST /api/v1/users/current/oidc/link/cancel":      "clears this browser's pending-link cookie; changes no setting and no data",
 	"DELETE /api/v1/users/current/oidc/identities/:id": "unlinks an identity; demands the current password",
 	"DELETE /api/v1/sessions/current":                  "signs out; changes no setting and no data",
 }
