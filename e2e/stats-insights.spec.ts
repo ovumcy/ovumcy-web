@@ -1,6 +1,7 @@
 import { test, expect, type Page } from './support/fixtures';
 import { apiOriginHeader } from './support/auth-helpers';
 import {
+  enableBBTTracking,
   isoToday,
   markCycleStartViaAPI,
   registerAndOnboardWithStartDaysAgo,
@@ -74,6 +75,7 @@ test.describe('Stats: BBT chart', () => {
     // (the oldest start), today-30 (cycle 3 start) and today-7 (cycle 4 start,
     // the current cycle). Layer the BBT samples on today-5..today.
     await registerAndOnboardWithStartDaysAgo(page, 'stats-bbt-chart', 60);
+    await enableBBTTracking(page);
     const today = isoToday();
 
     await savePeriodDay(page, shiftISODate(today, -90));
