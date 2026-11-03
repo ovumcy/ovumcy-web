@@ -109,6 +109,7 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 		"PredictionExplanationPrimaryCount":     viewData.PredictionExplanationPrimaryCount,
 		"PredictionExplanationPrimaryDate":      viewData.PredictionExplanationPrimaryDate,
 		"HighFertilityBadgeObserved":            viewData.HighFertilityBadgeObserved,
+		"HighFertilityBadgeVariant":             viewData.HighFertilityBadgeVariant,
 		"PredictionExplanationSecondaryKey":     viewData.PredictionExplanationSecondaryKey,
 		"HasPredictionExplanationPrimary":       viewData.HasPredictionExplanationPrimary,
 		"HasPredictionExplanationSecondary":     viewData.HasPredictionExplanationSecondary,

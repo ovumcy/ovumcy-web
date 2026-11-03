@@ -109,49 +109,72 @@ func TestBuildOwnerPredictionExplanationNamesBleedingOutsideTheCycleStart(t *tes
 // spotting today on a 3+ cycle history read "Best timing: fertile window
 // (estimate)" beside "Fertile details held back". The states that withhold the
 // badge itself are TestBuildDashboardViewDataWithholdsHighFertilityBadgeWhileFertilitySuppressed.
+// WEB-476: the goal colour is a timing cue of its own, so every withheld state
+// renders the neutral variant whatever the goal; a shown header keeps it.
 func TestBuildDashboardViewDataTellsTheFirstCycleOnce(t *testing.T) {
 	today := mustParseDashboardServiceDay(t, "2026-02-21")
-	for name, testCase := range map[string]struct {
-		completed       int
-		bleedingOutside bool
-		wantObserved    bool
-	}{
+	states := map[string]eggWhiteBadgeState{
 		"no completed cycle":     {completed: 0, wantObserved: true},
 		"three completed cycles": {completed: 3, wantObserved: false},
 		"bleeding_outside_cycle_start after three completed cycles":     {completed: 3, bleedingOutside: true, wantObserved: true},
 		"bleeding_outside_cycle_start before the first completed cycle": {completed: 0, bleedingOutside: true, wantObserved: true},
-	} {
-		t.Run(name, func(t *testing.T) {
-			user := &models.User{ID: 9, Role: models.RoleOwner, CycleLength: 28, UsageGoal: models.UsageGoalTrying, TrackBBT: true}
-			service := NewDashboardViewService(
-				&stubDashboardStatsProvider{stats: CycleStats{
-					CompletedCycleCount:       testCase.completed,
-					BleedingOutsideCycleStart: testCase.bleedingOutside,
-					CurrentCycleDay:           5,
-					MedianCycleLength:         28,
-					LastPeriodStart:           mustParseDashboardServiceDay(t, "2026-02-17"),
-					NextPeriodStart:           mustParseDashboardServiceDay(t, "2026-03-17"),
-				}},
-				&stubDashboardViewerProvider{logEntry: models.DailyLog{Date: today, CervicalMucus: models.CervicalMucusEggWhite}},
-				&stubDashboardDayStateProvider{},
-			)
-			viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
-			if err != nil {
-				t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+	goals := map[string]string{
+		models.UsageGoalTrying: HighFertilityBadgeVariantPositive,
+		models.UsageGoalAvoid:  HighFertilityBadgeVariantWarning,
+	}
+	for stateName, testCase := range states {
+		for goal, goalVariant := range goals {
+			wantVariant := goalVariant
+			if testCase.wantObserved {
+				wantVariant = HighFertilityBadgeVariantNeutral
 			}
-			if viewData.ShowFirstCycleBridge {
-				t.Fatalf("expected no bridge line beside the explainer, explainer=%q", viewData.PredictionExplanationPrimaryKey)
-			}
-			if !viewData.ShowHighFertilityBadge {
-				t.Fatalf("expected the egg-white badge to show")
-			}
-			if viewData.CycleContext.FertilitySuppressed != testCase.wantObserved || viewData.ShowFertilityStatus == testCase.wantObserved {
-				t.Fatalf("fixture: fertility suppressed=%v, header status shown=%v; want the badge beside a withheld header exactly when observed=%v",
-					viewData.CycleContext.FertilitySuppressed, viewData.ShowFertilityStatus, testCase.wantObserved)
-			}
-			if viewData.HighFertilityBadgeObserved != testCase.wantObserved {
-				t.Fatalf("expected observation wording=%v, got %v", testCase.wantObserved, viewData.HighFertilityBadgeObserved)
-			}
-		})
+			t.Run(stateName+"/"+goal, func(t *testing.T) {
+				assertDashboardEggWhiteBadge(t, today, goal, testCase, wantVariant)
+			})
+		}
+	}
+}
+
+type eggWhiteBadgeState struct {
+	completed       int
+	bleedingOutside bool
+	wantObserved    bool
+}
+
+func assertDashboardEggWhiteBadge(t *testing.T, today time.Time, goal string, testCase eggWhiteBadgeState, wantVariant string) {
+	t.Helper()
+	user := &models.User{ID: 9, Role: models.RoleOwner, CycleLength: 28, UsageGoal: goal, TrackBBT: true}
+	service := NewDashboardViewService(
+		&stubDashboardStatsProvider{stats: CycleStats{
+			CompletedCycleCount:       testCase.completed,
+			BleedingOutsideCycleStart: testCase.bleedingOutside,
+			CurrentCycleDay:           5,
+			MedianCycleLength:         28,
+			LastPeriodStart:           mustParseDashboardServiceDay(t, "2026-02-17"),
+			NextPeriodStart:           mustParseDashboardServiceDay(t, "2026-03-17"),
+		}},
+		&stubDashboardViewerProvider{logEntry: models.DailyLog{Date: today, CervicalMucus: models.CervicalMucusEggWhite}},
+		&stubDashboardDayStateProvider{},
+	)
+	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+	if viewData.ShowFirstCycleBridge {
+		t.Fatalf("expected no bridge line beside the explainer, explainer=%q", viewData.PredictionExplanationPrimaryKey)
+	}
+	if viewData.HighFertilityBadgeVariant != wantVariant {
+		t.Fatalf("badge variant=%q, want %q", viewData.HighFertilityBadgeVariant, wantVariant)
+	}
+	if !viewData.ShowHighFertilityBadge {
+		t.Fatalf("expected the egg-white badge to show")
+	}
+	if viewData.CycleContext.FertilitySuppressed != testCase.wantObserved || viewData.ShowFertilityStatus == testCase.wantObserved {
+		t.Fatalf("fixture: fertility suppressed=%v, header status shown=%v; want the badge beside a withheld header exactly when observed=%v",
+			viewData.CycleContext.FertilitySuppressed, viewData.ShowFertilityStatus, testCase.wantObserved)
+	}
+	if viewData.HighFertilityBadgeObserved != testCase.wantObserved {
+		t.Fatalf("expected observation wording=%v, got %v", testCase.wantObserved, viewData.HighFertilityBadgeObserved)
 	}
 }

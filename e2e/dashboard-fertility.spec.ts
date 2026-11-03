@@ -129,6 +129,7 @@ test.describe('Dashboard: fertility badge', () => {
     page,
   }) => {
     await registerAndSetEggwhiteToday(page, 'fertility-no-history', 0);
+    await setUsageGoal(page, 'trying_to_conceive');
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
@@ -137,10 +138,11 @@ test.describe('Dashboard: fertility badge', () => {
     // slider-derived fertile status stays withheld is pinned at the unit level
     // (TestBuildDashboardViewDataShowsHighFertilityBadgeBeforeTheFirstCycleCompletes).
     // Before the first completed cycle it names the observation rather than the
-    // fertile window the header withholds.
+    // fertile window the header withholds, and drops the goal's positive style.
     await expect(dashboardStatusLine(page)).toBeVisible();
     const fertilityBadge = page.locator('[data-fertility-badge]');
     await expect(fertilityBadge).toBeVisible();
+    await expect(fertilityBadge).toHaveAttribute('data-fertility-badge-variant', 'neutral');
     await expect(fertilityBadge).toHaveAttribute(
       'data-fertility-badge-key',
       'dashboard.fertility_badge_observed'
