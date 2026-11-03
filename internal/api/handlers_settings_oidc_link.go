@@ -188,6 +188,12 @@ func (handler *Handler) ShowOIDCIdentityLinkConfirmPage(c fiber.Ctx) error {
 	if err != nil {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
+	// A link parked before a revocation this session survived can only be
+	// refused as stale on confirm, so the page offers no form for it.
+	if !services.AuthSessionVersionsMatch(pending.SessionVersion, user.AuthSessionVersion) {
+		handler.clearOIDCLinkPendingCookie(c)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+	}
 	messages := currentMessages(c)
 	return handler.render(c, "settings_oidc_link_confirm", fiber.Map{
 		"Title":       brandedPageTitle(messages, "settings.oidc_link.confirm.title", "Ovumcy | Link sign-in"),
