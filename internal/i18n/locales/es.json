@@ -883,6 +883,7 @@
   "warning.future_date": "Esta es una fecha futura. Los datos pueden ser inexactos.",
   "warning.future_cycle_start": "Las predicciones se recalcularán cuando llegue ese día.",
   "cycle start replace required": "Confirma que quieres reemplazar el inicio de ciclo ya marcado.",
+  "cycle start mark on the day": "Este día solo podrá reemplazar tu inicio de ciclo guardado cuando llegue. Márcalo ese mismo día.",
   "cycle start confirmation required": "Confirma que quieres marcar un inicio de ciclo con un intervalo corto.",
   "common.not_available": "-",
   "phases.unknown": "Desconocida",

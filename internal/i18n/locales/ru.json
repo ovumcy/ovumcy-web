@@ -911,6 +911,7 @@
   "warning.future_date": "Это будущая дата. Данные могут быть неточными.",
   "warning.future_cycle_start": "Прогноз пересчитается, когда этот день наступит.",
   "cycle start replace required": "Подтвердите замену уже отмеченного начала цикла.",
+  "cycle start mark on the day": "Этот день сможет заменить сохранённое начало цикла, только когда наступит. Отметьте его в сам этот день.",
   "cycle start confirmation required": "Подтвердите отметку начала цикла с коротким интервалом.",
   "common.not_available": "-",
   "phases.unknown": "Неизвестно",

@@ -883,6 +883,7 @@
   "warning.future_date": "This is a future date. Data may be inaccurate.",
   "warning.future_cycle_start": "Predictions will be recalculated when that day arrives.",
   "cycle start replace required": "Confirm replacing the already marked cycle start.",
+  "cycle start mark on the day": "This day can replace your saved cycle start only once it arrives. Mark it on the day.",
   "cycle start confirmation required": "Confirm marking a cycle start with a short gap.",
   "common.not_available": "-",
   "phases.unknown": "Unknown",

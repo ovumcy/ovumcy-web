@@ -18,9 +18,7 @@ import {
   openCalendarDayEditor,
   saveDayEditorForm,
   settleCalendarGridRefresh,
-  settleDayEditorLoad,
   watchCalendarGridRefresh,
-  watchDayEditorLoad,
 } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
@@ -646,7 +644,7 @@ test.describe('Calendar page', () => {
     await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
   });
 
-  test('tomorrow keeps manual cycle start available with a warning', async ({ page }) => {
+  test('tomorrow next to the stored start asks for the mark on the day', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-future-cycle-start');
 
     const todayISO = await todayISOFromCalendar(page);
@@ -656,9 +654,13 @@ test.describe('Calendar page', () => {
     await page.goto(`/calendar?month=${month}&day=${tomorrowISO}`);
     await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${tomorrowISO}`));
 
-    const manualStartForm = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"]`);
-    const manualStartButton = manualStartForm.locator('[data-day-cycle-start-button]');
-    await expect(manualStartButton).toBeVisible();
+    // The onboarding start (today-3) is a logged cycle start in the same
+    // period, and a future day may not replace it: the editor offers no
+    // cycle-start form, only the notice asking for the mark on the day.
+    const onTheDay = page.locator('#day-editor [data-cycle-start-on-the-day]');
+    await expect(onTheDay.first()).toBeVisible();
+    await expect(onTheDay.first()).toHaveText(localeText('en', 'cycle start mark on the day'));
+    await expect(page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"]`)).toHaveCount(0);
     // The notice has its own hook and declares the key it renders — the same
     // element dashboard-warnings.spec.ts pins, so the two specs can no longer
     // describe it two different ways.
@@ -668,43 +670,6 @@ test.describe('Calendar page', () => {
       'data-notice-key',
       'warning.future_cycle_start'
     );
-
-    // The onboarding seed anchors last_period_start at today-3, so tomorrow is a
-    // 4-day short gap: the backend rejects the start with a 400 unless the owner
-    // explicitly confirms it as uncertain (ShortGapDays > 0). The confirm modal
-    // must open so accepting can flip mark_uncertain=true before the POST fires.
-    await manualStartButton.click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    // The onboarding start is a logged cycle start, so marking tomorrow first
-    // asks to replace it, then warns about the short gap.
-    await expect(page.locator('#confirm-modal')).toContainText('already marked a cycle start');
-    await page.locator('#confirm-modal-accept').click();
-    await expect(page.locator('#confirm-modal')).toContainText('days have passed since the previous cycle');
-
-    // The accepted start answers with HX-Refresh: the reloaded page lazy-loads
-    // the selected day's editor, which the next click must not race.
-    const editorLoad = watchDayEditorLoad(page, tomorrowISO);
-    const [cycleStartRequest] = await Promise.all([
-      page.waitForRequest((candidate) => {
-        return (
-          candidate.method() === 'POST' &&
-          candidate.url().includes(`/api/v1/days/${tomorrowISO}/cycle-start?source=calendar`)
-        );
-      }),
-      page.locator('#confirm-modal-accept').click(),
-    ]);
-    const cycleStartResponse = await cycleStartRequest.response();
-    expect(
-      cycleStartResponse,
-      `expected a response for POST /api/v1/days/${tomorrowISO}/cycle-start?source=calendar`
-    ).not.toBeNull();
-    expect(cycleStartResponse!.status()).toBeLessThan(400);
-    await settleDayEditorLoad(page, editorLoad);
-
-    await page.locator(`[data-day-editor-open="${tomorrowISO}"]`).first().click();
-    const dayEditorForm = page.locator(`[data-day-editor-form][data-day-editor-date="${tomorrowISO}"]`);
-    await expect(dayEditorForm).toBeVisible();
-    await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
   });
 
   test('summary-view manual cycle start exposes its policy node so the confirm modal opens', async ({
