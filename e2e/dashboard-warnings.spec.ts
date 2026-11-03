@@ -136,10 +136,12 @@ test.describe('Calendar: future cycle start notice', () => {
     // ShowFutureCycleStartNotice = isFutureDate && AllowManualCycleStart.
     // The future window caps at today+2 and AllowManualCycleStart is true
     // for owners by default, so the day editor for tomorrow flips the
-    // notice on. The notice lives as a sibling to data-day-editor-form
+    // notice on. The onboarding period sits 10 days back: a tomorrow inside
+    // the stored start's period would ask for the mark on the day instead,
+    // and hide this notice. It lives as a sibling to data-day-editor-form
     // (right under the manual cycle-start subform), so scope the assertion
     // to the #day-editor panel rather than the form itself.
-    await registerAndOnboardDefault(page, 'calendar-future-cycle-start');
+    await registerAndOnboardWithStartDaysAgo(page, 'calendar-future-cycle-start', 10);
     const today = await todayISOFromDashboard(page);
     const tomorrow = shiftISODate(today, 1);
 
