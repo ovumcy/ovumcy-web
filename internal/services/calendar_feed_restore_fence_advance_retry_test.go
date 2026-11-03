@@ -137,9 +137,15 @@ func TestAdvanceOrRefuseOverAnUnreadableFenceFileRefusesOnlyWhileATokenRemains(t
 			anchor := &stubFenceAnchor{readErr: broken, writeErr: broken}
 			fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-			err := fence.AdvanceOrRefuse(context.Background())
-			if refused := errors.Is(err, ErrCalendarFeedFenceWriteFailed); refused != testCase.refuses {
-				t.Fatalf("refused = %t, want %t (err %v)", refused, testCase.refuses, err)
+			// Twice: a waived write must not record a token that refuses the next.
+			for attempt := 1; attempt <= 2; attempt++ {
+				err := fence.AdvanceOrRefuse(context.Background())
+				if refused := errors.Is(err, ErrCalendarFeedFenceWriteFailed); refused != testCase.refuses {
+					t.Fatalf("attempt %d: refused = %t, want %t (err %v)", attempt, refused, testCase.refuses, err)
+				}
+			}
+			if !testCase.refuses && len(appState.values) != 0 {
+				t.Fatalf("a waived write over an unreadable fence must record nothing, got %v", appState.values)
 			}
 		})
 	}

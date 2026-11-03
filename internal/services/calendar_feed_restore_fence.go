@@ -391,7 +391,7 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 // Over halves that already disagree durably — a file holding another token, or
 // a database half already dropped — the next boot runs the full pass whatever
 // is written, so the database half moves alone and the write proceeds
-// (durableDisagreement). A file that reads as absent, or a read that fails, is
+// (refusalWaiver). A file that reads as absent, or a read that fails, is
 // refused like a failed write: an unmounted fence volume reads as absent, and
 // once mounted again its old token agrees with a restored pre-write backup. A
 // database failure after the file moved is returned wrapped in
@@ -475,8 +475,14 @@ func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context
 	if errors.Is(writeErr, security.ErrCalendarFeedFenceNotConfigured) {
 		return nil
 	}
-	if writeErr != nil && !diverge && !fence.durableDisagreement(ctx, fence.confirmContinuity(ctx)) {
-		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: writeErr}
+	if writeErr != nil && !diverge {
+		waived, record := fence.refusalWaiver(ctx, fence.confirmContinuity(ctx))
+		if !waived {
+			return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: writeErr}
+		}
+		if !record {
+			return nil
+		}
 	}
 	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
 		if writeErr == nil {
@@ -487,26 +493,30 @@ func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context
 	return nil
 }
 
-// durableDisagreement reports whether confirmContinuity's answer is a
-// disagreement the next boot reads whatever a restore does in between: a file
-// that holds a token other than the database's, or a database half already
-// dropped (an unanchored opt-out boot, an unfinished first boot). Only that
-// waives AdvanceOrRefuse's refusal. A file that reads as absent is NOT one — an
-// unmounted fence volume reads exactly so, and once it is mounted again its old
-// token agrees with a restored pre-write backup — and neither is a read that
-// failed outright (WEB-464), unless the database half is already gone: an
-// unanchored opt-out boot drops it, and with no token there is nothing a
-// restore could make agree. The caller holds fence.writing.
-func (fence *CalendarFeedRestoreFence) durableDisagreement(ctx context.Context, err error) bool {
+// refusalWaiver reports whether confirmContinuity's answer waives
+// AdvanceOrRefuse's refusal, and whether the database half is then recorded.
+// The refusal is waived over a disagreement the next boot reads whatever a
+// restore does in between: a file that holds a token other than the
+// database's, or a database half already dropped (an unanchored opt-out boot,
+// an unfinished first boot); the database half moves alone there, as in
+// Advance. A file that reads as absent is NOT one — an unmounted fence volume
+// reads exactly so, and once it is mounted again its old token agrees with a
+// restored pre-write backup — and neither is a read that failed outright
+// (WEB-464), unless the database half is already gone: an unanchored opt-out
+// boot drops it, and with no token there is nothing a restore could make
+// agree. That waiver records nothing, because a recorded token would make the
+// next write refuse. The caller holds fence.writing.
+func (fence *CalendarFeedRestoreFence) refusalWaiver(ctx context.Context, err error) (waived, record bool) {
 	var continuity *CalendarFeedFenceContinuityError
 	if errors.As(err, &continuity) {
-		return continuity.AnchorFound || !continuity.StoredFound
+		durable := continuity.AnchorFound || !continuity.StoredFound
+		return durable, durable
 	}
 	if errors.Is(err, ErrCalendarFeedFenceUnreachable) {
 		_, storedFound, getErr := fence.appState.Get(ctx, models.AppStateKeyCalendarFeedRestoreFence)
-		return getErr == nil && !storedFound
+		return getErr == nil && !storedFound, false
 	}
-	return false
+	return false, false
 }
 
 // writeAnchorRetrying writes token to the file half, retrying a failed write
