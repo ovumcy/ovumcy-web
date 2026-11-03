@@ -63,6 +63,31 @@ export async function acceptConfirmDialog(page: Page): Promise<void> {
 }
 
 /**
+ * Accepts every question a manual cycle-start mark asks, in order: the replace
+ * question when a recorded start competes (an onboarding start is one), then the
+ * short-gap one. Returns how many were accepted; zero when none was asked.
+ */
+export async function acceptCycleStartConfirms(page: Page): Promise<number> {
+  const modal = page.locator('#confirm-modal');
+  const message = page.locator('#confirm-modal-message');
+  let accepted = 0;
+  for (let round = 0; round < 3; round += 1) {
+    try {
+      await modal.waitFor({ state: 'visible', timeout: 2000 });
+    } catch {
+      break;
+    }
+    const asked = (await message.textContent()) ?? '';
+    await page.locator('#confirm-modal-accept').click();
+    accepted += 1;
+    await expect
+      .poll(async () => !(await modal.isVisible()) || ((await message.textContent()) ?? '') !== asked)
+      .toBe(true);
+  }
+  return accepted;
+}
+
+/**
  * Un-ticks a day form's period toggle that asks first (`data-period-off-confirm`:
  * the un-tick moves the cycle start or clears auto-filled days). The box keeps
  * its tick until the question is answered, so a bare `uncheck()` — which

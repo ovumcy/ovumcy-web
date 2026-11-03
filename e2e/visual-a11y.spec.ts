@@ -1,5 +1,5 @@
 import { expect, test, type Page } from './support/fixtures';
-import { mutatingRequestsDuring } from './support/confirm-dialog-helpers';
+import { acceptCycleStartConfirms, mutatingRequestsDuring } from './support/confirm-dialog-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -429,8 +429,7 @@ test.describe('Visual and accessibility regressions', () => {
     // once today is a cycle start. Mark it, so the phase-tinted fill this test
     // exists for is actually on screen.
     await page.locator('[data-dashboard-cycle-start-button]').click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    await page.locator('#confirm-modal-accept').click();
+    expect(await acceptCycleStartConfirms(page)).toBeGreaterThan(0);
     await expect(page.locator('[data-dashboard-editor] .btn-primary')).toBeVisible();
 
     const editor = page.locator('[data-dashboard-editor]');
