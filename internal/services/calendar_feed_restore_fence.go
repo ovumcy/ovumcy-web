@@ -322,20 +322,23 @@ func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outco
 //     every boot (Enforce's unanchored path), so containment is complete
 //     without this write.
 //   - Configured but unwritable — a broken mount, a full disk, a transient I/O
-//     error — over halves that agree. Nothing is recorded and
-//     ErrCalendarFeedFenceWriteFailed is returned, so the caller refuses its
-//     own write (WEB-414): the halves still agree and the row never moves, so
-//     there is nothing a restore could undo. Over halves that already disagree
-//     (or cannot be read) the next boot runs the full pass anyway, so the
-//     database half moves alone, as AdvanceOrDiverge does, and the write
-//     proceeds.
-//     Moving the database half alone would fail closed too, but the next boot
-//     cannot tell that disagreement from a restored backup and answers it with
-//     the full ContinuityBroken revocation — every session, webhook and local
-//     password on the instance — for a write the owner could simply retry.
+//     error. The write is retried as in AdvanceOrRefuse, and when every attempt
+//     fails nothing is recorded and ErrCalendarFeedFenceWriteFailed is
+//     returned, so the caller refuses its own write (WEB-414): the row never
+//     moves, so there is nothing a restore could undo. A file that reads as
+//     absent or cannot be read is refused the same way (WEB-469): an unmounted
+//     fence volume reads as absent, and once mounted again its old token agrees
+//     with a restored pre-revocation backup. Only a disagreement the next boot
+//     keeps whatever a restore does lets the write proceed (refusalWaiver).
+//     Moving the database half alone would fail closed against the next boot,
+//     which cannot tell that disagreement from a restored backup and answers it
+//     with the full ContinuityBroken revocation — every session, webhook and
+//     local password on the instance — for a write the owner could simply
+//     retry; and against a restore made before that boot it fails open.
 //
-// A database failure after the file half was written is returned as well, and
-// is the one outcome that changes something: the halves disagree, so the next
+// A database failure after the file half was written is returned wrapped in
+// ErrCalendarFeedFenceHalfAdvanced, and is the one outcome that changes
+// something: the halves disagree, so the next
 // boot runs the ContinuityBroken pass. It is priced in rather than avoided: the
 // halves are written one after the other with no transaction spanning both,
 // and file-then-database is the order whose failure revokes too much instead
@@ -350,27 +353,7 @@ func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outco
 func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
-
-	if fence.consumeConfirmedAdvance() {
-		return nil
-	}
-	token, err := security.NewCalendarFeedFenceToken()
-	if err != nil {
-		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
-	}
-	if err := fence.anchor.Write(token); err != nil {
-		if errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
-			return nil
-		}
-		// Refuse only where there is continuity to keep. Halves that already
-		// disagree — an instance that booted unanchored under the opt-out, its
-		// database half dropped — already send the next boot down the full pass,
-		// so refusing there would only block an owner revoking a leaked feed.
-		if fence.confirmContinuity(ctx) == nil {
-			return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: err}
-		}
-	}
-	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
+	return fence.advanceRetryingLocked(ctx, false)
 }
 
 // AdvanceOrRefuse is Advance for a write that revokes sessions or changes a
@@ -379,10 +362,10 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 // redemption, the operator email re-home — whose revocation must survive a
 // restore taken before it.
 //
-// Where Advance refuses on the first failed file write, this retries it a
-// bounded number of times (calendarFeedFenceWriteRetryDelays), so a momentary
-// ENOSPC or EIO does not cost an owner a refused sign-out. When every attempt
-// fails it refuses exactly as Advance does (WEB-464): nothing written in either
+// It retries a failed file write a bounded number of times
+// (calendarFeedFenceWriteRetryDelays), so a momentary ENOSPC or EIO does not
+// cost an owner a refused sign-out. When every attempt fails it refuses
+// exactly as Advance does (WEB-464): nothing written in either
 // half, ErrCalendarFeedFenceWriteFailed returned, and the caller's row write
 // must not run. Moving the database half alone is NOT safe here: a backup
 // taken before this write carries the old token in app_state, the file still
@@ -456,13 +439,13 @@ func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) err
 }
 
 // calendarFeedFenceWriteRetryDelays are the waits between the file-write
-// attempts of AdvanceOrRefuse and AdvanceOrDiverge: four attempts within about
+// attempts of every advance but AdvanceConfirmed: four attempts within about
 // half a second, held under writing, which the batch spreads over every
 // sign-out that arrives meanwhile.
 var calendarFeedFenceWriteRetryDelays = []time.Duration{25 * time.Millisecond, 100 * time.Millisecond, 400 * time.Millisecond}
 
-// advanceRetryingLocked is one AdvanceOrRefuse or AdvanceOrDiverge write. The
-// caller holds fence.writing.
+// advanceRetryingLocked is one Advance, AdvanceOrRefuse or AdvanceOrDiverge
+// write. The caller holds fence.writing.
 func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context, diverge bool) error {
 	if fence.consumeConfirmedAdvance() {
 		return nil
@@ -550,8 +533,9 @@ func (fence *CalendarFeedRestoreFence) writeAnchorRetrying(ctx context.Context, 
 	return err
 }
 
-// ErrCalendarFeedFenceWriteFailed is returned by Advance when the fence is
-// configured and its file could not be written. Nothing was written in either
+// ErrCalendarFeedFenceWriteFailed is returned by Advance and AdvanceOrRefuse
+// when the fence is configured and its file could not be written after the
+// retries, and no disagreement already waives the refusal. Nothing was written in either
 // half, so the caller's own write must not run, and a retry is safe. It always
 // wraps the anchor error.
 var ErrCalendarFeedFenceWriteFailed = errors.New("calendar feed restore fence: could not write the fence file")

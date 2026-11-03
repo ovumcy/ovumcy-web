@@ -86,9 +86,12 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 //     the fence never saw would hand that endpoint back to the next notify
 //     pass. The fence is the only restore detector the boot pass has, so a
 //     revocation it does not record is one no boot can answer.
-//     Advance refuses an unwritable fence file as well as a database failure
-//     (WEB-414), so a transient file error costs the owner one retry rather
-//     than costing every owner the next boot's full restore revocation.
+//     Advance retries an unwritable fence file, then refuses it as well as a
+//     database failure (WEB-414), so a fence volume that stays broken costs
+//     the owner one retry rather than costing every owner the next boot's
+//     full restore revocation. A file that reads as absent — an unmounted
+//     volume — is refused too (WEB-469): mounted again, its old token agrees
+//     with a restored pre-revocation backup.
 //   - Every session or credential writer — sign-out, password change, TOTP
 //     toggle, operator email re-home, OIDC link and unlink in
 //     OIDCIdentityRepository, recovery-code rotation, the operator reset, the

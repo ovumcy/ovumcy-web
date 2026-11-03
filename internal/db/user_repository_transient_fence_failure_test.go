@@ -33,8 +33,8 @@ func (file *failingOnceFenceFile) Write(value string) error {
 
 // TestATransientFenceWriteFailureRevokesNoPasswordOnTheNextBoot is WEB-414's
 // check, on both dialects, over the real fence file and app_state: a feed
-// revocation and a webhook removal that meet a failing fence file are refused
-// with the row untouched, and the boot after the failure clears reads
+// revocation and a webhook removal that meet a fence file failing every retry
+// are refused with the row untouched, and the boot after the failure clears reads
 // continuity — no ContinuityBroken pass, every password and session intact.
 // Before WEB-414 the database half moved alone and that boot revoked every
 // local password on the instance.
@@ -73,14 +73,14 @@ func TestATransientFenceWriteFailureRevokesNoPasswordOnTheNextBoot(t *testing.T)
 			}
 			before := reloadUserForWebhookRevocationTest(t, repo, user.ID)
 
-			file.failNext = true
+			file.failing = true
 			if err := repo.ClearCalendarFeedToken(ctx, user.ID); !errors.Is(err, services.ErrCalendarFeedFenceWriteFailed) {
-				t.Fatalf("ClearCalendarFeedToken must refuse a failed fence write, got %v", err)
+				t.Fatalf("ClearCalendarFeedToken must refuse a fence write that fails every retry, got %v", err)
 			}
-			file.failNext = true
 			if err := repo.RemoveWebhookDestination(ctx, user.ID); !errors.Is(err, services.ErrCalendarFeedFenceWriteFailed) {
-				t.Fatalf("RemoveWebhookDestination must refuse a failed fence write, got %v", err)
+				t.Fatalf("RemoveWebhookDestination must refuse a fence write that fails every retry, got %v", err)
 			}
+			file.failing = false
 			if after := reloadUserForCalendarFeed(t, repo, user.ID); after.CalendarFeedSelector != columns.Selector || after.WebhookURL != before.WebhookURL {
 				t.Fatalf("a refused write must leave the row untouched, got selector %q url %q", after.CalendarFeedSelector, after.WebhookURL)
 			}

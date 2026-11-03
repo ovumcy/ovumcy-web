@@ -483,13 +483,13 @@ func TestCalendarFeedRestoreFenceAdvanceRecordsNothingWithoutAFence(t *testing.T
 	}
 }
 
-// TestCalendarFeedRestoreFenceAdvanceRefusesATransientFileFailure pins WEB-414's
-// first half. A configured fence whose file write fails for a moment must
-// refuse the owner's write and leave both halves as they were, so the boot
+// TestCalendarFeedRestoreFenceAdvanceRefusesAPersistentFileFailure pins WEB-414's
+// first half. A configured fence whose file write fails through every retry
+// must refuse the owner's write and leave both halves as they were, so the boot
 // after the failure clears reads continuity and revokes nothing. Moving the
 // database half alone would have made that boot indistinguishable from a
 // restore, and its answer is every session, webhook and local password.
-func TestCalendarFeedRestoreFenceAdvanceRefusesATransientFileFailure(t *testing.T) {
+func TestCalendarFeedRestoreFenceAdvanceRefusesAPersistentFileFailure(t *testing.T) {
 	appState := &stubFenceAppState{values: map[string]string{
 		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
 	}}
@@ -523,29 +523,35 @@ func TestCalendarFeedRestoreFenceAdvanceRefusesATransientFileFailure(t *testing.
 // opt-out — a fence path set, no volume behind it — holds no database half, so
 // there is no continuity a refusal could keep, and refusing would leave an
 // owner unable to revoke a leaked feed until the mount came back. The write
-// proceeds and the database half moves, which the next boot reads as the same
-// broken continuity it already would have.
+// proceeds and records nothing: a recorded token would refuse the next
+// revocation, while the unanchored stamp already sends the next fenced boot
+// down the full pass.
 func TestCalendarFeedRestoreFenceAdvanceProceedsOverHalvesThatAlreadyDisagree(t *testing.T) {
 	appState := &stubFenceAppState{values: map[string]string{}}
 	anchor := &stubFenceAnchor{writeErr: errors.New("no such file or directory")}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	if err := fence.Advance(context.Background()); err != nil {
-		t.Fatalf("an owner revocation over an unanchored fence must proceed, got %v", err)
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := fence.Advance(context.Background()); err != nil {
+			t.Fatalf("attempt %d: an owner revocation over an unanchored fence must proceed, got %v", attempt, err)
+		}
 	}
-	if appState.values[models.AppStateKeyCalendarFeedRestoreFence] == "" {
-		t.Fatal("the database half must move, so the next fenced boot reads the gap as broken continuity")
+	if len(appState.values) != 0 {
+		t.Fatalf("a waived advance over a dropped database half must record nothing, got %v", appState.values)
 	}
 }
 
 // TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing tables
-// every shape of the two halves under an unwritable fence file. Only the pair
-// that agrees on one token is continuity worth keeping, so only it refuses;
-// every other shape (a token mismatch, either half alone, an unreadable file)
-// proceeds and moves the database half, because refusing there would block an
-// owner revoking a leaked feed on a restored-but-unbooted database. A gate that
-// refuses whenever both halves hold a token, ignoring equality, fails the
-// mismatch row; one that refuses on any present half fails the one-half rows.
+// every shape of the two halves under a fence file that stays unwritable. The
+// refusal is waived only over a disagreement the next boot keeps whatever a
+// restore does in between: a file holding another token, or a file token with
+// no database half. Every shape in which the database still holds a token a
+// remounted file could agree with again — the agreeing pair, a file that reads
+// as absent, a file that cannot be read — refuses (WEB-469), because a
+// pre-revocation backup restored before the next boot would bring that token
+// back and the revoked feed or webhook with it. A gate that refuses on any
+// present half fails the file-only row; one that waives on any disagreement,
+// as Advance did before WEB-469, fails the absent and unreadable rows.
 func TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing(t *testing.T) {
 	const olderToken = "an-older-generation"
 	cases := []struct {
@@ -555,7 +561,7 @@ func TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing(t *tes
 		wantRefused bool
 	}{
 		{
-			name:        "the halves agree is the one pair that refuses",
+			name:        "the halves agree",
 			stored:      map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
 			anchor:      &stubFenceAnchor{value: fenceTestToken, found: true},
 			wantRefused: true,
@@ -566,9 +572,10 @@ func TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing(t *tes
 			anchor: &stubFenceAnchor{value: fenceTestToken, found: true},
 		},
 		{
-			name:   "only the database half has a token",
-			stored: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
-			anchor: &stubFenceAnchor{},
+			name:        "the file reads as absent beside a database token",
+			stored:      map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor:      &stubFenceAnchor{},
+			wantRefused: true,
 		},
 		{
 			name:   "only the file half has a token",
@@ -576,9 +583,10 @@ func TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing(t *tes
 			anchor: &stubFenceAnchor{value: fenceTestToken, found: true},
 		},
 		{
-			name:   "the file cannot be read",
-			stored: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
-			anchor: &stubFenceAnchor{value: fenceTestToken, found: true, readErr: errors.New("permission denied")},
+			name:        "the file cannot be read beside a database token",
+			stored:      map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor:      &stubFenceAnchor{value: fenceTestToken, found: true, readErr: errors.New("permission denied")},
+			wantRefused: true,
 		},
 	}
 
@@ -593,7 +601,7 @@ func TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing(t *tes
 			after := appState.values[models.AppStateKeyCalendarFeedRestoreFence]
 			if testCase.wantRefused {
 				if !errors.Is(err, ErrCalendarFeedFenceWriteFailed) {
-					t.Fatalf("agreeing halves under an unwritable file must refuse, got %v", err)
+					t.Fatalf("this shape under an unwritable file must refuse, got %v", err)
 				}
 				if after != before {
 					t.Fatalf("a refused advance must leave the database half alone, %q -> %q", before, after)
@@ -601,12 +609,61 @@ func TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing(t *tes
 				return
 			}
 			if err != nil {
-				t.Fatalf("halves that are not an agreeing pair must not block the write, got %v", err)
+				t.Fatalf("a disagreement the next boot keeps must not block the write, got %v", err)
 			}
 			if after == "" || after == before {
 				t.Fatalf("the database half must move to a fresh token, %q -> %q", before, after)
 			}
 		})
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceRetriesATransientFileFailure pins that
+// a feed or webhook write pays no refusal for a fence file that fails fewer
+// times than it is retried, and ends with both halves on one fresh token.
+func TestCalendarFeedRestoreFenceAdvanceRetriesATransientFileFailure(t *testing.T) {
+	fence, appState, anchor := agreeingFenceForRetryTest(len(calendarFeedFenceWriteRetryDelays))
+
+	if err := fence.Advance(context.Background()); err != nil {
+		t.Fatalf("a transient fence-file failure must be retried away, got %v", err)
+	}
+	if anchor.attempts != len(calendarFeedFenceWriteRetryDelays)+1 {
+		t.Fatalf("expected %d attempts, got %d", len(calendarFeedFenceWriteRetryDelays)+1, anchor.attempts)
+	}
+	if stored := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; stored != anchor.value || stored == fenceTestToken {
+		t.Fatalf("the halves must agree on a fresh token: file %q, database %q", anchor.value, stored)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceOverAnUnreadableFileProceedsOnlyOnceTheTokenIsDropped
+// pins Advance's read-failure arm against the opt-out loop: over a dropped
+// database half the write proceeds and records nothing, so the next one is not
+// refused either; with a token held it refuses (row above).
+func TestCalendarFeedRestoreFenceAdvanceOverAnUnreadableFileProceedsOnlyOnceTheTokenIsDropped(t *testing.T) {
+	broken := errors.New("permission denied")
+	appState := &stubFenceAppState{values: map[string]string{}}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, &stubFenceAnchor{readErr: broken, writeErr: broken})
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := fence.Advance(context.Background()); err != nil {
+			t.Fatalf("attempt %d over a dropped token must proceed, got %v", attempt, err)
+		}
+	}
+	if len(appState.values) != 0 {
+		t.Fatalf("a waived advance over an unreadable fence must record nothing, got %v", appState.values)
+	}
+}
+
+// TestCalendarFeedRestoreFenceAdvanceTypesADatabaseFailureAfterTheFile pins
+// that a database failure after the file moved is told apart from a refusal
+// with nothing written.
+func TestCalendarFeedRestoreFenceAdvanceTypesADatabaseFailureAfterTheFile(t *testing.T) {
+	fence, appState, _ := agreeingFenceForRetryTest(0)
+	appState.setErr = errors.New("database is locked")
+
+	err := fence.Advance(context.Background())
+	if !errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) || errors.Is(err, ErrCalendarFeedFenceWriteFailed) {
+		t.Fatalf("a database failure after the file moved must wrap ErrCalendarFeedFenceHalfAdvanced only, got %v", err)
 	}
 }
 
