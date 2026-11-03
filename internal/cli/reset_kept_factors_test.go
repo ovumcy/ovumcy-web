@@ -24,7 +24,7 @@ func TestResetPasswordPlainNamesTheFactorsItKeeps(t *testing.T) {
 		full     bool
 		wantKept string
 	}{
-		"plain reset of an account with factors": {seed: true, wantKept: "Kept: 1 linked OIDC identity; two-factor sign-in and its recovery code. If the account may be compromised, run again with --full to remove them."},
+		"plain reset of an account with factors": {seed: true, wantKept: "Kept: 1 linked OIDC identity; two-factor sign-in; the recovery code; the webhook endpoint. If the account may be compromised, run again with --full to remove them."},
 		"plain reset of an account without":      {},
 		"full reset":                             {seed: true, full: true},
 	} {
@@ -87,11 +87,11 @@ func TestPrintKeptFactorsCountsAndSurvivesAFailedRead(t *testing.T) {
 		},
 		"identity listing failed": {
 			readers: keptFactorReaders{users: plainUser, identities: fakeLinkedIdentityLister{err: errors.New("database is locked")}},
-			want:    "Kept: any linked OIDC identities (they could not be listed: database is locked). If the account",
+			want:    "Kept: any linked OIDC identities (they could not be listed). If the account",
 		},
 		"account re-read failed": {
 			readers: keptFactorReaders{users: fakeKeptFactorUser{err: errors.New("database is locked")}, identities: fakeLinkedIdentityLister{}},
-			want:    "Kept: two-factor sign-in and its recovery code, if enrolled (the account could not be re-read). If the account",
+			want:    "Kept: any two-factor sign-in, recovery code and webhook endpoint (the account could not be re-read). If the account",
 		},
 	} {
 		var output bytes.Buffer
