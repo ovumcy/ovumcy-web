@@ -388,9 +388,15 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 // taken before this write carries the old token in app_state, the file still
 // holds that same token, and restoring the backup before the next boot leaves a
 // pair that agrees — the revoked cookie or replaced credential resolves again.
-// Over halves that already disagree (or cannot be read) the next boot runs the
-// full pass whatever is written, so, as in Advance, the database half moves
-// alone and the write proceeds.
+// Over halves that already disagree durably — a file holding another token, or
+// a database half already dropped — the next boot runs the full pass whatever
+// is written, so the database half moves alone and the write proceeds
+// (durableDisagreement). A file that reads as absent, or a read that fails, is
+// refused like a failed write: an unmounted fence volume reads as absent, and
+// once mounted again its old token agrees with a restored pre-write backup. A
+// database failure after the file moved is returned wrapped in
+// ErrCalendarFeedFenceHalfAdvanced, so a caller can tell either refusal from
+// an error of its own write.
 //
 // Concurrent calls are coalesced. A caller joins the batch that is still
 // waiting for writing, or opens one; the batch's leader detaches it only once
@@ -465,15 +471,33 @@ func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context
 	if err != nil {
 		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
-	if err := fence.writeAnchorRetrying(ctx, token); err != nil {
-		if errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
-			return nil
-		}
-		if !diverge && fence.confirmContinuity(ctx) == nil {
-			return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: err}
-		}
+	writeErr := fence.writeAnchorRetrying(ctx, token)
+	if errors.Is(writeErr, security.ErrCalendarFeedFenceNotConfigured) {
+		return nil
 	}
-	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
+	if writeErr != nil && !diverge && !durableDisagreement(fence.confirmContinuity(ctx)) {
+		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: writeErr}
+	}
+	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
+		if writeErr == nil {
+			return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err}
+		}
+		return err
+	}
+	return nil
+}
+
+// durableDisagreement reports whether confirmContinuity's answer is a
+// disagreement the next boot reads whatever a restore does in between: a file
+// that holds a token other than the database's, or a database half already
+// dropped (an unanchored opt-out boot, an unfinished first boot). Only that
+// waives AdvanceOrRefuse's refusal. A file that reads as absent is NOT one — an
+// unmounted fence volume reads exactly so, and once it is mounted again its old
+// token agrees with a restored pre-write backup — and neither is a read that
+// failed outright (WEB-464).
+func durableDisagreement(err error) bool {
+	var continuity *CalendarFeedFenceContinuityError
+	return errors.As(err, &continuity) && (continuity.AnchorFound || !continuity.StoredFound)
 }
 
 // writeAnchorRetrying writes token to the file half, retrying a failed write
@@ -526,7 +550,8 @@ var ErrCalendarFeedFenceUnreachable = errors.New("calendar feed restore fence: c
 // It always wraps the storage error.
 var ErrCalendarFeedFenceMarkerUnavailable = errors.New("calendar feed restore fence: could not read the database marker")
 
-// ErrCalendarFeedFenceHalfAdvanced is returned by AdvanceConfirmed when the
+// ErrCalendarFeedFenceHalfAdvanced is returned by AdvanceConfirmed — and by
+// AdvanceOrRefuse and AdvanceOrDiverge — when the
 // file half was written and the database half then could not be. It is the
 // one error out of that method after which something HAS changed: the file is
 // ahead of app_state, so the server's next boot reads that as a restore and

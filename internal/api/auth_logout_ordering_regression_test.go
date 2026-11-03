@@ -121,6 +121,18 @@ func TestARefusedSignOutKeepsTheSessionForARetry(t *testing.T) {
 		}
 	}
 
+	// A plain form post is still signed in, so it lands on settings with a
+	// retry banner instead of on a JSON body.
+	formRequest := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", bytes.NewBufferString(""))
+	formResponse, err := app.Test(formRequest, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("form logout request failed: %v", err)
+	}
+	t.Cleanup(func() { _ = formResponse.Body.Close() })
+	if formResponse.StatusCode != http.StatusSeeOther || formResponse.Header.Get("Location") != "/settings" || authCookieIsCleared(formResponse) {
+		t.Fatalf("a refused browser sign-out: status %d, location %q, cookie cleared %t", formResponse.StatusCode, formResponse.Header.Get("Location"), authCookieIsCleared(formResponse))
+	}
+
 	repo.refuse = false
 	retried := doLogout(t, app)
 	if retried.StatusCode != http.StatusOK || !authCookieIsCleared(retried) || repo.revokes != 1 {

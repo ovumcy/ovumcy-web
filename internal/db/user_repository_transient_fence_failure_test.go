@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -111,6 +112,7 @@ func TestATransientFenceWriteFailureRevokesNoPasswordOnTheNextBoot(t *testing.T)
 // and a cookie minted at that owner's session version.
 type signOutFenceFixture struct {
 	repositories *Repositories
+	mount        string
 	file         *failingOnceFenceFile
 	fence        *services.CalendarFeedRestoreFence
 	auth         *services.AuthService
@@ -125,7 +127,11 @@ func newSignOutFenceFixture(t *testing.T, database *gorm.DB) signOutFenceFixture
 	t.Helper()
 	ctx := context.Background()
 	repositories := NewRepositories(database)
-	file := &failingOnceFenceFile{CalendarFeedFenceFile: security.NewCalendarFeedFenceFile(filepath.Join(t.TempDir(), "calendar-feed.fence"))}
+	mount := filepath.Join(t.TempDir(), "fence-mount")
+	if err := os.MkdirAll(mount, 0o700); err != nil {
+		t.Fatalf("create the fence mount: %v", err)
+	}
+	file := &failingOnceFenceFile{CalendarFeedFenceFile: security.NewCalendarFeedFenceFile(filepath.Join(mount, "calendar-feed.fence"))}
 	fence := services.NewCalendarFeedRestoreFence(repositories.AppState, repositories.Users, file)
 	repositories = repositories.WithCalendarFeedFence(fence)
 	if outcome, err := fence.EnforceRequired(ctx); err != nil || !outcome.FirstBoot {
@@ -138,7 +144,7 @@ func newSignOutFenceFixture(t *testing.T, database *gorm.DB) signOutFenceFixture
 	if err != nil {
 		t.Fatalf("mint a cookie: %v", err)
 	}
-	return signOutFenceFixture{repositories: repositories, file: file, fence: fence, auth: auth, user: user, cookie: cookie, now: now}
+	return signOutFenceFixture{repositories: repositories, mount: mount, file: file, fence: fence, auth: auth, user: user, cookie: cookie, now: now}
 }
 
 func (fixture signOutFenceFixture) halves(t *testing.T) (file string, stored string) {
@@ -218,6 +224,46 @@ func TestASignOutOverAPersistentlyFailingFenceFileIsRefused(t *testing.T) {
 			}
 			if _, _, err := fixture.auth.ResolveAuthSession(ctx, signOutFenceSecret, fixture.cookie, fixture.now); !errors.Is(err, services.ErrAuthSessionTokenRevoked) {
 				t.Fatalf("the retried sign-out must revoke the cookie, got %v", err)
+			}
+		})
+	}
+}
+
+// TestASignOutOverAnUnmountedFenceVolumeIsRefused is the persistent arm over
+// the real file, on both dialects: a fence volume gone from under a running
+// server reads as no token and fails every write. That is not a disagreement
+// the next boot keeps — mounted again, the file still holds the token a
+// pre-sign-out backup carries — so the sign-out is refused with nothing
+// written, and goes through once the volume is back.
+func TestASignOutOverAnUnmountedFenceVolumeIsRefused(t *testing.T) {
+	for name, open := range signOutFenceDialects() {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			fixture := newSignOutFenceFixture(t, open(t))
+			_, storedBefore := fixture.halves(t)
+
+			unmounted := fixture.mount + ".unmounted"
+			if err := os.Rename(fixture.mount, unmounted); err != nil {
+				t.Fatalf("unmount the fence volume: %v", err)
+			}
+			if err := fixture.repositories.Users.BumpAuthSessionVersion(ctx, fixture.user.ID); !errors.Is(err, services.ErrCalendarFeedFenceWriteFailed) {
+				t.Fatalf("a sign-out over an unmounted fence volume must be refused, got %v", err)
+			}
+			if after := reloadUserForWebhookRevocationTest(t, fixture.repositories.Users, fixture.user.ID); after.AuthSessionVersion != fixture.user.AuthSessionVersion {
+				t.Fatalf("a refused sign-out must leave the row untouched, session version %d -> %d", fixture.user.AuthSessionVersion, after.AuthSessionVersion)
+			}
+			if err := os.Rename(unmounted, fixture.mount); err != nil {
+				t.Fatalf("mount the fence volume again: %v", err)
+			}
+			if _, storedAfter := fixture.halves(t); storedAfter != storedBefore {
+				t.Fatal("a refused sign-out must leave the database half alone")
+			}
+
+			if err := fixture.repositories.Users.BumpAuthSessionVersion(ctx, fixture.user.ID); err != nil {
+				t.Fatalf("the sign-out once the volume is back: %v", err)
+			}
+			if fileAfter, storedAfter := fixture.halves(t); fileAfter != storedAfter || storedAfter == storedBefore {
+				t.Fatal("the retried sign-out must move both halves to one fresh token")
 			}
 		})
 	}

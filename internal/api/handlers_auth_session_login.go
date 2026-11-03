@@ -160,11 +160,15 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 	// A refused revoke — a storage error, or a restore fence that cannot record
 	// it (WEB-464) — keeps the cookies: clearing them would sign this browser out
 	// while the session itself stays valid everywhere else, and leave the owner
-	// no session to retry the sign-out from.
+	// no session to retry the sign-out from. A browser is still signed in, so
+	// it lands on settings with a retry banner rather than on a JSON body.
 	if err := handler.authService.RevokeAuthSessions(c.Context(), user.ID); err != nil {
 		spec := authSessionRevokeErrorSpec()
 		handler.logSecurityError(c, "auth.logout", spec)
-		return handler.respondMappedError(c, spec)
+		if acceptsJSON(c) || isHTMX(c) {
+			return handler.respondMappedError(c, spec)
+		}
+		return handler.redirectSettingsRefusal(c, transportErrorSpecForStatus(fiber.StatusServiceUnavailable))
 	}
 	handler.clearSessionEndCookies(c)
 	// The session has ended by this line on every branch below, so the audit
