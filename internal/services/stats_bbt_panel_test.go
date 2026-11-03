@@ -37,6 +37,25 @@ func TestStatsBBTChartBelowTheMinimumKeepsTheReadingCount(t *testing.T) {
 	}
 }
 
+// WEB-451: with tracking off the chart is not drawn even when enough stored
+// readings exist to draw it.
+func TestStatsBBTChartIsWithheldWhileTrackingIsOff(t *testing.T) {
+	stats := CycleStats{LastPeriodStart: statscycleinsightsCovDay(t, "2026-01-01")}
+	now := statscycleinsightsCovDay(t, "2026-01-14")
+	var logs []models.DailyLog
+	for _, day := range []string{"2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05", "2026-01-06"} {
+		logs = append(logs, statscycleinsightsCovBBTLog(t, day, 36.40))
+	}
+
+	if tracking := buildOwnerCurrentCycleBBTChart(&models.User{Role: models.RoleOwner, TrackBBT: true}, "en", stats, logs, now, time.UTC); len(tracking.Labels) == 0 {
+		t.Fatalf("expected a BBT-tracking owner to get the drawn chart")
+	}
+	notTracking := buildOwnerCurrentCycleBBTChart(&models.User{Role: models.RoleOwner}, "en", stats, logs, now, time.UTC)
+	if len(notTracking.Labels) != 0 || len(notTracking.Points) != 0 || notTracking.ReadingCount != 0 {
+		t.Fatalf("expected no chart for an owner who does not track BBT, got %d labels, %d points", len(notTracking.Labels), len(notTracking.Points))
+	}
+}
+
 // TestStatsBBTChartMarkerCarriesItsDate pins that the marker names its day: the
 // date rides on the chart and the matching table point is flagged.
 func TestStatsBBTChartMarkerCarriesItsDate(t *testing.T) {

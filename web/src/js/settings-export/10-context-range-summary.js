@@ -174,6 +174,8 @@
       return { from: fromDate, to: toDate };
     }
 
+    var lastAppliedPreset = "";
+
     function updatePresetState() {
       if (!context.presetButtons.length) {
         return;
@@ -181,12 +183,28 @@
 
       var fromDate = parseISODate(dateFieldValue(context.fromField, context.fromInput));
       var toDate = parseISODate(dateFieldValue(context.toField, context.toInput));
+      var matching = [];
+      var activeIndex = -1;
+      var index;
 
-      for (var index = 0; index < context.presetButtons.length; index++) {
+      for (index = 0; index < context.presetButtons.length; index++) {
+        var range = computePresetRange(context.presetButtons[index].getAttribute("data-export-preset") || "");
+        matching.push(!!(range && fromDate && toDate && isSameDay(fromDate, range.from) && isSameDay(toDate, range.to)));
+      }
+      // Under a year of data "All time" and "365 days" name the same range, so
+      // only one is marked: the preset picked last, else the first in order.
+      for (index = 0; index < matching.length; index++) {
+        if (!matching[index]) {
+          continue;
+        }
+        if (activeIndex < 0 || (context.presetButtons[index].getAttribute("data-export-preset") || "") === lastAppliedPreset) {
+          activeIndex = index;
+        }
+      }
+
+      for (index = 0; index < context.presetButtons.length; index++) {
         var button = context.presetButtons[index];
-        var presetValue = button.getAttribute("data-export-preset") || "";
-        var range = computePresetRange(presetValue);
-        var active = !!(range && fromDate && toDate && isSameDay(fromDate, range.from) && isSameDay(toDate, range.to));
+        var active = index === activeIndex;
 
         setButtonDisabled(button, !bounds.hasBounds);
         button.classList.toggle("btn-primary", active);
@@ -199,6 +217,7 @@
       if (!range) {
         return false;
       }
+      lastAppliedPreset = String(rawPreset || "");
       setDateFieldValue(context.fromField, context.fromInput, formatISODate(range.from));
       setDateFieldValue(context.toField, context.toInput, formatISODate(range.to));
       validate("to");

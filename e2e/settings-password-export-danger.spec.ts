@@ -488,13 +488,12 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     const deleteForm = page.locator('form[hx-delete="/api/v1/users/current"]');
 
+    // A wrong password is refused before the irreversible confirm opens.
     await deleteForm.locator('#settings-delete-password').fill('WrongPass1');
     await deleteForm.locator('button[type="submit"]').click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    await page.locator('#confirm-modal-accept').click();
-
-    await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('#delete-account-feedback .status-error')).toBeVisible();
+    await expect(page.locator('#confirm-modal')).toBeHidden();
+    await expect(page).toHaveURL(/\/settings$/);
 
     await deleteForm.locator('#settings-delete-password').fill(creds.password);
     await deleteForm.locator('button[type="submit"]').click();
