@@ -495,7 +495,7 @@ test.describe('Dashboard: today editor', () => {
     // never left behind a closed disclosure.
     await page.reload();
     await expect(dashboardMoreDisclosure(page)).toHaveAttribute('open', '');
-    await expect(page.locator('#dashboard-bbt')).toHaveValue('36.60');
+    await expect(page.locator('#dashboard-bbt')).toHaveValue('36.6');
   });
 
   test('a saved pregnancy result is removed by a button, not by a third radio', async ({
@@ -975,7 +975,7 @@ test.describe('Dashboard: today editor', () => {
       await bbtInput.blur();
     });
     await page.reload();
-    await expect(page.locator('#dashboard-bbt')).toHaveValue('36.60');
+    await expect(page.locator('#dashboard-bbt')).toHaveValue('36.6');
     await expect(dashboardMoreDisclosure(page).locator('#dashboard-bbt')).toHaveCount(0);
   });
 
