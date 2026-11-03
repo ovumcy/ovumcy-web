@@ -12,16 +12,23 @@ import (
 // refusingCalendarFeedFence fails every advance, standing in for the one state
 // the repository cannot produce on its own: a fence whose app_state write is
 // refused while the database serving these rows still answers.
-// calls counts Advance, the refusable form; diverged counts AdvanceOrDiverge,
-// the form a side-effect writer must use instead (WEB-414).
+// calls counts Advance, the refusable form; sessions counts AdvanceOrRefuse,
+// the form every session or credential writer uses (WEB-464); diverged counts
+// AdvanceOrDiverge, the form clear-data and erasure use (WEB-414).
 type refusingCalendarFeedFence struct {
 	err      error
 	calls    int
+	sessions int
 	diverged int
 }
 
 func (fence *refusingCalendarFeedFence) Advance(context.Context) error {
 	fence.calls++
+	return fence.err
+}
+
+func (fence *refusingCalendarFeedFence) AdvanceOrRefuse(context.Context) error {
+	fence.sessions++
 	return fence.err
 }
 
@@ -211,15 +218,78 @@ func TestAWebhookWithdrawalIsRefusedWhenTheFenceCannotRecordIt(t *testing.T) {
 	}
 }
 
-// TestASideEffectFenceFailureNeverRefusesTheWrite covers the writers whose feed
-// clear is a side effect and which advance the fence best-effort ahead of their
-// write (WEB-397). Unlike TestARevocationIsRefusedWhenTheFenceCannotRecordIt
-// above — whose two methods must refuse when the fence cannot keep up — these
-// proceed and report SUCCESS: refusing a password reset, a recovery-code
-// rotation, a clear-data wipe or an erasure over a calendar-feed marker would
-// trade a credential or an erasure for a feed record. The fence's own failure
-// is bounded elsewhere — Enforce disarms every armed feed on the next boot.
-func TestASideEffectFenceFailureNeverRefusesTheWrite(t *testing.T) {
+// TestASessionWriterRefusesWhatTheFenceCannotRecord is WEB-464's contract at
+// the repository: every write that revokes sessions or changes a credential
+// advances through AdvanceOrRefuse ahead of its row write, and a refusal from
+// it stops that write with the row untouched. Proceeding past it — what these
+// writers did after WEB-454 — leaves a revocation a restore before the next
+// boot undoes.
+func TestASessionWriterRefusesWhatTheFenceCannotRecord(t *testing.T) {
+	repo := openCalendarFeedRepoForTest(t)
+	ctx := context.Background()
+	refused := errors.New("fence file is unwritable")
+
+	cases := []struct {
+		name string
+		run  func(userID uint) error
+	}{
+		{name: "BumpAuthSessionVersion", run: func(userID uint) error { return repo.BumpAuthSessionVersion(ctx, userID) }},
+		{name: "UpdatePasswordAndRevokeSessions", run: func(userID uint) error {
+			return repo.UpdatePasswordAndRevokeSessions(ctx, userID, storedSessionVersionForTest(t, repo, userID), "new-password-hash", false)
+		}},
+		{name: "UpdateRecoveryCodeHashAndRevokeSessions", run: func(userID uint) error {
+			return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, storedSessionVersionForTest(t, repo, userID), "recovery-hash", nil)
+		}},
+		{name: "ForceResetPasswordAndRevokeSessions", run: func(userID uint) error {
+			return repo.ForceResetPasswordAndRevokeSessions(ctx, userID, "new-password-hash", false)
+		}},
+		{name: "UpdatePasswordRecoveryCodeAndRevokeSessions", run: func(userID uint) error {
+			return repo.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, userID, storedSessionVersionForTest(t, repo, userID), "new-password-hash", "new-recovery-hash", false, nil)
+		}},
+		{name: "UpdatePasswordRecoveryCodeAndRevokeSessionsCAS", run: func(userID uint) error {
+			// createUserForTimezoneTest always seeds PasswordHash "hash".
+			return repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, userID, "hash", 1, "new-password-hash", "new-recovery-hash", nil)
+		}},
+		{name: "UpdateTOTPFieldsAndRevokeSessions", run: func(userID uint) error {
+			return repo.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, storedSessionVersionForTest(t, repo, userID), "", false, 0)
+		}},
+		{name: "SetUserEmailByIDAndRevokeSessions", run: func(userID uint) error {
+			before := reloadUserForWebhookRevocationTest(t, repo, userID)
+			_, err := repo.SetUserEmailByIDAndRevokeSessions(ctx, userID, before.Email, "rehomed-"+before.Email)
+			return err
+		}},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			user := createUserForTimezoneTest(t, repo, "session-fence-"+testCase.name+"@example.com")
+			fence := &refusingCalendarFeedFence{err: refused}
+			repo.calendarFeedFence = fence
+			before := reloadUserForWebhookRevocationTest(t, repo, user.ID)
+
+			if err := testCase.run(user.ID); !errors.Is(err, refused) {
+				t.Fatalf("%s must return the fence refusal, got %v", testCase.name, err)
+			}
+			after := reloadUserForWebhookRevocationTest(t, repo, user.ID)
+			if after.AuthSessionVersion != before.AuthSessionVersion || after.PasswordHash != before.PasswordHash ||
+				after.RecoveryCodeHash != before.RecoveryCodeHash || after.Email != before.Email {
+				t.Fatalf("%s wrote its row past a refused advance", testCase.name)
+			}
+			if fence.sessions != 1 || fence.calls != 0 || fence.diverged != 0 {
+				t.Fatalf("%s must advance through AdvanceOrRefuse once, got refuse=%d advance=%d diverge=%d", testCase.name, fence.sessions, fence.calls, fence.diverged)
+			}
+		})
+	}
+}
+
+// TestAnErasureFenceFailureNeverRefusesTheWrite covers clear-data and account
+// erasure, whose feed clear is a side effect and which advance the fence
+// best-effort ahead of their write (WEB-397). Unlike the session writers above,
+// these proceed and report SUCCESS: refusing an erasure over a calendar-feed
+// marker would keep health data the owner asked to have gone. The fence's own
+// failure is bounded elsewhere — the diverged halves send the next boot down
+// the full pass.
+func TestAnErasureFenceFailureNeverRefusesTheWrite(t *testing.T) {
 	repo := openCalendarFeedRepoForTest(t)
 	ctx := context.Background()
 	refused := errors.New("app_state is unavailable")
@@ -230,26 +300,6 @@ func TestASideEffectFenceFailureNeverRefusesTheWrite(t *testing.T) {
 		run  func(userID uint) error
 	}{
 		{
-			name: "UpdateRecoveryCodeHashAndRevokeSessions",
-			run: func(userID uint) error {
-				return repo.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, storedSessionVersionForTest(t, repo, userID), "recovery-hash", nil)
-			},
-		},
-		{
-			name: "ForceResetPasswordAndRevokeSessions",
-			run: func(userID uint) error {
-				return repo.ForceResetPasswordAndRevokeSessions(ctx, userID, "password-hash", false)
-			},
-		},
-		{
-			name: "UpdatePasswordRecoveryCodeAndRevokeSessionsCAS",
-			run: func(userID uint) error {
-				// createUserForTimezoneTest below always seeds PasswordHash
-				// "hash", so the CAS predicate is known without a reload.
-				return repo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, userID, "hash", 1, "new-password-hash", "new-recovery-hash", nil)
-			},
-		},
-		{
 			name: "ClearAllDataAndResetSettings",
 			run: func(userID uint) error {
 				return repo.ClearAllDataAndResetSettings(ctx, userID, storedSessionVersionForTest(t, repo, userID))
@@ -259,6 +309,12 @@ func TestASideEffectFenceFailureNeverRefusesTheWrite(t *testing.T) {
 			name: "DeleteAccountAndRelatedData",
 			run: func(userID uint) error {
 				return repo.DeleteAccountAndRelatedData(ctx, userID)
+			},
+		},
+		{
+			name: "DeleteAccountFromAuthSessionVersion",
+			run: func(userID uint) error {
+				return repo.DeleteAccountFromAuthSessionVersion(ctx, userID, storedSessionVersionForTest(t, repo, userID))
 			},
 		},
 	}
@@ -277,8 +333,8 @@ func TestASideEffectFenceFailureNeverRefusesTheWrite(t *testing.T) {
 			}
 			// Advance refuses an unwritable file and writes nothing; a writer that
 			// proceeds anyway would leave both halves agreeing across it.
-			if fence.calls != 0 {
-				t.Fatalf("a side-effect writer must never use the refusing Advance, got %d call(s)", fence.calls)
+			if fence.calls != 0 || fence.sessions != 0 {
+				t.Fatalf("an erasure must never use a refusing advance, got Advance=%d AdvanceOrRefuse=%d", fence.calls, fence.sessions)
 			}
 		})
 	}

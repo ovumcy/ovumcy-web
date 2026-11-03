@@ -41,6 +41,7 @@ var ErrUserOwnerRequired = errors.New("user owner is required")
 // depends on the behaviour rather than on the layer above it.
 type CalendarFeedFence interface {
 	Advance(ctx context.Context) error
+	AdvanceOrRefuse(ctx context.Context) error
 	AdvanceOrDiverge(ctx context.Context) error
 }
 
@@ -88,13 +89,15 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 //     Advance refuses an unwritable fence file as well as a database failure
 //     (WEB-414), so a transient file error costs the owner one retry rather
 //     than costing every owner the next boot's full restore revocation.
-//   - Everything else — every session or credential writer (sign-out, password
-//     change, TOTP toggle, operator email re-home, OIDC link and unlink in
-//     OIDCIdentityRepository), recovery-code rotation, the operator reset, the
-//     reset-token redeem, clear-data and account erasure — goes through
-//     advanceCalendarFeedFenceBestEffort and proceeds. There the feed clear is
-//     a side effect, and refusing would block a password change or an erasure
-//     on a calendar-feed marker.
+//   - Every session or credential writer — sign-out, password change, TOTP
+//     toggle, operator email re-home, OIDC link and unlink in
+//     OIDCIdentityRepository, recovery-code rotation, the operator reset, the
+//     reset-token redeem — goes through advanceCalendarFeedFenceOrRefuse,
+//     which retries a failed fence-file write and returns the refusal when
+//     every retry fails (WEB-464).
+//   - Clear-data and account erasure go through
+//     advanceCalendarFeedFenceBestEffort and proceed: refusing would keep
+//     health data the owner asked to have gone over a fence volume.
 //
 // This reasoning is the server's own; it holds only for a write acting on the
 // account's OWN feed, never for the operator CLI acting on someone else's,
@@ -114,34 +117,48 @@ func (repo *UserRepository) advanceCalendarFeedFence(ctx context.Context) error 
 	return repo.calendarFeedFence.Advance(ctx)
 }
 
-// advanceCalendarFeedFenceBestEffort is the form for writes whose feed clear is a
-// side effect, and for every write that revokes sessions or changes a
-// credential or the login identity (WEB-418): a restore across one of them
-// would revive the cookie, password, second factor or identity it replaced, so
-// it moves the fence as a feed revocation does. It is called BEFORE the row
-// write (WEB-397), and this is the only place the dropped error is explained:
-// refusing a sign-out, password change, TOTP toggle, OIDC link or unlink,
-// recovery-code rotation, reset-token consumption, clear-data wipe or account
-// erasure because a calendar-feed marker could not be written would trade a
-// credential or an erasure for a feed record.
+// advanceCalendarFeedFenceOrRefuse is the form for every write that revokes
+// sessions or changes a credential or the login identity (WEB-418): a restore
+// across one of them would revive the cookie, password, second factor or
+// identity it replaced, so it moves the fence as a feed revocation does, BEFORE
+// the row write (WEB-397). A non-nil error means the row write must not run.
 //
-// It calls AdvanceOrDiverge, never Advance: an unwritable fence file must not
-// leave both halves agreeing across a write that proceeds, so the database half
-// moves alone and the next boot runs the full ContinuityBroken pass. A write
-// that moved the file but not app_state leaves the same disagreement. Either
-// way no revocation is lost silently. The remaining route — a failed token
-// mint, neither half written over a writable fence — WOULD lose the record, and
-// takes an OS-level entropy fault; the fence marks it unreachable for the same
-// reason.
-func (repo *UserRepository) advanceCalendarFeedFenceBestEffort(ctx context.Context) {
-	advanceFenceOrDiverge(ctx, repo.calendarFeedFence)
+// It calls AdvanceOrRefuse: a transient fence-file failure is retried away, and
+// a persistent one refuses with nothing written in either half (WEB-464).
+// Moving the database half alone instead, as these writers did after WEB-454,
+// leaves the file at the token a backup taken before the write also holds, so
+// restoring that backup before the next boot reads as continuity and revives
+// what the write revoked.
+func (repo *UserRepository) advanceCalendarFeedFenceOrRefuse(ctx context.Context) error {
+	return advanceFenceOrRefuse(ctx, repo.calendarFeedFence)
 }
 
-func advanceFenceOrDiverge(ctx context.Context, fence CalendarFeedFence) {
+func advanceFenceOrRefuse(ctx context.Context, fence CalendarFeedFence) error {
 	if fence == nil {
+		return nil
+	}
+	return fence.AdvanceOrRefuse(ctx)
+}
+
+// advanceCalendarFeedFenceBestEffort is the form for clear-data and account
+// erasure, whose feed clear is a side effect, and this is the only place the
+// dropped error is explained: refusing an erasure because a calendar-feed
+// marker could not be written would keep health data the owner asked to have
+// gone, while the hole the divergence leaves — a pre-erasure backup restored
+// before the next boot — brings that data back with the restore itself.
+//
+// It calls AdvanceOrDiverge, never Advance: an unwritable fence file, after the
+// retries, must not leave both halves agreeing across a write that proceeds, so
+// the database half moves alone and the next boot runs the full
+// ContinuityBroken pass. A write that moved the file but not app_state leaves
+// the same disagreement. The remaining route — a failed token mint, neither
+// half written over a writable fence — WOULD lose the record, and takes an
+// OS-level entropy fault; the fence marks it unreachable for the same reason.
+func (repo *UserRepository) advanceCalendarFeedFenceBestEffort(ctx context.Context) {
+	if repo.calendarFeedFence == nil {
 		return
 	}
-	_ = fence.AdvanceOrDiverge(ctx)
+	_ = repo.calendarFeedFence.AdvanceOrDiverge(ctx)
 }
 
 func (repo *UserRepository) CountUsers(ctx context.Context) (int64, error) {
@@ -260,7 +277,9 @@ func (repo *UserRepository) RenormalizeUserEmail(ctx context.Context, userID uin
 // belongs to the account, not to the address, and the owner keeps the manual
 // rotate control.
 func (repo *UserRepository) SetUserEmailByIDAndRevokeSessions(ctx context.Context, userID uint, fromEmail string, toEmail string) (bool, error) {
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return false, err
+	}
 	result := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND email = ?", userID, fromEmail).
 		Updates(map[string]any{
@@ -1328,7 +1347,9 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return err
+	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"recovery_code_hash":            recoveryHash,
@@ -1382,7 +1403,9 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context,
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return err
+	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		_, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"password_hash":        passwordHash,
@@ -1427,7 +1450,9 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return err
+	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query, err := scopedUserUpdateTx(tx, userID)
 		if err != nil {
@@ -1514,7 +1539,9 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
 	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return err
+	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"password_hash":             passwordHash,
@@ -1579,7 +1606,9 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 	if oldSessionVersion < 1 {
 		return ErrResetTokenAlreadyConsumed
 	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return err
+	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&models.User{}).
 			Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
@@ -1615,7 +1644,9 @@ func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID u
 	if err != nil {
 		return err
 	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return err
+	}
 	return query.UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error
 }
 
@@ -1645,7 +1676,9 @@ func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Contex
 	if enabled && lastUsedStep <= 0 {
 		return ErrTOTPEnrollmentStepMissing
 	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return err
+	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		_, err := updateFromAuthSessionVersionTx(tx, userID, expectedSessionVersion, map[string]any{
 			"totp_secret":         encryptedSecret,

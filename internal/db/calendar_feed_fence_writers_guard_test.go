@@ -42,13 +42,14 @@ var alwaysAdvancingWriters = map[string]string{
 	"DeleteAccountFromAuthSessionVersion": "the owner's own erasure: the same row removal, gated on the session version",
 }
 
-// calendarFeedFenceAdvanceCalls are the two spellings of the advance. They are
-// one call in two forms — the error-returning one, which the arming and
-// revoking writers use, and the best-effort wrapper that drops it, which every
-// writer whose feed clear is a side effect uses — so the scan has to count both
-// or it would report five writers as never advancing at all.
+// calendarFeedFenceAdvanceCalls are the three spellings of the advance. They
+// are one call in three forms — the error-returning one the arming and revoking
+// writers use, the retrying-then-refusing one every session or credential
+// writer uses, and the best-effort wrapper clear-data and erasure use — so the
+// scan has to count all three or it would report writers as never advancing.
 var calendarFeedFenceAdvanceCalls = map[string]bool{
 	"advanceCalendarFeedFence":           true,
+	"advanceCalendarFeedFenceOrRefuse":   true,
 	"advanceCalendarFeedFenceBestEffort": true,
 }
 

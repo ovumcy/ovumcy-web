@@ -157,16 +157,14 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 	// exhausted budget would keep a session alive on a device the owner is
 	// leaving. What the refusal below still withholds is the provider sign-out
 	// bridge and the success answer — the cookies are already gone.
+	// A refused revoke — a storage error, or a restore fence that cannot record
+	// it (WEB-464) — keeps the cookies: clearing them would sign this browser out
+	// while the session itself stays valid everywhere else, and leave the owner
+	// no session to retry the sign-out from.
 	if err := handler.authService.RevokeAuthSessions(c.Context(), user.ID); err != nil {
-		// codecov:ignore:start -- the revoke fails only on a storage error, which no
-		// request-shaped input can provoke. The branch stays in step with the
-		// success path below: the auth cookie goes either way, so the session end is
-		// just as deliberate and the language cache goes with it.
-		handler.clearSessionEndCookies(c)
 		spec := authSessionRevokeErrorSpec()
 		handler.logSecurityError(c, "auth.logout", spec)
 		return handler.respondMappedError(c, spec)
-		// codecov:ignore:end
 	}
 	handler.clearSessionEndCookies(c)
 	// The session has ended by this line on every branch below, so the audit

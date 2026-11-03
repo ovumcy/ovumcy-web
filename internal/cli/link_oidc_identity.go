@@ -221,7 +221,8 @@ func linkOIDCIdentity(repositories linkOIDCRepositories, oidcClient *security.OI
 
 // mapLinkOIDCIdentityLinkError translates OIDCLoginService.ConfirmAndLinkIdentity's
 // sentinels into operator-facing wording. ErrOIDCIdentityResolveFailed (a
-// storage failure resolving the identity lookup) shares the default arm
+// storage failure resolving the identity lookup, or a restore fence that could
+// not record the link — WEB-464 — whose cause it wraps) shares the default arm
 // deliberately: both wrap the same way, and giving it its own case would be
 // two branches a test has to prove behave identically rather than one.
 func mapLinkOIDCIdentityLinkError(err error) error {

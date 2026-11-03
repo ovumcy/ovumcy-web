@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -72,6 +73,59 @@ func authCookieIsCleared(response *http.Response) bool {
 		}
 	}
 	return false
+}
+
+// refusingLogoutAuthRepo refuses the revoke while refuse is set, the way the
+// repository does when the restore fence cannot record it (WEB-464).
+type refusingLogoutAuthRepo struct {
+	countingLogoutAuthRepo
+	refuse bool
+}
+
+func (repo *refusingLogoutAuthRepo) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
+	if repo.refuse {
+		return &services.CalendarFeedFenceStepError{Sentinel: services.ErrCalendarFeedFenceWriteFailed, Cause: errors.New("no space left on device")}
+	}
+	return repo.countingLogoutAuthRepo.BumpAuthSessionVersion(ctx, userID)
+}
+
+// TestARefusedSignOutKeepsTheSessionForARetry is WEB-464 at the handler: a
+// sign-out whose revoke is refused answers an ordinary failure and keeps the
+// auth cookie, so the owner retries from the same session, and the retry ends
+// it. Clearing the cookie on the refusal would sign this browser out while the
+// session stayed valid for every copy of it.
+func TestARefusedSignOutKeepsTheSessionForARetry(t *testing.T) {
+	repo := &refusingLogoutAuthRepo{refuse: true}
+	authSvc := services.NewAuthService(repo)
+	authSvc.ConfigureLogoutAttemptLimits(10, time.Hour)
+	handler := &Handler{
+		location:           time.UTC,
+		secretKey:          []byte("test-secret-key"),
+		authService:        authSvc,
+		oidcLogoutStateSvc: services.NewOIDCLogoutStateService(&moveLogoutStateStub{findFound: false}),
+	}
+	app := fiber.New()
+	app.Use(func(c fiber.Ctx) error {
+		c.Locals(contextUserKey, &models.User{ID: 1, Role: models.RoleOwner})
+		return c.Next()
+	})
+	app.Delete("/api/v1/sessions/current", handler.Logout)
+
+	refused := doLogout(t, app)
+	if refused.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("a refused sign-out: status %d, want 500", refused.StatusCode)
+	}
+	for _, cookie := range refused.Cookies() {
+		if cookie.Name == authCookieName {
+			t.Fatalf("a refused sign-out must not touch the auth cookie, got %+v", cookie)
+		}
+	}
+
+	repo.refuse = false
+	retried := doLogout(t, app)
+	if retried.StatusCode != http.StatusOK || !authCookieIsCleared(retried) || repo.revokes != 1 {
+		t.Fatalf("the retried sign-out: status %d, cookie cleared %t, revokes %d", retried.StatusCode, authCookieIsCleared(retried), repo.revokes)
+	}
 }
 
 // TestLogoutRevokesTheSessionBeforeTheBudgetIsChecked pins the order: a

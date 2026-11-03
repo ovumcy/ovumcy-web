@@ -141,6 +141,7 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 	writers := map[string]token.Pos{}
 	advancing := map[string]bool{}
 	advancesFirst := map[string]bool{}
+	diverging := map[string]bool{}
 	for _, file := range pkg.Syntax {
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
@@ -165,6 +166,9 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 					switch {
 					case advances[callee]:
 						earliest(&advanceAt, typed.Pos())
+						if callee.Name() == "advanceCalendarFeedFenceBestEffort" {
+							diverging[name] = true
+						}
 					case primitives[callee]:
 						earliest(&writeAt, typed.Pos())
 					case callee.Pkg() != nil && callee.Pkg().Path() == "gorm.io/gorm":
@@ -257,6 +261,13 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 			violations = append(violations, fmt.Sprintf("%s (%s) revokes a session or changes a credential but never advances the restore fence, so a backup restore would undo it unseen", name, at))
 		case !advancesFirst[name]:
 			violations = append(violations, fmt.Sprintf("%s (%s) must advance the fence BEFORE its write, or a crash between the two leaves the revocation recorded only in the database", name, at))
+		case diverging[name] && divergingRevocationWriters[name] == "":
+			violations = append(violations, fmt.Sprintf("%s (%s) advances through advanceCalendarFeedFenceBestEffort, which diverges over an unwritable fence file; a session or credential writer must refuse through advanceCalendarFeedFenceOrRefuse (WEB-464)", name, at))
+		}
+	}
+	for name := range divergingRevocationWriters {
+		if !diverging[name] {
+			t.Errorf("%s is listed as diverging but no longer advances through advanceCalendarFeedFenceBestEffort: drop it from divergingRevocationWriters", name)
 		}
 	}
 	for _, violation := range violations {
@@ -376,7 +387,7 @@ func TestNoPackageOutsideDBWritesThroughThePersistenceLayer(t *testing.T) {
 }
 
 // fenceAdvanceMethods resolves the repositories' fence advances to their
-// declarations. Both repositories that revoke must carry the best-effort form.
+// declarations. Both repositories that revoke must carry the refusing form.
 func fenceAdvanceMethods(t *testing.T, pkg *packages.Package) map[types.Object]bool {
 	t.Helper()
 	methods := map[types.Object]bool{}
@@ -389,19 +400,31 @@ func fenceAdvanceMethods(t *testing.T, pkg *packages.Package) map[types.Object]b
 		if !ok {
 			t.Fatalf("%s is not a named type", receiver)
 		}
-		foundBestEffort := false
+		foundRefusing := false
 		for index := range named.NumMethods() {
 			method := named.Method(index)
 			if calendarFeedFenceAdvanceCalls[method.Name()] {
 				methods[method] = true
-				foundBestEffort = foundBestEffort || method.Name() == "advanceCalendarFeedFenceBestEffort"
+				foundRefusing = foundRefusing || method.Name() == "advanceCalendarFeedFenceOrRefuse"
 			}
 		}
-		if !foundBestEffort {
-			t.Errorf("%s has no advanceCalendarFeedFenceBestEffort: its revoking writes cannot reach the fence", receiver)
+		if !foundRefusing {
+			t.Errorf("%s has no advanceCalendarFeedFenceOrRefuse: its revoking writes cannot reach the fence", receiver)
 		}
 	}
 	return methods
+}
+
+// divergingRevocationWriters may advance through
+// advanceCalendarFeedFenceBestEffort, which moves the database half alone over
+// an unwritable fence file. Every other session or credential writer must
+// refuse instead (WEB-464): a divergence there leaves the file on the token a
+// pre-write backup carries, and restoring that backup before the next boot
+// revives what the write revoked.
+var divergingRevocationWriters = map[string]string{
+	"UserRepository.ClearAllDataAndResetSettings":        "an erasure; refusing it keeps health data the owner asked to have gone",
+	"UserRepository.DeleteAccountAndRelatedData":         "an erasure; refusing it keeps health data the owner asked to have gone",
+	"UserRepository.DeleteAccountFromAuthSessionVersion": "an erasure; refusing it keeps health data the owner asked to have gone",
 }
 
 // declarationName is Receiver.Method for a method and the bare name otherwise:

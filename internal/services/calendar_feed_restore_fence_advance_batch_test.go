@@ -19,6 +19,7 @@ import (
 // of either form, and the one after it writes again.
 func TestAConfirmedAdvanceCoversTheOperatorWriteThatFollowsIt(t *testing.T) {
 	forms := map[string]func(*CalendarFeedRestoreFence, context.Context) error{
+		"AdvanceOrRefuse":  (*CalendarFeedRestoreFence).AdvanceOrRefuse,
 		"AdvanceOrDiverge": (*CalendarFeedRestoreFence).AdvanceOrDiverge,
 		"Advance":          (*CalendarFeedRestoreFence).Advance,
 	}
@@ -88,12 +89,12 @@ func (anchor *gatedFenceAnchor) Write(value string) error {
 	return nil
 }
 
-// TestConcurrentAdvanceOrDivergeCallsShareOneAdvance is WEB-454's sign-out
+// TestConcurrentAdvanceOrRefuseCallsShareOneAdvance is WEB-454's sign-out
 // cost: every sign-out advances the fence under one instance-wide lock, each
 // with a synced file write. Callers that arrive while an advance is in flight
 // now share the next one, so N of them cost two writes rather than N+1, and
 // the halves still agree on the last token.
-func TestConcurrentAdvanceOrDivergeCallsShareOneAdvance(t *testing.T) {
+func TestConcurrentAdvanceOrRefuseCallsShareOneAdvance(t *testing.T) {
 	const waiting = 8
 	ctx := context.Background()
 	appState := &lockedFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}}
@@ -105,7 +106,7 @@ func TestConcurrentAdvanceOrDivergeCallsShareOneAdvance(t *testing.T) {
 	calls.Add(1)
 	go func() {
 		defer calls.Done()
-		errs <- fence.AdvanceOrDiverge(ctx)
+		errs <- fence.AdvanceOrRefuse(ctx)
 	}()
 	<-anchor.entered
 
@@ -113,7 +114,7 @@ func TestConcurrentAdvanceOrDivergeCallsShareOneAdvance(t *testing.T) {
 		calls.Add(1)
 		go func() {
 			defer calls.Done()
-			errs <- fence.AdvanceOrDiverge(ctx)
+			errs <- fence.AdvanceOrRefuse(ctx)
 		}()
 	}
 	deadline := time.Now().Add(10 * time.Second)
@@ -137,7 +138,7 @@ func TestConcurrentAdvanceOrDivergeCallsShareOneAdvance(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		if err != nil {
-			t.Fatalf("AdvanceOrDiverge: %v", err)
+			t.Fatalf("AdvanceOrRefuse: %v", err)
 		}
 	}
 
@@ -174,11 +175,11 @@ func TestAPanickingAdvanceReleasesTheFence(t *testing.T) {
 
 	func() {
 		defer func() { _ = recover() }()
-		_ = fence.AdvanceOrDiverge(context.Background())
+		_ = fence.AdvanceOrRefuse(context.Background())
 	}()
 
 	done := make(chan error, 1)
-	go func() { done <- fence.AdvanceOrDiverge(context.Background()) }()
+	go func() { done <- fence.AdvanceOrRefuse(context.Background()) }()
 	select {
 	case err := <-done:
 		if err != nil {
