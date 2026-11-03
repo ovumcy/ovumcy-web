@@ -682,6 +682,33 @@ func TestOIDCIdentityLinkConfirmFromAnEarlierSessionVersionAnswersStale(t *testi
 	}
 }
 
+// TestOIDCIdentityLinkConfirmSignsOutOnARevocationAfterTheVersionCheck pins
+// the second line behind the version check: a revocation that lands between
+// it and the write fails the write's compare-and-set, and that one still signs
+// this device out.
+func TestOIDCIdentityLinkConfirmSignsOutOnARevocationAfterTheVersionCheck(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-oidc-link-confirm-cas@example.com")
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "cas-subject"}
+	pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+	fixture.oidcStub.confirmLinkErr = services.ErrAuthSessionVersionChanged
+
+	response := postOIDCIdentityLinkConfirm(t, fixture, fixture.authCookie, pendingCookie, true)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/login" {
+		t.Fatalf("expected a 303 to /login, got %d to %q", response.StatusCode, response.Header.Get("Location"))
+	}
+	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie == nil || strings.TrimSpace(authCookie.Value) != "" {
+		t.Fatalf("expected the auth cookie to be cleared, got %v", authCookie)
+	}
+	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	if flashCookie == nil || decodeFlashCookieForTest(t, flashCookie.Value).AuthError != authSessionCreateErrorSpec().Key {
+		t.Fatalf("expected the %q auth flash", authSessionCreateErrorSpec().Key)
+	}
+}
+
 // pendingCookieAfter is the pending-link cookie a browser sends on its next
 // request: the one it held, unless the response replaced or cleared it.
 func pendingCookieAfter(response *http.Response, held string) string {
