@@ -312,7 +312,7 @@ func TestResetPasswordAdvancesTheFenceBeforeTheRow(t *testing.T) {
 	operatorUsers := services.NewOperatorUserService(users, authService)
 
 	opts := resetPasswordOptions{email: "reset-fence-order@example.com"}
-	if err := runResetPassword(operatorUsers, authService, "/app/fence/calendar-feed.fence", fence, opts, "reset-fence-order@example.com", "EvenStronger2", &bytes.Buffer{}); err != nil {
+	if err := runResetPassword(operatorUsers, authService, keptFactorReaders{users: repositories.Users, identities: repositories.OIDCIdentities}, "/app/fence/calendar-feed.fence", fence, opts, "reset-fence-order@example.com", "EvenStronger2", &bytes.Buffer{}); err != nil {
 		t.Fatalf("runResetPassword: %v", err)
 	}
 

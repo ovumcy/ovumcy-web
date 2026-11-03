@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -170,7 +171,19 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, fencePath 
 	authService := services.NewAuthService(repositories.Users)
 	operatorUsers := services.NewOperatorUserService(repositories.Users, authService)
 
-	return runResetPassword(operatorUsers, authService, fencePath, fence, opts, normalizedEmail, newPassword, output)
+	kept := keptFactorReaders{users: repositories.Users, identities: repositories.OIDCIdentities}
+	return runResetPassword(operatorUsers, authService, kept, fencePath, fence, opts, normalizedEmail, newPassword, output)
+}
+
+// keptFactorReaders are the reads a plain reset needs to name what it leaves
+// in place: the account's two-factor state and its linked identities.
+type keptFactorReaders struct {
+	users interface {
+		FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error)
+	}
+	identities interface {
+		ListByUser(ctx context.Context, userID uint) ([]models.OIDCIdentity, error)
+	}
 }
 
 // runResetPassword is runResetPasswordCommand's own tail — resolve, confirm
@@ -178,7 +191,7 @@ func runResetPasswordCommand(databaseConfig db.Config, args []string, fencePath 
 // over a fence and a user repository it controls, the same seam runUsersDelete
 // already gives `users delete`. It is what lets a test journal WHEN each fence
 // half advances relative to the credential write, not only that it does.
-func runResetPassword(operatorUsers *services.OperatorUserService, authService *services.AuthService, fencePath string, fence *services.CalendarFeedRestoreFence, opts resetPasswordOptions, normalizedEmail string, newPassword string, output io.Writer) error {
+func runResetPassword(operatorUsers *services.OperatorUserService, authService *services.AuthService, kept keptFactorReaders, fencePath string, fence *services.CalendarFeedRestoreFence, opts resetPasswordOptions, normalizedEmail string, newPassword string, output io.Writer) error {
 	target, err := resolveOperatorUser(operatorUsers, opts.userID, normalizedEmail)
 	if err != nil {
 		return mapOperatorUserLookupError(err, opts.userID, normalizedEmail)
@@ -204,10 +217,41 @@ func runResetPassword(operatorUsers *services.OperatorUserService, authService *
 	if opts.full {
 		_, _ = fmt.Fprintln(output, "Two-factor sign-in, the recovery code, any linked OIDC identities and the webhook endpoint were removed.")
 		_, _ = fmt.Fprintln(output, "Under OIDC_LOGIN_MODE=oidc_only the account cannot sign in until `ovumcy link-oidc-identity` links an identity again.")
+	} else {
+		printKeptFactors(output, kept, target.ID)
 	}
 	_, _ = fmt.Fprintln(output, "User must sign in again and reset the password before continuing.")
 
 	return nil
+}
+
+// printKeptFactors names what a plain reset leaves in place. A linked identity
+// still signs in and, while the forced change is pending, can replace the
+// temporary password itself, so an operator recovering a compromised account
+// has to see it is there.
+func printKeptFactors(output io.Writer, readers keptFactorReaders, userID uint) {
+	ctx := context.Background()
+	kept := []string{}
+	linked, err := readers.identities.ListByUser(ctx, userID)
+	switch {
+	case err != nil:
+		kept = append(kept, "any linked OIDC identities (they could not be listed: "+err.Error()+")")
+	case len(linked) == 1:
+		kept = append(kept, "1 linked OIDC identity")
+	case len(linked) > 1:
+		kept = append(kept, fmt.Sprintf("%d linked OIDC identities", len(linked)))
+	}
+	user, found, err := readers.users.FindByIDOptional(ctx, userID)
+	switch {
+	case err != nil || !found:
+		kept = append(kept, "two-factor sign-in and its recovery code, if enrolled (the account could not be re-read)")
+	case user.TOTPEnabled:
+		kept = append(kept, "two-factor sign-in and its recovery code")
+	}
+	if len(kept) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(output, "Kept: %s. If the account may be compromised, run again with --full to remove them.\n", strings.Join(kept, "; "))
 }
 
 // mapResetPasswordError translates AuthService's own sentinels — the password
@@ -218,13 +262,14 @@ func runResetPassword(operatorUsers *services.OperatorUserService, authService *
 // Account-lookup refusals do not reach it: the address is resolved through
 // mapOperatorUserLookupError, shared with `users delete` and
 // `link-oidc-identity` so all three name an unknown account identically. The
-// one lookup sentinel left here is ErrAuthUserNotFound, which only a row
-// deleted in the narrow window between that resolve and this command's own
-// write can produce — the operator cannot tell which of the two fired, so it
-// is answered by that same shared helper.
+// lookup sentinels left here are ErrAuthUserNotFound and the repository's
+// ErrUserOwnerRequired, which only a row deleted in the narrow window between
+// that resolve and this command's own write can produce (before the service's
+// re-read, or between it and the update) — the operator cannot tell which
+// fired, so both are answered by that same shared helper.
 func mapResetPasswordError(err error, opts resetPasswordOptions, normalizedEmail string) error {
 	switch {
-	case errors.Is(err, services.ErrAuthUserNotFound):
+	case errors.Is(err, services.ErrAuthUserNotFound), errors.Is(err, db.ErrUserOwnerRequired):
 		return operatorUserNotFoundError(opts.userID, normalizedEmail)
 	case errors.Is(err, services.ErrAuthResetInvalid):
 		return errors.New("password is required")

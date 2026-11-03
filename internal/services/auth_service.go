@@ -324,7 +324,7 @@ func (service *AuthService) forceResetPassword(ctx context.Context, userID uint,
 	}
 
 	if err := service.users.ForceResetPasswordAndRevokeSessions(ctx, userID, string(passwordHash), clearSecondFactors); err != nil {
-		return fmt.Errorf("%w: %v", ErrAuthPasswordUpdate, err)
+		return fmt.Errorf("%w: %w", ErrAuthPasswordUpdate, err)
 	}
 
 	return nil

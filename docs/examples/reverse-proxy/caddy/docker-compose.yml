@@ -75,7 +75,9 @@ services:
       # database: it is how the app tells a restored backup from the database it
       # replaced, so it only works while your backups leave it out. Do not archive
       # it, do not restore it, and do not point it at the data volume. Losing it
-      # costs one round of re-generated subscribe URLs and nothing else.
+      # reads as a restore: the next start disarms every feed, signs every owner
+      # out, clears every webhook endpoint and revokes every local password, once
+      # (docs/self-hosted.md, "Losing it reads as a restore").
       - ovumcy_fence:/app/fence
       # Optional: mount a file-backed app secret and set SECRET_KEY_FILE=/run/secrets/ovumcy_secret_key in .env
       # - ./secrets/ovumcy_secret_key:/run/secrets/ovumcy_secret_key:ro
