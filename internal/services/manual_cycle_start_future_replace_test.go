@@ -98,6 +98,18 @@ func TestManualCycleStartOnAFutureDayOverAnotherStartStillReplaces(t *testing.T)
 	}
 }
 
+// TestStoredStartCompetesNeedsAStoredStart: with no stored start there is
+// nothing for a future mark to replace, so no refusal.
+func TestStoredStartCompetesNeedsAStoredStart(t *testing.T) {
+	_, selected, all := competingStartFixture()
+	if storedStartCompetes(nil, all, selected.Date, time.UTC) {
+		t.Fatal("a nil owner reported a competing stored start")
+	}
+	if storedStartCompetes(&models.User{}, all, selected.Date, time.UTC) {
+		t.Fatal("an owner with no stored start reported a competing stored start")
+	}
+}
+
 // TestCompetingCycleStartsKeepTheStoredStartForAFutureSelection: the replace
 // itself never moves the stored start onto a future day, even when a caller
 // reaches it without the policy's refusal.

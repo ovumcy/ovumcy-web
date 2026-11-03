@@ -265,10 +265,8 @@ func storedStartCompetes(user *models.User, logs []models.DailyLog, day time.Tim
 		return false
 	}
 	stored := dateOnly(*user.LastPeriodStart)
-	clusterStart, clusterEnd, ok := manualCycleStartClusterBounds(logs, day, location)
-	if !ok {
-		return false
-	}
+	// Only reached with a ConflictDate set, which the same bounds produced.
+	clusterStart, clusterEnd, _ := manualCycleStartClusterBounds(logs, day, location)
 	for _, logEntry := range logs {
 		if !logEntry.CycleStart || !dateOnly(logEntry.Date).Equal(stored) {
 			continue
