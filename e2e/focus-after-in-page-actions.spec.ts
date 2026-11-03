@@ -7,7 +7,7 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
-import { acceptConfirmDialog } from './support/confirm-dialog-helpers';
+import { acceptConfirmDialog, acceptCycleStartConfirms } from './support/confirm-dialog-helpers';
 import {
   openCalendarDayEditor,
   registerAndOnboardWithStartDaysAgo,
@@ -174,10 +174,8 @@ test.describe('Focus after in-page actions', () => {
     await button.focus();
     const reloaded = page.waitForEvent('load');
     await button.press('Enter');
-    // The confirm dialog only asks when the start would replace a recorded one.
-    if (await page.locator('#confirm-modal').isVisible()) {
-      await acceptConfirmDialog(page);
-    }
+    // The onboarding start is a recorded start, so the mark asks before it posts.
+    await acceptCycleStartConfirms(page);
     await reloaded;
     await expect(page.locator('[data-dashboard-cycle-start-button]')).toBeFocused();
   });
@@ -194,9 +192,7 @@ test.describe('Focus after in-page actions', () => {
     await button.focus();
     const reloaded = page.waitForEvent('load');
     await button.press('Enter');
-    if (await page.locator('#confirm-modal').isVisible()) {
-      await acceptConfirmDialog(page);
-    }
+    await acceptCycleStartConfirms(page);
     await reloaded;
     await expect(page.locator('[data-day-cycle-start-button]')).toBeFocused();
   });
