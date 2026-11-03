@@ -31,11 +31,18 @@
 
     <p class="status-error mt-5">{{t .Messages "settings.oidc_link.confirm.warning"}}</p>
 
-    <form action="/api/v1/users/current/oidc/link/confirm" method="post" class="mt-6 flex flex-wrap gap-2" data-oidc-link-confirm-form>
-      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-      <button type="submit" class="btn-primary">{{t .Messages "settings.oidc_link.confirm.submit"}}</button>
-      <a href="/settings" class="btn-secondary inline-flex justify-center">{{t .Messages "settings.oidc_link.confirm.cancel"}}</a>
-    </form>
+    {{/* Cancel is a POST, not a link to /settings: it retracts the pending
+         link, so the identity declined here cannot be confirmed later. */}}
+    <div class="mt-6 flex flex-wrap gap-2">
+      <form action="/api/v1/users/current/oidc/link/confirm" method="post" data-oidc-link-confirm-form>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn-primary">{{t .Messages "settings.oidc_link.confirm.submit"}}</button>
+      </form>
+      <form action="/api/v1/users/current/oidc/link/cancel" method="post" data-oidc-link-cancel-form>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn-secondary">{{t .Messages "settings.oidc_link.confirm.cancel"}}</button>
+      </form>
+    </div>
   </div>
 </section>
 {{end}}

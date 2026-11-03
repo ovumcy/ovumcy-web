@@ -224,6 +224,16 @@ func (handler *Handler) ConfirmOIDCIdentityLink(c fiber.Ctx) error {
 		handler.logSecurityError(c, oidcIdentityLinkConfirmAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
+	// AuthRequired admitted this session at the stored version, so a pending
+	// link parked at another one predates a revocation this device survived:
+	// stale, not a reason to sign it out. The write's own compare-and-set still
+	// catches a revocation that lands after this read.
+	if !services.AuthSessionVersionsMatch(pending.SessionVersion, user.AuthSessionVersion) {
+		handler.clearOIDCLinkPendingCookie(c)
+		spec := settingsOIDCReauthStaleErrorSpec()
+		handler.logSecurityError(c, oidcIdentityLinkConfirmAction, spec)
+		return handler.respondMappedError(c, spec)
+	}
 	linkedSessionVersion, err := handler.oidcService.ConfirmAndLinkIdentity(c.Context(), user.ID, pending.SessionVersion, pending.claims(), time.Now())
 	// A storage fault leaves the confirmation in place for a retry; every
 	// other outcome spends it.
@@ -251,6 +261,21 @@ func (handler *Handler) ConfirmOIDCIdentityLink(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "oidc_identity_linked"})
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+}
+
+const oidcIdentityLinkCancelAction = "settings.oidc_identity_link.cancel"
+
+// CancelOIDCIdentityLink is the interstitial's Cancel: it retracts the pending
+// link, so the identity the owner declined cannot be linked by a later visit
+// to the page within the cookie's lifetime.
+func (handler *Handler) CancelOIDCIdentityLink(c fiber.Ctx) error {
+	handler.clearOIDCLinkPendingCookie(c)
+	handler.logSecurityEvent(c, oidcIdentityLinkCancelAction, "cancelled")
+	if acceptsJSON(c) {
+		return c.JSON(fiber.Map{"ok": true})
+	}
+	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "oidc_link_cancelled"})
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 }
 

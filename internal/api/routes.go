@@ -113,6 +113,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	// The step-up callback only parks the returned identity; the link is
 	// written here, from the owner's confirmation (WEB-401).
 	usersCurrent.Post("/oidc/link/confirm", handler.OwnerOnly, handler.ConfirmOIDCIdentityLink)
+	usersCurrent.Post("/oidc/link/cancel", handler.OwnerOnly, handler.CancelOIDCIdentityLink)
 	usersCurrent.Delete("/oidc/identities/:id", handler.OwnerOnly, handler.UnlinkOIDCIdentity)
 
 	onboarding := v1.Group("/onboarding", handler.AuthRequired)

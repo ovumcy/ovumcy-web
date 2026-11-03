@@ -339,6 +339,7 @@
   "settings.success.profile_name_cleared": "Profile name removed.",
   "settings.success.data_cleared": "All tracking data cleared successfully.",
   "settings.success.oidc_identity_linked": "OIDC identity linked successfully.",
+  "settings.success.oidc_link_cancelled": "OIDC identity link cancelled.",
   "settings.success.oidc_identity_unlinked": "OIDC identity unlinked. Other devices were signed out.",
   "settings.symptoms.success.created": "Custom symptom added.",
   "settings.symptoms.success.updated": "Custom symptom updated.",

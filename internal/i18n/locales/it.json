@@ -339,6 +339,7 @@
   "settings.success.profile_name_cleared": "Nome profilo rimosso.",
   "settings.success.data_cleared": "Tutti i dati di tracciamento cancellati con successo.",
   "settings.success.oidc_identity_linked": "Identità OIDC collegata con successo.",
+  "settings.success.oidc_link_cancelled": "Collegamento dell'identità OIDC annullato.",
   "settings.success.oidc_identity_unlinked": "Identità OIDC scollegata. Gli altri dispositivi sono stati disconnessi.",
   "settings.symptoms.success.created": "Sintomo personalizzato aggiunto.",
   "settings.symptoms.success.updated": "Sintomo personalizzato aggiornato.",

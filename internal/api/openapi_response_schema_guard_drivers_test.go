@@ -383,6 +383,17 @@ func openAPIResponseSchemaGuardTable() []openAPIResponseSchemaGuardEntry {
 			request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(fixture.authCookie, csrfCookie), pendingCookie))
 			return schemaGuardBody(t, mustAppResponse(t, fixture.app, request))
 		}},
+		{operation: "POST /api/v1/users/current/oidc/link/cancel", drive: func(t *testing.T) (int, []byte) {
+			fixture := newOIDCStepupFixture(t, "schema-guard-link-cancel@example.com")
+			fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "schema-guard-link-cancel"}
+			pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+			csrfCookie, csrfToken := fixture.settingsCSRF(t)
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/cancel", strings.NewReader(url.Values{"csrf_token": {csrfToken}}.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("Accept", "application/json")
+			request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(fixture.authCookie, csrfCookie), pendingCookie))
+			return schemaGuardBody(t, mustAppResponse(t, fixture.app, request))
+		}},
 		{operation: "DELETE /api/v1/users/current/oidc/identities/{id}", drive: func(t *testing.T) (int, []byte) {
 			fixture := newOIDCStepupFixture(t, "schema-guard-unlink@example.com")
 			giveLinkFixtureAPassword(t, fixture)
