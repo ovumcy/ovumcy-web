@@ -138,7 +138,7 @@ func newSignOutFenceFixture(t *testing.T, database *gorm.DB) signOutFenceFixture
 	if err != nil {
 		t.Fatalf("mint a cookie: %v", err)
 	}
-	return signOutFenceFixture{repositories: repositories,file: file, fence: fence, auth: auth, user: user, cookie: cookie, now: now}
+	return signOutFenceFixture{repositories: repositories, file: file, fence: fence, auth: auth, user: user, cookie: cookie, now: now}
 }
 
 func (fixture signOutFenceFixture) halves(t *testing.T) (file string, stored string) {
