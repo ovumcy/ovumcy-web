@@ -202,9 +202,9 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	visibility := dashboardOwnerVisibilityState(user, today, now, location)
 	timingFrame := resolveDashboardTimingFrame(user, cycleContext, visibility)
 	showHighFertilityBadge := dashboardHighFertilityBadge(user, stats, todayLog)
-	// Before the first completed cycle the badge words the observation it is,
-	// not the fertile window the header withholds.
-	highFertilityBadgeObserved := showHighFertilityBadge && cycleContext.AwaitingFirstCycle
+	// Wherever the fertility half is withheld the badge words the observation it
+	// is, not the fertile window the header withholds (WEB-426, WEB-471).
+	highFertilityBadgeObserved := showHighFertilityBadge && cycleContext.FertilitySuppressed
 	// The first-cycle explainer already says the window waits for the first
 	// completed cycle; the bridge saying it again was the same sentence twice.
 	showFirstCycleBridge := timingFrame.ShowFirstCycleBridge && predictionExplanation.PrimaryKey != predictionExplainerAwaitingFirstCycleKey
