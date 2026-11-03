@@ -24,14 +24,17 @@ test.describe('Dashboard prediction range', () => {
     // seed at the 60-day boundary and use the cycle-start API (which has no
     // past-date limit) to backfill an older cycle anchor and add the
     // subsequent cycle starts.
-    await registerAndOnboardWithStartDaysAgo(page, 'dashboard-prediction-range', 60);
+    // One constant feeds both the registration helper and the derivation below,
+    // so the anchor offset cannot drift from where onboarding really put it.
+    const onboardingStartDaysAgo = 60;
+    await registerAndOnboardWithStartDaysAgo(page, 'dashboard-prediction-range', onboardingStartDaysAgo);
 
     const today = isoToday();
     // Cycle starts: today-90, today-60 (onboarding anchor), today-35, today-5.
     // Completed cycle lengths: 30, 25, 30. Population StdDev ≈ 2.36 → span
     // = 2 days. Max-min spread = 5, below the IsIrregularCycleSpread
     // threshold of 7, so no irregularity notice fires.
-    const onboardingAnchorOffset = -60;
+    const onboardingAnchorOffset = -onboardingStartDaysAgo;
     const cycleStartOffsets = [-90, onboardingAnchorOffset, -35, -5];
     for (const offset of cycleStartOffsets.filter((value) => value !== onboardingAnchorOffset)) {
       await markCycleStartViaAPI(page, shiftISODate(today, offset));
@@ -65,7 +68,9 @@ test.describe('Dashboard prediction range', () => {
     expect(renderedDates[0] > today).toBeTruthy();
     expect(renderedDates[1] > renderedDates[0]).toBeTruthy();
     // The window must contain the day the fixture projects, so two ordered
-    // dates drawn from the wrong anchor no longer pass.
+    // dates drawn from the wrong anchor no longer pass. The bound holds by
+    // construction of the symmetric ±span window around the projected start
+    // (dashboard_cycle.go), so it checks the anchor date, not the window width.
     expect(
       renderedDates[0] <= projectedStart && projectedStart <= renderedDates[1],
       `window ${renderedDates[0]}..${renderedDates[1]} must contain ${projectedStart}`,

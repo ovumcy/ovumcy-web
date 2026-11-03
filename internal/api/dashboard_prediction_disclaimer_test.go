@@ -19,7 +19,7 @@ import (
 // the owner, so a future template refactor cannot silently drop it from a
 // health-prediction surface.
 func TestDashboardRendersPredictionDisclaimer(t *testing.T) {
-	assertPredictionDisclaimerRendered(t, "/dashboard", `data-dashboard-prediction-disclaimer`, `data-dashboard-next-period`)
+	assertPredictionDisclaimerRendered(t, "/dashboard", `data-dashboard-prediction-disclaimer`, `data-dashboard-next-period>`)
 }
 
 // TestStatsRendersPredictionDisclaimer extends the medical-safety labeling to
