@@ -168,7 +168,7 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		if acceptsJSON(c) || isHTMX(c) {
 			return handler.respondMappedError(c, spec)
 		}
-		return handler.redirectSettingsRefusal(c, transportErrorSpecForStatus(fiber.StatusServiceUnavailable))
+		return handler.redirectSettingsRefusal(c, settingsSessionFaultErrorSpec())
 	}
 	handler.clearSessionEndCookies(c)
 	// The session has ended by this line on every branch below, so the audit
