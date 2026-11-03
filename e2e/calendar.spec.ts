@@ -675,6 +675,11 @@ test.describe('Calendar page', () => {
     // must open so accepting can flip mark_uncertain=true before the POST fires.
     await manualStartButton.click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
+    // The onboarding start is a logged cycle start, so marking tomorrow first
+    // asks to replace it, then warns about the short gap.
+    await expect(page.locator('#confirm-modal')).toContainText('already marked a cycle start');
+    await page.locator('#confirm-modal-accept').click();
+    await expect(page.locator('#confirm-modal')).toContainText('days have passed since the previous cycle');
 
     // The accepted start answers with HX-Refresh: the reloaded page lazy-loads
     // the selected day's editor, which the next click must not race.
@@ -735,6 +740,11 @@ test.describe('Calendar page', () => {
     // short-gap cycle start (HTTP < 400) instead of the silent 400.
     await manualStartForm.locator('[data-day-cycle-start-button]').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
+    // The onboarding start is a logged cycle start, so marking tomorrow first
+    // asks to replace it, then warns about the short gap.
+    await expect(page.locator('#confirm-modal')).toContainText('already marked a cycle start');
+    await page.locator('#confirm-modal-accept').click();
+    await expect(page.locator('#confirm-modal')).toContainText('days have passed since the previous cycle');
 
     const [cycleStartRequest] = await Promise.all([
       page.waitForRequest((candidate) => {
@@ -1010,6 +1020,11 @@ test.describe('Calendar page', () => {
     // short-gap cycle start (HTTP < 400) instead of the silent 400.
     await manualStartForm.locator('[data-day-cycle-start-button]').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
+    // The onboarding start is a logged cycle start, so marking tomorrow first
+    // asks to replace it, then warns about the short gap.
+    await expect(page.locator('#confirm-modal')).toContainText('already marked a cycle start');
+    await page.locator('#confirm-modal-accept').click();
+    await expect(page.locator('#confirm-modal')).toContainText('days have passed since the previous cycle');
 
     const [cycleStartRequest] = await Promise.all([
       page.waitForRequest((candidate) => {
