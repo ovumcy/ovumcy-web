@@ -1,10 +1,12 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -179,6 +181,11 @@ func TestCalendarFeedDetailedTitlesKeepEverySuppression(t *testing.T) {
 		whole    bool
 		suppress func(t *testing.T) CalendarFeedICSInput
 		control  func(t *testing.T) CalendarFeedICSInput
+		// feedBlind, when set, says why the feed's own reaction to this reason is
+		// not observable on a regular account: the absence assertion is skipped
+		// for it (it would hold with the signal removed), so the row guards only
+		// the verdict fixture and the control, not the feed.
+		feedBlind string
 	}
 	// whole marks a reason that withholds every event, not only the fertility half.
 	cases := []suppressionCase{
@@ -213,13 +220,20 @@ func TestCalendarFeedDetailedTitlesKeepEverySuppression(t *testing.T) {
 			input.Logs = lastStarts(t, 3)
 			return input
 		}},
-		{reason: SuppressionReasonCycleDataStale, suppress: func(t *testing.T) CalendarFeedICSInput {
-			input := baseInput(t)
-			input.Now = mustParseDashboardDay(t, "2026-03-31")
-			return input
-		}},
 		{
-			reason:   SuppressionReasonCyclePastProjectionLength,
+			reason: SuppressionReasonCycleDataStale,
+			feedBlind: "the band starts at the reference length, after the projected ovulation " +
+				"of the running cycle is already past, and the feed never projects fertility into later cycles for a regular account",
+			suppress: func(t *testing.T) CalendarFeedICSInput {
+				input := baseInput(t)
+				input.Now = mustParseDashboardDay(t, "2026-03-31")
+				return input
+			},
+		},
+		{
+			reason: SuppressionReasonCyclePastProjectionLength,
+			feedBlind: "the days between the median and the average projection length fall after the projected " +
+				"ovulation, which the feed already drops as past, so no future ovulation is left to withhold",
 			suppress: func(t *testing.T) CalendarFeedICSInput { return parityInput(t, "2026-10-28") },
 			control:  func(t *testing.T) CalendarFeedICSInput { return parityInput(t, "2026-10-27") },
 		},
@@ -239,11 +253,20 @@ func TestCalendarFeedDetailedTitlesKeepEverySuppression(t *testing.T) {
 				t.Fatalf("fixture: reasons %v do not name %s", reasonsOf(input), testCase.reason)
 			}
 			body := string(buildTestFeedICS(input))
-			if testCase.whole && strings.Contains(body, "BEGIN:VEVENT") {
-				t.Fatalf("the opt-in reopened a suppressed feed:\n%s", body)
-			}
-			if strings.Contains(body, "SUMMARY:Ovulation (estimate)") {
-				t.Fatalf("the opt-in named an ovulation under %s:\n%s", testCase.reason, body)
+			if testCase.feedBlind != "" {
+				t.Logf("feed reaction not observable for %s: %s", testCase.reason, testCase.feedBlind)
+			} else {
+				if testCase.whole && strings.Contains(body, "BEGIN:VEVENT") {
+					t.Fatalf("the opt-in reopened a suppressed feed:\n%s", body)
+				}
+				if strings.Contains(body, "SUMMARY:Ovulation (estimate)") {
+					t.Fatalf("the opt-in named an ovulation under %s:\n%s", testCase.reason, body)
+				}
+				// A fertility-only reason keeps the projected period: the feed must not
+				// whole-suppress on it.
+				if !testCase.whole && !strings.Contains(body, "SUMMARY:Period (estimate)") {
+					t.Fatalf("a fertility-only reason %s withheld the period event too:\n%s", testCase.reason, body)
+				}
 			}
 
 			control := baseInput(t)
@@ -315,6 +338,50 @@ func TestResolveFeedWithoutTheOptInNeverAsksForTitles(t *testing.T) {
 		t.Fatalf("titles were looked up for an owner who did not opt in")
 	}
 	assertNeutralSummaries(t, string(body))
+}
+
+// TestResolveFeedLogsOnceWhenTheDisclaimerResolvesBlank: a blank disclaimer
+// empties the feed, so the service says so — the reason and the locale, nothing
+// that names an owner or the token — and a resolved disclaimer stays silent.
+func TestResolveFeedLogsOnceWhenTheDisclaimerResolvesBlank(t *testing.T) {
+	var captured bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&captured)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	resolve := func(disclaimer string) (string, string) {
+		captured.Reset()
+		user, token := armedFeedUser(t, 4242, "2026-03-02")
+		user.InterfaceLanguage = "ru"
+		svc := NewCalendarFeedService(
+			&stubFeedUserStore{selector: user.CalendarFeedSelector, user: user},
+			&stubFeedDayReader{logs: predictableFeedLogs(t)},
+			stubFeedDisclaimer{text: disclaimer},
+			[]byte(calendarFeedTestSecretKey),
+		)
+		body, ok, err := svc.ResolveFeed(context.Background(), token, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
+		if err != nil || !ok {
+			t.Fatalf("ResolveFeed: ok=%v err=%v", ok, err)
+		}
+		return string(body), token
+	}
+
+	body, token := resolve("  ")
+	if strings.Contains(body, "BEGIN:VEVENT") {
+		t.Fatalf("fixture: a blank disclaimer must withhold every event:\n%s", body)
+	}
+	logged := captured.String()
+	if strings.Count(logged, "reason=disclaimer_blank") != 1 || !strings.Contains(logged, `locale="ru"`) {
+		t.Fatalf("want one disclaimer_blank warning carrying the locale, got %q", logged)
+	}
+	if strings.Contains(logged, token) || strings.Contains(logged, "4242") {
+		t.Fatalf("the warning carries user data or the token: %q", logged)
+	}
+
+	resolve("estimates disclaimer")
+	if strings.Contains(captured.String(), "disclaimer_blank") {
+		t.Fatalf("a resolved disclaimer must not warn, got %q", captured.String())
+	}
 }
 
 type recordingFeedCopy struct {

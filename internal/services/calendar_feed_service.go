@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"log"
+	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -193,6 +195,12 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 		// never chose a language stores "", and Messages merges the default over an
 		// empty or unknown target, so "" still yields the server-default copy.
 		disclaimer = service.disclaimer.Disclaimer(user.InterfaceLanguage)
+	}
+	if strings.TrimSpace(disclaimer) == "" {
+		// The feed withholds every event without its disclaimer text; say so, or a
+		// missing copy key empties every owner's calendar with no signal. The line
+		// names the reason and the locale only: no user id, token or email.
+		log.Printf("calendar feed withheld: reason=disclaimer_blank locale=%q", user.InterfaceLanguage)
 	}
 	var titles CalendarFeedTitles
 	if user.CalendarFeedDetailedTitles && service.disclaimer != nil {

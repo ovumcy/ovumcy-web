@@ -154,6 +154,9 @@ func TestCalendarFeedWithoutAUIDKeyCarriesNoEvent(t *testing.T) {
 		input.Logs = predictableFeedLogs(t)
 		input.Now = mustParseDashboardDay(t, "2026-03-20")
 		input.Location = time.UTC
+		// Without a disclaimer the blank-disclaimer gate alone empties the feed and
+		// blinds this test to the missing UID key.
+		input.Disclaimer = "disclaimer"
 		if len(calendarFeedEvents(input)) == 0 {
 			t.Fatalf("%s: fixture must resolve events", name)
 		}
