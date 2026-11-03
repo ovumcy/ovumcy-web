@@ -76,8 +76,9 @@ func TestSettingsStartMoveToTodayFillsNoDayAfterToday(t *testing.T) {
 
 // TestSettingsStartMoveKeepsATodayOnboardingsSingleDay: onboarding completed on
 // its own start day (10-07, period length 5, auto-fill on) records that one day,
-// its fill stopping at today. One row is no proven cohort, so a later move of
-// the start to 10-01 fills 10-01..10-05 and leaves the 10-07 row in place.
+// its fill stopping at today. One row is no proven cohort for the fill clear, but
+// the row is the logged start: a later move of the start to 10-01 fills
+// 10-01..10-05 and the bare 10-07 row goes with the start mark it carried.
 func TestSettingsStartMoveKeepsATodayOnboardingsSingleDay(t *testing.T) {
 	ctx := context.Background()
 	start := startMoveDay(time.October, 7)
@@ -98,7 +99,7 @@ func TestSettingsStartMoveKeepsATodayOnboardingsSingleDay(t *testing.T) {
 	startMoveTodayBoundSave(t, repositories, userID, "2026-10-01")
 
 	got := startMoveLoggedDays(startMoveListLogs(t, repositories, userID))
-	want := []string{"2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-07"}
+	want := []string{"2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05"}
 	if len(got) != len(want) {
 		t.Fatalf("logged %v, want %v", got, want)
 	}

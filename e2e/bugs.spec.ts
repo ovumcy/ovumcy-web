@@ -89,9 +89,11 @@ async function expectAutoFillWindowMarkers(
   await page.goto(`/calendar?month=${onboardingDate.slice(0, 7)}&day=${onboardingDate}`);
   for (let offset = 0; offset < 5; offset += 1) {
     const iso = shiftISODate(onboardingDate, offset);
+    // Setup logs the start day itself as a cycle start whatever the fill
+    // setting; only the days after it depend on auto-fill.
     await expect(page.locator(`button[data-day="${iso}"]`)).toHaveAttribute(
       'data-calendar-has-data',
-      hasData ? 'true' : 'false'
+      hasData || offset === 0 ? 'true' : 'false'
     );
   }
 }
@@ -351,7 +353,7 @@ test.describe('Bug regressions', () => {
       await expect(page.locator(`button[data-day="${preFertileDay}"]`)).toHaveAttribute('data-calendar-state', 'default');
     });
 
-    test('onboarding with auto period fill disabled does not create logged-entry markers', async ({
+    test('onboarding with auto period fill disabled marks only the start day as logged', async ({
       page,
     }) => {
       await page.goto('/login');

@@ -76,11 +76,22 @@ missing, carries anything the owner entered, or was written by another save.
 Only a fill written as one cohort of at least two days is removed: unless the
 old start and the day after it share one write, nothing goes. So a period day
 ticked by hand is never removed, a period length of 1 is never cleared, an
-onboarding completed on its own start day wrote that one day only and keeps it, and an
+onboarding completed on its own start day wrote that one day only, and an
 install onboarded before this release (whose fill carries a stamp per day)
-keeps its old days on a move, as it did before. Otherwise the old fill would
+keeps its old fill days on a move, as it did before. Otherwise the old fill would
 remain a boundary of its own and leave a phantom short cycle. A later move keeps
 the old days as history.
+A move that corrects the old date, with auto-fill on or off, also takes the
+logged cycle-start mark (and the uncertain flag) off the old start's day; a day
+left with nothing else (a period day with no flow beyond the default and no
+symptom, note, mood, BBT, mucus, test, sex activity or cycle factor) is deleted,
+a day carrying other data keeps it. The new start is written as a period day
+carrying the cycle-start mark, as onboarding writes it, and a start after the
+owner's today writes no day. Marking a different day as the cycle start in the
+same period replaces the competing mark; when the replaced mark sat on the
+stored start, the stored start moves to the newly marked day in the same
+transaction, so the grouping sees one start. Replacing any other mark leaves the
+stored start alone.
 An export over a requested range omits the stored start when
 it lies outside that range.
 

@@ -1775,10 +1775,13 @@ func (repo *UserRepository) UpdateCycleSettingsMovingPeriodStart(ctx context.Con
 				return err
 			}
 		}
+		if !move.ReleaseStart.IsZero() {
+			if err := releaseOldPeriodStart(tx, userID, move); err != nil {
+				return err
+			}
+		}
 		if !move.MarkDay.IsZero() {
-			if err := tx.Model(&models.DailyLog{}).
-				Where("user_id = ? AND date >= ? AND date < ? AND is_period = ?", userID, move.MarkDay, move.MarkDay.AddDate(0, 0, 1), false).
-				Updates(map[string]any{"is_period": true, "auto_filled": false}).Error; err != nil {
+			if err := markNewPeriodStart(tx, userID, move.MarkDay); err != nil {
 				return err
 			}
 		}
@@ -1789,6 +1792,61 @@ func (repo *UserRepository) UpdateCycleSettingsMovingPeriodStart(ctx context.Con
 		}
 		return query.Updates(updates).Error
 	})
+}
+
+// releaseOldPeriodStart takes the cycle-start mark off the old start's rows. A
+// row the move's predicate calls bare once the mark is off is deleted; one that
+// carries other data keeps it. Every read and write is scoped to userID.
+func releaseOldPeriodStart(tx *gorm.DB, userID uint, move models.PeriodStartMove) error {
+	var rows []models.DailyLog
+	if err := tx.Where("user_id = ? AND date >= ? AND date < ?", userID, move.ReleaseStart, move.ReleaseStart.AddDate(0, 0, 1)).
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if !row.CycleStart && !row.IsUncertain {
+			continue
+		}
+		row.CycleStart = false
+		row.IsUncertain = false
+		if move.ReleaseIsBare != nil && move.ReleaseIsBare(row) {
+			if err := tx.Where("id = ? AND user_id = ?", row.ID, userID).Delete(&models.DailyLog{}).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		if err := tx.Model(&models.DailyLog{}).Where("id = ? AND user_id = ?", row.ID, userID).
+			Updates(map[string]any{"cycle_start": false, "is_uncertain": false}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// markNewPeriodStart makes day a logged cycle start, as onboarding does: a
+// non-period row becomes a period day, a missing row is created as the
+// owner's own bare period day, and the cycle-start mark is set.
+func markNewPeriodStart(tx *gorm.DB, userID uint, day time.Time) error {
+	dayEnd := day.AddDate(0, 0, 1)
+	var count int64
+	if err := tx.Model(&models.DailyLog{}).Where("user_id = ? AND date >= ? AND date < ?", userID, day, dayEnd).Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		entry := bareOnboardingPeriodDay(userID, day, time.Now().UTC())
+		entry.CycleStart = true
+		manual := false
+		entry.AutoFilled = &manual
+		return tx.Create(&entry).Error
+	}
+	if err := tx.Model(&models.DailyLog{}).
+		Where("user_id = ? AND date >= ? AND date < ? AND is_period = ?", userID, day, dayEnd, false).
+		Updates(map[string]any{"is_period": true, "auto_filled": false}).Error; err != nil {
+		return err
+	}
+	return tx.Model(&models.DailyLog{}).
+		Where("user_id = ? AND date >= ? AND date < ?", userID, day, dayEnd).
+		Update("cycle_start", true).Error
 }
 
 // bareOnboardingPeriodDay is the row onboarding's auto-fill writes for a day

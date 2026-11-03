@@ -1194,6 +1194,10 @@ func (service *DayService) clearCompetingCycleStarts(ctx context.Context, userID
 	}
 
 	selectedDay := CalendarDay(selectedEntry.Date, location)
+	storedStart, err := service.storedStart(ctx, userID)
+	if err != nil {
+		return err
+	}
 	for _, logEntry := range logs {
 		if logEntry.UserID != userID || !logEntry.CycleStart {
 			continue
@@ -1223,9 +1227,33 @@ func (service *DayService) clearCompetingCycleStarts(ctx context.Context, userID
 		if err := service.logs.Save(ctx, &competing); err != nil {
 			return err
 		}
+		// The replaced start was the stored one: the stored start follows the
+		// mark in this same transaction, so the new date is the one start.
+		if storedStart != nil && !storedStart.IsZero() && dateOnly(*storedStart).Equal(dateOnly(competing.Date)) {
+			if err := service.moveStoredStart(ctx, userID, dateOnly(competing.Date), dateOnly(selectedEntry.Date)); err != nil {
+				return err
+			}
+			storedStart = nil
+		}
 	}
 
 	return nil
+}
+
+// lastPeriodStartMover is the day-log repository's write of the stored start on
+// its transaction handle, the move twin of lastPeriodStartClearer.
+type lastPeriodStartMover interface {
+	MoveLastPeriodStartOn(ctx context.Context, userID uint, fromDay time.Time, toDay time.Time) error
+}
+
+var errLastPeriodStartMoveUnsupported = errors.New("day log repository cannot move the stored start with the day write")
+
+func (service *DayService) moveStoredStart(ctx context.Context, userID uint, from time.Time, to time.Time) error {
+	mover, ok := service.logs.(lastPeriodStartMover)
+	if !ok {
+		return errLastPeriodStartMoveUnsupported
+	}
+	return mover.MoveLastPeriodStartOn(ctx, userID, from, to)
 }
 
 // refreshDerivedCycleSettings is the single place the "day save" writer

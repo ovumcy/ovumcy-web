@@ -293,6 +293,20 @@ func (repo *DailyLogRepository) ClearLastPeriodStartOn(ctx context.Context, user
 		Update("last_period_start", nil).Error
 }
 
+// MoveLastPeriodStartOn sets users.last_period_start for userID to the day
+// starting at toDay when it currently falls on the calendar day starting at
+// fromDay (canonical UTC midnights), and leaves it alone otherwise. It runs on
+// this repository's handle, so inside WithinTransaction it commits with the
+// manual cycle-start replace that moved the mark. A zero userID is refused.
+func (repo *DailyLogRepository) MoveLastPeriodStartOn(ctx context.Context, userID uint, fromDay time.Time, toDay time.Time) error {
+	if userID == 0 {
+		return errors.New("user id is required")
+	}
+	return repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND last_period_start >= ? AND last_period_start < ?", userID, fromDay, fromDay.AddDate(0, 0, 1)).
+		Update("last_period_start", toDay).Error
+}
+
 // LoadLastPeriodStartForUpdate reads users.last_period_start for userID on this
 // repository's handle, so inside WithinTransaction a day write that derives a
 // row-less day's period tick from the stored onboarding start reads the start
