@@ -176,6 +176,19 @@ func TestCalendarFeedDetailedTitlesKeepEverySuppression(t *testing.T) {
 			Titles:     testDetailedFeedTitles,
 		}
 	}
+	bleedingInput := func(t *testing.T, today string) CalendarFeedICSInput {
+		user := dayFeedbackParityUser(434)
+		user.CalendarFeedDetailedTitles = true
+		logs := web434History(t, models.DailyLog{Date: mustParseDay(t, "2026-11-02"), IsPeriod: true, CycleStart: true, IsUncertain: true, Flow: models.FlowSpotting})
+		return CalendarFeedICSInput{
+			User:       user,
+			Logs:       logs,
+			Now:        mustParseDashboardDay(t, today),
+			Location:   time.UTC,
+			Disclaimer: "Predictions are estimates, not medical advice or a method of contraception.",
+			Titles:     testDetailedFeedTitles,
+		}
+	}
 	type suppressionCase struct {
 		reason   SuppressionReason
 		whole    bool
@@ -229,6 +242,13 @@ func TestCalendarFeedDetailedTitlesKeepEverySuppression(t *testing.T) {
 				input.Now = mustParseDashboardDay(t, "2026-03-31")
 				return input
 			},
+		},
+		{
+			// Spotting logged on 2026-11-02 opens no cycle: on that day the running
+			// cycle's ovulation is withheld; two days later the bleed is history.
+			reason:   SuppressionReasonBleedingOutsideCycleStart,
+			suppress: func(t *testing.T) CalendarFeedICSInput { return bleedingInput(t, "2026-11-02") },
+			control:  func(t *testing.T) CalendarFeedICSInput { return bleedingInput(t, "2026-11-04") },
 		},
 		{
 			reason: SuppressionReasonCyclePastProjectionLength,
