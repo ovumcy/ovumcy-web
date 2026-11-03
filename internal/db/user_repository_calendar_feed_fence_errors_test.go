@@ -282,6 +282,46 @@ func TestASessionWriterRefusesWhatTheFenceCannotRecord(t *testing.T) {
 	}
 }
 
+// TestAnOIDCLinkOrUnlinkRefusesWhatTheFenceCannotRecord is the session-writer
+// refusal for the OIDC identity repository: a link or unlink revokes sessions,
+// so a fence that cannot record it leaves the identity rows and the version
+// as they were.
+func TestAnOIDCLinkOrUnlinkRefusesWhatTheFenceCannotRecord(t *testing.T) {
+	users := openCalendarFeedRepoForTest(t)
+	identities := NewOIDCIdentityRepository(users.database)
+	ctx := context.Background()
+	refused := errors.New("fence file is unwritable")
+	user := createUserForTimezoneTest(t, users, "oidc-fence-refusal@example.com")
+
+	unlinkable := models.OIDCIdentity{UserID: user.ID, Issuer: "https://id.example.com", Subject: "kept"}
+	if err := identities.CreateAndRevokeSessions(ctx, &unlinkable, storedSessionVersionForTest(t, users, user.ID)); err != nil {
+		t.Fatalf("seed identity: %v", err)
+	}
+	fence := &refusingCalendarFeedFence{err: refused}
+	identities.calendarFeedFence = fence
+	before := reloadUserForWebhookRevocationTest(t, users, user.ID)
+
+	linked := models.OIDCIdentity{UserID: user.ID, Issuer: "https://id.example.com", Subject: "refused"}
+	if err := identities.CreateAndRevokeSessions(ctx, &linked, before.AuthSessionVersion); !errors.Is(err, refused) {
+		t.Fatalf("a link must return the fence refusal, got %v", err)
+	}
+	if _, found, err := identities.FindByIssuerSubject(ctx, linked.Issuer, linked.Subject); err != nil || found {
+		t.Fatalf("a refused link must write no identity: found=%t err=%v", found, err)
+	}
+	if deleted, err := identities.DeleteForUserAndRevokeSessions(ctx, user.ID, unlinkable.ID, before.AuthSessionVersion, true); !errors.Is(err, refused) || deleted {
+		t.Fatalf("an unlink must return the fence refusal, got deleted=%t err=%v", deleted, err)
+	}
+	if _, found, err := identities.FindByIssuerSubject(ctx, unlinkable.Issuer, unlinkable.Subject); err != nil || !found {
+		t.Fatalf("a refused unlink must keep the identity: found=%t err=%v", found, err)
+	}
+	if after := reloadUserForWebhookRevocationTest(t, users, user.ID); after.AuthSessionVersion != before.AuthSessionVersion {
+		t.Fatalf("a refused link or unlink must not bump the session version: %d -> %d", before.AuthSessionVersion, after.AuthSessionVersion)
+	}
+	if fence.sessions != 2 || fence.calls != 0 || fence.diverged != 0 {
+		t.Fatalf("link and unlink must each advance through AdvanceOrRefuse, got refuse=%d advance=%d diverge=%d", fence.sessions, fence.calls, fence.diverged)
+	}
+}
+
 // TestAnErasureFenceFailureNeverRefusesTheWrite covers clear-data and account
 // erasure, whose feed clear is a side effect and which advance the fence
 // best-effort ahead of their write (WEB-397). Unlike the session writers above,

@@ -181,6 +181,35 @@ func TestAdvanceOrRefuseTypesADatabaseFailureAfterTheFile(t *testing.T) {
 	}
 }
 
+// TestAdvanceOrRefuseRefusesWhenTheWaiverCannotReadTheDatabaseHalf pins that
+// an unreadable fence whose database half cannot be read either is refused:
+// without that read nothing shows the token is gone.
+func TestAdvanceOrRefuseRefusesWhenTheWaiverCannotReadTheDatabaseHalf(t *testing.T) {
+	broken := errors.New("permission denied")
+	appState := &stubFenceAppState{values: map[string]string{}, getErr: errors.New("database is locked")}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, &stubFenceAnchor{readErr: broken, writeErr: broken})
+
+	if err := fence.AdvanceOrRefuse(context.Background()); !errors.Is(err, ErrCalendarFeedFenceWriteFailed) {
+		t.Fatalf("an unreadable database half must not waive the refusal, got %v", err)
+	}
+	if len(appState.values) != 0 {
+		t.Fatalf("a refused advance must record nothing, got %v", appState.values)
+	}
+}
+
+// TestAdvanceOrDivergeReturnsTheDatabaseFailureUntypedAfterAFailedFile pins
+// that a database failure after a file that was never written is not
+// ErrCalendarFeedFenceHalfAdvanced: neither half moved.
+func TestAdvanceOrDivergeReturnsTheDatabaseFailureUntypedAfterAFailedFile(t *testing.T) {
+	fence, appState, _ := agreeingFenceForRetryTest(len(calendarFeedFenceWriteRetryDelays) + 1)
+	appState.setErr = errors.New("database is locked")
+
+	err := fence.AdvanceOrDiverge(context.Background())
+	if !errors.Is(err, appState.setErr) || errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
+		t.Fatalf("expected the bare database failure, got %v", err)
+	}
+}
+
 // TestAdvanceOrDivergeRetriesBeforeItDiverges pins that an erasure pays the
 // divergence only for a failure that outlasts the retries.
 func TestAdvanceOrDivergeRetriesBeforeItDiverges(t *testing.T) {
