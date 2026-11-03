@@ -56,7 +56,10 @@ for those periods; marking each such day as a cycle start restores them.
 The start date stored at onboarding (the last period start) is a boundary of its
 own. It joins the grouping as a marked, non-spotting day, so a logged episode it
 falls inside or adjoins yields one start, not two. A start dated in the future is
-ignored. Un-ticking the period on the start date, or deleting that day, clears
+ignored. Finishing setup logs the start date as a period day carrying the
+cycle-start mark (alone when auto-fill is off, as the first day of the fill when
+it is on); an account set up before that keeps a start with no logged day, which
+the rest of this paragraph describes. Un-ticking the period on the start date, or deleting that day, clears
 the stored start. A start day with no entry shows its period ticked in the day
 editor and in the dashboard's Today form, and each form posts a hidden field
 saying the tick came from the stored start; saving either form unticked clears

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"net/url"
 	"testing"
@@ -55,7 +56,16 @@ func TestOnboardingFlowSkipsPeriodLogsWhenAutoFillIsDisabled(t *testing.T) {
 
 	submitOnboardingComplete(t, app, authCookie, user.ID)
 
-	for day := startDay; day.Before(endDayExclusive); day = day.AddDate(0, 0, 1) {
+	// With auto-fill off only the start day the owner entered is logged (as a
+	// cycle start); no other day of the period is seeded.
+	var startRows []models.DailyLog
+	if err := database.Where("user_id = ? AND date >= ? AND date < ?", user.ID, startDay, startDay.AddDate(0, 0, 1)).Find(&startRows).Error; err != nil {
+		t.Fatalf("load the start day: %v", err)
+	}
+	if len(startRows) != 1 || !startRows[0].IsPeriod || !startRows[0].CycleStart {
+		t.Fatalf("the start day must be one period day carrying the cycle-start mark, got %+v", startRows)
+	}
+	for day := startDay.AddDate(0, 0, 1); day.Before(endDayExclusive); day = day.AddDate(0, 0, 1) {
 		assertNoOnboardingLogForDay(t, database, user.ID, day)
 	}
 }

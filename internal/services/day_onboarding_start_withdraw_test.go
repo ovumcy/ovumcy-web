@@ -33,6 +33,14 @@ func withdrawFixture(t *testing.T, email string, autoFill bool) (*DayService, *d
 	if err := repositories.Users.CompleteOnboarding(context.Background(), user.ID, startMoveDay(time.September, 14), startMoveDay(time.September, 18), autoFill, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
+	if !autoFill {
+		// Setup now logs the start day itself. These tests are about the stored
+		// start that has no logged day (an account set up before that), so the
+		// row is dropped to reproduce it; the stored start stays.
+		if err := repositories.DailyLogs.DeleteByUserAndDayRange(context.Background(), user.ID, startMoveDay(time.September, 14), startMoveDay(time.September, 15)); err != nil {
+			t.Fatalf("drop the start day to model an account set up before the start was logged: %v", err)
+		}
+	}
 	service := NewDayServiceWithTx(repositories.DailyLogs, repositories.Users, func(ctx context.Context, fn func(DayLogRepository) error) error {
 		return repositories.DailyLogs.WithinTransaction(ctx, func(tx *db.DailyLogRepository) error {
 			return fn(tx)

@@ -1812,6 +1812,37 @@ func bareOnboardingPeriodDay(userID uint, day time.Time, createdAt time.Time) mo
 	}
 }
 
+// recordOnboardingCycleStart makes the start date the owner entered a logged
+// cycle start: a period day carrying the cycle-start mark, so the calendar,
+// the export and the observed-cycle count agree on it. The day is the row the
+// fill already wrote when auto-fill is on (marked, never duplicated), or a
+// single new row when it is off. With auto-fill off the row is the owner's
+// own entry, not an auto-fill row, so it carries the manual provenance mark.
+func recordOnboardingCycleStart(tx *gorm.DB, userID uint, startDay time.Time, autoPeriodFill bool) error {
+	dayEnd := startDay.AddDate(0, 0, 1)
+	var entry models.DailyLog
+	result := tx.
+		Where("user_id = ? AND date >= ? AND date < ?", userID, startDay, dayEnd).
+		Order("date DESC, id DESC").
+		First(&entry)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		entry = bareOnboardingPeriodDay(userID, startDay, time.Now().UTC())
+		entry.CycleStart = true
+		if !autoPeriodFill {
+			manual := false
+			entry.AutoFilled = &manual
+		}
+		return tx.Create(&entry).Error
+	}
+	if result.Error != nil {
+		return result.Error
+	}
+	return tx.Model(&entry).Where("user_id = ?", userID).Updates(map[string]any{
+		"is_period":   true,
+		"cycle_start": true,
+	}).Error
+}
+
 func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (models.User, error) {
 	var user models.User
 	if err := repo.database.WithContext(ctx).
@@ -2166,7 +2197,9 @@ func (repo *UserRepository) purgeExpiredOIDCLogoutStatesBestEffort(ctx context.C
 
 // CompleteOnboarding records the onboarding baseline and, when autoPeriodFill
 // is on, marks startDay through fillEndDay (both inclusive, UTC-midnight
-// calendar days) as period days. The caller decides fillEndDay — the period's
+// calendar days) as period days. Whatever the fill setting, startDay itself is
+// written as one logged cycle-start period day (never twice) unless it lies
+// past fillEndDay. The caller decides fillEndDay — the period's
 // last day or the owner's local today, whichever comes first — so the bound by
 // today is not computed here; an end before startDay writes no day at all.
 //
@@ -2212,6 +2245,15 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 				}).Error; err != nil {
 					return err
 				}
+			}
+		}
+
+		// A start the owner's today has not reached yet (fillEndDay is bounded
+		// by today) is stored as the baseline only: no logged day is written
+		// ahead of the day the owner has reached.
+		if !fillEndDay.Before(startDay) {
+			if err := recordOnboardingCycleStart(tx, userID, startDay, autoPeriodFill); err != nil {
+				return err
 			}
 		}
 
