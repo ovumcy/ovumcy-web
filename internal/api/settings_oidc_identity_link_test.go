@@ -640,6 +640,21 @@ func TestOIDCIdentityLinkConfirmFromAnEarlierSessionVersionAnswersStale(t *testi
 	reissuedUser.AuthSessionVersion = bumped
 	reissuedAuthCookie := issueAuthCookieForUser(t, reissuedUser)
 
+	// The interstitial offers no confirm form for it either.
+	pageRequest := httptest.NewRequest(http.MethodGet, oidcLinkConfirmPagePath, nil)
+	pageRequest.Header.Set("Cookie", joinCookieHeader(reissuedAuthCookie, pendingCookie))
+	page := mustAppResponse(t, fixture.app, pageRequest)
+	_ = page.Body.Close()
+	if page.StatusCode != http.StatusSeeOther || page.Header.Get("Location") != "/settings" {
+		t.Fatalf("expected the page to land on /settings for a stale pending link, got %d to %q", page.StatusCode, page.Header.Get("Location"))
+	}
+	if spent := responseCookie(page.Cookies(), oidcLinkPendingCookieName); spent == nil || strings.TrimSpace(spent.Value) != "" {
+		t.Fatalf("expected the page to clear the stale pending link, got %v", spent)
+	}
+
+	// Sent anyway (an interstitial left open in another tab). The auth cookie
+	// staying untouched also rules out refuseSessionRevokedDuring, which clears
+	// it in the same call that logs session_revoked_during_link.
 	response := postOIDCIdentityLinkConfirm(t, fixture, reissuedAuthCookie, pendingCookie, true)
 	defer func() { _ = response.Body.Close() }()
 
