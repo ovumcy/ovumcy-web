@@ -250,6 +250,22 @@ func TestOIDCConfirmAndLinkIdentitySurfacesAStorageFaultAsLinkFailed(t *testing.
 	}
 }
 
+// A restore fence that refuses the link (WEB-464) wrote nothing, so it must
+// read as a retryable storage fault — the handler keeps the step-up
+// confirmation for it — never as an identity another account already holds.
+func TestOIDCConfirmAndLinkIdentityMapsAFenceRefusalToResolveFailed(t *testing.T) {
+	t.Parallel()
+
+	refusal := &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: errors.New("no space left on device")}
+	identities := &stubOIDCIdentityStore{revokeErr: refusal}
+	service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "fresh-sub"}
+	_, err := service.ConfirmAndLinkIdentity(context.Background(), 7, 1, claims, time.Now())
+	if !errors.Is(err, ErrOIDCIdentityResolveFailed) || !errors.Is(err, ErrCalendarFeedFenceWriteFailed) || errors.Is(err, ErrOIDCLinkFailed) {
+		t.Fatalf("expected ErrOIDCIdentityResolveFailed wrapping the fence refusal, got %v", err)
+	}
+}
+
 // linkIdentity is the auto-provision sign-in path's persistence step. Its own
 // zero-owner and missing-claim-key guards mirror checks Authenticate and
 // resolveUserForClaims already make before calling it, but stay here as the

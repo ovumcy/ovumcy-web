@@ -68,7 +68,9 @@ func (repo *OIDCIdentityRepository) CreateAndRevokeSessions(ctx context.Context,
 	if identity == nil || identity.UserID == 0 {
 		return errOIDCIdentityOwnerRequired
 	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return err
+	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := bumpAuthSessionVersionFromTx(tx, identity.UserID, expectedSessionVersion); err != nil {
 			return err
@@ -122,7 +124,9 @@ func (repo *OIDCIdentityRepository) DeleteForUserAndRevokeSessions(ctx context.C
 	if userID == 0 || identityID == 0 {
 		return false, nil
 	}
-	repo.advanceCalendarFeedFenceBestEffort(ctx)
+	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
+		return false, err
+	}
 	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := bumpAuthSessionVersionFromTx(tx, userID, expectedSessionVersion); err != nil {
 			if errors.Is(err, errOIDCIdentityOwnerRequired) {
@@ -191,11 +195,11 @@ func (repo *OIDCIdentityRepository) TouchLastUsed(ctx context.Context, identityI
 		Update("last_used_at", usedAt).Error
 }
 
-// advanceCalendarFeedFenceBestEffort is UserRepository's, for the same reason:
-// refusing a link or unlink on a fence marker would trade a sign-in method for
-// a feed record.
-func (repo *OIDCIdentityRepository) advanceCalendarFeedFenceBestEffort(ctx context.Context) {
-	advanceFenceOrDiverge(ctx, repo.calendarFeedFence)
+// advanceCalendarFeedFenceOrRefuse is UserRepository's, for the same reason: a
+// link or unlink changes how the account can be entered, and a restore across
+// one the fence never recorded would revive the sign-in method it replaced.
+func (repo *OIDCIdentityRepository) advanceCalendarFeedFenceOrRefuse(ctx context.Context) error {
+	return advanceFenceOrRefuse(ctx, repo.calendarFeedFence)
 }
 
 var errOIDCIdentityOwnerRequired = errors.New("oidc identity owner is required")

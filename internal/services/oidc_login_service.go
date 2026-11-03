@@ -507,6 +507,11 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 		if errors.Is(err, ErrAuthSessionVersionChanged) {
 			return 0, ErrAuthSessionVersionChanged
 		}
+		// A fence that cannot record the link (WEB-464) wrote nothing, so the
+		// link is retryable — not a pair some other account already holds.
+		if errors.Is(err, ErrCalendarFeedFenceWriteFailed) {
+			return 0, fmt.Errorf("%w: %w", ErrOIDCIdentityResolveFailed, err)
+		}
 		return 0, ErrOIDCLinkFailed
 	}
 	return expectedSessionVersion + 1, nil

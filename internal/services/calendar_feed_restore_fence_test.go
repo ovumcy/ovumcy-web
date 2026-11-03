@@ -472,6 +472,9 @@ func TestCalendarFeedRestoreFenceAdvanceRecordsNothingWithoutAFence(t *testing.T
 	if err := fence.AdvanceOrDiverge(context.Background()); err != nil {
 		t.Fatalf("an unconfigured fence must not fail a side-effect revocation: %v", err)
 	}
+	if err := fence.AdvanceOrRefuse(context.Background()); err != nil {
+		t.Fatalf("an unconfigured fence must not fail a sign-out: %v", err)
+	}
 	if len(appState.values) != 0 {
 		t.Fatalf("an unconfigured fence must record nothing, got %v", appState.values)
 	}

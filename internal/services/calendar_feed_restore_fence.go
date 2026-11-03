@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
@@ -139,7 +140,8 @@ type CalendarFeedRestoreFence struct {
 	// concurrently by construction.
 	writing sync.Mutex
 	// confirmedAhead is set by a successful AdvanceConfirmed and consumed by
-	// the next Advance or AdvanceOrDiverge, which then writes nothing (WEB-429).
+	// the next Advance, AdvanceOrRefuse or AdvanceOrDiverge, which then writes
+	// nothing (WEB-429).
 	// The operator write that follows the gate advances the fence again from
 	// inside its repository; the confirmed advance already precedes that write,
 	// and a second one could only add a failure — a file error there moves the
@@ -147,14 +149,14 @@ type CalendarFeedRestoreFence struct {
 	// local password, including the one the operator just set. Guarded by
 	// writing.
 	confirmedAhead bool
-	// batching and pending coalesce concurrent AdvanceOrDiverge calls — every
+	// batching and pending coalesce concurrent AdvanceOrRefuse calls — every
 	// sign-out runs one — into one advance per turn of writing, so a caller
 	// waits for at most two file syncs however many arrive with it (WEB-454).
 	batching sync.Mutex
 	pending  *calendarFeedFenceAdvanceBatch
 }
 
-// calendarFeedFenceAdvanceBatch is one coalesced AdvanceOrDiverge: every caller
+// calendarFeedFenceAdvanceBatch is one coalesced AdvanceOrRefuse: every caller
 // that joined it before its leader started writing returns its result.
 type calendarFeedFenceAdvanceBatch struct {
 	done    chan struct{}
@@ -342,7 +344,8 @@ func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outco
 // mechanism exists to close.
 //
 // A write whose feed clear is a side effect it must not be refused over — a
-// password change, an erasure — calls AdvanceOrDiverge instead, and an
+// password change, a sign-out — calls AdvanceOrRefuse instead, an erasure
+// AdvanceOrDiverge, and an
 // operator process acting on someone ELSE's account calls AdvanceConfirmed.
 func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	fence.writing.Lock()
@@ -370,34 +373,37 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
 }
 
-// AdvanceOrDiverge is Advance for a write that proceeds whatever the fence
-// does — a sign-out, a password change or reset, a TOTP toggle, an OIDC link or
-// unlink, recovery-code rotation, reset-token redemption, clear-data, account
-// erasure — whose session or feed revocation must survive a restore but must
-// not wait on the fence. Refusing those over a calendar-feed marker would trade
-// a credential or an erasure for a feed record.
+// AdvanceOrRefuse is Advance for a write that revokes sessions or changes a
+// credential or the login identity — a sign-out, a password change or reset, a
+// TOTP toggle, an OIDC link or unlink, recovery-code rotation, reset-token
+// redemption, the operator email re-home — whose revocation must survive a
+// restore taken before it.
 //
-// So where Advance refuses on a configured but unwritable file, this moves the
-// database half on ALONE: the halves disagree, and the next boot answers with
-// the full ContinuityBroken pass, passwords included. That cost is the
-// containment, not a side effect of it: nothing outside the database recorded
-// this write, so a backup taken before it, restored, leaves the very same
-// disagreement, and no marker the database could carry would tell the two
-// apart — a restored dump carries it too. Only these writes pay it, and only
-// while the file is unwritable.
+// Where Advance refuses on the first failed file write, this retries it a
+// bounded number of times (calendarFeedFenceWriteRetryDelays), so a momentary
+// ENOSPC or EIO does not cost an owner a refused sign-out. When every attempt
+// fails it refuses exactly as Advance does (WEB-464): nothing written in either
+// half, ErrCalendarFeedFenceWriteFailed returned, and the caller's row write
+// must not run. Moving the database half alone is NOT safe here: a backup
+// taken before this write carries the old token in app_state, the file still
+// holds that same token, and restoring the backup before the next boot leaves a
+// pair that agrees — the revoked cookie or replaced credential resolves again.
+// Over halves that already disagree (or cannot be read) the next boot runs the
+// full pass whatever is written, so, as in Advance, the database half moves
+// alone and the write proceeds.
 //
 // Concurrent calls are coalesced. A caller joins the batch that is still
 // waiting for writing, or opens one; the batch's leader detaches it only once
 // it holds writing, so every member called before the advance began, which is
 // all the ordering its row write needs. A member waits for the result whatever
-// its ctx does: its caller ignores the error and writes next, so returning
-// early would put that write ahead of the advance. The write runs under the
-// leader's ctx, as every fence write runs under its caller's: a cancelled
-// leader fails the database half for the whole batch, which diverges the
-// halves — fail closed, the same outcome that leader alone would have had.
-// The lock and the batch are released on every exit, a panic included, or
+// its ctx does, so its row write never runs ahead of an advance it joined. The
+// write runs under the leader's ctx, as every fence write runs under its
+// caller's: a cancelled leader refuses the whole batch, or — once the file has
+// moved — fails the database half for it, which leaves the file ahead the way
+// Advance's database failure does. Every member refuses its row write either
+// way. The lock and the batch are released on every exit, a panic included, or
 // each later session writer would wait forever.
-func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) error {
+func (fence *CalendarFeedRestoreFence) AdvanceOrRefuse(ctx context.Context) error {
 	fence.batching.Lock()
 	if batch := fence.pending; batch != nil {
 		batch.members++
@@ -417,7 +423,7 @@ func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) err
 	fence.batching.Lock()
 	fence.pending = nil
 	fence.batching.Unlock()
-	batch.err = fence.advanceOrDivergeLocked(ctx)
+	batch.err = fence.advanceRetryingLocked(ctx, false)
 	return batch.err
 }
 
@@ -425,9 +431,33 @@ func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) err
 // leader panicked mid-write receive.
 var errCalendarFeedFenceAdvanceAbandoned = errors.New("calendar feed restore fence: the shared advance was abandoned")
 
-// advanceOrDivergeLocked is one AdvanceOrDiverge write. The caller holds
-// fence.writing.
-func (fence *CalendarFeedRestoreFence) advanceOrDivergeLocked(ctx context.Context) error {
+// AdvanceOrDiverge is AdvanceOrRefuse for a write that proceeds whatever the
+// fence does: clear-data and account erasure. Refusing those over a fence
+// volume would keep health data the owner asked to have gone, while the hole a
+// divergence leaves — a pre-erasure backup restored before the next boot —
+// brings that data back with the restore itself, which no fence prevents.
+//
+// It retries the file write as AdvanceOrRefuse does. When every attempt fails
+// it moves the database half on ALONE: the halves disagree, and the next boot
+// answers with the full ContinuityBroken pass, passwords included. Only these
+// writes pay that, and only while the file stays unwritable. It is not
+// coalesced: erasures are rare, and a batch shared with refusing callers would
+// have to answer one persistent failure two opposite ways.
+func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) error {
+	fence.writing.Lock()
+	defer fence.writing.Unlock()
+	return fence.advanceRetryingLocked(ctx, true)
+}
+
+// calendarFeedFenceWriteRetryDelays are the waits between the file-write
+// attempts of AdvanceOrRefuse and AdvanceOrDiverge: four attempts within about
+// half a second, held under writing, which the batch spreads over every
+// sign-out that arrives meanwhile.
+var calendarFeedFenceWriteRetryDelays = []time.Duration{25 * time.Millisecond, 100 * time.Millisecond, 400 * time.Millisecond}
+
+// advanceRetryingLocked is one AdvanceOrRefuse or AdvanceOrDiverge write. The
+// caller holds fence.writing.
+func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context, diverge bool) error {
 	if fence.consumeConfirmedAdvance() {
 		return nil
 	}
@@ -435,10 +465,36 @@ func (fence *CalendarFeedRestoreFence) advanceOrDivergeLocked(ctx context.Contex
 	if err != nil {
 		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
-	if err := fence.anchor.Write(token); errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
-		return nil
+	if err := fence.writeAnchorRetrying(ctx, token); err != nil {
+		if errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
+			return nil
+		}
+		if !diverge && fence.confirmContinuity(ctx) == nil {
+			return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: err}
+		}
 	}
 	return fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token)
+}
+
+// writeAnchorRetrying writes token to the file half, retrying a failed write
+// after each of calendarFeedFenceWriteRetryDelays. An unconfigured fence is not
+// retried, and a done ctx ends the retries with the last write error.
+func (fence *CalendarFeedRestoreFence) writeAnchorRetrying(ctx context.Context, token string) error {
+	err := fence.anchor.Write(token)
+	for _, delay := range calendarFeedFenceWriteRetryDelays {
+		if err == nil || errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
+			return err
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return err
+		case <-timer.C:
+		}
+		err = fence.anchor.Write(token)
+	}
+	return err
 }
 
 // ErrCalendarFeedFenceWriteFailed is returned by Advance when the fence is
@@ -453,7 +509,7 @@ var ErrCalendarFeedFenceWriteFailed = errors.New("calendar feed restore fence: c
 // anchor failure, including one surfaced by the read half. It always wraps
 // the underlying cause.
 //
-// Advance and AdvanceOrDiverge treat an UNSET path as "no fence" and proceed,
+// Advance, AdvanceOrRefuse and AdvanceOrDiverge treat an UNSET path as "no fence" and proceed,
 // because an instance with no fence disarms every feed on every boot anyway.
 // AdvanceConfirmed exists for the opposite caller — an operator process whose
 // shell may simply not be looking at the server's fence — where proceeding
@@ -738,7 +794,8 @@ func (fence *CalendarFeedRestoreFence) storeToken(ctx context.Context, outcome C
 // configured), so a backup taken then, restored beside the untouched file,
 // compares equal and the stamp is never consulted. A fence that is configured
 // but unusable is the other flavour of unanchored: there Advance refuses every
-// owner feed change and AdvanceOrDiverge moves the database half alone, so the
+// owner feed change while AdvanceOrRefuse and AdvanceOrDiverge, over halves
+// that already disagree, move the database half alone, so the
 // gap either changed nothing or left a disagreement the next fenced boot reads. The drop still runs for that flavour, on purpose — the two are
 // told apart only by the error, and a drop keyed on it would leave the file
 // agreeing with a database half nothing wrote across a gap the pass just

@@ -180,8 +180,8 @@ func assertRotationAdvancedTheFenceAhead(t *testing.T, rotation recoveryRotation
 	if rotation.advancesFence {
 		want = 1
 	}
-	if fence.diverged != want {
-		t.Fatalf("%s advanced the calendar-feed fence %d time(s) ahead of a write that did not commit, want %d", rotation.name, fence.diverged, want)
+	if fence.sessions != want {
+		t.Fatalf("%s advanced the calendar-feed fence %d time(s) ahead of a write that did not commit, want %d", rotation.name, fence.sessions, want)
 	}
 }
 
@@ -216,8 +216,8 @@ func TestRecoveryCodeRotationHandsItsHookTheStoredSessionVersion(t *testing.T) {
 			if rotation.advancesFence {
 				wantFence = 1
 			}
-			if fence.diverged != wantFence {
-				t.Fatalf("expected %d fence advance(s) for the committed rotation, got %d", wantFence, fence.diverged)
+			if fence.sessions != wantFence {
+				t.Fatalf("expected %d fence advance(s) for the committed rotation, got %d", wantFence, fence.sessions)
 			}
 		})
 	}
@@ -244,8 +244,8 @@ func TestRecoveryCodeRotationRefusesAZeroOwnerBeforeItsHook(t *testing.T) {
 			if !errors.Is(err, ErrUserOwnerRequired) {
 				t.Fatalf("a rotation for owner id 0 must be refused as ErrUserOwnerRequired, got %v", err)
 			}
-			if hookCalls != 0 || fence.diverged != 0 {
-				t.Fatalf("a refused zero-owner rotation ran its hook %d time(s) and the fence %d time(s)", hookCalls, fence.diverged)
+			if hookCalls != 0 || fence.sessions != 0 {
+				t.Fatalf("a refused zero-owner rotation ran its hook %d time(s) and the fence %d time(s)", hookCalls, fence.sessions)
 			}
 		})
 	}
