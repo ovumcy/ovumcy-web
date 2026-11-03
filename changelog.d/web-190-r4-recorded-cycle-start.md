@@ -11,4 +11,5 @@ period fill on or off: the old date loses the cycle start (a day left with
 nothing else is removed, a day with notes or other entries keeps them) and the
 new date becomes a period day carrying it, unless it is still in the future.
 Marking another day as the cycle start in the same period now also moves the
-stored start when the replaced mark was the stored one.
+stored start when the replaced mark was the stored one and the new day is not
+in the future.

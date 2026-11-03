@@ -569,7 +569,7 @@ func TestDayService_ClearCompetingCycleStarts_ClearsIsUncertain(t *testing.T) {
 
 	selected := logs.entries["2026-03-10"]
 	allLogs := []models.DailyLog{logs.entries["2026-03-08"], logs.entries["2026-03-10"]}
-	if err := service.clearCompetingCycleStarts(context.Background(), 10, allLogs, selected, time.UTC); err != nil {
+	if err := service.clearCompetingCycleStarts(context.Background(), 10, allLogs, selected, competingStartNow, time.UTC); err != nil {
 		t.Fatalf("clearCompetingCycleStarts: %v", err)
 	}
 

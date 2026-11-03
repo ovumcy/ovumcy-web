@@ -968,7 +968,7 @@ func (service *DayService) MarkCycleStartManually(ctx context.Context, userID ui
 		if err != nil {
 			return err
 		}
-		return txService.clearCompetingManualCycleStarts(ctx, userID, entry, location)
+		return txService.clearCompetingManualCycleStarts(ctx, userID, entry, now, location)
 	}); err != nil {
 		return err
 	}
@@ -1048,12 +1048,12 @@ func (service *DayService) persistManualCycleStartFlags(ctx context.Context, use
 	return entry, nil
 }
 
-func (service *DayService) clearCompetingManualCycleStarts(ctx context.Context, userID uint, entry models.DailyLog, location *time.Location) error {
+func (service *DayService) clearCompetingManualCycleStarts(ctx context.Context, userID uint, entry models.DailyLog, now time.Time, location *time.Location) error {
 	allLogs, err := service.logs.ListByUser(ctx, userID)
 	if err != nil {
 		return wrapManualCycleStartFailure(err)
 	}
-	if err := service.clearCompetingCycleStarts(ctx, userID, allLogs, entry, location); err != nil {
+	if err := service.clearCompetingCycleStarts(ctx, userID, allLogs, entry, now, location); err != nil {
 		return wrapManualCycleStartFailure(err)
 	}
 	return nil
@@ -1187,13 +1187,17 @@ func (service *DayService) hasPeriodInRecentDays(ctx context.Context, userID uin
 	return false, nil
 }
 
-func (service *DayService) clearCompetingCycleStarts(ctx context.Context, userID uint, logs []models.DailyLog, selectedEntry models.DailyLog, location *time.Location) error {
+func (service *DayService) clearCompetingCycleStarts(ctx context.Context, userID uint, logs []models.DailyLog, selectedEntry models.DailyLog, now time.Time, location *time.Location) error {
 	clusterStart, clusterEnd, ok := manualCycleStartClusterBounds(logs, selectedEntry.Date, location)
 	if !ok {
 		return nil
 	}
 
 	selectedDay := CalendarDay(selectedEntry.Date, location)
+	// Onboarding, Settings and import never store a future start and the cycle
+	// anchor ignores one, so a future mark leaves the stored start in place;
+	// only the replaced row's cycle_start is cleared.
+	selectedNotFuture := !selectedDay.After(DateAtLocation(now, location))
 	storedStart, err := service.storedStart(ctx, userID)
 	if err != nil {
 		return err
@@ -1229,7 +1233,7 @@ func (service *DayService) clearCompetingCycleStarts(ctx context.Context, userID
 		}
 		// The replaced start was the stored one: the stored start follows the
 		// mark in this same transaction, so the new date is the one start.
-		if storedStart != nil && !storedStart.IsZero() && dateOnly(*storedStart).Equal(dateOnly(competing.Date)) {
+		if selectedNotFuture && storedStart != nil && !storedStart.IsZero() && dateOnly(*storedStart).Equal(dateOnly(competing.Date)) {
 			if err := service.moveStoredStart(ctx, userID, dateOnly(competing.Date), dateOnly(selectedEntry.Date)); err != nil {
 				return err
 			}
