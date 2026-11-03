@@ -97,6 +97,7 @@ type DashboardViewData struct {
 	ManualCycleStartPolicy            ManualCycleStartPolicy
 	ShowHighFertilityBadge            bool
 	HighFertilityBadgeObserved        bool
+	HighFertilityBadgeVariant         string
 	ShowMissedDaysLink                bool
 	MissedDay                         time.Time
 	ShowCycleStartSuggestion          bool
@@ -264,6 +265,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		ManualCycleStartPolicy:            cycleStart.Policy,
 		ShowHighFertilityBadge:            showHighFertilityBadge,
 		HighFertilityBadgeObserved:        highFertilityBadgeObserved,
+		HighFertilityBadgeVariant:         dashboardHighFertilityBadgeVariant(user, highFertilityBadgeObserved),
 		ShowMissedDaysLink:                showMissedDaysLink,
 		MissedDay:                         missedDay,
 		ShowCycleStartSuggestion:          cycleStart.ShowSuggestion,
@@ -428,6 +430,29 @@ func dashboardHighFertilityBadge(user *models.User, stats CycleStats, todayLog m
 	return IsOwnerUser(user) &&
 		!FertilityObservationSuppressed(user, stats) &&
 		NormalizeDayCervicalMucus(todayLog.CervicalMucus) == models.CervicalMucusEggWhite
+}
+
+const (
+	HighFertilityBadgeVariantNeutral  = "neutral"
+	HighFertilityBadgeVariantWarning  = "warning"
+	HighFertilityBadgeVariantPositive = "positive"
+)
+
+// dashboardHighFertilityBadgeVariant styles the badge by the goal only where
+// the fertility half is shown: under suppression a warning or positive colour
+// is itself a timing cue, so the observed badge stays neutral (WEB-476).
+func dashboardHighFertilityBadgeVariant(user *models.User, observed bool) string {
+	if observed {
+		return HighFertilityBadgeVariantNeutral
+	}
+	switch NormalizeUsageGoal(user.UsageGoal) {
+	case models.UsageGoalAvoid:
+		return HighFertilityBadgeVariantWarning
+	case models.UsageGoalTrying:
+		return HighFertilityBadgeVariantPositive
+	default:
+		return HighFertilityBadgeVariantNeutral
+	}
 }
 
 func dashboardSpottingCycleWarning(logs []models.DailyLog, todayLog models.DailyLog, today time.Time, location *time.Location) bool {
