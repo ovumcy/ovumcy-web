@@ -217,6 +217,7 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"ShowPredictionReliability":           viewData.ShowPredictionReliability,
 		"PredictionExplanationPrimaryKey":     viewData.PredictionExplanationPrimaryKey,
 		"PredictionExplanationPrimaryCount":   viewData.PredictionExplanationPrimaryCount,
+		"PredictionExplanationPrimaryDate":    viewData.PredictionExplanationPrimaryDate,
 		"PredictionExplanationSecondaryKey":   viewData.PredictionExplanationSecondaryKey,
 		"HasPredictionExplanationPrimary":     viewData.HasPredictionExplanationPrimary,
 		"HasPredictionExplanationSecondary":   viewData.HasPredictionExplanationSecondary,

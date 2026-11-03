@@ -106,8 +106,9 @@ func BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time
 	boundaryCtx := BoundaryContextFor(user, today)
 	stats := buildCycleStats(logs, now, boundaryCtx, ownerRunningPeriodRule(user, today))
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, location)
-	if _, paused := ResolvePregnancyPause(logs, boundaryCtx); paused {
+	if testDate, paused := ResolvePregnancyPause(logs, boundaryCtx); paused {
 		stats.PregnancyPaused = true
+		stats.PregnancyTestDate = testDate
 	}
 	return stats
 }

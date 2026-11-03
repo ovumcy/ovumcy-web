@@ -734,10 +734,11 @@ func TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle(t *
 		wantBridge      bool
 		wantMoreBridge  bool
 	}{
+		// The frame still asks for the bridge; the first-cycle explainer says
+		// the same thing, so the page shows it once.
 		"trying, no completed cycle": {
 			completedCycles: 0,
 			goal:            models.UsageGoalTrying,
-			wantBridge:      true,
 		},
 		// One and two completed cycles are still below the floor: the header
 		// withholds the date and says the window arrives after three.

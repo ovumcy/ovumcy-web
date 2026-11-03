@@ -1,13 +1,20 @@
 package services
 
-import "github.com/ovumcy/ovumcy-web/internal/models"
+import (
+	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
+)
 
 // PrimaryCount is the number the primary sentence names through its one %d,
 // and also what selects its plural form; 0 means the sentence takes no number.
 // It is resolved here once, so no page decides per key whether to format.
+// PrimaryDate is the day the pregnancy-pause sentence names and links to the
+// calendar, where its "Remove result" lives; zero for every other sentence.
 type PredictionExplanation struct {
 	PrimaryKey   string
 	PrimaryCount int
+	PrimaryDate  time.Time
 	SecondaryKey string
 }
 
@@ -15,6 +22,12 @@ type PredictionExplanation struct {
 const (
 	predictionExplainerIrregularSparseKey    = "prediction.explainer.irregular_sparse"
 	predictionExplainerAwaitingMoreCyclesKey = "prediction.explainer.awaiting_more_cycles"
+)
+
+const (
+	predictionExplainerPregnancyPausedKey    = "prediction.explainer.pregnancy_paused"
+	predictionExplainerAwaitingFirstCycleKey = "prediction.explainer.awaiting_first_cycle"
+	predictionExplainerBleedingOutsideKey    = "prediction.explainer.bleeding_outside_cycle_start"
 )
 
 // predictionExplanationPrimaryCount is the completed-cycle floor for a sentence
@@ -57,13 +70,16 @@ func BuildOwnerPredictionExplanation(user *models.User, cycleContext DashboardCy
 		PrimaryCount: predictionExplanationPrimaryCount(primaryKey),
 		SecondaryKey: predictionExplanationSecondaryKey(cycleContext, hasFactorHint),
 	}
+	if primaryKey == predictionExplainerPregnancyPausedKey {
+		explanation.PrimaryDate = cycleContext.PregnancyTestDate
+	}
 	return withoutExplanationRestatedByLateCycle(explanation, cycleContext.LateCycle)
 }
 
 func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCycleContext) string {
 	switch {
 	case cycleContext.PregnancyPaused:
-		return "prediction.explainer.pregnancy_paused"
+		return predictionExplainerPregnancyPausedKey
 	case cycleContext.PredictionDisabled:
 		return "prediction.explainer.unpredictable"
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodNeedsData || cycleContext.DisplayOvulationNeedsData):
@@ -78,13 +94,19 @@ func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCy
 	// traded a more specific answer for a more general one. What is left here is
 	// the owner who had no explanation at all.
 	case cycleContext.AwaitingFirstCycle:
-		return "prediction.explainer.awaiting_first_cycle"
+		return predictionExplainerAwaitingFirstCycleKey
 	// The next tier up for a regular owner: one or two completed cycles. The
 	// fertility half is still withheld, and the sentence names the number the
 	// floor counts to. Irregular owners never carry it (their sparse branch
 	// above answers first, and the context flag excludes them).
 	case cycleContext.AwaitingMoreCycles:
 		return predictionExplainerAwaitingMoreCyclesKey
+	// Bleeding outside the running cycle's opening episode withholds the
+	// fertility half for the day it is logged and the next, and the hero said
+	// nothing about it. The branches above withhold that half anyway and name
+	// their own reason, so this sentence is for the account they let through.
+	case cycleContext.BleedingOutsideCycleStart:
+		return predictionExplainerBleedingOutsideKey
 	// A regular owner with at least one completed cycle behind them gets no
 	// explainer even when the prediction renders as a range: the range is the
 	// affordance, and since wave 2 the next-period line names the quantity it

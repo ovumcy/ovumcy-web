@@ -30,12 +30,18 @@ import (
 // moment the shared predicate gains a disjunct or is narrowed to let a recorded
 // observation through.
 type DashboardCycleContext struct {
-	CycleDayReference           int
-	CycleDayWarning             bool
-	LateCycle                   LateCycleNotice
-	CycleDataStale              bool
-	PredictionDisabled          bool
-	PregnancyPaused             bool
+	CycleDayReference  int
+	CycleDayWarning    bool
+	LateCycle          LateCycleNotice
+	CycleDataStale     bool
+	PredictionDisabled bool
+	PregnancyPaused    bool
+	// PregnancyTestDate is the positive test that holds the pause, so the
+	// explainer can name it and link the calendar day where it is removed.
+	PregnancyTestDate time.Time
+	// BleedingOutsideCycleStart carries the fertility-only signal of the same
+	// name, so the explainer can say why the fertile half is withheld.
+	BleedingOutsideCycleStart   bool
 	DisplayNextPeriodStart      time.Time
 	DisplayNextPeriodEnd        time.Time
 	DisplayNextPeriodRangeStart time.Time
@@ -815,6 +821,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 			CycleDayReference:   DashboardCycleReferenceLength(user, stats),
 			PredictionDisabled:  true,
 			PregnancyPaused:     true,
+			PregnancyTestDate:   stats.PregnancyTestDate,
 			AwaitingFirstCycle:  awaitingFirstCycle,
 			AwaitingMoreCycles:  awaitingMoreCycles,
 			FertilitySuppressed: fertilitySuppressed,
@@ -874,6 +881,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 		AwaitingFirstCycle:          awaitingFirstCycle,
 		AwaitingMoreCycles:          awaitingMoreCycles,
 		FertilitySuppressed:         fertilitySuppressed,
+		BleedingOutsideCycleStart:   DashboardBleedingOutsideCycleStart(stats),
 		NextPeriodInPast:            dashboardNextPeriodInPast(display, today),
 		OvulationInPast:             dashboardOvulationInPast(display, today),
 	}
@@ -1111,15 +1119,21 @@ func dashboardNextPeriodEnd(nextPeriodStart time.Time, stats CycleStats, locatio
 	return AddCalendarDays(nextPeriodStart, periodLength-1, location)
 }
 
-// dashboardNextPeriodInPast reports a projected start already behind today: the
-// window's last day, or the single date where no window is shown. The projection
-// stays on the running cycle until the overdue gate (DashboardUpcomingPredictions),
-// so a late period reaches this state rather than a date a cycle on.
+// dashboardNextPeriodInPast reports a projected period already behind today:
+// the window's last day, or the last predicted period day where no window is
+// shown — a line naming "Oct 29 - Nov 2" is not in the past on Nov 2. The
+// projection stays on the running cycle until the overdue gate
+// (DashboardUpcomingPredictions), so a late period reaches this state rather
+// than a date a cycle on.
 func dashboardNextPeriodInPast(display dashboardPredictionDisplay, today time.Time) bool {
 	if display.nextPeriodUseRange {
 		return !display.nextPeriodRangeEnd.IsZero() && display.nextPeriodRangeEnd.Before(today)
 	}
-	return !display.nextPeriodStart.IsZero() && CalendarDaysBetween(display.nextPeriodStart, today) > 0
+	last := display.nextPeriodEnd
+	if last.IsZero() {
+		last = display.nextPeriodStart
+	}
+	return !last.IsZero() && CalendarDaysBetween(last, today) > 0
 }
 
 func dashboardOvulationInPast(display dashboardPredictionDisplay, today time.Time) bool {

@@ -42,6 +42,7 @@ type CalendarPageViewData struct {
 	Stats                             CycleStats
 	PredictionExplanationPrimaryKey   string
 	PredictionExplanationPrimaryCount int
+	PredictionExplanationPrimaryDate  time.Time
 	PredictionExplanationSecondaryKey string
 	HasPredictionExplanationPrimary   bool
 	HasPredictionExplanationSecondary bool
@@ -111,6 +112,7 @@ func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Contex
 		Stats:                             stats,
 		PredictionExplanationPrimaryKey:   predictionExplanation.PrimaryKey,
 		PredictionExplanationPrimaryCount: predictionExplanation.PrimaryCount,
+		PredictionExplanationPrimaryDate:  predictionExplanation.PrimaryDate,
 		PredictionExplanationSecondaryKey: predictionExplanation.SecondaryKey,
 		HasPredictionExplanationPrimary:   predictionExplanation.PrimaryKey != "",
 		HasPredictionExplanationSecondary: predictionExplanation.SecondaryKey != "",
