@@ -140,7 +140,8 @@ func TestOpenAPIOperationsDeclareEveryStatusTheirOwnHandlerChainCanEmit(t *testi
 		return
 	}
 	sort.Strings(offenders)
-	t.Errorf("operations whose handler chain can emit a status docs/openapi.yaml never declares for that operation:\n  %s",
+	t.Errorf("operations whose handler chain can emit a status docs/openapi.yaml never declares for that operation:\n  %s"+
+		"\nA fiber.Status* that only picks a flash spec on a 303 counts as emitted too: flash a spec whose status the operation declares or this walk exempts (settingsSessionFaultErrorSpec), never declare a status the wire never carries.",
 		strings.Join(offenders, "\n  "))
 }
 
