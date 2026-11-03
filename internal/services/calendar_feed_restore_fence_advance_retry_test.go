@@ -101,6 +101,35 @@ func TestAdvanceOrRefuseOverDisagreeingHalvesMovesTheDatabaseHalf(t *testing.T) 
 	}
 }
 
+// TestAdvanceOrRefuseRefusesOverAFenceFileThatReadsAbsent pins that a missing
+// file is not a disagreement that waives the refusal: an unmounted fence
+// volume reads as absent and fails the write, and once it is mounted again its
+// old token agrees with a restored pre-write backup.
+func TestAdvanceOrRefuseRefusesOverAFenceFileThatReadsAbsent(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}}
+	anchor := &countdownFenceAnchor{failures: len(calendarFeedFenceWriteRetryDelays) + 1}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	if err := fence.AdvanceOrRefuse(context.Background()); !errors.Is(err, ErrCalendarFeedFenceWriteFailed) {
+		t.Fatalf("an absent, unwritable fence file must refuse, got %v", err)
+	}
+	if stored := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; stored != fenceTestToken {
+		t.Fatalf("a refused advance must leave the database half alone, got %q", stored)
+	}
+}
+
+// TestAdvanceOrRefuseTypesADatabaseFailureAfterTheFile pins that the one
+// refusal after which something changed is told apart from a caller's own
+// write error.
+func TestAdvanceOrRefuseTypesADatabaseFailureAfterTheFile(t *testing.T) {
+	fence, appState, _ := agreeingFenceForRetryTest(0)
+	appState.setErr = errors.New("database is locked")
+
+	if err := fence.AdvanceOrRefuse(context.Background()); !errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
+		t.Fatalf("a database failure after the file moved must wrap ErrCalendarFeedFenceHalfAdvanced, got %v", err)
+	}
+}
+
 // TestAdvanceOrDivergeRetriesBeforeItDiverges pins that an erasure pays the
 // divergence only for a failure that outlasts the retries.
 func TestAdvanceOrDivergeRetriesBeforeItDiverges(t *testing.T) {
