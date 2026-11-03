@@ -444,13 +444,14 @@ test.describe('Settings: profile and cycle', () => {
       await bbtInput.fill('98.6');
       await bbtInput.blur();
     });
-    await expect(bbtInput).toHaveValue('98.60');
+    // Trailing zeros are trimmed, as the summary and /stats print the value.
+    await expect(bbtInput).toHaveValue('98.6');
 
     const todayAction = await dashboardForm.getAttribute('hx-put');
     expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
     const todayISO = String(todayAction).replace('/api/v1/days/', '');
     const dayEditorForm = await openCalendarDayEditor(page, todayISO);
-    await expect(dayEditorForm.locator('#calendar-bbt')).toHaveValue('98.60');
+    await expect(dayEditorForm.locator('#calendar-bbt')).toHaveValue('98.6');
     await expect(dayEditorForm.locator('.measurement-field-unit')).toContainText('°F');
 
     await page.goto('/settings');
