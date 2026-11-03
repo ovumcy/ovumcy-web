@@ -475,7 +475,7 @@ func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context
 	if errors.Is(writeErr, security.ErrCalendarFeedFenceNotConfigured) {
 		return nil
 	}
-	if writeErr != nil && !diverge && !durableDisagreement(fence.confirmContinuity(ctx)) {
+	if writeErr != nil && !diverge && !fence.durableDisagreement(ctx, fence.confirmContinuity(ctx)) {
 		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: writeErr}
 	}
 	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
@@ -494,10 +494,19 @@ func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context
 // waives AdvanceOrRefuse's refusal. A file that reads as absent is NOT one — an
 // unmounted fence volume reads exactly so, and once it is mounted again its old
 // token agrees with a restored pre-write backup — and neither is a read that
-// failed outright (WEB-464).
-func durableDisagreement(err error) bool {
+// failed outright (WEB-464), unless the database half is already gone: an
+// unanchored opt-out boot drops it, and with no token there is nothing a
+// restore could make agree. The caller holds fence.writing.
+func (fence *CalendarFeedRestoreFence) durableDisagreement(ctx context.Context, err error) bool {
 	var continuity *CalendarFeedFenceContinuityError
-	return errors.As(err, &continuity) && (continuity.AnchorFound || !continuity.StoredFound)
+	if errors.As(err, &continuity) {
+		return continuity.AnchorFound || !continuity.StoredFound
+	}
+	if errors.Is(err, ErrCalendarFeedFenceUnreachable) {
+		_, storedFound, getErr := fence.appState.Get(ctx, models.AppStateKeyCalendarFeedRestoreFence)
+		return getErr == nil && !storedFound
+	}
+	return false
 }
 
 // writeAnchorRetrying writes token to the file half, retrying a failed write

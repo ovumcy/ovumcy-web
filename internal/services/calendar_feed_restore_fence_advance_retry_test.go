@@ -118,6 +118,33 @@ func TestAdvanceOrRefuseRefusesOverAFenceFileThatReadsAbsent(t *testing.T) {
 	}
 }
 
+// TestAdvanceOrRefuseOverAnUnreadableFenceFileRefusesOnlyWhileATokenRemains
+// pins the read-failure arm: a fence that cannot be read is refused while the
+// database still holds a token a restore could bring back to agreement, and
+// proceeds once an unanchored opt-out boot has dropped it.
+func TestAdvanceOrRefuseOverAnUnreadableFenceFileRefusesOnlyWhileATokenRemains(t *testing.T) {
+	broken := errors.New("permission denied")
+	cases := map[string]struct {
+		stored  map[string]string
+		refuses bool
+	}{
+		"token held":    {stored: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}, refuses: true},
+		"token dropped": {stored: map[string]string{}, refuses: false},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			appState := &stubFenceAppState{values: testCase.stored}
+			anchor := &stubFenceAnchor{readErr: broken, writeErr: broken}
+			fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+			err := fence.AdvanceOrRefuse(context.Background())
+			if refused := errors.Is(err, ErrCalendarFeedFenceWriteFailed); refused != testCase.refuses {
+				t.Fatalf("refused = %t, want %t (err %v)", refused, testCase.refuses, err)
+			}
+		})
+	}
+}
+
 // TestAdvanceOrRefuseTypesADatabaseFailureAfterTheFile pins that the one
 // refusal after which something changed is told apart from a caller's own
 // write error.
