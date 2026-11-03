@@ -76,16 +76,15 @@ func newTemplateFuncMap() template.FuncMap {
 		"hasBBT": func(value *float64) bool {
 			return value != nil && services.IsValidDayBBT(value)
 		},
-		"displayBBT": func(value *float64, unit string) string {
-			return services.FormatDayBBTForInput(value, unit)
-		},
-		"displayBBTLocalized":   services.FormatDayBBTForDisplay,
-		"temperatureUnitSymbol": services.TemperatureUnitSymbol,
-		"userIdentity":          templateUserIdentity,
-		"hasDisplayName":        templateHasDisplayName,
-		"isActiveRoute":         isActiveTemplateRoute,
-		"hasSymptom":            hasTemplateSymptom,
-		"hasCycleFactor":        hasTemplateCycleFactor,
+		"displayBBT":                services.FormatDayBBTForInputLocalized,
+		"temperatureInputSeparator": services.TemperatureInputSeparator,
+		"displayBBTLocalized":       services.FormatDayBBTForDisplay,
+		"temperatureUnitSymbol":     services.TemperatureUnitSymbol,
+		"userIdentity":              templateUserIdentity,
+		"hasDisplayName":            templateHasDisplayName,
+		"isActiveRoute":             isActiveTemplateRoute,
+		"hasSymptom":                hasTemplateSymptom,
+		"hasCycleFactor":            hasTemplateCycleFactor,
 		"dismissibleStatusOK": func(messages map[string]string, message string) template.HTML {
 			return httpx.DismissibleStatusOKTemplateHTML(message, localizedStatusDismissLabel(messages))
 		},
