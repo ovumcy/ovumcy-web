@@ -54,7 +54,7 @@
               data-fertility-badge
               data-fertility-badge-variant="{{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}positive{{else}}neutral{{end}}"
               data-fertility-badge-key="{{if .HighFertilityBadgeObserved}}dashboard.fertility_badge_observed{{else if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}dashboard.fertility_badge_warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}dashboard.fertility_badge_positive{{else}}dashboard.high_fertility_badge{{end}}">
-              {{/* Before the first completed cycle the badge names the observation,
+              {{/* Wherever fertility is withheld the badge names the observation,
                    not the fertile window the header withholds. */}}
               {{if .HighFertilityBadgeObserved}}<span aria-hidden="true">{{template "icon" "droplets"}}</span> {{t .Messages "dashboard.fertility_badge_observed"}}{{else if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}<span aria-hidden="true">{{template "icon" "alert"}}</span> {{t .Messages "dashboard.fertility_badge_warning"}}{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}<span aria-hidden="true">{{template "icon" "sparkle"}}</span> {{t .Messages "dashboard.fertility_badge_positive"}}{{else}}<span aria-hidden="true">{{template "icon" "droplets"}}</span> {{t .Messages "dashboard.high_fertility_badge"}}{{end}}
             </span>
