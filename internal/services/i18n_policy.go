@@ -111,6 +111,7 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	"display name contains invalid characters":        "settings.error.display_name_invalid_characters",
 	"invalid cycle start date":                        "settings.error.invalid_last_period_start",
 	"invalid cycle start day":                         "dashboard.error.invalid_cycle_start_date",
+	"cycle start mark on the day":                     "cycle start mark on the day",
 	"invalid pregnancy test day":                      "dashboard.error.invalid_pregnancy_test_date",
 	"invalid password":                                "settings.error.invalid_password",
 	"local password required":                         "settings.error.local_password_required",
