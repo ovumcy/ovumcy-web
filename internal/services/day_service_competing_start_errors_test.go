@@ -24,6 +24,10 @@ func (stub *movingStartDayLogs) MoveLastPeriodStartOn(_ context.Context, _ uint,
 	return stub.moveErr
 }
 
+// competingStartNow puts the fixtures' March days in the past, so a replace of
+// the stored start moves it.
+var competingStartNow = time.Date(2026, time.March, 20, 12, 0, 0, 0, time.UTC)
+
 func competingStartFixture() (earlier models.DailyLog, selected models.DailyLog, all []models.DailyLog) {
 	earlierDay := time.Date(2026, time.March, 8, 0, 0, 0, 0, time.UTC)
 	targetDay := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
@@ -40,7 +44,7 @@ func TestCompetingCycleStartReplaceFailsWhenTheStoredStartCannotBeRead(t *testin
 	injected := errors.New("driver: database is locked")
 	service := NewDayService(logs, &dayUserRepositoryStub{loadErr: injected})
 
-	err := service.clearCompetingCycleStarts(context.Background(), 10, all, selected, time.UTC)
+	err := service.clearCompetingCycleStarts(context.Background(), 10, all, selected, competingStartNow, time.UTC)
 	if !errors.Is(err, injected) {
 		t.Fatalf("expected the failed stored-start read back, got %v", err)
 	}
@@ -56,7 +60,7 @@ func TestCompetingCycleStartReplaceFailsWhenTheStoredStartCannotMove(t *testing.
 	logs.entries["2026-03-10"] = selected
 	service := NewDayService(logs, &dayUserRepositoryStub{settings: models.User{LastPeriodStart: &earlier.Date}})
 
-	err := service.clearCompetingCycleStarts(context.Background(), 10, all, selected, time.UTC)
+	err := service.clearCompetingCycleStarts(context.Background(), 10, all, selected, competingStartNow, time.UTC)
 	if !errors.Is(err, logs.moveErr) {
 		t.Fatalf("expected the failed stored-start move back, got %v", err)
 	}
@@ -72,7 +76,7 @@ func TestCompetingCycleStartReplaceIsRefusedWithoutATransactionalStartMove(t *te
 	logs.entries["2026-03-10"] = selected
 	service := NewDayService(logs, &dayUserRepositoryStub{settings: models.User{LastPeriodStart: &earlier.Date}})
 
-	err := service.clearCompetingCycleStarts(context.Background(), 10, all, selected, time.UTC)
+	err := service.clearCompetingCycleStarts(context.Background(), 10, all, selected, competingStartNow, time.UTC)
 	if !errors.Is(err, errLastPeriodStartMoveUnsupported) {
 		t.Fatalf("expected errLastPeriodStartMoveUnsupported, got %v", err)
 	}
