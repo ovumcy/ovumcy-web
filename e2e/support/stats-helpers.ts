@@ -436,7 +436,9 @@ export async function saveCycleFactorOnDay(
   await expect(savedForm.locator(`input[name="cycle_factor_keys"][value="${factorKey}"]`)).toBeChecked();
 }
 
-export async function saveBBTOnDay(page: Page, isoDate: string, value: string): Promise<void> {
+// BBT readings surface on /stats and in the day summary only while tracking is
+// on (WEB-451), so a spec seeding readings through the API turns it on first.
+export async function enableBBTTracking(page: Page): Promise<void> {
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings$/);
 
@@ -460,6 +462,10 @@ export async function saveBBTOnDay(page: Page, isoDate: string, value: string): 
     });
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
   }
+}
+
+export async function saveBBTOnDay(page: Page, isoDate: string, value: string): Promise<void> {
+  await enableBBTTracking(page);
 
   const form = await openCalendarDayEditor(page, isoDate);
   const bbtInput = form.locator('#calendar-bbt');
