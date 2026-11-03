@@ -63,39 +63,43 @@ type DashboardViewService struct {
 // form posts it back. TodayHasData, TodayEntryExists and every other reader
 // keep the stored row, TodayLog.
 type DashboardViewData struct {
-	Stats                             CycleStats
-	CycleContext                      DashboardCycleContext
-	CycleHero                         DashboardCycleHero
-	ReminderBanner                    DashboardReminderBanner
-	Today                             time.Time
-	Yesterday                         time.Time
-	YesterdayMonth                    string
-	FormattedDate                     string
-	TodayLog                          models.DailyLog
-	TodayEntry                        models.DailyLog
-	TodayPeriodFromStoredStart        bool
-	TodayHasData                      bool
-	TodayEntryExists                  bool
-	Symptoms                          []models.SymptomType
-	PrimarySymptoms                   []models.SymptomType
-	ExtraSymptoms                     []models.SymptomType
-	HasExtraSymptoms                  bool
-	SelectedSymptomID                 map[uint]bool
-	ShowYesterdayJump                 bool
-	ShowSexChip                       bool
-	ShowBBTField                      bool
-	ShowCervicalMucus                 bool
-	ShowCycleFactors                  bool
-	ShowNotesField                    bool
-	MoreFieldsOpen                    bool
-	ShowOvulationEstimate             bool
-	ShowFirstCycleBridge              bool
-	ShowMoreCyclesBridge              bool
-	ShowFertilityStatus               bool
-	ShowBBTInVisibleTier              bool
-	AllowManualCycleStart             bool
-	ManualCycleStartPolicy            ManualCycleStartPolicy
-	ShowHighFertilityBadge            bool
+	Stats                      CycleStats
+	CycleContext               DashboardCycleContext
+	CycleHero                  DashboardCycleHero
+	ReminderBanner             DashboardReminderBanner
+	Today                      time.Time
+	Yesterday                  time.Time
+	YesterdayMonth             string
+	FormattedDate              string
+	TodayLog                   models.DailyLog
+	TodayEntry                 models.DailyLog
+	TodayPeriodFromStoredStart bool
+	TodayHasData               bool
+	TodayEntryExists           bool
+	Symptoms                   []models.SymptomType
+	PrimarySymptoms            []models.SymptomType
+	ExtraSymptoms              []models.SymptomType
+	HasExtraSymptoms           bool
+	SelectedSymptomID          map[uint]bool
+	ShowYesterdayJump          bool
+	ShowSexChip                bool
+	ShowBBTField               bool
+	ShowCervicalMucus          bool
+	ShowCycleFactors           bool
+	ShowNotesField             bool
+	MoreFieldsOpen             bool
+	ShowOvulationEstimate      bool
+	ShowFirstCycleBridge       bool
+	ShowMoreCyclesBridge       bool
+	ShowFertilityStatus        bool
+	ShowBBTInVisibleTier       bool
+	AllowManualCycleStart      bool
+	ManualCycleStartPolicy     ManualCycleStartPolicy
+	ShowHighFertilityBadge     bool
+	// HighFertilityBadgeObserved words the badge as the observation it is
+	// before the first completed cycle, where the fertile window it would
+	// otherwise name is withheld.
+	HighFertilityBadgeObserved        bool
 	ShowMissedDaysLink                bool
 	MissedDay                         time.Time
 	ShowCycleStartSuggestion          bool
@@ -104,6 +108,7 @@ type DashboardViewData struct {
 	ShowSpottingCycleWarning          bool
 	PredictionExplanationPrimaryKey   string
 	PredictionExplanationPrimaryCount int
+	PredictionExplanationPrimaryDate  time.Time
 	PredictionExplanationSecondaryKey string
 	HasPredictionExplanationPrimary   bool
 	HasPredictionExplanationSecondary bool
@@ -222,39 +227,43 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	cycleContext.MovedWindow = movedWindow
 
 	return DashboardViewData{
-		Stats:                             publishedStats,
-		CycleContext:                      cycleContext,
-		CycleHero:                         BuildDashboardCycleHero(user, confirmedStats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: location}),
-		ReminderBanner:                    reminderBanner,
-		Today:                             today,
-		Yesterday:                         yesterday,
-		YesterdayMonth:                    yesterday.Format("2006-01"),
-		FormattedDate:                     LocalizedDashboardDate(language, today),
-		TodayLog:                          todayLog,
-		TodayEntry:                        todayEntry,
-		TodayPeriodFromStoredStart:        todayPeriodFromStoredStart,
-		TodayHasData:                      DayHasData(todayLog),
-		TodayEntryExists:                  todayLog.ID != 0,
-		Symptoms:                          rankedSymptoms,
-		PrimarySymptoms:                   primarySymptoms,
-		ExtraSymptoms:                     extraSymptoms,
-		HasExtraSymptoms:                  len(extraSymptoms) > 0,
-		SelectedSymptomID:                 selectedSymptomID,
-		ShowYesterdayJump:                 !yesterdayHasData,
-		ShowSexChip:                       visibility.ShowSexChip,
-		ShowBBTField:                      visibility.ShowBBTField,
-		ShowCervicalMucus:                 visibility.ShowCervicalMucus,
-		ShowCycleFactors:                  visibility.ShowCycleFactors,
-		ShowNotesField:                    visibility.ShowNotesField,
-		MoreFieldsOpen:                    dashboardMoreFieldsHoldData(todayLog, visibility, timingFrame.BBTInVisibleTier),
-		ShowOvulationEstimate:             timingFrame.ShowOvulationEstimate,
-		ShowFirstCycleBridge:              timingFrame.ShowFirstCycleBridge,
+		Stats:                      publishedStats,
+		CycleContext:               cycleContext,
+		CycleHero:                  BuildDashboardCycleHero(user, confirmedStats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: location}),
+		ReminderBanner:             reminderBanner,
+		Today:                      today,
+		Yesterday:                  yesterday,
+		YesterdayMonth:             yesterday.Format("2006-01"),
+		FormattedDate:              LocalizedDashboardDate(language, today),
+		TodayLog:                   todayLog,
+		TodayEntry:                 todayEntry,
+		TodayPeriodFromStoredStart: todayPeriodFromStoredStart,
+		TodayHasData:               DayHasData(todayLog),
+		TodayEntryExists:           todayLog.ID != 0,
+		Symptoms:                   rankedSymptoms,
+		PrimarySymptoms:            primarySymptoms,
+		ExtraSymptoms:              extraSymptoms,
+		HasExtraSymptoms:           len(extraSymptoms) > 0,
+		SelectedSymptomID:          selectedSymptomID,
+		ShowYesterdayJump:          !yesterdayHasData,
+		ShowSexChip:                visibility.ShowSexChip,
+		ShowBBTField:               visibility.ShowBBTField,
+		ShowCervicalMucus:          visibility.ShowCervicalMucus,
+		ShowCycleFactors:           visibility.ShowCycleFactors,
+		ShowNotesField:             visibility.ShowNotesField,
+		MoreFieldsOpen:             dashboardMoreFieldsHoldData(todayLog, visibility, timingFrame.BBTInVisibleTier),
+		ShowOvulationEstimate:      timingFrame.ShowOvulationEstimate,
+		// The first-cycle explainer below the header already says the window
+		// waits for the first completed cycle; the bridge saying it again in the
+		// status line was the same sentence twice.
+		ShowFirstCycleBridge:              timingFrame.ShowFirstCycleBridge && predictionExplanation.PrimaryKey != predictionExplainerAwaitingFirstCycleKey,
 		ShowMoreCyclesBridge:              timingFrame.ShowMoreCyclesBridge,
 		ShowFertilityStatus:               !cycleContext.FertilitySuppressed,
 		ShowBBTInVisibleTier:              timingFrame.BBTInVisibleTier,
 		AllowManualCycleStart:             visibility.AllowManualCycleStart,
 		ManualCycleStartPolicy:            cycleStart.Policy,
 		ShowHighFertilityBadge:            showHighFertilityBadge,
+		HighFertilityBadgeObserved:        showHighFertilityBadge && cycleContext.AwaitingFirstCycle,
 		ShowMissedDaysLink:                showMissedDaysLink,
 		MissedDay:                         missedDay,
 		ShowCycleStartSuggestion:          cycleStart.ShowSuggestion,
@@ -263,6 +272,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		ShowSpottingCycleWarning:          showSpottingCycleWarning,
 		PredictionExplanationPrimaryKey:   predictionExplanation.PrimaryKey,
 		PredictionExplanationPrimaryCount: predictionExplanation.PrimaryCount,
+		PredictionExplanationPrimaryDate:  predictionExplanation.PrimaryDate,
 		PredictionExplanationSecondaryKey: predictionExplanation.SecondaryKey,
 		HasPredictionExplanationPrimary:   predictionExplanation.PrimaryKey != "",
 		HasPredictionExplanationSecondary: predictionExplanation.SecondaryKey != "",

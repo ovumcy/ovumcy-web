@@ -35,6 +35,7 @@ func (handler *Handler) buildCalendarViewData(ctx context.Context, user *models.
 		"Stats":                             viewData.Stats,
 		"PredictionExplanationPrimaryKey":   viewData.PredictionExplanationPrimaryKey,
 		"PredictionExplanationPrimaryCount": viewData.PredictionExplanationPrimaryCount,
+		"PredictionExplanationPrimaryDate":  viewData.PredictionExplanationPrimaryDate,
 		"PredictionExplanationSecondaryKey": viewData.PredictionExplanationSecondaryKey,
 		"HasPredictionExplanationPrimary":   viewData.HasPredictionExplanationPrimary,
 		"HasPredictionExplanationSecondary": viewData.HasPredictionExplanationSecondary,

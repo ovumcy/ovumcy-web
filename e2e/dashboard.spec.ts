@@ -954,20 +954,18 @@ test.describe('Dashboard: today editor', () => {
     );
 
     // What the goal promised at onboarding, on the next load of the page. This
-    // account has completed no cycle yet, so the timing item is the one line
-    // naming when its fertile window arrives — an ovulation date here could only
-    // be the onboarding cycle length projected forward. The date itself, once a
-    // cycle has been observed, is pinned in the Go render regression
+    // account has completed no cycle yet, so no ovulation date: it could only be
+    // the onboarding cycle length projected forward. The first-cycle explainer
+    // says when the window arrives, so the bridge does not say it a second time
+    // in the status line. The date itself, once a cycle has been observed, is
+    // pinned in the Go render regression
     // (TestDashboardFramesTimingForTheGoalThatIsAboutIt).
     await page.reload();
     await expect(ovulation).toHaveCount(0);
-    await expect(bridge).toHaveCount(1);
-    await expect(bridge).toHaveAttribute(
-      'data-first-cycle-bridge-key',
-      'dashboard.fertile_window_after_first_cycle'
-    );
-    await expect(bridge).toHaveText(
-      localeText('en', 'dashboard.fertile_window_after_first_cycle')
+    await expect(bridge).toHaveCount(0);
+    await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(
+      'data-explainer-key',
+      'prediction.explainer.awaiting_first_cycle'
     );
     await expect(bbtInput).toBeVisible();
     await expect(dashboardMoreDisclosure(page).locator('#dashboard-bbt')).toHaveCount(0);

@@ -98,15 +98,16 @@ func TestBuildDashboardCycleContext(t *testing.T) {
 		t.Fatalf("did not expect stable cycle context to render next period as an uncertainty range")
 	}
 	// Cycle day 30: the running cycle's period was due yesterday. It stays the
-	// one named — not the anchor plus 56 days — and reads as already behind.
+	// one named — not the anchor plus 56 days — and, with its last predicted
+	// day still ahead, does not read as behind (WEB-448).
 	if got := context.DisplayNextPeriodStart.Format("2006-01-02"); got != "2026-03-10" {
 		t.Fatalf("expected exact next period start 2026-03-10, got %s", got)
 	}
 	if got := context.DisplayNextPeriodEnd.Format("2006-01-02"); got != "2026-03-14" {
 		t.Fatalf("expected exact next period end 2026-03-14, got %s", got)
 	}
-	if !context.NextPeriodInPast {
-		t.Fatalf("expected a single next-period date behind today to read as in the past")
+	if context.NextPeriodInPast {
+		t.Fatalf("expected period days ending 2026-03-14 not to read as in the past on 2026-03-11")
 	}
 }
 

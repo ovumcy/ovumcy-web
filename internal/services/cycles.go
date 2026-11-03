@@ -62,6 +62,10 @@ type CycleStats struct {
 	// boundary rule did not take as a new start, which contradicts the running
 	// projection (WEB-434). BuildCycleStats is its only writer.
 	BleedingOutsideCycleStart bool `json:"-"`
+
+	// PregnancyTestDate is the positive test ResolvePregnancyPause holds the
+	// pause on; zero whenever PregnancyPaused is false.
+	PregnancyTestDate time.Time `json:"-"`
 }
 
 type detectedCycle struct {
