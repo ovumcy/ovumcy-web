@@ -25,11 +25,12 @@ func TestDashboardEggWhiteBadgeNamesTheObservationWhileBleedingOutsideCycleStart
 		spotting    bool
 		wantVariant string
 		wantClass   string
+		wantKey     string
 	}{
-		"withheld/trying_to_conceive": {goal: models.UsageGoalTrying, spotting: true, wantVariant: "neutral"},
-		"withheld/avoid_pregnancy":    {goal: models.UsageGoalAvoid, spotting: true, wantVariant: "neutral"},
-		"shown/trying_to_conceive":    {goal: models.UsageGoalTrying, wantVariant: "positive", wantClass: "dashboard-status-item-positive"},
-		"shown/avoid_pregnancy":       {goal: models.UsageGoalAvoid, wantVariant: "warning", wantClass: "dashboard-status-item-warning"},
+		"withheld/trying_to_conceive": {goal: models.UsageGoalTrying, spotting: true, wantVariant: "neutral", wantKey: "dashboard.fertility_badge_observed"},
+		"withheld/avoid_pregnancy":    {goal: models.UsageGoalAvoid, spotting: true, wantVariant: "neutral", wantKey: "dashboard.fertility_badge_observed"},
+		"shown/trying_to_conceive":    {goal: models.UsageGoalTrying, wantVariant: "positive", wantClass: "dashboard-status-item-positive", wantKey: "dashboard.fertility_badge_positive"},
+		"shown/avoid_pregnancy":       {goal: models.UsageGoalAvoid, wantVariant: "warning", wantClass: "dashboard-status-item-warning", wantKey: "dashboard.fertility_badge_warning"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			badge := renderDashboardEggWhiteBadge(t, testCase.goal, testCase.spotting)
@@ -41,11 +42,11 @@ func TestDashboardEggWhiteBadgeNamesTheObservationWhileBleedingOutsideCycleStart
 					t.Fatalf("badge class=%q, want goal class %q only", htmlAttr(badge, "class"), testCase.wantClass)
 				}
 			}
+			if key := htmlAttr(badge, "data-fertility-badge-key"); key != testCase.wantKey {
+				t.Fatalf("badge renders from %q, want %s", key, testCase.wantKey)
+			}
 			if !testCase.spotting {
 				return
-			}
-			if key := htmlAttr(badge, "data-fertility-badge-key"); key != "dashboard.fertility_badge_observed" {
-				t.Fatalf("badge renders from %q, want dashboard.fertility_badge_observed", key)
 			}
 			manager, err := i18n.NewManager(i18n.LangEN)
 			if err != nil {
