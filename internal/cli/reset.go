@@ -235,18 +235,25 @@ func printKeptFactors(output io.Writer, readers keptFactorReaders, userID uint) 
 	linked, err := readers.identities.ListByUser(ctx, userID)
 	switch {
 	case err != nil:
-		kept = append(kept, "any linked OIDC identities (they could not be listed: "+err.Error()+")")
+		kept = append(kept, "any linked OIDC identities (they could not be listed)")
 	case len(linked) == 1:
 		kept = append(kept, "1 linked OIDC identity")
 	case len(linked) > 1:
 		kept = append(kept, fmt.Sprintf("%d linked OIDC identities", len(linked)))
 	}
 	user, found, err := readers.users.FindByIDOptional(ctx, userID)
-	switch {
-	case err != nil || !found:
-		kept = append(kept, "two-factor sign-in and its recovery code, if enrolled (the account could not be re-read)")
-	case user.TOTPEnabled:
-		kept = append(kept, "two-factor sign-in and its recovery code")
+	if err != nil || !found {
+		kept = append(kept, "any two-factor sign-in, recovery code and webhook endpoint (the account could not be re-read)")
+	} else {
+		if user.TOTPEnabled {
+			kept = append(kept, "two-factor sign-in")
+		}
+		if strings.TrimSpace(user.RecoveryCodeHash) != "" {
+			kept = append(kept, "the recovery code")
+		}
+		if strings.TrimSpace(user.WebhookURL) != "" {
+			kept = append(kept, "the webhook endpoint")
+		}
 	}
 	if len(kept) == 0 {
 		return
