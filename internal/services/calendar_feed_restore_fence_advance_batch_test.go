@@ -149,6 +149,46 @@ func TestConcurrentAdvanceOrDivergeCallsShareOneAdvance(t *testing.T) {
 	}
 }
 
+// panickingFenceAnchor panics on its first Write and writes normally after.
+type panickingFenceAnchor struct {
+	stubFenceAnchor
+	panicked bool
+}
+
+func (anchor *panickingFenceAnchor) Write(value string) error {
+	if !anchor.panicked {
+		anchor.panicked = true
+		panic("fence volume driver fault")
+	}
+	return anchor.stubFenceAnchor.Write(value)
+}
+
+// TestAPanickingAdvanceReleasesTheFence pins the batch leader's cleanup: a
+// panic mid-advance, recovered by the request's own handler, must leave the
+// fence usable. Holding writing across it would block every later sign-out,
+// password change and feed write on the instance for good.
+func TestAPanickingAdvanceReleasesTheFence(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}}
+	anchor := &panickingFenceAnchor{stubFenceAnchor: stubFenceAnchor{value: fenceTestToken, found: true}}
+	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+	func() {
+		defer func() { _ = recover() }()
+		_ = fence.AdvanceOrDiverge(context.Background())
+	}()
+
+	done := make(chan error, 1)
+	go func() { done <- fence.AdvanceOrDiverge(context.Background()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("the advance after a recovered panic: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the fence stayed locked after a panicking advance")
+	}
+}
+
 // lockedFenceAppState is stubFenceAppState for a test whose callers run on
 // several goroutines.
 type lockedFenceAppState struct {

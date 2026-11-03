@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
+	"slices"
 	"sort"
 	"testing"
 
@@ -294,27 +295,43 @@ var persistenceWriteMethods = map[string]map[string]bool{
 // internal/db reaches a gorm or database/sql write at all.
 func TestNoPackageOutsideDBWritesThroughThePersistenceLayer(t *testing.T) {
 	const module = "github.com/ovumcy/ovumcy-web"
-	listed, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedImports, Dir: "../.."}, "./...")
+	listed, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedImports | packages.NeedDeps, Dir: "../.."}, "./...")
 	if err != nil {
 		t.Fatalf("list the module: %v", err)
+	}
+	// A package can call a gorm method on a value whose type it never names,
+	// so a candidate is any package that REACHES gorm or database/sql through
+	// its imports, not only one that imports it directly.
+	reaches := map[string]bool{}
+	var reachesPersistence func(pkg *packages.Package) bool
+	reachesPersistence = func(pkg *packages.Package) bool {
+		if reached, seen := reaches[pkg.PkgPath]; seen {
+			return reached
+		}
+		reaches[pkg.PkgPath] = false
+		for importPath, imported := range pkg.Imports {
+			if persistenceWriteMethods[importPath] != nil || reachesPersistence(imported) {
+				reaches[pkg.PkgPath] = true
+				break
+			}
+		}
+		return reaches[pkg.PkgPath]
 	}
 	var candidates []string
 	for _, pkg := range listed {
 		for _, packageError := range pkg.Errors {
 			t.Fatalf("%s does not load: %v", pkg.PkgPath, packageError)
 		}
-		for importPath := range pkg.Imports {
-			if persistenceWriteMethods[importPath] != nil {
-				candidates = append(candidates, pkg.PkgPath)
-				break
-			}
+		if reachesPersistence(pkg) {
+			candidates = append(candidates, pkg.PkgPath)
 		}
 	}
 	sort.Strings(candidates)
-	// Anti-vacuity: the db package must be among the importers, and the
-	// matcher must resolve its writes, or a scan that finds nothing elsewhere
-	// proves nothing.
-	if !containsString(candidates, module+"/internal/db") || !containsString(candidates, module+"/internal/cli") {
+	// Anti-vacuity: the db package must be among the candidates, a package that
+	// only reaches gorm transitively (internal/services, through models) too,
+	// and the matcher must resolve the db package's writes, or a scan that
+	// finds nothing elsewhere proves nothing.
+	if !slices.Contains(candidates, module+"/internal/db") || !slices.Contains(candidates, module+"/internal/services") {
 		t.Fatalf("the importer scan missed internal/db or internal/cli: %v", candidates)
 	}
 
@@ -356,15 +373,6 @@ func TestNoPackageOutsideDBWritesThroughThePersistenceLayer(t *testing.T) {
 	for _, violation := range violations {
 		t.Error(violation)
 	}
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 // fenceAdvanceMethods resolves the repositories' fence advances to their
