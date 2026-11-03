@@ -274,13 +274,15 @@ func TestUserRepositoryCompleteOnboardingUpdateIsScopedByOwner(t *testing.T) {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 
-	if len(dailyLogUpdates) != 1 {
-		t.Fatalf("expected exactly one daily_logs UPDATE from the auto-fill update arm, got %d: %q", len(dailyLogUpdates), dailyLogUpdates)
+	// One UPDATE from the auto-fill arm, one marking the same row as the start.
+	if len(dailyLogUpdates) != 2 {
+		t.Fatalf("expected two daily_logs UPDATEs (auto-fill arm, start mark), got %d: %q", len(dailyLogUpdates), dailyLogUpdates)
 	}
-	statement := dailyLogUpdates[0]
-	where := strings.LastIndex(statement, " WHERE ")
-	if where < 0 || !strings.Contains(statement[where:], "user_id") {
-		t.Fatalf("expected the onboarding daily_logs UPDATE to be scoped by user_id in its WHERE clause, got %q", statement)
+	for _, statement := range dailyLogUpdates {
+		where := strings.LastIndex(statement, " WHERE ")
+		if where < 0 || !strings.Contains(statement[where:], "user_id") {
+			t.Fatalf("expected every onboarding daily_logs UPDATE to be scoped by user_id in its WHERE clause, got %q", statement)
+		}
 	}
 }
 
