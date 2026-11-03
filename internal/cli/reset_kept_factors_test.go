@@ -99,6 +99,9 @@ func TestPrintKeptFactorsCountsAndSurvivesAFailedRead(t *testing.T) {
 		if !strings.Contains(output.String(), tc.want) {
 			t.Fatalf("%s: expected %q, got %q", name, tc.want, output.String())
 		}
+		if strings.Contains(output.String(), "database is locked") {
+			t.Fatalf("%s: the driver's error text must not reach the operator output, got %q", name, output.String())
+		}
 	}
 }
 
