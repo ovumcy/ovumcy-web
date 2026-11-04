@@ -1,4 +1,4 @@
-# golangci-lint v2 configuration (CI pins v2.12.2 in .github/workflows/ci.yml).
+# golangci-lint v2 configuration (CI pins GOLANGCI_LINT_VERSION in .github/workflows/ci.yml).
 #
 # Baseline: the standard default linters (errcheck, govet, ineffassign,
 # staticcheck, unused) — exactly what CI ran before this file existed, so

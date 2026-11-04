@@ -204,14 +204,14 @@ func assertParityTypeAxisResolves(t *testing.T, schema dialectSchema, dialect st
 //   - users.auth_session_version DEFAULT 1 NOT NULL: a session minted for a
 //     fresh account carries the version this default leaves, and a NULL there
 //     would break the compare-and-set every revocation bumps through.
-//   - users.age_group DEFAULT ”: an empty-string default is the case where
+//   - users.age_group DEFAULT the empty string: the case where
 //     "no default" and "default empty" are easiest to confuse.
 //   - idx_users_email_normalized UNIQUE on lower(trim(email)): the login
 //     identity both the credential path and the OIDC email match resolve an
 //     account by; it is an expression index, which GORM's own index reader
 //     cannot read on SQLite and reads without its expression on Postgres.
-//   - idx_users_calendar_feed_selector UNIQUE WHERE calendar_feed_selector <>
-//     ”: the feed lookup key, and the one partial index — the anchor for the
+//   - idx_users_calendar_feed_selector UNIQUE WHERE calendar_feed_selector is
+//     not the empty string: the feed lookup key, and the one partial index — the anchor for the
 //     predicate normalization.
 //   - unique(user_id,date) on daily_logs: the one-entry-per-day rule, an inline
 //     UNIQUE constraint whose index each engine names itself.
