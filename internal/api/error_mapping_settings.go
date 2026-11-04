@@ -122,14 +122,14 @@ func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
 		return settingsOIDCReauthStaleErrorSpec()
 	case errors.Is(err, services.ErrOIDCLinkFailed):
 		return settingsOIDCIdentityLinkClaimedErrorSpec()
-	// A holder sign-in refuses: the reply sign-in gives that identity, so the
-	// step-up says no more than signing in does (WEB-433 H5).
-	case errors.Is(err, services.ErrOIDCAccountUnavailable):
+	// A holder sign-in stops short of (services.SignInStop): a refused role, or
+	// a forced reset it cannot issue (no local password). The link says no more
+	// than signing in does (WEB-433 H5). The second case does not reuse
+	// sign-in's reset-token key: that is a 500, and this refusal is permanent
+	// until `reset-password --full`, so a 4xx is the honest answer (WEB-480).
+	case errors.Is(err, services.ErrOIDCAccountUnavailable),
+		errors.Is(err, services.ErrPasswordResetTokenInvalidPasswordState):
 		return authOIDCAccountUnavailableErrorSpec()
-	// A holder sign-in sends to a forced reset it cannot issue (no local
-	// password): the error sign-in's callback answers there.
-	case errors.Is(err, services.ErrPasswordResetTokenInvalidPasswordState):
-		return authResetTokenCreateErrorSpec()
 	case errors.Is(err, services.ErrAuthSessionVersionChanged):
 		return authSessionCreateErrorSpec()
 	case errors.Is(err, services.ErrOIDCDisabled),

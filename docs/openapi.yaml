@@ -4013,7 +4013,7 @@ paths:
           description: Form submit — redirect to `/settings` (linked, or refused with a settings flash) or to `/login` (this device was signed out).
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409':
-          description: The identity was linked to another account after the step-up returned it.
+          description: The identity was linked to another account after the step-up returned it, and sign-in with it reaches that account.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -4030,7 +4030,7 @@ paths:
                 error: "sso temporarily unavailable"
                 error_detail: { key: "sso temporarily unavailable", category: "internal", target: "auth_form" }
         '403':
-          description: The caller is not the owner, or the request was refused before the handler runs (CSRF) with the `csrf_refused` key.
+          description: The caller is not the owner, or the request was refused before the handler runs (CSRF) with the `csrf_refused` key. Also returned when the identity was linked after the step-up to an account sign-in stops short of (a non-owner row, or a forced reset with no local password to issue it for); the refusal is `sso sign-in unavailable`, the reply sign-in gives.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }

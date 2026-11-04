@@ -212,10 +212,20 @@ func TestOIDCLinkRefusalForAClaimedIdentityTellsItsHolderNothingSignInWouldNot(t
 				if result.User.ID != holderID {
 					t.Fatalf("sign-in reached user %d, want the holder %d", result.User.ID, holderID)
 				}
+				if got := service.SignInStop(result.User); got != nil {
+					t.Fatalf("SignInStop answered %v for a holder sign-in reaches", got)
+				}
 				return
 			}
 			if !errors.Is(signInStop, tc.wantLink) {
 				t.Fatalf("sign-in stopped on %v, want %v", signInStop, tc.wantLink)
+			}
+			// Past Authenticate, the stop is the predicate's, and it is the
+			// one the callback reads before it issues a token.
+			if result.RequiresPasswordReset {
+				if got := service.SignInStop(result.User); !errors.Is(got, tc.wantLink) {
+					t.Fatalf("SignInStop answered %v, want %v", got, tc.wantLink)
+				}
 			}
 		})
 	}

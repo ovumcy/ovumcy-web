@@ -37,7 +37,8 @@ func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
 		{name: "cross-user claim maps to claimed", err: services.ErrOIDCLinkFailed, want: settingsOIDCIdentityLinkClaimedErrorSpec()},
 		// WEB-433 H5: a holder sign-in refuses gets sign-in's own reply.
 		{name: "claim by an account sign-in refuses maps to sign-in's reply", err: services.ErrOIDCAccountUnavailable, want: authOIDCAccountUnavailableErrorSpec()},
-		{name: "claim by a holder whose forced reset cannot be issued maps to sign-in's reply", err: services.ErrPasswordResetTokenInvalidPasswordState, want: authResetTokenCreateErrorSpec()},
+		// WEB-480: not sign-in's 500 reset-token key; the refusal is permanent.
+		{name: "claim by a holder whose forced reset cannot be issued maps to account unavailable", err: services.ErrPasswordResetTokenInvalidPasswordState, want: authOIDCAccountUnavailableErrorSpec()},
 		{name: "sessions revoked since the step-up began maps to session create", err: services.ErrAuthSessionVersionChanged, want: authSessionCreateErrorSpec()},
 		{name: "oidc disabled maps to unavailable", err: services.ErrOIDCDisabled, want: authOIDCUnavailableErrorSpec()},
 		{name: "oidc unavailable maps to unavailable", err: services.ErrOIDCUnavailable, want: authOIDCUnavailableErrorSpec()},
@@ -373,6 +374,42 @@ func TestOIDCIdentityLinkStepupCallbackRefusesAStaleReauth(t *testing.T) {
 	// so the auth channel would carry this refusal to a page it never reaches.
 	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != settingsOIDCReauthStaleErrorSpec().Key {
 		t.Fatalf("expected the stale-reauth refusal %q on the settings flash channel, got %q (auth channel holds %q)", settingsOIDCReauthStaleErrorSpec().Key, payload.SettingsError, payload.AuthError)
+	}
+}
+
+// TestOIDCIdentityLinkStepupCallbackAnswersAHolderSignInStopsShortOf: where
+// services.SignInStop stops sign-in for the holder, the step-up callback
+// flashes the account-unavailable key and parks nothing to confirm (WEB-480).
+func TestOIDCIdentityLinkStepupCallbackAnswersAHolderSignInStopsShortOf(t *testing.T) {
+	t.Parallel()
+
+	for name, stop := range map[string]error{
+		"role refused":                  services.ErrOIDCAccountUnavailable,
+		"forced reset cannot be issued": services.ErrPasswordResetTokenInvalidPasswordState,
+	} {
+		fixture := newOIDCStepupFixture(t, "settings-oidc-link-holder-stop@example.com")
+		startResponse := postOIDCIdentityLinkStepupStart(t, fixture)
+		stepupCookie := readStepupCookie(t, startResponse)
+		_ = startResponse.Body.Close()
+		state := extractStepupCallbackState(t, fixture)
+		fixture.oidcStub.identityLinkReauthErr = stop
+
+		callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+		_ = callbackResponse.Body.Close()
+
+		if callbackResponse.StatusCode != http.StatusSeeOther {
+			t.Fatalf("%s: expected a redirect, got %d", name, callbackResponse.StatusCode)
+		}
+		if cookie := responseCookie(callbackResponse.Cookies(), oidcLinkPendingCookieName); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
+			t.Fatalf("%s: a refused claim must park no pending link", name)
+		}
+		flashCookie := responseCookie(callbackResponse.Cookies(), flashCookieName)
+		if flashCookie == nil {
+			t.Fatalf("%s: expected a flash cookie carrying the refusal", name)
+		}
+		if got, want := decodeFlashCookieForTest(t, flashCookie.Value).SettingsError, authOIDCAccountUnavailableErrorSpec().Key; got != want {
+			t.Fatalf("%s: expected settings flash %q, got %q", name, want, got)
+		}
 	}
 }
 

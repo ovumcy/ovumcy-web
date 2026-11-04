@@ -56,6 +56,9 @@ type OIDCWorkflowService interface {
 	StartReauth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
 	Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (services.OIDCLoginResult, error)
 	ValidateReauthExchange(ctx context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, now time.Time) error
+	// SignInStop is the error OIDC sign-in stops on for a resolved user, nil
+	// when sign-in reaches it.
+	SignInStop(user models.User) error
 	// VerifyIdentityLinkReauth checks the identity-link step-up and returns the
 	// identity it resolved to; it writes nothing.
 	VerifyIdentityLinkReauth(ctx context.Context, code string, codeVerifier string, expectedNonce string, targetUserID uint, maxAuthAge time.Duration, now time.Time) (security.OIDCClaims, error)
