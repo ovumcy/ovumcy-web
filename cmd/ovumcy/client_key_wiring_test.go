@@ -12,7 +12,7 @@ import (
 
 // TestConfigureFiberMiddlewarePublishesTheEdgeClientKey pins WEB-395 L3. Behind
 // a trusted proxy with PROXY_HEADER=X-Forwarded-For, c.IP() can return a
-// client-supplied entry; keyed on it, the per-client auth-attempt buckets let a
+// client-supplied entry (mechanism: rateLimitKeyGenerator); keyed on it, the per-client auth-attempt buckets let a
 // stranger name a victim's address and spend its login budget (eight junk
 // requests lock that address out). The handlers key on api.RequestClientKey,
 // so the composition root must publish the edge limiters' own key there.
