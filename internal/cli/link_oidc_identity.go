@@ -231,6 +231,8 @@ func mapLinkOIDCIdentityLinkError(err error) error {
 		return errors.New("OIDC is not enabled on this instance (set OIDC_ENABLED=true)")
 	case errors.Is(err, services.ErrOIDCLinkFailed):
 		return errors.New("that (issuer, subject) pair is already linked to a different account")
+	case errors.Is(err, services.ErrOIDCAccountUnavailable):
+		return errors.New("that (issuer, subject) pair is already linked to a different account, one this instance does not sign in (unsupported role)")
 	case errors.Is(err, services.ErrAuthSessionVersionChanged):
 		return errors.New("the account's sessions changed while linking; nothing was linked, run the command again")
 	default:

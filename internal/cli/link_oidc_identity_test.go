@@ -294,6 +294,9 @@ func TestMapLinkOIDCIdentityLinkErrorBranches(t *testing.T) {
 	if err := mapLinkOIDCIdentityLinkError(services.ErrOIDCLinkFailed); err == nil || !strings.Contains(err.Error(), "already linked to a different account") {
 		t.Fatalf("expected a cross-user-claim refusal, got %v", err)
 	}
+	if err := mapLinkOIDCIdentityLinkError(services.ErrOIDCAccountUnavailable); err == nil || !strings.Contains(err.Error(), "unsupported role") {
+		t.Fatalf("expected a cross-user-claim refusal naming the unsupported holder, got %v", err)
+	}
 	if err := mapLinkOIDCIdentityLinkError(services.ErrAuthSessionVersionChanged); err == nil || !strings.Contains(err.Error(), "nothing was linked") {
 		t.Fatalf("expected a retry refusal for a concurrent revocation, got %v", err)
 	}

@@ -491,7 +491,7 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 			// (issuer, subject) was claimed by somebody else between the OIDC
 			// callback that issued the pending-link cookie and this
 			// confirmation. Fail closed.
-			return 0, ErrOIDCLinkFailed
+			return 0, service.claimedElsewhereError(ctx, existing.UserID)
 		}
 		_ = service.identities.TouchLastUsed(ctx, existing.ID, targetUserID, effectiveOIDCLoginTime(linkTime)) // codecov:ignore -- best-effort last-used touch; error intentionally ignored
 		return expectedSessionVersion, nil
@@ -656,9 +656,24 @@ func (service *OIDCLoginService) VerifyIdentityLinkReauth(ctx context.Context, c
 		return security.OIDCClaims{}, ErrOIDCIdentityResolveFailed
 	}
 	if found && existing.UserID != targetUserID {
-		return security.OIDCClaims{}, ErrOIDCLinkFailed
+		return security.OIDCClaims{}, service.claimedElsewhereError(ctx, existing.UserID)
 	}
 	return exchange.Claims, nil
+}
+
+// claimedElsewhereError is the refusal for an identity another account holds.
+// It names the claim (ErrOIDCLinkFailed) only when sign-in with that identity
+// would enter the holder; a holder sign-in refuses answers as sign-in does
+// (ErrOIDCAccountUnavailable), so linking never says more than signing in.
+func (service *OIDCLoginService) claimedElsewhereError(ctx context.Context, holderID uint) error {
+	holder, err := service.users.FindByID(ctx, holderID)
+	if err != nil {
+		return ErrOIDCIdentityResolveFailed
+	}
+	if ValidateSupportedWebUser(&holder) != nil {
+		return ErrOIDCAccountUnavailable
+	}
+	return ErrOIDCLinkFailed
 }
 
 func (service *OIDCLoginService) authenticateLinkedIdentity(ctx context.Context, exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, bool, error) {

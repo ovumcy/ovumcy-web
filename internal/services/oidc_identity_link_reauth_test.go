@@ -141,11 +141,67 @@ func TestOIDCLoginServiceVerifyIdentityLinkReauthRefusesCrossUserClaim(t *testin
 		enabled:  true,
 		exchange: makeReauthExchange("https://id.example.com", "claimed-elsewhere", now.Add(-1*time.Minute)),
 	}
-	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{}, nil)
+	service := NewOIDCLoginService(client, identities, &stubOIDCUserStore{byID: models.User{ID: 7, Role: models.RoleOwner}}, nil)
 
 	_, err := service.VerifyIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 5*time.Minute, now)
 	if !errors.Is(err, ErrOIDCLinkFailed) {
 		t.Fatalf("expected ErrOIDCLinkFailed for a cross-user claim, got %v", err)
+	}
+}
+
+// TestOIDCLinkRefusalForAClaimedIdentityTellsItsHolderNothingSignInWouldNot is
+// the premise of the declared "already linked to another account" wording
+// (WEB-433 H5): for every holder, the link step-up and the confirm answer a
+// claimed identity exactly as sign-in with the same exchange does — the named
+// refusal where sign-in enters the holder, sign-in's own refusal where it does
+// not (a legacy non-owner row), and a lookup fault where sign-in has one.
+func TestOIDCLinkRefusalForAClaimedIdentityTellsItsHolderNothingSignInWouldNot(t *testing.T) {
+	t.Parallel()
+
+	const holderID uint = 7
+	cases := []struct {
+		name       string
+		users      *stubOIDCUserStore
+		wantLink   error
+		wantSignIn error
+	}{
+		{"owner holder", &stubOIDCUserStore{byID: models.User{ID: holderID, Role: models.RoleOwner}}, ErrOIDCLinkFailed, nil},
+		{"legacy partner holder", &stubOIDCUserStore{byID: models.User{ID: holderID, Role: "partner"}}, ErrOIDCAccountUnavailable, ErrOIDCAccountUnavailable},
+		{"holder lookup fault", &stubOIDCUserStore{byIDErr: errors.New("store down")}, ErrOIDCIdentityResolveFailed, ErrOIDCIdentityResolveFailed},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
+			identities := &stubOIDCIdentityStore{
+				found:    true,
+				identity: models.OIDCIdentity{ID: 99, UserID: holderID, Issuer: "https://id.example.com", Subject: "claimed-elsewhere"},
+			}
+			client := &stubOIDCProviderClient{
+				enabled:  true,
+				exchange: makeReauthExchange("https://id.example.com", "claimed-elsewhere", now.Add(-1*time.Minute)),
+			}
+			service := NewOIDCLoginService(client, identities, tc.users, nil)
+
+			if _, err := service.VerifyIdentityLinkReauth(context.Background(), "code", "verifier", "nonce", 42, 5*time.Minute, now); !errors.Is(err, tc.wantLink) {
+				t.Fatalf("step-up: got %v, want %v", err, tc.wantLink)
+			}
+			claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "claimed-elsewhere"}
+			if _, err := service.ConfirmAndLinkIdentity(context.Background(), 42, 1, claims, now); !errors.Is(err, tc.wantLink) {
+				t.Fatalf("confirm: got %v, want %v", err, tc.wantLink)
+			}
+			if identities.createCallSeen {
+				t.Fatal("a claimed identity must never be linked")
+			}
+
+			result, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", now)
+			if !errors.Is(err, tc.wantSignIn) {
+				t.Fatalf("sign-in: got %v, want %v", err, tc.wantSignIn)
+			}
+			if tc.wantSignIn == nil && result.User.ID != holderID {
+				t.Fatalf("sign-in reached user %d, want the holder %d", result.User.ID, holderID)
+			}
+		})
 	}
 }
 

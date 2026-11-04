@@ -458,7 +458,7 @@ func TestOIDCLoginServiceConfirmAndLinkIdentityRefusesCrossUserClaim(t *testing.
 			Subject: "first-login-sub",
 		},
 	}
-	service := NewOIDCLoginService(&stubOIDCProviderClient{enabled: true}, identities, &stubOIDCUserStore{}, nil)
+	service := NewOIDCLoginService(&stubOIDCProviderClient{enabled: true}, identities, &stubOIDCUserStore{byID: models.User{ID: 44, Role: models.RoleOwner}}, nil)
 
 	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "first-login-sub"}
 	if _, err := service.ConfirmAndLinkIdentity(context.Background(), 9, 1, claims, now); !errors.Is(err, ErrOIDCLinkFailed) {
