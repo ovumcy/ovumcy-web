@@ -219,7 +219,7 @@ func (handler *Handler) ConfirmOIDCIdentityLink(c fiber.Ctx) error {
 	}
 	if handler.oidcService == nil || !handler.oidcService.Enabled() {
 		handler.clearOIDCLinkPendingCookie(c)
-		spec := authOIDCUnavailableErrorSpec()
+		spec := mapOIDCIdentityLinkReauthError(services.ErrOIDCDisabled)
 		handler.logSecurityError(c, oidcIdentityLinkConfirmAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
