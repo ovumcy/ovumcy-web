@@ -56,6 +56,61 @@ func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
 			if got.Status != tt.want.Status {
 				t.Fatalf("expected status %d, got %d", tt.want.Status, got.Status)
 			}
+			// WEB-483: an auth-form target on a Settings route renders nowhere.
+			if got.Target == APIErrorTargetAuthForm {
+				t.Fatalf("expected no auth-form target on the Settings link, got %q", got.Target)
+			}
+		})
+	}
+}
+
+// TestOIDCIdentityLinkConfirmRefusalLandsOnSettings pins where a refused
+// confirm renders (WEB-483): a form submit gets the /settings flash and never
+// the sign-in page's channel, and an HTMX submit gets the status fragment.
+func TestOIDCIdentityLinkConfirmRefusalLandsOnSettings(t *testing.T) {
+	t.Parallel()
+
+	refusals := map[string]error{
+		"role refused":                  services.ErrOIDCAccountUnavailable,
+		"forced reset cannot be issued": services.ErrPasswordResetTokenInvalidPasswordState,
+		"oidc disabled":                 services.ErrOIDCDisabled,
+		"unmapped":                      errors.New("unmapped confirm error"),
+	}
+	for name, refusal := range refusals {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			want := mapOIDCIdentityLinkReauthError(refusal).Key
+
+			fixture := newOIDCStepupFixture(t, "settings-oidc-link-confirm-refusal-"+strings.ReplaceAll(name, " ", "-")+"@example.com")
+			fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "refused-subject"}
+			pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+			fixture.oidcStub.confirmLinkErr = refusal
+
+			response := postOIDCIdentityLinkConfirm(t, fixture, fixture.authCookie, pendingCookie, true)
+			_ = response.Body.Close()
+			if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/settings" {
+				t.Fatalf("expected a 303 to /settings, got %d to %q", response.StatusCode, response.Header.Get("Location"))
+			}
+			flashCookie := responseCookie(response.Cookies(), flashCookieName)
+			if flashCookie == nil {
+				t.Fatal("expected a refusal flash")
+			}
+			if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != want || payload.AuthError != "" {
+				t.Fatalf("expected settings error %q and no auth error, got settings=%q auth=%q", want, payload.SettingsError, payload.AuthError)
+			}
+
+			pendingCookie = readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+			csrfCookie, csrfToken := loadSettingsCSRFContext(t, fixture.app, fixture.authCookie)
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/confirm", strings.NewReader(url.Values{"csrf_token": {csrfToken}}.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("HX-Request", "true")
+			request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(fixture.authCookie, csrfCookie), pendingCookie))
+			htmx := mustAppResponse(t, fixture.app, request)
+			body := mustReadBodyString(t, htmx.Body)
+			flashKey := `data-flash-key="` + services.AuthErrorTranslationKey(want) + `"`
+			if htmx.StatusCode != http.StatusOK || !strings.Contains(body, flashKey) {
+				t.Fatalf("expected an HTMX status fragment carrying %s, got %d: %q", flashKey, htmx.StatusCode, body)
+			}
 		})
 	}
 }
