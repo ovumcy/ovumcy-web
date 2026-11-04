@@ -58,16 +58,52 @@ func (m trustedProxyMatcher) contains(ip net.IP) bool {
 // closest to us, appended by our own trusted proxy) toward the left and returns
 // the first address that is not itself a trusted proxy: the real client as seen
 // from the edge of our trusted chain. Entries further left are client-supplied
-// and spoofable, so they are ignored. Returns "" when every hop is trusted or
-// the list is empty, letting the caller fall back to the direct peer.
+// and spoofable, so they are ignored. Returns "" when every hop is trusted, the
+// list is empty, or a hop does not parse, letting the caller fall back to the
+// direct peer.
+//
+// A hop that does not parse stops the walk instead of being stepped over: it may
+// be the one our proxy appended, and whatever lies left of it is the client's
+// to choose.
 func rightmostUntrustedIP(forwarded []string, trusted trustedProxyMatcher) string {
 	for i := len(forwarded) - 1; i >= 0; i-- {
-		ip := net.ParseIP(strings.TrimSpace(forwarded[i]))
-		if ip != nil && !trusted.contains(ip) {
+		hop := strings.TrimSpace(forwarded[i])
+		if hop == "" {
+			continue
+		}
+		ip := parseForwardedHop(hop)
+		if ip == nil {
+			return ""
+		}
+		if !trusted.contains(ip) {
 			return ip.String()
 		}
 	}
 	return ""
+}
+
+// parseForwardedHop reads one X-Forwarded-For entry as an address, accepting
+// the host:port and [v6]:port forms some proxies append. Nil when it is neither.
+func parseForwardedHop(hop string) net.IP {
+	if ip := net.ParseIP(hop); ip != nil {
+		return ip
+	}
+	host, _, err := net.SplitHostPort(hop)
+	if err != nil {
+		return nil
+	}
+	return net.ParseIP(host)
+}
+
+// forwardedHops splits every X-Forwarded-For line of the request, in order,
+// without fiber's IP validation: c.IPs() drops a host:port entry silently, which
+// would hand the walk the client-supplied hop to its left.
+func forwardedHops(c fiber.Ctx) []string {
+	var hops []string
+	for _, line := range c.Request().Header.PeekAll(fiber.HeaderXForwardedFor) {
+		hops = append(hops, strings.Split(string(line), ",")...)
+	}
+	return hops
 }
 
 // rateLimitKeyGenerator builds the per-request key for fiber's rate limiters.
@@ -86,7 +122,7 @@ func rightmostUntrustedIP(forwarded []string, trusted trustedProxyMatcher) strin
 //     forwarded header (all client-controlled in that position).
 //   - Peer is a trusted proxy and the header is X-Forwarded-For: key on the
 //     rightmost untrusted hop (see rightmostUntrustedIP); fall back to the peer
-//     when every hop is trusted.
+//     when every hop is trusted or a hop does not parse.
 //   - Peer is a trusted proxy and the header is a single-value header the proxy
 //     overwrites (for example X-Real-IP): defer to fiber's parsed c.IP().
 func rateLimitKeyGenerator(proxy proxySettings) func(fiber.Ctx) string {
@@ -100,10 +136,10 @@ func rateLimitKeyGenerator(proxy proxySettings) func(fiber.Ctx) string {
 		if !headerIsXForwardedFor {
 			return c.IP()
 		}
-		if client := rightmostUntrustedIP(c.IPs(), trusted); client != "" {
+		if client := rightmostUntrustedIP(forwardedHops(c), trusted); client != "" {
 			return client
 		}
-		return peer.String() // codecov:ignore -- main() IP-resolution fallback; exercised by e2e
+		return peer.String()
 	}
 }
 

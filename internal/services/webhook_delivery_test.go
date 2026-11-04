@@ -568,6 +568,13 @@ func TestWebhookAddressClassifiers(t *testing.T) {
 		{"93.184.216.34", false, false},
 		{"100.64.0.1", true, false},     // RFC 6598 CGNAT literal (net.IP.IsPrivate omits it)
 		{"64:ff9b::a00:1", true, false}, // RFC 6052 NAT64 literal wrapping 10.0.0.1
+		// WEB-433 H2: the RFC 8215 local-use NAT64 block is refused whole with the
+		// gate off — the /96 and /64 layouts wrapping 169.254.169.254, and an
+		// address in it that wraps nothing metadata-shaped.
+		{"64:ff9b:1::a9fe:a9fe", true, true},
+		{"64:ff9b:1:0:a9:fea9:fe00:0", true, true},
+		{"64:ff9b:1::808:808", true, true},
+		{"64:ff9b:2::a9fe:a9fe", false, false}, // just outside the /48: a public v6 neighbour
 		{"203.0.113.10", true, false},   // TEST-NET-3: documentation space is not globally reachable
 		{"192.31.196.1", false, false},  // AS112-v4 anycast: special-purpose but globally reachable (over-block guard)
 	}
