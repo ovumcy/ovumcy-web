@@ -76,11 +76,59 @@ func TestRightmostUntrustedIP(t *testing.T) {
 		{"port above 65535 stops the walk", []string{"192.0.2.55", "198.51.100.1:65536"}, ""},
 		{"bracketed IPv4 stops the walk", []string{"192.0.2.55", "[198.51.100.1]:80"}, ""},
 		{"highest port is accepted", []string{"192.0.2.55", "198.51.100.1:65535"}, "198.51.100.1"},
+		{"lowest port is accepted", []string{"192.0.2.55", "198.51.100.1:1"}, "198.51.100.1"},
+		{"port zero stops the walk", []string{"192.0.2.55", "198.51.100.1:0"}, ""},
+		{"zero-padded port stops the walk", []string{"192.0.2.55", "198.51.100.1:080"}, ""},
+		{"zero-padded IPv6 port stops the walk", []string{"192.0.2.55", "[2001:db8::1]:0443"}, ""},
+		{"signed port stops the walk", []string{"192.0.2.55", "198.51.100.1:+80"}, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := rightmostUntrustedIP(tc.forwarded, trusted); got != tc.want {
 				t.Fatalf("rightmostUntrustedIP(%#v) = %q, want %q", tc.forwarded, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestFiberCIPUnderForwardedForCanReturnAClientEntry pins the fiber behaviour
+// rateLimitKeyGenerator exists to avoid: on the shipped fiberConfig, with
+// PROXY_HEADER=X-Forwarded-For and a trusted peer, c.IP() steps over a hop it
+// cannot validate and returns the leftmost entry when every valid hop is
+// trusted. Either way the answer can be an entry the client wrote. A fiber
+// upgrade that changes this fails here, and the comments and docs that cite it
+// (rateLimitKeyGenerator, docs/SECURITY_INVARIANTS.md) must be re-read.
+func TestFiberCIPUnderForwardedForCanReturnAClientEntry(t *testing.T) {
+	// app.Test's socket peer is 0.0.0.0, so it is listed as the trusted peer.
+	proxy := proxySettings{Enabled: true, Header: "X-Forwarded-For", TrustedProxies: []string{"0.0.0.0", "203.0.113.7", "10.0.0.0/8"}}
+	app := fiber.New(fiberConfig(proxy, nil))
+	var got string
+	app.Get("/probe", func(c fiber.Ctx) error {
+		got = c.IP()
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	cases := []struct {
+		name      string
+		forwarded string
+		want      string
+	}{
+		{"client then trusted proxy", "198.51.100.1, 203.0.113.7", "198.51.100.1"},
+		{"a port-suffixed hop is stepped over", "198.51.100.1, 192.0.2.55:5678", "198.51.100.1"},
+		{"every hop trusted yields the leftmost", "10.1.1.1, 203.0.113.7, 10.2.2.2", "10.1.1.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got = ""
+			req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+			req.Header.Set("X-Forwarded-For", tc.forwarded)
+			resp, err := app.Test(req, testConfigNoTimeout)
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			_ = resp.Body.Close()
+			if got != tc.want {
+				t.Fatalf("c.IP() for %q = %q, want %q", tc.forwarded, got, tc.want)
 			}
 		})
 	}
@@ -190,7 +238,7 @@ func TestHeaderSectionValuesLeavesOutTrailers(t *testing.T) {
 	if !slices.Contains(all, "198.51.100.77") {
 		t.Fatalf("PeekAll = %q: the trailer was not parsed, so this test proves nothing", all)
 	}
-	if got := headerSectionValues(&req.Header, "X-Probe"); !slices.Equal(got, []string{"203.0.113.7"}) {
+	if got := headerSectionValues(&req.Header, []byte("X-Probe"));!slices.Equal(got, []string{"203.0.113.7"}) {
 		t.Fatalf("headerSectionValues = %q, want only the header-section value", got)
 	}
 }
