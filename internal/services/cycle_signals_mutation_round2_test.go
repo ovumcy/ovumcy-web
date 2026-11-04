@@ -174,3 +174,131 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyTwentyIsKept(t *te
 		t.Fatalf("expected inferred luteal phase 17 (avg of 20 and 14); got %d. A value of %d means the boundary length 20 was wrongly dropped.", phase, defaultLutealPhaseDays)
 	}
 }
+
+// TestCycleSignals_InferUserLutealPhase_LutealLengthBelowMinIsDroppedNotClamped
+// is the rejecting half of the lower filter: the case above keeps exactly
+// minLutealPhaseDays, this one feeds a length one day under it. A cycle whose
+// observed luteal length is 9 is an outlier and must contribute nothing —
+// neither its own 9 nor a clamp to 10 — so the two remaining cycles (14 each)
+// decide the result alone. Without the `< minLutealPhaseDays` condition the 9
+// joins the average and the personalised phase drops to 12.
+func TestCycleSignals_InferUserLutealPhase_LutealLengthBelowMinIsDroppedNotClamped(t *testing.T) {
+	t.Parallel()
+
+	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
+	flatWindow := func(start string) []models.DailyLog {
+		first := day(start)
+		window := make([]models.DailyLog, 0, bbtCoverlineWindow)
+		for offset := range bbtCoverlineWindow {
+			window = append(window, models.DailyLog{Date: first.AddDate(0, 0, offset), BBT: new(36.20)})
+		}
+		return window
+	}
+	rise := func(first string) []models.DailyLog {
+		firstHigh := day(first)
+		streak := make([]models.DailyLog, 0, bbtElevatedStreakDays)
+		for offset := range bbtElevatedStreakDays {
+			streak = append(streak, models.DailyLog{Date: firstHigh.AddDate(0, 0, offset), BBT: new(36.50)})
+		}
+		return streak
+	}
+
+	logs := []models.DailyLog{
+		{Date: day("2025-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-29"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: day("2025-03-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+	}
+	// Cycle 1 (28 days): first high day Jan20 = cycle day 20, ovulation on day
+	// 19, luteal = 28-19 = 9, one under minLutealPhaseDays.
+	logs = append(logs, flatWindow("2025-01-01")...)
+	logs = append(logs, rise("2025-01-20")...)
+	// Cycles 2 and 3 (28 days each): first high day = start+14, ovulation on
+	// day 14, luteal = 14.
+	logs = append(logs, flatWindow("2025-01-29")...)
+	logs = append(logs, rise("2025-02-12")...)
+	logs = append(logs, flatWindow("2025-02-26")...)
+	logs = append(logs, rise("2025-03-12")...)
+
+	phase, ok := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
+	if !ok {
+		t.Fatal("expected ok=true: the two 14-day cycles are enough on their own")
+	}
+	if phase != 14 {
+		t.Fatalf("inferred luteal phase = %d, want 14: the 9-day cycle must be dropped (9 counted gives 12, a clamp to %d gives 13)", phase, minLutealPhaseDays)
+	}
+}
+
+// TestCycleSignals_InferBBTOvulationDate_IgnoresReadingsOutsideTheValidRange
+// pins collectCycleBBTPoints's IsValidDayBBT filter from the detector's side: a
+// reading outside the physiological range must neither count toward a thermal
+// shift (above) nor fill a slot of the six-day coverline window (below), and
+// must not move the ovulation day a valid shift names.
+func TestCycleSignals_InferBBTOvulationDate_IgnoresReadingsOutsideTheValidRange(t *testing.T) {
+	t.Parallel()
+
+	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
+	cycleStart := day("2025-01-01")
+	seriesEnd := day("2025-01-29")
+	reading := func(date string, value float64) models.DailyLog {
+		return models.DailyLog{Date: day(date), BBT: &value}
+	}
+	flat := func(from, through int) []models.DailyLog {
+		logs := make([]models.DailyLog, 0, through-from+1)
+		for dayOfMonth := from; dayOfMonth <= through; dayOfMonth++ {
+			logs = append(logs, models.DailyLog{Date: cycleStart.AddDate(0, 0, dayOfMonth-1), BBT: new(36.20)})
+		}
+		return logs
+	}
+	join := func(parts ...[]models.DailyLog) []models.DailyLog {
+		var all []models.DailyLog
+		for _, part := range parts {
+			all = append(all, part...)
+		}
+		return all
+	}
+	validRise := []models.DailyLog{reading("2025-01-10", 36.50), reading("2025-01-11", 36.50), reading("2025-01-12", 36.50)}
+
+	cases := []struct {
+		name string
+		logs []models.DailyLog
+		want string
+	}{
+		{
+			name: "control: a valid shift names the day before its first high day",
+			logs: join(flat(1, 6), validRise),
+			want: "2025-01-09",
+		},
+		{
+			name: "an above-range run before the valid shift does not move the day",
+			logs: join(flat(1, 6), []models.DailyLog{reading("2025-01-07", 43.5), reading("2025-01-08", 43.5), reading("2025-01-09", 43.5)}, validRise),
+			want: "2025-01-09",
+		},
+		{
+			name: "an above-range run alone is no shift",
+			logs: join(flat(1, 6), []models.DailyLog{reading("2025-01-07", 43.5), reading("2025-01-08", 43.5), reading("2025-01-09", 43.5)}),
+			want: "",
+		},
+		{
+			name: "a below-range reading does not fill the coverline window",
+			logs: join(flat(1, 5), []models.DailyLog{reading("2025-01-06", 33.0), reading("2025-01-07", 36.50), reading("2025-01-08", 36.50), reading("2025-01-09", 36.50)}),
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := inferBBTOvulationDate(tc.logs, cycleStart, seriesEnd, time.UTC)
+			if tc.want == "" {
+				if !got.IsZero() {
+					t.Fatalf("detected ovulation %s, want none", got.Format("2006-01-02"))
+				}
+				return
+			}
+			if got.IsZero() || got.Format("2006-01-02") != tc.want {
+				t.Fatalf("detected ovulation %s, want %s", got.Format("2006-01-02"), tc.want)
+			}
+		})
+	}
+}
