@@ -92,6 +92,21 @@ func (stub stubDisclaimer) Message(_ string, key string) string {
 // never re-resolves it from the provider: the builder is not the gate. A payload with a blank disclaimer never leaves, because the pass
 // withholds the owner's reminders before it builds one
 // (TestNotifyWithholdsEveryReminderWhenTheDisclaimerIsBlank).
+// TestResolveDisclaimerWithholdsOnANilProviderOrBlankText pins the one resolve
+// both egress surfaces gate on: no provider and whitespace-only copy both read
+// as "" (withhold), and real copy comes back verbatim.
+func TestResolveDisclaimerWithholdsOnANilProviderOrBlankText(t *testing.T) {
+	if got := resolveDisclaimer(nil, "en"); got != "" {
+		t.Fatalf("a nil provider must resolve to \"\", got %q", got)
+	}
+	if got := resolveDisclaimer(stubDisclaimer{text: "  \n"}, "en"); got != "" {
+		t.Fatalf("blank copy must resolve to \"\", got %q", got)
+	}
+	if got := resolveDisclaimer(stubDisclaimer{text: " estimate only "}, "en"); got != " estimate only " {
+		t.Fatalf("real copy must come back verbatim, got %q", got)
+	}
+}
+
 func TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest(t *testing.T) {
 	service := &WebhookNotifyService{localized: stubDisclaimer{text: "provider copy"}}
 	reminder := DueReminder{
