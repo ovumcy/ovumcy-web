@@ -2,9 +2,12 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -277,6 +280,9 @@ var revealMarkPairings = map[string]string{
 // the reveal of a token that no longer resolves would only make a retained
 // sealed cookie presentable again. The sweep therefore looks at the VALUE, and
 // its own fixtures below prove it can answer both ways.
+//
+// A paired column added to a map by index is refused outright
+// (revealMarkIndexWrites): that form is a mint the literal sweep cannot see.
 func TestEveryRecoveryCodeMintClearsItsRevealMark(t *testing.T) {
 	assertRevealMarkSweepAnswersBothWays(t)
 
@@ -311,6 +317,57 @@ func TestEveryRecoveryCodeMintClearsItsRevealMark(t *testing.T) {
 	if mints == 0 {
 		t.Fatal("the sweep found no mint at all — it is measuring nothing, so the pairing it claims to enforce is unproven")
 	}
+
+	pkg := loadTypedDBPackage(t)
+	for _, refused := range revealMarkIndexWrites(pkg.Fset, pkg.TypesInfo, pkg.Syntax) {
+		t.Error(refused)
+	}
+}
+
+// revealMarkIndexWrites lists every assignment, across the package's non-test
+// sources, that adds a revealMarkPairings column to a map by index
+// (`columns["recovery_code_hash"] = …`). The literal sweep above reads composite
+// literals only, so a mint written that way would never reach it; the write is
+// refused outright, as the selector fence refuses it for calendar_feed_selector.
+// The map is identified by its type and the column by its constant value, both
+// from the type checker, so a named constant or a named map type is the same
+// write as the spelled-out one.
+func revealMarkIndexWrites(fileSet *token.FileSet, info *types.Info, files []*ast.File) []string {
+	var refused []string
+	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			assign, ok := node.(*ast.AssignStmt)
+			if !ok {
+				return true
+			}
+			for _, target := range assign.Lhs {
+				index, ok := target.(*ast.IndexExpr)
+				if !ok {
+					continue
+				}
+				kind := info.TypeOf(index.X)
+				if kind == nil {
+					continue
+				}
+				if _, isMap := kind.Underlying().(*types.Map); !isMap {
+					continue
+				}
+				value := info.Types[index.Index].Value
+				if value == nil || value.Kind() != constant.String {
+					continue
+				}
+				column := constant.StringVal(value)
+				if mark, paired := revealMarkPairings[column]; paired {
+					refused = append(refused, fmt.Sprintf(
+						"%s: %s is added to a column map by index, out of the sweep's sight; write it in one map literal beside %s",
+						fileSet.Position(assign.Pos()), column, mark,
+					))
+				}
+			}
+			return true
+		})
+	}
+	return refused
 }
 
 // writtenColumns reduces an `Updates(map[string]any{...})` literal to the set of
@@ -351,6 +408,37 @@ func assertRevealMarkSweepAnswersBothWays(t *testing.T) {
 	revoke := parseUpdatesLiteralForTest(t, `map[string]any{"calendar_feed_selector": nil}`)
 	if written, cleared := writtenColumns(revoke); !written["calendar_feed_selector"] || !cleared["calendar_feed_selector"] {
 		t.Fatal("the sweep must read a nil column value as a clear")
+	}
+
+	// One indexed write of a paired column, through a named constant into a
+	// named map type, must be refused; an unpaired column and a non-map index
+	// must not.
+	fileSet := token.NewFileSet()
+	fixture, err := parser.ParseFile(fileSet, "fixture.go", `package fixture
+
+type columnMap map[string]any
+
+const recoveryColumn = "recovery_code_hash"
+
+func mint(hash string) (columnMap, [1]string) {
+	columns := columnMap{"recovery_code_revealed_at": nil}
+	columns[recoveryColumn] = hash
+	columns["unpaired_column"] = hash
+	var unrelated [1]string
+	unrelated[0] = hash
+	return columns, unrelated
+}
+`, 0)
+	if err != nil {
+		t.Fatalf("parse index fixture: %v", err)
+	}
+	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}
+	if _, err := (&types.Config{}).Check("fixture", fileSet, []*ast.File{fixture}, info); err != nil {
+		t.Fatalf("type-check index fixture: %v", err)
+	}
+	refused := revealMarkIndexWrites(fileSet, info, []*ast.File{fixture})
+	if len(refused) != 1 || !strings.Contains(refused[0], "recovery_code_hash") {
+		t.Fatalf("the index guard must refuse exactly the paired column written through a constant, got %q", refused)
 	}
 }
 
