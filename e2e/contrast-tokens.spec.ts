@@ -8,6 +8,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { applyTheme, WCAG_AA_GRAPHIC_CONTRAST, WCAG_AA_TEXT_CONTRAST } from './support/contrast-helpers';
+import { isoToday, shiftISODate } from './support/iso-date-helpers';
 
 async function registerAndOpenCalendar(page: Page): Promise<void> {
   await registerOwnerViaUI(page, createCredentials('contrast-tokens'));
@@ -110,16 +111,24 @@ test.describe('WEB-260 contrast tokens', () => {
   }) => {
     await registerAndOpenCalendar(page);
 
+    // The legend draws only what the grid draws, so its swatches are read on the
+    // month holding the period onboarding recorded (three days before today);
+    // a fixed month drifts into the past and loses them.
+    const recordedMonth = shiftISODate(isoToday(), -3).slice(0, 7);
+
     for (const theme of ['light', 'dark'] as const) {
+      await page.goto(`/calendar?month=${recordedMonth}`);
+      await applyTheme(page, theme);
+      const swatches = (await measure(page)).swatches;
+      expect(Object.keys(swatches).length, `${theme}: legend swatches present`).toBeGreaterThan(0);
+      for (const [name, ratio] of Object.entries(swatches)) {
+        expect(ratio, `${theme}: ${name} border`).toBeGreaterThanOrEqual(WCAG_AA_GRAPHIC_CONTRAST);
+      }
+
       // A fixed month that starts on a Thursday, so it always shows out-of-month days.
       await page.goto('/calendar?month=2026-10');
       await applyTheme(page, theme);
       const result = await measure(page);
-
-      expect(Object.keys(result.swatches).length, `${theme}: legend swatches present`).toBeGreaterThan(0);
-      for (const [name, ratio] of Object.entries(result.swatches)) {
-        expect(ratio, `${theme}: ${name} border`).toBeGreaterThanOrEqual(WCAG_AA_GRAPHIC_CONTRAST);
-      }
 
       expect(result.outOpacity, `${theme}: out-of-month cell must not fade its number with opacity`).toBe(1);
       expect(result.outRatio, `${theme}: out-of-month day number`).toBeGreaterThanOrEqual(WCAG_AA_TEXT_CONTRAST);
