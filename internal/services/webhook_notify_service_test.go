@@ -1,8 +1,10 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"sync"
 	"testing"
@@ -86,19 +88,19 @@ func (stub stubDisclaimer) Message(_ string, key string) string {
 }
 
 // TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest pins that
-// buildPayload carries the disclaimer verbatim, "" included: the builder is not
-// the gate. A payload with a blank disclaimer never leaves, because the pass
+// buildPayload carries the disclaimer it is handed verbatim, "" included, and
+// never re-resolves it from the provider: the builder is not the gate. A payload with a blank disclaimer never leaves, because the pass
 // withholds the owner's reminders before it builds one
 // (TestNotifyWithholdsEveryReminderWhenTheDisclaimerIsBlank).
 func TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest(t *testing.T) {
-	service := &WebhookNotifyService{localized: stubDisclaimer{text: ""}}
+	service := &WebhookNotifyService{localized: stubDisclaimer{text: "provider copy"}}
 	reminder := DueReminder{
 		Type:      DueReminderTypePeriod,
 		EventDate: time.Date(2026, time.April, 9, 0, 0, 0, 0, time.UTC),
 		LeadDays:  2,
 	}
 
-	payload := service.buildPayload(reminder, "")
+	payload := service.buildPayload(reminder, "", "")
 	if payload.Disclaimer != "" {
 		t.Fatalf("the builder carries the resolved disclaimer verbatim, got %q", payload.Disclaimer)
 	}
@@ -109,7 +111,7 @@ func TestBuildPayloadWithAnEmptyDisclaimerSendsItEmptyAndKeepsTheRest(t *testing
 		t.Fatalf("type, date and lead days are unaffected: %+v", payload)
 	}
 
-	control := (&WebhookNotifyService{localized: stubDisclaimer{text: "estimate only"}}).buildPayload(reminder, "")
+	control := service.buildPayload(reminder, "", "estimate only")
 	if control.Disclaimer != "estimate only" {
 		t.Fatalf("control: a non-empty disclaimer is carried verbatim, got %q", control.Disclaimer)
 	}
@@ -490,16 +492,31 @@ func TestNotifyWithholdsEveryReminderWhenTheDisclaimerIsBlank(t *testing.T) {
 		2: completedCycleStartLogs(2, *ovulationOwner.LastPeriodStart),
 	}}
 
+	var captured bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&captured)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
 	for _, blank := range []string{"", "  \n"} {
 		deliverer := &stubDeliverer{}
 		service := NewWebhookNotifyService(repo, logs, stubDecryptor{}, deliverer, stubDisclaimer{text: blank})
 		for _, dryRun := range []bool{true, false} {
+			captured.Reset()
 			report, err := service.RunOnce(context.Background(), now, time.UTC, dryRun)
 			if err != nil {
 				t.Fatalf("RunOnce: %v", err)
 			}
 			if report.Due != 0 || report.Sent != 0 || report.Failed != 0 || len(report.DryRunPreview) != 0 {
 				t.Fatalf("disclaimer %q dryRun=%v: expected nothing due or previewed, got %+v", blank, dryRun, report)
+			}
+			if report.WithheldDisclaimer != 2 {
+				t.Fatalf("disclaimer %q dryRun=%v: expected both reminders counted as withheld, got %d", blank, dryRun, report.WithheldDisclaimer)
+			}
+			// Both owners share one locale, so the pass logs one line naming the
+			// count, never an owner id.
+			logged := captured.String()
+			if strings.Count(logged, "reason=disclaimer_blank") != 1 || !strings.Contains(logged, `locale="" owners=2`) || strings.Contains(logged, "id=") {
+				t.Fatalf("disclaimer %q dryRun=%v: want one disclaimer_blank line for the locale with owners=2, got %q", blank, dryRun, logged)
 			}
 		}
 		if got := len(deliverer.deliveries()); got != 0 {

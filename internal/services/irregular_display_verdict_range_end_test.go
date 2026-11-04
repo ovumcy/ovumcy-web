@@ -32,7 +32,7 @@ func TestIrregularSpreadRangeLeavesWithItsLastDay(t *testing.T) {
 	service := NewWebhookNotifyService(nil, nil, nil, nil, provider)
 	for _, language := range provider.manager.SupportedLanguages() {
 		for _, reminder := range []DueReminder{period, ovulation} {
-			payload := service.buildPayload(reminder, language)
+			payload := service.buildPayload(reminder, language, resolveDisclaimer(provider, language))
 			first, last := reminder.EventDate.Format("2006-01-02"), reminder.EventDateEnd.Format("2006-01-02")
 			if payload.EventDate != first || payload.EventDateEnd != last {
 				t.Fatalf("%s %s payload: %s..%s, want %s..%s", language, reminder.Type, payload.EventDate, payload.EventDateEnd, first, last)
@@ -58,7 +58,7 @@ func TestIrregularSpreadRangeLeavesWithItsLastDay(t *testing.T) {
 	}
 
 	// A single-date reminder keeps the field absent.
-	single := service.buildPayload(DueReminder{Type: DueReminderTypePeriod, EventDate: today}, "en")
+	single := service.buildPayload(DueReminder{Type: DueReminderTypePeriod, EventDate: today}, "en", resolveDisclaimer(provider, "en"))
 	if single.EventDateEnd != "" {
 		t.Fatalf("single-date payload carries event_date_end %q", single.EventDateEnd)
 	}
