@@ -92,12 +92,10 @@ func TestRightmostUntrustedIP(t *testing.T) {
 }
 
 // TestFiberCIPUnderForwardedForCanReturnAClientEntry pins the fiber behaviour
-// rateLimitKeyGenerator exists to avoid: on the shipped fiberConfig, with
-// PROXY_HEADER=X-Forwarded-For and a trusted peer, c.IP() steps over a hop it
-// cannot validate and returns the leftmost entry when every valid hop is
-// trusted. Either way the answer can be an entry the client wrote. A fiber
-// upgrade that changes this fails here, and the comments and docs that cite it
-// (rateLimitKeyGenerator, docs/SECURITY_INVARIANTS.md) must be re-read.
+// rateLimitKeyGenerator exists to avoid (mechanism: its comment), on the shipped
+// fiberConfig. A fiber upgrade that changes it fails here, and the comments and
+// docs that cite it (rateLimitKeyGenerator, docs/SECURITY_INVARIANTS.md) must be
+// re-read.
 func TestFiberCIPUnderForwardedForCanReturnAClientEntry(t *testing.T) {
 	// app.Test's socket peer is 0.0.0.0, so it is listed as the trusted peer.
 	proxy := proxySettings{Enabled: true, Header: "X-Forwarded-For", TrustedProxies: []string{"0.0.0.0", "203.0.113.7", "10.0.0.0/8"}}
@@ -238,7 +236,7 @@ func TestHeaderSectionValuesLeavesOutTrailers(t *testing.T) {
 	if !slices.Contains(all, "198.51.100.77") {
 		t.Fatalf("PeekAll = %q: the trailer was not parsed, so this test proves nothing", all)
 	}
-	if got := headerSectionValues(&req.Header, []byte("X-Probe"));!slices.Equal(got, []string{"203.0.113.7"}) {
+	if got := headerSectionValues(&req.Header, []byte("X-Probe")); !slices.Equal(got, []string{"203.0.113.7"}) {
 		t.Fatalf("headerSectionValues = %q, want only the header-section value", got)
 	}
 }
