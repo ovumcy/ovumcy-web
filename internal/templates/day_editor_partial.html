@@ -156,7 +156,7 @@
     "ShortGap" .ManualCycleStartShortGap
     "PreviousDate" .ManualCycleStartPreviousDate
     "Implantation" .ManualCycleStartPotentialImplantation)}}
-  {{if and .ShowFutureCycleStartNotice (not .ManualCycleStartMarkOnTheDay)}}
+  {{if .ShowFutureCycleStartNotice}}
   <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
   {{end}}
   {{/* The question beside the period toggle already asks this; the hint stays
@@ -209,14 +209,14 @@
         "TargetDate" .Date
         "Active" .Log.CycleStart
         "MarkOnTheDay" .ManualCycleStartMarkOnTheDay
-    "Conflict" .ManualCycleStartConflict
+        "Conflict" .ManualCycleStartConflict
         "ConflictDate" .ManualCycleStartConflictDate
         "ShortGap" .ManualCycleStartShortGap
         "PreviousDate" .ManualCycleStartPreviousDate
         "Implantation" .ManualCycleStartPotentialImplantation)}}
       {{end}}
     </div>
-    {{if and .ShowFutureCycleStartNotice (not .ManualCycleStartMarkOnTheDay)}}
+    {{if .ShowFutureCycleStartNotice}}
     <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
     {{end}}
     {{if .ShowCycleStartSuggestion}}
@@ -246,14 +246,14 @@
           "TargetDate" .Date
           "Active" false
           "MarkOnTheDay" .ManualCycleStartMarkOnTheDay
-    "Conflict" .ManualCycleStartConflict
+          "Conflict" .ManualCycleStartConflict
           "ConflictDate" .ManualCycleStartConflictDate
           "ShortGap" .ManualCycleStartShortGap
           "PreviousDate" .ManualCycleStartPreviousDate
           "Implantation" .ManualCycleStartPotentialImplantation)}}
         {{end}}
       </div>
-      {{if and .ShowFutureCycleStartNotice (not .ManualCycleStartMarkOnTheDay)}}
+      {{if .ShowFutureCycleStartNotice}}
       <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
       {{end}}
       {{if .ShowCycleStartSuggestion}}
