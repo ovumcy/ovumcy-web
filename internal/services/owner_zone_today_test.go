@@ -15,14 +15,14 @@ import (
 // today, so the WEB-434 bleeding-outside-start suppression missed and the feed
 // and webhook announced a fertile window on a day logged as bleeding.
 func TestBleedingTodaySuppressesFertilityWhenTheInstanceZoneIsADayBehind(t *testing.T) {
-	owner, err := time.LoadLocation("Pacific/Kiritimati")
-	if err != nil {
-		t.Skipf("tzdata: %v", err)
-	}
+	owner := calendarDayComparisonZone(t, "Pacific/Kiritimati")
 	user := dayFeedbackParityUser(485)
 	spotting := models.DailyLog{Date: mustParseDay(t, "2026-11-02"), IsPeriod: true, CycleStart: true, IsUncertain: true, Flow: models.FlowSpotting}
 	logs := web434History(t, spotting)
 
+	// 11-02 is the row that fails without the fix: the instance is still on
+	// 11-01, before the bleed. On 11-03 the instance day already holds it, and
+	// the baseline pass re-reads the cycle day in the owner's zone either way.
 	for _, tc := range []struct {
 		ownerDay string
 		cycleDay int
