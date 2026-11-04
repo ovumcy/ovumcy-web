@@ -187,7 +187,7 @@ func rateLimitKeyGenerator(proxy proxySettings) func(fiber.Ctx) string {
 // client IP (for example X-Real-IP).
 func proxyHeaderRateLimitWarning(proxy proxySettings) string {
 	if proxy.Enabled && strings.EqualFold(strings.TrimSpace(proxy.Header), fiber.HeaderXForwardedFor) {
-		return "NOTE: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the rate limiters and the per-client auth-attempt buckets key on the rightmost untrusted X-Forwarded-For hop and are not spoofable, but fiber's c.IP() can still return a client-supplied entry (docs/SECURITY_INVARIANTS.md explains when). Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP) for spoof-proof c.IP() values."
+		return "NOTE: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the rate limiters and the per-client auth-attempt buckets key on the rightmost untrusted X-Forwarded-For hop and are not spoofable, but fiber's c.IP() can still return a client-supplied entry, because it steps over a hop it cannot validate. Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP) for spoof-proof c.IP() values."
 	}
 	return ""
 }
