@@ -377,7 +377,9 @@ Operator-relevant summary (the full, test-backed claim list lives in
   on AWS, GCP, Azure and most other clouds), `fd20:ce::254` (GCE over IPv6) or
   `fd00:ec2::254` (AWS IMDS over
   IPv6) is refused before any connection, and the connection goes to the
-  validated IP.
+  validated IP. So is the whole RFC 8215 local-use NAT64 block
+  (`64:ff9b:1::/48`), whose translators can route to the metadata address
+  under any of six layouts.
 - **Private-address block.** `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` (default: on
   under open registration, off when `REGISTRATION_MODE=closed`) refuses delivery
   to loopback/private/link-local targets, and to any other address the IANA
