@@ -122,6 +122,10 @@ func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
 		return settingsOIDCReauthStaleErrorSpec()
 	case errors.Is(err, services.ErrOIDCLinkFailed):
 		return settingsOIDCIdentityLinkClaimedErrorSpec()
+	// A holder sign-in refuses: the reply sign-in gives that identity, so the
+	// step-up says no more than signing in does (WEB-433 H5).
+	case errors.Is(err, services.ErrOIDCAccountUnavailable):
+		return authOIDCAccountUnavailableErrorSpec()
 	case errors.Is(err, services.ErrAuthSessionVersionChanged):
 		return authSessionCreateErrorSpec()
 	case errors.Is(err, services.ErrOIDCDisabled),
