@@ -1,16 +1,19 @@
 package main
 
 import (
+	"bufio"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
+	"github.com/valyala/fasthttp"
 )
 
 func TestTrustedProxyMatcher(t *testing.T) {
@@ -67,6 +70,12 @@ func TestRightmostUntrustedIP(t *testing.T) {
 		{"empty appended entry stops the walk", []string{"192.0.2.55", " ", ""}, ""},
 		{"empty entry left of the client is never reached", []string{"198.51.100.1", "", "192.0.2.55"}, "192.0.2.55"},
 		{"untrusted IPv6 hop", []string{"2001:db8::1"}, "2001:db8::1"},
+		// net.SplitHostPort passes each of these; none is an address a proxy writes.
+		{"empty port stops the walk", []string{"192.0.2.55", "198.51.100.1:"}, ""},
+		{"non-numeric port stops the walk", []string{"192.0.2.55", "198.51.100.1:abc"}, ""},
+		{"port above 65535 stops the walk", []string{"192.0.2.55", "198.51.100.1:65536"}, ""},
+		{"bracketed IPv4 stops the walk", []string{"192.0.2.55", "[198.51.100.1]:80"}, ""},
+		{"highest port is accepted", []string{"192.0.2.55", "198.51.100.1:65535"}, "198.51.100.1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -124,31 +133,65 @@ func TestServerRefusesAForwardedForTrailer(t *testing.T) {
 	go func() { served <- app.Listener(listener, fiber.ListenConfig{DisableStartupMessage: true}) }()
 	t.Cleanup(func() { _ = app.Shutdown() })
 
-	conn, err := net.Dial("tcp", listener.Addr().String())
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer func() { _ = conn.Close() }()
-	raw := "POST /probe HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n" +
-		"X-Forwarded-For: 203.0.113.7\r\n\r\n" +
-		"4\r\nbody\r\n0\r\nX-Forwarded-For: 198.51.100.77\r\n\r\n"
-	if _, err := conn.Write([]byte(raw)); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	answer := make([]byte, 4096)
-	n, err := io.ReadAtLeast(conn, answer, 1)
-	if err != nil {
-		select {
-		case serveErr := <-served:
-			t.Fatalf("read: %v (server stopped: %v)", err, serveErr)
-		default:
-			t.Fatalf("read: %v", err)
+	send := func(trailer string) string {
+		t.Helper()
+		conn, err := net.Dial("tcp", listener.Addr().String())
+		if err != nil {
+			t.Fatalf("dial: %v", err)
 		}
+		defer func() { _ = conn.Close() }()
+		raw := "POST /probe HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n" +
+			"X-Forwarded-For: 203.0.113.7\r\n\r\n" +
+			"4\r\nbody\r\n0\r\n" + trailer + "\r\n"
+		if _, err := conn.Write([]byte(raw)); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		answer := make([]byte, 4096)
+		n, err := io.ReadAtLeast(conn, answer, 1)
+		if err != nil {
+			select {
+			case serveErr := <-served:
+				t.Fatalf("read: %v (server stopped: %v)", err, serveErr)
+			default:
+				t.Fatalf("read: %v", err)
+			}
+		}
+		return string(answer[:n])
 	}
-	// The handler answers 204, so a 400 also means it never ran.
-	if !strings.HasPrefix(string(answer[:n]), "HTTP/1.1 400 ") {
-		t.Fatalf("a request with an X-Forwarded-For trailer must be refused before routing, got %q", answer[:n])
+
+	// Positive control: the same chunked request without the trailer reaches
+	// the handler, so the 400 below can only come from the trailer.
+	if got := send(""); !strings.HasPrefix(got, "HTTP/1.1 204 ") {
+		t.Fatalf("the request without a trailer must reach the handler, got %q", got)
+	}
+	if got := send("X-Forwarded-For: 198.51.100.77\r\n"); !strings.HasPrefix(got, "HTTP/1.1 400 ") {
+		t.Fatalf("a request with an X-Forwarded-For trailer must be refused before routing, got %q", got)
+	}
+}
+
+// TestHeaderSectionValuesLeavesOutTrailers pins what forwardedHops relies on:
+// RequestHeader.All yields the header section only. fasthttp refuses an
+// X-Forwarded-For trailer at parse and at SetTrailer/AddTrailer, so the
+// closest reachable form is a permitted trailer field parsed into the trailer
+// section; PeekAll still returns it, which anchors that it was parsed.
+func TestHeaderSectionValuesLeavesOutTrailers(t *testing.T) {
+	raw := "POST /probe HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n" +
+		"Trailer: X-Probe\r\nX-Probe: 203.0.113.7\r\n\r\n" +
+		"4\r\nbody\r\n0\r\nX-Probe: 198.51.100.77\r\n\r\n"
+	var req fasthttp.Request
+	if err := req.Read(bufio.NewReader(strings.NewReader(raw))); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var all []string
+	for _, value := range req.Header.PeekAll("X-Probe") {
+		all = append(all, string(value))
+	}
+	if !slices.Contains(all, "198.51.100.77") {
+		t.Fatalf("PeekAll = %q: the trailer was not parsed, so this test proves nothing", all)
+	}
+	if got := headerSectionValues(&req.Header, "X-Probe"); !slices.Equal(got, []string{"203.0.113.7"}) {
+		t.Fatalf("headerSectionValues = %q, want only the header-section value", got)
 	}
 }
 
