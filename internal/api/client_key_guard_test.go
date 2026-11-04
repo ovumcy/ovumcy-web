@@ -14,7 +14,8 @@ var directIPRead = regexp.MustCompile(`\.IPs?\(\)`)
 
 // TestHandlersKeyClientBucketsOnTheEdgeKey keeps every per-client attempt
 // bucket on requestClientKey (WEB-395 L3). c.IP() behind a trusted proxy with
-// PROXY_HEADER=X-Forwarded-For can be a client-supplied entry, so a
+// PROXY_HEADER=X-Forwarded-For can return a client-supplied entry (mechanism:
+// rateLimitKeyGenerator in cmd/ovumcy, docs/SECURITY_INVARIANTS.md), so a
 // handler that reads it again lets a stranger spend a victim address's budget.
 // Only client_key.go may read it, as the fallback for an app wired without the
 // middleware.

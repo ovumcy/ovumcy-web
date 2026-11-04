@@ -170,7 +170,12 @@ The supported reverse proxy path is intentionally narrow:
   `AUDIT_LOG_ENABLED` or `OIDC_ENABLED` also refuses the boot, naming the key and the value — a typo in one of these no longer
   starts the instance silently on a posture you did not choose.
   Accepted spellings are `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`; leaving a key unset still means its documented default.
-- Keep `PROXY_HEADER=X-Real-IP`; the example proxies set it to the real client IP. The app's own default is `X-Forwarded-For`, which the edge rate limiters handle safely — they key on the **rightmost untrusted** hop, so a spoofed prefix cannot defeat them, and the app prints an operator note at boot when trust-proxy is on with that header. The per-client auth-attempt buckets key on that same hop. What stays client-controlled under `X-Forwarded-For` is fiber's `c.IP()`, which can return a client-written entry (it steps over a hop it cannot validate and returns the leftmost when every valid hop is trusted); a header your proxy overwrites gives you spoof-proof values everywhere.
+- Keep `PROXY_HEADER=X-Real-IP`; the example proxies set it to the real client IP. The app's own default is `X-Forwarded-For`,
+  which the edge rate limiters handle safely — they key on the **rightmost untrusted** hop, so a spoofed prefix cannot defeat
+  them, and the app prints an operator note at boot when trust-proxy is on with that header. The per-client auth-attempt buckets
+  key on that same hop. What stays client-controlled under `X-Forwarded-For` is fiber's `c.IP()`, which can return a
+  client-supplied entry (mechanism: [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md)); a header your proxy overwrites gives you
+  spoof-proof values everywhere.
 
 The example stacks below use dedicated internal subnets and set `TRUSTED_PROXIES` to those exact ranges. If you adapt the stacks, keep the trusted proxy range as small as the network design allows. If the sample subnet collides with your environment, change both the Docker subnet and `TRUSTED_PROXIES` together.
 

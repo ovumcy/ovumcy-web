@@ -7,10 +7,10 @@ type clientKeyLocalsKey struct{}
 // ClientKeyMiddleware records, once per request, the client address the edge
 // rate limiters key on, so the per-client auth-attempt buckets in
 // internal/services key on the same attacker-proof value. c.IP() is not that
-// value behind a trusted proxy with PROXY_HEADER=X-Forwarded-For: it steps over
-// a hop it cannot validate and returns the leftmost when every valid hop is
-// trusted, so it can return a client-supplied entry, and a stranger could name
-// any victim's address there and spend that address's login budget for it.
+// value behind a trusted proxy with PROXY_HEADER=X-Forwarded-For: it can return
+// a client-supplied entry (mechanism: rateLimitKeyGenerator in cmd/ovumcy,
+// docs/SECURITY_INVARIANTS.md), and a stranger could name any victim's address
+// there and spend that address's login budget for it.
 func ClientKeyMiddleware(keyGenerator func(fiber.Ctx) string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		c.Locals(clientKeyLocalsKey{}, keyGenerator(c))
