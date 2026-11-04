@@ -100,14 +100,21 @@ type runningPeriodRule struct {
 
 // BuildCycleStats derives the history statistics from CycleBoundaries. The
 // context carries the owner's onboarding start, a boundary of its own; a zero
-// Today defaults to the calendar day of now.
+// Today defaults to the calendar day of now. That day is read in now's OWN
+// location, so a caller must hand now already in the owner's zone; one holding
+// an instance-zone now and an owner location goes through
+// BuildCycleStatsFromLogs.
 func BuildCycleStats(logs []models.DailyLog, now time.Time, ctx BoundaryContext) CycleStats {
 	return buildCycleStats(logs, now, ctx, runningPeriodRule{})
 }
 
-func buildCycleStats(logs []models.DailyLog, now time.Time, ctx BoundaryContext, rule runningPeriodRule) CycleStats {
+// buildCycleStats takes the owner's today from its caller and never re-derives
+// it from an instant (WEB-485): the calendar day of an instance-zone now lags
+// the owner's for anyone east of the instance, and the day it drops is the one
+// the bleeding-outside-start suppression reads.
+func buildCycleStats(logs []models.DailyLog, today time.Time, ctx BoundaryContext, rule runningPeriodRule) CycleStats {
 	stats := CycleStats{CurrentPhase: "unknown", CurrentFertility: FertilityStatusUnknown}
-	today := dateOnly(now)
+	today = dateOnly(today)
 	sorted := sortDailyLogs(filterLogsNotAfter(logs, today))
 
 	if ctx.Today.IsZero() {
