@@ -4030,7 +4030,7 @@ paths:
                 error: "sso temporarily unavailable"
                 error_detail: { key: "sso temporarily unavailable", category: "internal", target: "auth_form" }
         '403':
-          description: The caller is not the owner, or the request was refused before the handler runs (CSRF) with the `csrf_refused` key. Also returned when the identity was linked after the step-up to an account sign-in stops short of (a non-owner row, or a forced reset with no local password to issue it for); the refusal is `sso sign-in unavailable`, whose status is permanent until the operator repairs that account.
+          description: The caller is not the owner, or the request was refused before the handler runs (CSRF) with the `csrf_refused` key. Also returned when the identity was linked after the step-up to an account sign-in stops short of (a non-owner row, or a forced reset with no local password to issue it for); the refusal is `sso sign-in unavailable`, and it lasts until the operator repairs that account.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
