@@ -665,8 +665,8 @@ func (service *OIDCLoginService) VerifyIdentityLinkReauth(ctx context.Context, c
 // It names the claim (ErrOIDCLinkFailed) only when sign-in with that identity
 // would reach the holder; a holder sign-in refuses gets sign-in's own reply
 // (ErrOIDCAccountUnavailable). That reply still differs from the confirm page an
-// unheld identity reaches, so it is a "held, not by you" only the identity's
-// own holder, freshly re-authenticated, can read.
+// unheld identity reaches, so it tells a caller freshly re-authenticated as
+// that identity, and no one else, that some account holds it.
 func (service *OIDCLoginService) claimedElsewhereError(ctx context.Context, holderID uint) error {
 	holder, err := service.users.FindByID(ctx, holderID)
 	if err != nil {
