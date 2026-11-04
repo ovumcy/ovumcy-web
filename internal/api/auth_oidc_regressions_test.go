@@ -85,6 +85,16 @@ type stubOIDCWorkflowService struct {
 	// reissueSessionAfterIdentityChange's later FindByID, which is otherwise
 	// unreachable from outside a single synchronous handler call.
 	afterIdentityLinkConfirm func()
+
+	// signInStopErr is what SignInStop answers for any user; nil lets the
+	// callback reach IssueResetTokenForUser as before.
+	signInStopErr      error
+	lastSignInStopUser models.User
+}
+
+func (stub *stubOIDCWorkflowService) SignInStop(user models.User) error {
+	stub.lastSignInStopUser = user
+	return stub.signInStopErr
 }
 
 func (stub *stubOIDCWorkflowService) Enabled() bool {

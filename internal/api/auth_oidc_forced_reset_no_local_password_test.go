@@ -20,8 +20,34 @@ import (
 // that carries a sign-in onward, and the audit line names the cause so the
 // operator knows `reset-password --full` is the way back (walked end to end by
 // TestResetPasswordFullRecoversAnOIDCOnlyAccountWithUnverifiableTOTP).
+//
+// Both stops give that reply: services.SignInStop, which the callback asks
+// before it tries a token (the link refusal reads the same predicate,
+// WEB-480), and the token issuance itself, kept behind it. A role stop from
+// the predicate gets sign-in's account-unavailable reply, not the 500.
 func TestOIDCCallbackRefusesTheForcedResetForAnAccountWithoutALocalPassword(t *testing.T) {
-	stub := newStubOIDCWorkflowService(true)
+	// A hash the token could bind to: only the predicate stops these.
+	const bindableHash = "$2a$10$0123456789abcdef01234uVwxyzABCD0123456789abcdef01234"
+	t.Run("token issuance refuses", func(t *testing.T) {
+		assertOIDCCallbackRefusesTheForcedReset(t, newStubOIDCWorkflowService(true), "", authResetTokenCreateErrorSpec().Key, "no_local_password")
+	})
+	t.Run("SignInStop refuses first", func(t *testing.T) {
+		stub := newStubOIDCWorkflowService(true)
+		stub.signInStopErr = services.ErrPasswordResetTokenInvalidPasswordState
+		assertOIDCCallbackRefusesTheForcedReset(t, stub, bindableHash, authResetTokenCreateErrorSpec().Key, "no_local_password")
+		if stub.lastSignInStopUser.ID != 52 {
+			t.Fatalf("SignInStop asked about user %d, want the resolved user 52", stub.lastSignInStopUser.ID)
+		}
+	})
+	t.Run("SignInStop refuses the role", func(t *testing.T) {
+		stub := newStubOIDCWorkflowService(true)
+		stub.signInStopErr = services.ErrOIDCAccountUnavailable
+		assertOIDCCallbackRefusesTheForcedReset(t, stub, bindableHash, authOIDCAccountUnavailableErrorSpec().Key, "account_unavailable")
+	})
+}
+
+func assertOIDCCallbackRefusesTheForcedReset(t *testing.T, stub *stubOIDCWorkflowService, passwordHash string, wantKey string, wantCause string) {
+	t.Helper()
 	stub.authURL = "https://id.example.com/authorize"
 	stub.result = services.OIDCLoginResult{
 		User: models.User{
@@ -30,6 +56,7 @@ func TestOIDCCallbackRefusesTheForcedResetForAnAccountWithoutALocalPassword(t *t
 			AuthSessionVersion: 1,
 			LocalAuthEnabled:   false,
 			TOTPEnabled:        true,
+			PasswordHash:       passwordHash,
 		},
 		RequiresPasswordReset: true,
 	}
@@ -62,8 +89,15 @@ func TestOIDCCallbackRefusesTheForcedResetForAnAccountWithoutALocalPassword(t *t
 			t.Fatalf("did not expect a %s cookie for an account without a local password", name)
 		}
 	}
-	if !strings.Contains(logOutput, "no_local_password") {
-		t.Fatalf("expected the no_local_password cause in the audit line, got %q", logOutput)
+	if !strings.Contains(logOutput, wantCause) {
+		t.Fatalf("expected the %s cause in the audit line, got %q", wantCause, logOutput)
+	}
+	flash := responseCookie(callbackResponse.Cookies(), exemptFlashCookieName)
+	if flash == nil {
+		t.Fatal("expected a flash cookie carrying the refusal")
+	}
+	if got, want := decodeExemptFlashCookieForTest(t, flash.Value).AuthError, wantKey; got != want {
+		t.Fatalf("expected the /login flash %q, got %q", want, got)
 	}
 }
 

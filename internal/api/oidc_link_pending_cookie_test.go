@@ -132,27 +132,32 @@ func TestOIDCIdentityLinkConfirmRefusesWhileOIDCIsOff(t *testing.T) {
 
 // TestOIDCIdentityLinkConfirmMapsALinkRefusal: an identity claimed by another
 // account between the callback and the confirm is refused with the claimed
-// spec and spends the pending link; a storage fault keeps it for a retry.
+// spec and spends the pending link; a storage fault keeps it for a retry. A
+// holder sign-in stops short of (services.SignInStop) gets the account-
+// unavailable reply in both cases, never a 500 (WEB-480).
 func TestOIDCIdentityLinkConfirmMapsALinkRefusal(t *testing.T) {
 	t.Parallel()
 
 	for name, tc := range map[string]struct {
 		err         error
-		wantStatus  int
+		want        APIErrorSpec
 		keepPending bool
 	}{
-		"claimed elsewhere": {err: services.ErrOIDCLinkFailed, wantStatus: settingsOIDCIdentityLinkClaimedErrorSpec().Status},
-		"storage fault":     {err: services.ErrOIDCIdentityResolveFailed, wantStatus: authOIDCUnavailableErrorSpec().Status, keepPending: true},
+		"claimed elsewhere":                    {err: services.ErrOIDCLinkFailed, want: settingsOIDCIdentityLinkClaimedErrorSpec()},
+		"holder sign-in refuses":               {err: services.ErrOIDCAccountUnavailable, want: authOIDCAccountUnavailableErrorSpec()},
+		"holder forced reset cannot be issued": {err: services.ErrPasswordResetTokenInvalidPasswordState, want: authOIDCAccountUnavailableErrorSpec()},
+		"storage fault":                        {err: services.ErrOIDCIdentityResolveFailed, want: authOIDCUnavailableErrorSpec(), keepPending: true},
 	} {
 		fixture := newOIDCStepupFixture(t, "settings-oidc-link-confirm-refusal@example.com")
 		pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
 		fixture.oidcStub.confirmLinkErr = tc.err
 
 		response := postOIDCIdentityLinkConfirmJSON(t, fixture, pendingCookie)
+		key := readAPIError(t, response.Body)
 		_ = response.Body.Close()
 
-		if response.StatusCode != tc.wantStatus {
-			t.Fatalf("%s: expected %d, got %d", name, tc.wantStatus, response.StatusCode)
+		if response.StatusCode != tc.want.Status || key != tc.want.Key {
+			t.Fatalf("%s: expected %d %q, got %d %q", name, tc.want.Status, tc.want.Key, response.StatusCode, key)
 		}
 		cookie := responseCookie(response.Cookies(), oidcLinkPendingCookieName)
 		if kept := cookie == nil; kept != tc.keepPending {

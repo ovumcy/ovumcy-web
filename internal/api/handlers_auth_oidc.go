@@ -183,12 +183,22 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		// `ovumcy reset-password --full` (docs/self-hosted.md): it clears the
 		// dead TOTP and the links and sets a temporary password, which the
 		// owner signs in with, changes, and then relinks the provider.
-		token, issueErr := handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &result.User, services.PasswordResetTokenPurposeForcedOIDC, resetTokenTTL, time.Now())
+		// SignInStop names that refusal before any token is attempted; the
+		// link refusal reads the same predicate (claimedElsewhereError).
+		issueErr := handler.oidcService.SignInStop(result.User)
+		var token string
+		if issueErr == nil {
+			token, issueErr = handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &result.User, services.PasswordResetTokenPurposeForcedOIDC, resetTokenTTL, time.Now())
+		}
 		if issueErr != nil {
 			spec := authResetTokenCreateErrorSpec()
 			var fields []SecurityEventField
-			if errors.Is(issueErr, services.ErrPasswordResetTokenInvalidPasswordState) {
+			switch {
+			case errors.Is(issueErr, services.ErrPasswordResetTokenInvalidPasswordState):
 				fields = append(fields, securityEventField("cause", "no_local_password"))
+			case errors.Is(issueErr, services.ErrOIDCAccountUnavailable):
+				spec = mapAuthOIDCError(issueErr)
+				fields = append(fields, securityEventField("cause", "account_unavailable"))
 			}
 			handler.logSecurityError(c, "auth.oidc_callback", spec, fields...)
 			handler.setCSRFExemptFlashCookie(c, FlashPayload{AuthError: spec.Key})

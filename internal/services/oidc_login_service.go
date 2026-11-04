@@ -667,25 +667,35 @@ func (service *OIDCLoginService) resetCause(user models.User) string {
 		user.TOTPEnabled && service.totp != nil && service.totp.Unverifiable(user))
 }
 
+// SignInStop is the one definition of where OIDC sign-in stops short of a
+// resolved user: a role it refuses (ErrOIDCAccountUnavailable), or a forced
+// reset it cannot issue a token for, because the user has no local password
+// to bind it to (ErrPasswordResetTokenInvalidPasswordState). nil means sign-in
+// reaches the user or its second-factor or forced-reset step. The OIDC
+// callback and the link refusal both read it, so the two cannot drift.
+func (service *OIDCLoginService) SignInStop(user models.User) error {
+	if ValidateSupportedWebUser(&user) != nil {
+		return ErrOIDCAccountUnavailable
+	}
+	if service.resetCause(user) != "" && PasswordStateFingerprint(user.PasswordHash) == "" {
+		return ErrPasswordResetTokenInvalidPasswordState
+	}
+	return nil
+}
+
 // claimedElsewhereError is the refusal for an identity another account holds.
-// It names the claim (ErrOIDCLinkFailed) only when sign-in with that identity
-// would reach the holder or its second-factor or forced-reset step. Where
-// sign-in stops short, the error is the one sign-in's callback stops on: a
-// role it refuses (ErrOIDCAccountUnavailable), or a forced reset it cannot
-// issue a token for, because the holder has no local password to bind it to
-// (ErrPasswordResetTokenInvalidPasswordState). That error still differs from
-// the confirm page an unheld identity reaches, so it tells a caller freshly
-// re-authenticated as that identity, and no one else, that some account holds it.
+// It names the claim (ErrOIDCLinkFailed) only when SignInStop says sign-in with
+// that identity reaches the holder; otherwise it is SignInStop's error. That
+// error still differs from the confirm page an unheld identity reaches, so it
+// tells a caller freshly re-authenticated as that identity, and no one else,
+// that some account holds it.
 func (service *OIDCLoginService) claimedElsewhereError(ctx context.Context, holderID uint) error {
 	holder, err := service.users.FindByID(ctx, holderID)
 	if err != nil {
 		return ErrOIDCIdentityResolveFailed
 	}
-	if ValidateSupportedWebUser(&holder) != nil {
-		return ErrOIDCAccountUnavailable
-	}
-	if service.resetCause(holder) != "" && PasswordStateFingerprint(holder.PasswordHash) == "" {
-		return ErrPasswordResetTokenInvalidPasswordState
+	if stop := service.SignInStop(holder); stop != nil {
+		return stop
 	}
 	return ErrOIDCLinkFailed
 }
