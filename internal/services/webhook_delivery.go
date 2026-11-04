@@ -485,9 +485,11 @@ var metadataV6IPs = []net.IP{net.ParseIP("fd00:ec2::254"), net.ParseIP("fd20:ce:
 // isMetadataIP is the classifier used when the private-address gate is off: it
 // denies cloud metadata only, so LAN targets keep working on a household
 // instance. An IPv6 transition form wrapping a metadata IPv4 (NAT64, 6to4,
-// IPv4-compatible) is denied like the address it routes to.
+// IPv4-compatible) is denied like the address it routes to. The local-use NAT64
+// block is denied whole: its six RFC 6052 layouts each place the v4 differently,
+// and a translator there can route to metadata through any of them.
 func isMetadataIP(ip net.IP) bool {
-	if metadataV4Net.Contains(ip) {
+	if metadataV4Net.Contains(ip) || nat64LocalUseNet.Contains(ip) {
 		return true
 	}
 	for _, endpoint := range metadataV6IPs {

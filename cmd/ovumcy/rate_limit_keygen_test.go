@@ -53,7 +53,14 @@ func TestRightmostUntrustedIP(t *testing.T) {
 		{"spoofed trusted-looking prefix is ignored", []string{"203.0.113.7", "192.0.2.55", "203.0.113.7"}, "192.0.2.55"},
 		{"all hops trusted yields empty", []string{"203.0.113.7", "10.9.9.9"}, ""},
 		{"empty list yields empty", nil, ""},
-		{"invalid rightmost token is skipped", []string{"192.0.2.55", "not-an-ip"}, "192.0.2.55"},
+		// WEB-433 H1: an unparsable hop may be the one our proxy appended, so the
+		// client-supplied hop left of it must never become the key.
+		{"invalid rightmost token stops the walk", []string{"192.0.2.55", "not-an-ip"}, ""},
+		{"invalid hop behind a trusted hop stops the walk", []string{"192.0.2.55", "not-an-ip", "203.0.113.7"}, ""},
+		{"port-suffixed IPv4 hop is the client", []string{"198.51.100.1", "192.0.2.55:5678"}, "192.0.2.55"},
+		{"port-suffixed IPv6 hop is the client", []string{"198.51.100.1", "[2001:db8::1]:443"}, "2001:db8::1"},
+		{"port-suffixed trusted hop is skipped", []string{"192.0.2.55", "10.1.2.3:80"}, "192.0.2.55"},
+		{"empty entries are not hops", []string{"192.0.2.55", " ", ""}, "192.0.2.55"},
 		{"untrusted IPv6 hop", []string{"2001:db8::1"}, "2001:db8::1"},
 	}
 	for _, tc := range cases {
@@ -62,6 +69,32 @@ func TestRightmostUntrustedIP(t *testing.T) {
 				t.Fatalf("rightmostUntrustedIP(%#v) = %q, want %q", tc.forwarded, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestRateLimitKeyReadsEveryForwardedForLine: a proxy may append its hop as a
+// second X-Forwarded-For line instead of extending the first; the walk must see
+// that line's port-suffixed client, not stop at the client-written first line.
+func TestRateLimitKeyReadsEveryForwardedForLine(t *testing.T) {
+	proxy := proxySettings{Enabled: true, Header: "X-Forwarded-For", TrustedProxies: []string{"0.0.0.0"}}
+	app := fiber.New(fiberConfig(proxy, nil))
+	keyFor := rateLimitKeyGenerator(proxy)
+	var key string
+	app.Get("/probe", func(c fiber.Ctx) error {
+		key = keyFor(c)
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/probe", nil)
+	req.Header.Add("X-Forwarded-For", "198.51.100.1")
+	req.Header.Add("X-Forwarded-For", "203.0.113.7:5678")
+	resp, err := app.Test(req, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if key != "203.0.113.7" {
+		t.Fatalf("key = %q, want the port-suffixed client from the last X-Forwarded-For line", key)
 	}
 }
 
@@ -100,6 +133,32 @@ func TestRateLimitKeyGeneratorBucketing(t *testing.T) {
 			values:   []string{"198.51.100.9, 203.0.113.1", "198.51.100.9, 203.0.113.2", "198.51.100.9, 203.0.113.3"},
 			wantTrip: false,
 			explain:  "the key must follow the rightmost untrusted (real) client, so distinct clients do not collide",
+		},
+		{
+			// WEB-433 H1: fiber's c.IPs() drops a host:port entry under
+			// EnableIPValidation, which handed the key to the spoofed hop.
+			name:       "spoofed prefix left of a port-suffixed real client shares one bucket",
+			proxy:      proxySettings{Enabled: true, Header: "X-Forwarded-For", TrustedProxies: []string{"0.0.0.0"}},
+			headerName: "X-Forwarded-For",
+			values:     []string{"198.51.100.1, 203.0.113.7:5678", "198.51.100.2, 203.0.113.7:5679", "198.51.100.3, 203.0.113.7:5680"},
+			wantTrip:   true,
+			explain:    "rotating the hop left of a port-suffixed real client must not mint fresh buckets",
+		},
+		{
+			name:       "distinct port-suffixed real clients get distinct buckets",
+			proxy:      proxySettings{Enabled: true, Header: "X-Forwarded-For", TrustedProxies: []string{"0.0.0.0"}},
+			headerName: "X-Forwarded-For",
+			values:     []string{"198.51.100.9, 203.0.113.1:5678", "198.51.100.9, 203.0.113.2:5678", "198.51.100.9, 203.0.113.3:5678"},
+			wantTrip:   false,
+			explain:    "the key must follow the port-suffixed real client, so distinct clients do not collide",
+		},
+		{
+			name:       "an unparsable appended hop keys on the peer",
+			proxy:      proxySettings{Enabled: true, Header: "X-Forwarded-For", TrustedProxies: []string{"0.0.0.0"}},
+			headerName: "X-Forwarded-For",
+			values:     []string{"198.51.100.1, unknown", "198.51.100.2, unknown", "198.51.100.3, unknown"},
+			wantTrip:   true,
+			explain:    "an unparsable hop must fall back to the socket peer, not to the spoofed hop left of it",
 		},
 		{
 			name:       "untrusted direct peer ignores X-Forwarded-For",
