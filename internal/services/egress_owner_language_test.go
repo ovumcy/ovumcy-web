@@ -120,7 +120,7 @@ func TestReminderTitleCarriesNoEstimateQualifierWhileTheBodyDoes(t *testing.T) {
 		{DueReminderTypePeriod, "Period reminder", "Estimated next period around 2026-02-10."},
 		{DueReminderTypeOvulation, "Ovulation reminder", "Estimated ovulation around 2026-02-10."},
 	} {
-		payload := service.buildPayload(DueReminder{Type: tc.reminderType, EventDate: eventDate}, i18n.LangEN)
+		payload := service.buildPayload(DueReminder{Type: tc.reminderType, EventDate: eventDate}, i18n.LangEN, resolveDisclaimer(service.localized, i18n.LangEN))
 		if payload.Title != tc.title {
 			t.Errorf("%s title = %q, want %q", tc.reminderType, payload.Title, tc.title)
 		}

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -134,6 +136,20 @@ type DisclaimerProvider interface {
 	Disclaimer(language string) string
 }
 
+// resolveDisclaimer is the one resolve both egress surfaces gate on: the
+// disclaimer at language, or "" when there is no provider or the text is blank.
+// "" means withhold, so the value a surface sends is the value it checked.
+func resolveDisclaimer(provider DisclaimerProvider, language string) string {
+	if provider == nil {
+		return ""
+	}
+	disclaimer := provider.Disclaimer(language)
+	if strings.TrimSpace(disclaimer) == "" {
+		return ""
+	}
+	return disclaimer
+}
+
 // NotifyCopyProvider is the whole localized-copy seam of the notify pass: the
 // medical-safety disclaimer plus any catalogue entry by key. The reminder
 // headline and sentence are catalogue entries rather than Go literals precisely
@@ -193,6 +209,10 @@ type NotifyReport struct {
 	// errored. Either way the watermark is left where the pass found it, so the
 	// next pass retries.
 	Failed int
+	// WithheldDisclaimer is the number of due reminders held back because the
+	// owner's disclaimer resolved blank. They are not counted in Due, nothing was
+	// claimed, and the first pass after the copy resolves sends them.
+	WithheldDisclaimer int
 	// DryRun records whether this pass computed-only (no delivery, no watermark).
 	DryRun bool
 	// OwnerIDsFailed lists the ids of owners with at least one failed delivery.
@@ -259,17 +279,27 @@ func (service *WebhookNotifyService) RunOnce(ctx context.Context, now time.Time,
 		return report, fmt.Errorf("list owners for notify: %w", err)
 	}
 
+	withheldOwnersByLocale := map[string]int{}
 	for i := range records {
 		record := records[i]
 		report.OwnersScanned++
-		service.processOwner(ctx, record, now, location, dryRun, &report)
+		if service.processOwner(ctx, record, now, location, dryRun, &report) {
+			withheldOwnersByLocale[record.InterfaceLanguage]++
+		}
+	}
+	// One line per locale per pass: a missing copy key withholds every owner on
+	// that locale, and a line per owner would repeat one cause. It names the
+	// locale and a count only.
+	for _, locale := range slices.Sorted(maps.Keys(withheldOwnersByLocale)) {
+		log.Printf("webhook notify withheld: reason=disclaimer_blank locale=%q owners=%d", locale, withheldOwnersByLocale[locale])
 	}
 	return report, nil
 }
 
 // processOwner runs the decision-and-delivery for a single owner, mutating the
 // aggregate report. All per-owner errors are contained here so the pass survives
-// a single bad endpoint.
+// a single bad endpoint. It reports whether the owner's due reminders were
+// withheld for a blank disclaimer, so RunOnce can log that once per locale.
 func (service *WebhookNotifyService) processOwner(
 	ctx context.Context,
 	record models.WebhookNotifyRecord,
@@ -277,9 +307,9 @@ func (service *WebhookNotifyService) processOwner(
 	location *time.Location,
 	dryRun bool,
 	report *NotifyReport,
-) {
+) bool {
 	if !record.WebhookEnabled {
-		return
+		return false
 	}
 
 	ownerLocation := resolveOwnerLocation(record.Timezone, location)
@@ -290,17 +320,17 @@ func (service *WebhookNotifyService) processOwner(
 		// decrypt failure (e.g. SECRET_KEY rotation). Log the owner id only — the
 		// error may not carry the URL, but we never risk it.
 		log.Printf("webhook notify: decrypt failed, skipping owner id=%d", record.ID)
-		return
+		return false
 	}
 	if strings.TrimSpace(decryptedURL) == "" {
 		// Enabled but no endpoint stored: nothing deliverable.
-		return
+		return false
 	}
 
 	dayLogs, err := service.logs.ListByUser(ctx, record.ID)
 	if err != nil {
 		log.Printf("webhook notify: load logs failed, skipping owner id=%d", record.ID)
-		return
+		return false
 	}
 
 	user := userFromNotifyRecord(record)
@@ -318,10 +348,15 @@ func (service *WebhookNotifyService) processOwner(
 	// calendar feed applies to a blank disclaimer. Nothing is claimed, so every
 	// watermark stays where it was and the reminder goes out on the first pass
 	// after the copy resolves. The dry-run preview withholds too: it shows what
-	// would be sent. The line names the owner id and the locale only.
-	if len(due) > 0 && strings.TrimSpace(service.localized.Disclaimer(record.InterfaceLanguage)) == "" {
-		log.Printf("webhook notify withheld: reason=disclaimer_blank owner id=%d locale=%q", record.ID, record.InterfaceLanguage)
-		return
+	// would be sent. The disclaimer resolves once, here, and every payload below
+	// carries this same value.
+	if len(due) == 0 {
+		return false
+	}
+	disclaimer := resolveDisclaimer(service.localized, record.InterfaceLanguage)
+	if disclaimer == "" {
+		report.WithheldDisclaimer += len(due)
+		return true
 	}
 
 	// Destination HOST only, for the dry-run preview and any host-scoped logging.
@@ -330,7 +365,7 @@ func (service *WebhookNotifyService) processOwner(
 
 	for _, reminder := range due {
 		report.Due++
-		payload := service.buildPayload(reminder, record.InterfaceLanguage)
+		payload := service.buildPayload(reminder, record.InterfaceLanguage, disclaimer)
 
 		if dryRun {
 			// Compute-only: no outbound request, no watermark. Record what WOULD be
@@ -426,6 +461,7 @@ func (service *WebhookNotifyService) processOwner(
 		}
 		report.Sent++
 	}
+	return false
 }
 
 // watermarkForReminderType returns the incoming watermark of the kind a reminder
@@ -445,10 +481,10 @@ func watermarkForReminderType(settings WebhookReminderSettings, reminderType str
 // disclaimer — resolves at ONE language: the owner's persisted
 // users.interface_language, which the projection carries because a request-free
 // pass has no browser to ask. An owner who never chose a language stores "",
-// which the provider answers at the server default. Health specifics stay
-// minimized to type + estimated date + lead days.
-func (service *WebhookNotifyService) buildPayload(reminder DueReminder, language string) WebhookPayload {
-	disclaimer := service.localized.Disclaimer(language)
+// which the provider answers at the server default. The disclaimer arrives
+// already resolved at that language: it is the value processOwner gated on.
+// Health specifics stay minimized to type + estimated date + lead days.
+func (service *WebhookNotifyService) buildPayload(reminder DueReminder, language string, disclaimer string) WebhookPayload {
 	title, message := service.reminderCopy(reminder, language)
 	payload := WebhookPayload{
 		Title:      title,

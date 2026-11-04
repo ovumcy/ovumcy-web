@@ -163,6 +163,7 @@ func printNotifyReport(output io.Writer, report services.NotifyReport, showHealt
 	_, _ = fmt.Fprintf(output, "  delivered:          %d\n", report.Sent)
 	_, _ = fmt.Fprintf(output, "  skipped (already sent): %d\n", report.SkippedIdempotent)
 	_, _ = fmt.Fprintf(output, "  failed:             %d\n", report.Failed)
+	_, _ = fmt.Fprintf(output, "  withheld (disclaimer blank): %d\n", report.WithheldDisclaimer)
 	if len(report.OwnerIDsFailed) > 0 {
 		_, _ = fmt.Fprintf(output, "  owners with failures: %s\n", formatOwnerIDs(report.OwnerIDsFailed))
 	}

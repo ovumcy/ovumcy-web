@@ -285,19 +285,20 @@ func TestRunNotifyCommandDeliveryErrorExitCode(t *testing.T) {
 // counts and owner ids but NEVER a URL, token, or health specific.
 func TestRunNotifyCommandReportPrintsCountsOnly(t *testing.T) {
 	runner := &stubNotifyRunner{report: services.NotifyReport{
-		OwnersScanned:     4,
-		Due:               3,
-		Sent:              2,
-		SkippedIdempotent: 1,
-		Failed:            1,
-		OwnerIDsFailed:    []uint{7},
+		OwnersScanned:      4,
+		Due:                3,
+		Sent:               2,
+		SkippedIdempotent:  1,
+		Failed:             1,
+		WithheldDisclaimer: 5,
+		OwnerIDsFailed:     []uint{7},
 	}}
 	var out bytes.Buffer
 	if err := runNotifyCommand(runner, notifyOptions{}, time.Now(), time.UTC, &out); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	text := out.String()
-	for _, want := range []string{"owners scanned", "reminders due", "delivered", "already sent", "failed", "owners with failures"} {
+	for _, want := range []string{"owners scanned", "reminders due", "delivered", "already sent", "failed", "withheld (disclaimer blank): 5", "owners with failures"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("report missing %q line: %q", want, text)
 		}

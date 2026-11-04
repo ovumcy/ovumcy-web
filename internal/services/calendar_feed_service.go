@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -184,19 +183,16 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 		return nil, false, err
 	}
 
-	disclaimer := ""
-	if service.disclaimer != nil {
-		// Resolve at the OWNER's chosen language (users.interface_language, the
-		// durable carrier of that choice), not at the server default: a calendar
-		// client sends no Accept-Language and no cookie, so the stored column is the
-		// only thing that knows which language this owner reads — exactly as
-		// users.timezone is the only thing that knows their calendar day. The
-		// webhook notify pass resolves the same field the same way. An owner who
-		// never chose a language stores "", and Messages merges the default over an
-		// empty or unknown target, so "" still yields the server-default copy.
-		disclaimer = service.disclaimer.Disclaimer(user.InterfaceLanguage)
-	}
-	if strings.TrimSpace(disclaimer) == "" {
+	// Resolve at the OWNER's chosen language (users.interface_language, the
+	// durable carrier of that choice), not at the server default: a calendar
+	// client sends no Accept-Language and no cookie, so the stored column is the
+	// only thing that knows which language this owner reads — exactly as
+	// users.timezone is the only thing that knows their calendar day. The
+	// webhook notify pass resolves the same field through the same helper. An
+	// owner who never chose a language stores "", and Messages merges the default
+	// over an empty or unknown target, so "" still yields the server-default copy.
+	disclaimer := resolveDisclaimer(service.disclaimer, user.InterfaceLanguage)
+	if disclaimer == "" {
 		// The feed withholds every event without its disclaimer text; say so, or a
 		// missing copy key empties every owner's calendar with no signal. The line
 		// names the reason and the locale only: no user id, token or email.
