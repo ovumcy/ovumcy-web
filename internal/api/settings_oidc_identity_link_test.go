@@ -37,6 +37,7 @@ func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
 		{name: "cross-user claim maps to claimed", err: services.ErrOIDCLinkFailed, want: settingsOIDCIdentityLinkClaimedErrorSpec()},
 		// WEB-433 H5: a holder sign-in refuses gets sign-in's own reply.
 		{name: "claim by an account sign-in refuses maps to sign-in's reply", err: services.ErrOIDCAccountUnavailable, want: authOIDCAccountUnavailableErrorSpec()},
+		{name: "claim by a holder whose forced reset cannot be issued maps to sign-in's reply", err: services.ErrPasswordResetTokenInvalidPasswordState, want: authResetTokenCreateErrorSpec()},
 		{name: "sessions revoked since the step-up began maps to session create", err: services.ErrAuthSessionVersionChanged, want: authSessionCreateErrorSpec()},
 		{name: "oidc disabled maps to unavailable", err: services.ErrOIDCDisabled, want: authOIDCUnavailableErrorSpec()},
 		{name: "oidc unavailable maps to unavailable", err: services.ErrOIDCUnavailable, want: authOIDCUnavailableErrorSpec()},
