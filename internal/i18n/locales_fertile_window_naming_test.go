@@ -69,6 +69,47 @@ func TestPredictionSurfacesCarryAnEstimateQualifier(t *testing.T) {
 	}
 }
 
+// The calendar legend never names the ovulation mark as a measurement: both
+// entries exist in every locale, each carries an inference qualifier in its own
+// language (Russian says "предполагаемая", which the shared estimate pattern
+// above does not list), and the English entries say "Estimated ovulation".
+func TestCalendarLegendNamesOvulationAsAnEstimateInEveryLocale(t *testing.T) {
+	qualifiers := map[string]*regexp.Regexp{
+		LangEN: regexp.MustCompile(`(?i)\bestimated`),
+		LangRU: regexp.MustCompile(`(?i)предполагаем|оценк|ориентировочн`),
+		LangDE: regexp.MustCompile(`(?i)geschätzt`),
+		LangES: regexp.MustCompile(`(?i)estimad`),
+		LangFR: regexp.MustCompile(`(?i)estimé`),
+		LangIT: regexp.MustCompile(`(?i)stimat`),
+	}
+	all := mustLoadAllLocaleMessages(t)
+	if len(all) != len(qualifiers) {
+		t.Fatalf("loaded %d locales, the qualifier table covers %d", len(all), len(qualifiers))
+	}
+	for language, messages := range all {
+		qualifier := qualifiers[language]
+		if qualifier == nil {
+			t.Fatalf("no estimate qualifier pattern for locale %s", language)
+		}
+		for _, key := range []string{"calendar.legend.ovulation_group", "calendar.legend.ovulation_estimate"} {
+			if strings.TrimSpace(messages[key]) == "" {
+				t.Errorf("%s %s is missing or empty", language, key)
+				continue
+			}
+			if !qualifier.MatchString(messages[key]) {
+				t.Errorf("%s %s = %q carries no inference qualifier", language, key, messages[key])
+			}
+		}
+	}
+	english := all[LangEN]
+	if got := english["calendar.legend.ovulation_estimate"]; got != "Estimated ovulation" {
+		t.Errorf("en calendar.legend.ovulation_estimate = %q, want %q", got, "Estimated ovulation")
+	}
+	if got := english["calendar.legend.ovulation_group"]; !strings.HasPrefix(got, "Estimated ovulation") {
+		t.Errorf("en calendar.legend.ovulation_group = %q, want it to open with %q", got, "Estimated ovulation")
+	}
+}
+
 // The product addresses the owner without a gendered form; feminine wording is
 // reserved for copy about the cycle itself.
 func TestItalianDirectAddressIsNotGendered(t *testing.T) {

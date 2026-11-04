@@ -204,3 +204,35 @@ func TestLutealPhasePersonalisedStaysFalseWhenTheInferredValueNeverLandsOnLastPe
 		t.Errorf("stats.LutealPhasePersonalised = false while stats.LutealPhase = %d carries the inferred value", stats.LutealPhase)
 	}
 }
+
+// TestLutealPhasePersonalisedStaysFalseWhenEveryLoggedCycleLiesAfterToday pins
+// the inference-without-projection state that is still reachable under the one
+// boundary rule. InferUserLutealPhase reads the whole log set, future-dated
+// days included, while the baseline's anchor reads only the boundaries on or
+// before today. An owner whose logged cycles all start after today therefore
+// gets a successful inference and no anchor to project from; the flag is the
+// conjunction of the two and must stay false, with stats.LutealPhase left
+// holding the stats' own value rather than the inferred one.
+func TestLutealPhasePersonalisedStaysFalseWhenEveryLoggedCycleLiesAfterToday(t *testing.T) {
+	t.Parallel()
+
+	user, logs, _ := personalisedBaselineFixture(t, 28, []int{15, 15}, lutealSignalBBT)
+	origin := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	now := origin.AddDate(0, 0, -10).Add(9 * time.Hour)
+
+	luteal, refined := InferUserLutealPhase(logs, time.UTC, BoundaryContext{})
+	if !refined || luteal != 13 {
+		t.Fatalf("fixture: InferUserLutealPhase = (%d, %t), want (13, true): the inference must succeed for the gap to exist", luteal, refined)
+	}
+
+	stats := ApplyUserCycleBaseline(user, logs, BuildCycleStats(logs, now, BoundaryContext{}), now, time.UTC)
+	if !stats.LastPeriodStart.IsZero() {
+		t.Fatalf("fixture: stats.LastPeriodStart = %s, want zero (no boundary on or before today)", stats.LastPeriodStart.Format("2006-01-02"))
+	}
+	if stats.LutealPhase == luteal {
+		t.Fatalf("fixture: stats.LutealPhase = %d already equals the inferred value, so the flag cannot be told from the inference", stats.LutealPhase)
+	}
+	if stats.LutealPhasePersonalised {
+		t.Errorf("stats.LutealPhasePersonalised = true with no projection: stats.LutealPhase = %d is not the inferred %d", stats.LutealPhase, luteal)
+	}
+}
