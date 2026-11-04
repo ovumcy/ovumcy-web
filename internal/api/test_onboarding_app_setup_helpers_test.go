@@ -89,6 +89,12 @@ type onboardingTestAppOptions struct {
 	// concurrent redeem that already won) that a real race cannot reliably
 	// reproduce in a test.
 	registerPickupTokenStoreWrap func(apideps.RegisterPickupTokenStore) apideps.RegisterPickupTokenStore
+	// oidcServiceFromDeps, when set, replaces the OIDC workflow service with
+	// one built from the composition root's own wiring, after it ran: a test
+	// that needs the real OIDCLoginService provisioning through the SAME
+	// registration service the HTTP routes use (only the provider client is a
+	// double) gets it here, since the database exists only inside this helper.
+	oidcServiceFromDeps func(dependencies Dependencies, repositories *db.Repositories) OIDCWorkflowService
 	// revokingWrites, when set, is installed around the user repository the
 	// auth, settings and TOTP services write through, for the race regressions
 	// that commit another write between a request's authentication and its own
@@ -229,6 +235,9 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	}
 	if appOptions.totpEnrollWindow != 0 {
 		dependencies.TOTPService.ConfigureEnrollAttempts(services.DefaultTOTPEnrollAttemptsLimit, appOptions.totpEnrollWindow)
+	}
+	if appOptions.oidcServiceFromDeps != nil {
+		dependencies.OIDCService = appOptions.oidcServiceFromDeps(dependencies, repositories)
 	}
 	if appOptions.registerPickupTokenStoreWrap != nil {
 		dependencies.RegisterPickupTokens = appOptions.registerPickupTokenStoreWrap(dependencies.RegisterPickupTokens)
