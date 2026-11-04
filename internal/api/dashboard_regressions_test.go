@@ -515,8 +515,8 @@ func TestDashboardHeaderWithholdsFertilityUntilThreeCompletedCycles(t *testing.T
 		wantExplainerKey string
 	}{
 		"trying to conceive, fresh baseline": {
-			account:          "trying-fresh",
-			goal:             models.UsageGoalTrying,
+			account: "trying-fresh",
+			goal:    models.UsageGoalTrying,
 			// The explainer says when the window arrives, so the bridge
 			// does not say it again (WEB-450).
 			wantExplainerKey: "prediction.explainer.awaiting_first_cycle",

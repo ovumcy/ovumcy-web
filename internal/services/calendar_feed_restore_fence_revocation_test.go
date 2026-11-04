@@ -111,9 +111,11 @@ func TestCalendarFeedRestoreFenceCheckContinuityReadsAndWritesNothing(t *testing
 			},
 		},
 		"the anchor cannot be read": {
-			stored:  map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
-			anchor:  &stubFenceAnchor{readErr: readFailure},
-			wantErr: func(err error) bool { return errors.Is(err, ErrCalendarFeedFenceUnreachable) && errors.Is(err, readFailure) },
+			stored: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken},
+			anchor: &stubFenceAnchor{readErr: readFailure},
+			wantErr: func(err error) bool {
+				return errors.Is(err, ErrCalendarFeedFenceUnreachable) && errors.Is(err, readFailure)
+			},
 		},
 	}
 	for name, tc := range cases {
