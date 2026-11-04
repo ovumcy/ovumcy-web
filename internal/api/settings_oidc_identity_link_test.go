@@ -125,6 +125,15 @@ func TestOIDCIdentityLinkConfirmRefusalLandsOnSettings(t *testing.T) {
 			if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.SettingsError != want || payload.AuthError != "" {
 				t.Fatalf("expected settings error %q and no auth error, got settings=%q auth=%q", want, payload.SettingsError, payload.AuthError)
 			}
+			// A storage fault keeps the confirmation for a retry; every other
+			// refusal spends it.
+			spent := responseCookie(response.Cookies(), oidcLinkPendingCookieName)
+			if keeps := errors.Is(tc.confirmErr, services.ErrOIDCIdentityResolveFailed); keeps != (spent == nil) || (spent != nil && strings.TrimSpace(spent.Value) != "") {
+				t.Fatalf("expected the pending link kept=%t, got %v", keeps, spent)
+			}
+			if tc.disabledAtConfirm && fixture.oidcStub.lastConfirmLinkUserID != 0 {
+				t.Fatalf("a confirm refused before the link must link nothing, linked for user %d", fixture.oidcStub.lastConfirmLinkUserID)
+			}
 
 			htmx := sendConfirm(parkPendingLink(), true)
 			body := mustReadBodyString(t, htmx.Body)
