@@ -1,9 +1,11 @@
 package main
 
 import (
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +97,53 @@ func TestRateLimitKeyReadsEveryForwardedForLine(t *testing.T) {
 	_ = resp.Body.Close()
 	if key != "203.0.113.7" {
 		t.Fatalf("key = %q, want the port-suffixed client from the last X-Forwarded-For line", key)
+	}
+}
+
+// TestServerRefusesAForwardedForTrailer: a chunked request could carry
+// X-Forwarded-For as a trailer, which would land after every hop our proxy
+// appended — the rightmost hop, chosen by the client. fasthttp refuses that
+// trailer (isBadTrailer) before any handler runs; this pins that, and the key's
+// own forwardedHops reads the header section only, so it holds without it.
+func TestServerRefusesAForwardedForTrailer(t *testing.T) {
+	// app.Test re-serializes the request and drops trailers, so this one goes
+	// over a real loopback socket as raw bytes; loopback is the trusted peer.
+	proxy := proxySettings{Enabled: true, Header: "X-Forwarded-For", TrustedProxies: []string{"127.0.0.1"}}
+	app := fiber.New(fiberConfig(proxy, nil))
+	keyFor := rateLimitKeyGenerator(proxy)
+	keys := make(chan string, 1)
+	app.Post("/probe", func(c fiber.Ctx) error {
+		keys <- keyFor(c)
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() { _ = app.Listener(listener, fiber.ListenConfig{DisableStartupMessage: true}) }()
+	t.Cleanup(func() { _ = app.Shutdown() })
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	raw := "POST /probe HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n" +
+		"X-Forwarded-For: 203.0.113.7\r\n\r\n" +
+		"4\r\nbody\r\n0\r\nX-Forwarded-For: 198.51.100.77\r\n\r\n"
+	if _, err := conn.Write([]byte(raw)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	answer := make([]byte, 4096)
+	n, _ := io.ReadAtLeast(conn, answer, 1)
+	if !strings.HasPrefix(string(answer[:n]), "HTTP/1.1 400 ") {
+		t.Fatalf("a request with an X-Forwarded-For trailer must be refused before routing, got %q", answer[:n])
+	}
+	select {
+	case key := <-keys:
+		t.Fatalf("the handler ran and keyed the request on %q", key)
+	default:
 	}
 }
 
