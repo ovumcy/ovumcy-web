@@ -126,6 +126,10 @@ func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
 	// step-up says no more than signing in does (WEB-433 H5).
 	case errors.Is(err, services.ErrOIDCAccountUnavailable):
 		return authOIDCAccountUnavailableErrorSpec()
+	// A holder sign-in sends to a forced reset it cannot issue (no local
+	// password): the error sign-in's callback answers there.
+	case errors.Is(err, services.ErrPasswordResetTokenInvalidPasswordState):
+		return authResetTokenCreateErrorSpec()
 	case errors.Is(err, services.ErrAuthSessionVersionChanged):
 		return authSessionCreateErrorSpec()
 	case errors.Is(err, services.ErrOIDCDisabled),

@@ -153,21 +153,26 @@ func TestOIDCLoginServiceVerifyIdentityLinkReauthRefusesCrossUserClaim(t *testin
 // the premise of the declared "already linked to another account" wording
 // (WEB-433 H5): for every holder, the link step-up and the confirm answer a
 // claimed identity exactly as sign-in with the same exchange does — the named
-// refusal where sign-in enters the holder, sign-in's own refusal where it does
-// not (a legacy non-owner row), and a lookup fault where sign-in has one.
+// refusal where sign-in reaches the holder or its forced-reset step, and the
+// error sign-in stops on where it does not: a legacy non-owner row, a forced
+// reset no token can be issued for (no local password), a lookup fault.
 func TestOIDCLinkRefusalForAClaimedIdentityTellsItsHolderNothingSignInWouldNot(t *testing.T) {
 	t.Parallel()
 
 	const holderID uint = 7
+	owner := func(mustChange bool, passwordHash string) *stubOIDCUserStore {
+		return &stubOIDCUserStore{byID: models.User{ID: holderID, Role: models.RoleOwner, MustChangePassword: mustChange, PasswordHash: passwordHash, AuthSessionVersion: 1}}
+	}
 	cases := []struct {
-		name       string
-		users      *stubOIDCUserStore
-		wantLink   error
-		wantSignIn error
+		name     string
+		users    *stubOIDCUserStore
+		wantLink error
 	}{
-		{"owner holder", &stubOIDCUserStore{byID: models.User{ID: holderID, Role: models.RoleOwner}}, ErrOIDCLinkFailed, nil},
-		{"legacy partner holder", &stubOIDCUserStore{byID: models.User{ID: holderID, Role: "partner"}}, ErrOIDCAccountUnavailable, ErrOIDCAccountUnavailable},
-		{"holder lookup fault", &stubOIDCUserStore{byIDErr: errors.New("store down")}, ErrOIDCIdentityResolveFailed, ErrOIDCIdentityResolveFailed},
+		{"owner holder", owner(false, ""), ErrOIDCLinkFailed},
+		{"owner holder sent to a forced reset it can take", owner(true, "stored-hash"), ErrOIDCLinkFailed},
+		{"owner holder sent to a forced reset with no local password", owner(true, ""), ErrPasswordResetTokenInvalidPasswordState},
+		{"legacy partner holder", &stubOIDCUserStore{byID: models.User{ID: holderID, Role: "partner"}}, ErrOIDCAccountUnavailable},
+		{"holder lookup fault", &stubOIDCUserStore{byIDErr: errors.New("store down")}, ErrOIDCIdentityResolveFailed},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -194,12 +199,23 @@ func TestOIDCLinkRefusalForAClaimedIdentityTellsItsHolderNothingSignInWouldNot(t
 				t.Fatal("a claimed identity must never be linked")
 			}
 
-			result, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", now)
-			if !errors.Is(err, tc.wantSignIn) {
-				t.Fatalf("sign-in: got %v, want %v", err, tc.wantSignIn)
+			// Where sign-in stops: Authenticate's error, else the forced-reset
+			// token the OIDC callback issues next (IssueResetTokenForUser).
+			result, signInStop := service.Authenticate(context.Background(), "code", "verifier", "nonce", now)
+			if signInStop == nil && result.RequiresPasswordReset {
+				_, signInStop = BuildPasswordResetToken([]byte("0123456789abcdef0123456789abcdef"), result.User.ID, result.User.PasswordHash, result.User.AuthSessionVersion, PasswordResetTokenPurposeForcedOIDC, time.Minute, now)
 			}
-			if tc.wantSignIn == nil && result.User.ID != holderID {
-				t.Fatalf("sign-in reached user %d, want the holder %d", result.User.ID, holderID)
+			if tc.wantLink == ErrOIDCLinkFailed {
+				if signInStop != nil {
+					t.Fatalf("sign-in stopped on %v, but the link names the claim", signInStop)
+				}
+				if result.User.ID != holderID {
+					t.Fatalf("sign-in reached user %d, want the holder %d", result.User.ID, holderID)
+				}
+				return
+			}
+			if !errors.Is(signInStop, tc.wantLink) {
+				t.Fatalf("sign-in stopped on %v, want %v", signInStop, tc.wantLink)
 			}
 		})
 	}

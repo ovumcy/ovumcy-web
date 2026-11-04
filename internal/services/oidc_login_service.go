@@ -413,8 +413,7 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 	// rotation) routes to the same forced-reset escape hatch because the
 	// factor cannot be checked, not only when the routing flag happens to be
 	// set. RequiresTOTP is required only where TOTP is actually verifiable.
-	result.ResetCause = forcedResetCause(result.User.MustChangePassword,
-		result.User.TOTPEnabled && service.totp != nil && service.totp.Unverifiable(result.User))
+	result.ResetCause = service.resetCause(result.User)
 	result.RequiresPasswordReset = result.ResetCause != ""
 	result.RequiresTOTP = !result.RequiresPasswordReset && result.User.TOTPEnabled
 	result.Logout = service.buildLogoutState(exchange.Session, result.User.ID)
@@ -661,12 +660,22 @@ func (service *OIDCLoginService) VerifyIdentityLinkReauth(ctx context.Context, c
 	return exchange.Claims, nil
 }
 
+// resetCause is the forced-reset reason sign-in routes a linked user through,
+// "" when there is none.
+func (service *OIDCLoginService) resetCause(user models.User) string {
+	return forcedResetCause(user.MustChangePassword,
+		user.TOTPEnabled && service.totp != nil && service.totp.Unverifiable(user))
+}
+
 // claimedElsewhereError is the refusal for an identity another account holds.
 // It names the claim (ErrOIDCLinkFailed) only when sign-in with that identity
-// would reach the holder; a holder sign-in refuses gets sign-in's own reply
-// (ErrOIDCAccountUnavailable). That reply still differs from the confirm page an
-// unheld identity reaches, so it tells a caller freshly re-authenticated as
-// that identity, and no one else, that some account holds it.
+// would reach the holder or its second-factor or forced-reset step. Where
+// sign-in stops short, the error is the one sign-in's callback stops on: a
+// role it refuses (ErrOIDCAccountUnavailable), or a forced reset it cannot
+// issue a token for, because the holder has no local password to bind it to
+// (ErrPasswordResetTokenInvalidPasswordState). That error still differs from
+// the confirm page an unheld identity reaches, so it tells a caller freshly
+// re-authenticated as that identity, and no one else, that some account holds it.
 func (service *OIDCLoginService) claimedElsewhereError(ctx context.Context, holderID uint) error {
 	holder, err := service.users.FindByID(ctx, holderID)
 	if err != nil {
@@ -674,6 +683,9 @@ func (service *OIDCLoginService) claimedElsewhereError(ctx context.Context, hold
 	}
 	if ValidateSupportedWebUser(&holder) != nil {
 		return ErrOIDCAccountUnavailable
+	}
+	if service.resetCause(holder) != "" && PasswordStateFingerprint(holder.PasswordHash) == "" {
+		return ErrPasswordResetTokenInvalidPasswordState
 	}
 	return ErrOIDCLinkFailed
 }
