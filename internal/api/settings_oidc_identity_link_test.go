@@ -65,28 +65,55 @@ func TestMapOIDCIdentityLinkReauthError(t *testing.T) {
 }
 
 // TestOIDCIdentityLinkConfirmRefusalLandsOnSettings pins where a refused
-// confirm renders (WEB-483): a form submit gets the /settings flash and never
-// the sign-in page's channel, and an HTMX submit gets the status fragment.
+// confirm renders (WEB-483): a browser form submit gets the /settings flash
+// and never the sign-in page's channel, and an HTMX submit gets the 200
+// status fragment.
 func TestOIDCIdentityLinkConfirmRefusalLandsOnSettings(t *testing.T) {
 	t.Parallel()
 
-	refusals := map[string]error{
-		"role refused":                  services.ErrOIDCAccountUnavailable,
-		"forced reset cannot be issued": services.ErrPasswordResetTokenInvalidPasswordState,
-		"oidc disabled":                 services.ErrOIDCDisabled,
-		"unmapped":                      errors.New("unmapped confirm error"),
+	refusals := map[string]struct {
+		confirmErr error
+		// disabledAtConfirm turns OIDC off between the step-up and the confirm,
+		// reaching the handler's own guard instead of ConfirmAndLinkIdentity.
+		disabledAtConfirm bool
+	}{
+		"role refused":                  {confirmErr: services.ErrOIDCAccountUnavailable},
+		"forced reset cannot be issued": {confirmErr: services.ErrPasswordResetTokenInvalidPasswordState},
+		"identity store unreachable":    {confirmErr: services.ErrOIDCIdentityResolveFailed},
+		"unmapped":                      {confirmErr: errors.New("unmapped confirm error")},
+		"oidc disabled at confirm":      {disabledAtConfirm: true},
 	}
-	for name, refusal := range refusals {
+	for name, tc := range refusals {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			want := mapOIDCIdentityLinkReauthError(refusal).Key
+			want := mapOIDCIdentityLinkReauthError(services.ErrOIDCDisabled).Key
+			if tc.confirmErr != nil {
+				want = mapOIDCIdentityLinkReauthError(tc.confirmErr).Key
+			}
 
 			fixture := newOIDCStepupFixture(t, "settings-oidc-link-confirm-refusal-"+strings.ReplaceAll(name, " ", "-")+"@example.com")
 			fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: "https://id.example.com", Subject: "refused-subject"}
-			pendingCookie := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
-			fixture.oidcStub.confirmLinkErr = refusal
+			fixture.oidcStub.confirmLinkErr = tc.confirmErr
+			parkPendingLink := func() string {
+				fixture.oidcStub.enabled = true
+				pending := readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
+				fixture.oidcStub.enabled = !tc.disabledAtConfirm
+				return pending
+			}
+			sendConfirm := func(pendingCookie string, htmx bool) *http.Response {
+				csrfCookie, csrfToken := loadSettingsCSRFContext(t, fixture.app, fixture.authCookie)
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/confirm", strings.NewReader(url.Values{"csrf_token": {csrfToken}}.Encode()))
+				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				if htmx {
+					request.Header.Set("HX-Request", "true")
+				} else {
+					request.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+				}
+				request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(fixture.authCookie, csrfCookie), pendingCookie))
+				return mustAppResponse(t, fixture.app, request)
+			}
 
-			response := postOIDCIdentityLinkConfirm(t, fixture, fixture.authCookie, pendingCookie, true)
+			response := sendConfirm(parkPendingLink(), false)
 			_ = response.Body.Close()
 			if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/settings" {
 				t.Fatalf("expected a 303 to /settings, got %d to %q", response.StatusCode, response.Header.Get("Location"))
@@ -99,13 +126,7 @@ func TestOIDCIdentityLinkConfirmRefusalLandsOnSettings(t *testing.T) {
 				t.Fatalf("expected settings error %q and no auth error, got settings=%q auth=%q", want, payload.SettingsError, payload.AuthError)
 			}
 
-			pendingCookie = readOIDCLinkPendingCookie(t, runOIDCIdentityLinkCallback(t, fixture))
-			csrfCookie, csrfToken := loadSettingsCSRFContext(t, fixture.app, fixture.authCookie)
-			request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/confirm", strings.NewReader(url.Values{"csrf_token": {csrfToken}}.Encode()))
-			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			request.Header.Set("HX-Request", "true")
-			request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(fixture.authCookie, csrfCookie), pendingCookie))
-			htmx := mustAppResponse(t, fixture.app, request)
+			htmx := sendConfirm(parkPendingLink(), true)
 			body := mustReadBodyString(t, htmx.Body)
 			flashKey := `data-flash-key="` + services.AuthErrorTranslationKey(want) + `"`
 			if htmx.StatusCode != http.StatusOK || !strings.Contains(body, flashKey) {

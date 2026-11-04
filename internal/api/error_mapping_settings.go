@@ -112,8 +112,10 @@ func settingsOIDCIdentityLinkClaimedErrorSpec() APIErrorSpec {
 // never leaks through error granularity.
 //
 // Every answer targets the settings form: the link is a Settings flow, and an
-// auth-form spec on /api/v1/users/current/* falls through respondAuthError to
-// the bare envelope instead of the /settings flash (WEB-483).
+// auth-form spec on /api/v1/users/current/* skips respondSettingsError — a
+// browser got the generic refusal page instead of the /settings flash its
+// sibling refusals (stale, claimed) answer with, HTMX a non-2xx fragment
+// (WEB-483).
 func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
 	spec := oidcIdentityLinkReauthErrorSpec(err)
 	if spec.Target == APIErrorTargetAuthForm {
