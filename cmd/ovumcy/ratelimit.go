@@ -95,13 +95,19 @@ func parseForwardedHop(hop string) net.IP {
 	return net.ParseIP(host)
 }
 
-// forwardedHops splits every X-Forwarded-For line of the request, in order,
-// without fiber's IP validation: c.IPs() drops a host:port entry silently, which
-// would hand the walk the client-supplied hop to its left.
+// forwardedHops splits every X-Forwarded-For line of the request's header
+// section, in order, without fiber's IP validation: c.IPs() drops a host:port
+// entry silently, which would hand the walk the client-supplied hop to its left.
+// Header.All, not PeekAll: PeekAll also returns a chunked body's trailers, which
+// come after anything our proxy appended and are the client's to write. fasthttp
+// refuses an X-Forwarded-* trailer today (TestServerRefusesAForwardedForTrailer);
+// the key does not rest on that list.
 func forwardedHops(c fiber.Ctx) []string {
 	var hops []string
-	for _, line := range c.Request().Header.PeekAll(fiber.HeaderXForwardedFor) {
-		hops = append(hops, strings.Split(string(line), ",")...)
+	for name, value := range c.Request().Header.All() {
+		if strings.EqualFold(string(name), fiber.HeaderXForwardedFor) {
+			hops = append(hops, strings.Split(string(value), ",")...)
+		}
 	}
 	return hops
 }
