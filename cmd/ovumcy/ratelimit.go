@@ -62,16 +62,12 @@ func (m trustedProxyMatcher) contains(ip net.IP) bool {
 // list is empty, or a hop does not parse, letting the caller fall back to the
 // direct peer.
 //
-// A hop that does not parse stops the walk instead of being stepped over: it may
-// be the one our proxy appended, and whatever lies left of it is the client's
-// to choose.
+// A hop that does not parse — an empty one included — stops the walk instead of
+// being stepped over: it may be the one our proxy appended, and whatever lies
+// left of it is the client's to choose.
 func rightmostUntrustedIP(forwarded []string, trusted trustedProxyMatcher) string {
 	for i := len(forwarded) - 1; i >= 0; i-- {
-		hop := strings.TrimSpace(forwarded[i])
-		if hop == "" {
-			continue
-		}
-		ip := parseForwardedHop(hop)
+		ip := parseForwardedHop(strings.TrimSpace(forwarded[i]))
 		if ip == nil {
 			return ""
 		}

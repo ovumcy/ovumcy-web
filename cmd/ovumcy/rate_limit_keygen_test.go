@@ -62,7 +62,10 @@ func TestRightmostUntrustedIP(t *testing.T) {
 		{"port-suffixed IPv4 hop is the client", []string{"198.51.100.1", "192.0.2.55:5678"}, "192.0.2.55"},
 		{"port-suffixed IPv6 hop is the client", []string{"198.51.100.1", "[2001:db8::1]:443"}, "2001:db8::1"},
 		{"port-suffixed trusted hop is skipped", []string{"192.0.2.55", "10.1.2.3:80"}, "192.0.2.55"},
-		{"empty entries are not hops", []string{"192.0.2.55", " ", ""}, "192.0.2.55"},
+		// An empty entry right of the client can only be a proxy's, so it stops
+		// the walk like any unparsable hop; one left of it is never reached.
+		{"empty appended entry stops the walk", []string{"192.0.2.55", " ", ""}, ""},
+		{"empty entry left of the client is never reached", []string{"198.51.100.1", "", "192.0.2.55"}, "192.0.2.55"},
 		{"untrusted IPv6 hop", []string{"2001:db8::1"}, "2001:db8::1"},
 	}
 	for _, tc := range cases {
@@ -110,17 +113,15 @@ func TestServerRefusesAForwardedForTrailer(t *testing.T) {
 	// over a real loopback socket as raw bytes; loopback is the trusted peer.
 	proxy := proxySettings{Enabled: true, Header: "X-Forwarded-For", TrustedProxies: []string{"127.0.0.1"}}
 	app := fiber.New(fiberConfig(proxy, nil))
-	keyFor := rateLimitKeyGenerator(proxy)
-	keys := make(chan string, 1)
 	app.Post("/probe", func(c fiber.Ctx) error {
-		keys <- keyFor(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	go func() { _ = app.Listener(listener, fiber.ListenConfig{DisableStartupMessage: true}) }()
+	served := make(chan error, 1)
+	go func() { served <- app.Listener(listener, fiber.ListenConfig{DisableStartupMessage: true}) }()
 	t.Cleanup(func() { _ = app.Shutdown() })
 
 	conn, err := net.Dial("tcp", listener.Addr().String())
@@ -136,14 +137,18 @@ func TestServerRefusesAForwardedForTrailer(t *testing.T) {
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	answer := make([]byte, 4096)
-	n, _ := io.ReadAtLeast(conn, answer, 1)
+	n, err := io.ReadAtLeast(conn, answer, 1)
+	if err != nil {
+		select {
+		case serveErr := <-served:
+			t.Fatalf("read: %v (server stopped: %v)", err, serveErr)
+		default:
+			t.Fatalf("read: %v", err)
+		}
+	}
+	// The handler answers 204, so a 400 also means it never ran.
 	if !strings.HasPrefix(string(answer[:n]), "HTTP/1.1 400 ") {
 		t.Fatalf("a request with an X-Forwarded-For trailer must be refused before routing, got %q", answer[:n])
-	}
-	select {
-	case key := <-keys:
-		t.Fatalf("the handler ran and keyed the request on %q", key)
-	default:
 	}
 }
 

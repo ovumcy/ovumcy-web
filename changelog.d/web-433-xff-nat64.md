@@ -6,7 +6,13 @@
   client-written entry to its left and a new value per request bypassed the per-address limits and
   the per-client sign-in attempt budget. The limiters now read every `X-Forwarded-For` line
   themselves, accept `address:port` and `[address]:port`, and fall back to the direct peer when an
-  entry does not parse instead of stepping past it.
+  entry does not parse, or is empty, instead of stepping past it.
+
+  **Operators behind a proxy that writes something other than an address into
+  `X-Forwarded-For`** (`unknown`, an obfuscated `_hidden` name, `unix:` from a unix-socket
+  listener): every client of that proxy now shares the proxy's own rate-limit bucket, so busy
+  instances will see `429`s where they saw none before. Set `PROXY_HEADER=X-Real-IP` and have the
+  proxy write the client address there — the bundled proxy examples already do.
 
 - **Cloud metadata stays unreachable through a local-use NAT64 prefix.** With
   `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` off, a webhook target in `64:ff9b:1::/48` was delivered to,
