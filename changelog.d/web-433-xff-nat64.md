@@ -5,8 +5,8 @@
   `address:port` had that entry dropped before the limiters read the chain, so they keyed on the
   client-written entry to its left and a new value per request bypassed the per-address limits and
   the per-client sign-in attempt budget. The limiters now read every `X-Forwarded-For` line
-  themselves, accept `address:port` and `[address]:port`, and fall back to the direct peer when an
-  entry does not parse, or is empty, instead of stepping past it.
+  themselves, accept `address:port` and `[IPv6 address]:port` with a numeric port, and fall back
+  to the direct peer when an entry does not parse, or is empty, instead of stepping past it.
 
   **Operators behind a proxy that writes something other than an address into
   `X-Forwarded-For`** (`unknown`, an obfuscated `_hidden` name, `unix:` from a unix-socket
