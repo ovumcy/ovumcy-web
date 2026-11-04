@@ -427,7 +427,7 @@ func TestAuthServiceForceResetPasswordByID(t *testing.T) {
 		}
 		service := NewAuthService(repo)
 
-		if err := service.ForceResetPasswordByID(context.Background(), 18, "EvenStronger2", false);err != nil {
+		if err := service.ForceResetPasswordByID(context.Background(), 18, "EvenStronger2", false); err != nil {
 			t.Fatalf("ForceResetPasswordByID() unexpected error: %v", err)
 		}
 		if !repo.forceResetCalled {
@@ -452,14 +452,14 @@ func TestAuthServiceForceResetPasswordByID(t *testing.T) {
 
 	t.Run("missing id", func(t *testing.T) {
 		service := NewAuthService(&stubAuthUserRepo{})
-		if err := service.ForceResetPasswordByID(context.Background(), 0, "EvenStronger2", false);!errors.Is(err, ErrAuthUserIDRequired) {
+		if err := service.ForceResetPasswordByID(context.Background(), 0, "EvenStronger2", false); !errors.Is(err, ErrAuthUserIDRequired) {
 			t.Fatalf("expected ErrAuthUserIDRequired, got %v", err)
 		}
 	})
 
 	t.Run("missing password", func(t *testing.T) {
 		service := NewAuthService(&stubAuthUserRepo{})
-		if err := service.ForceResetPasswordByID(context.Background(), 18, " ", false);!errors.Is(err, ErrAuthResetInvalid) {
+		if err := service.ForceResetPasswordByID(context.Background(), 18, " ", false); !errors.Is(err, ErrAuthResetInvalid) {
 			t.Fatalf("expected ErrAuthResetInvalid, got %v", err)
 		}
 	})
@@ -495,7 +495,7 @@ func TestAuthServiceForceResetPasswordByID(t *testing.T) {
 	t.Run("id not found", func(t *testing.T) {
 		repo := &stubAuthUserRepo{}
 		service := NewAuthService(repo)
-		if err := service.ForceResetPasswordByID(context.Background(), 9, "EvenStronger2", false);!errors.Is(err, ErrAuthUserNotFound) {
+		if err := service.ForceResetPasswordByID(context.Background(), 9, "EvenStronger2", false); !errors.Is(err, ErrAuthUserNotFound) {
 			t.Fatalf("expected ErrAuthUserNotFound, got %v", err)
 		}
 		if repo.forceResetCalled {
@@ -506,7 +506,7 @@ func TestAuthServiceForceResetPasswordByID(t *testing.T) {
 	t.Run("lookup failure", func(t *testing.T) {
 		repo := &stubAuthUserRepo{findByIDOptionalErr: errors.New("db down")}
 		service := NewAuthService(repo)
-		if err := service.ForceResetPasswordByID(context.Background(), 18, "EvenStronger2", false);!errors.Is(err, ErrAuthUserLookupFailed) {
+		if err := service.ForceResetPasswordByID(context.Background(), 18, "EvenStronger2", false); !errors.Is(err, ErrAuthUserLookupFailed) {
 			t.Fatalf("expected ErrAuthUserLookupFailed, got %v", err)
 		}
 	})
@@ -518,7 +518,7 @@ func TestAuthServiceForceResetPasswordByID(t *testing.T) {
 			forceResetErr:         errors.New("write failed"),
 		}
 		service := NewAuthService(repo)
-		if err := service.ForceResetPasswordByID(context.Background(), 18, "EvenStronger2", false);!errors.Is(err, ErrAuthPasswordUpdate) {
+		if err := service.ForceResetPasswordByID(context.Background(), 18, "EvenStronger2", false); !errors.Is(err, ErrAuthPasswordUpdate) {
 			t.Fatalf("expected ErrAuthPasswordUpdate, got %v", err)
 		}
 	})

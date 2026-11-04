@@ -575,8 +575,8 @@ func TestWebhookAddressClassifiers(t *testing.T) {
 		{"64:ff9b:1:0:a9:fea9:fe00:0", true, true},
 		{"64:ff9b:1::808:808", true, true},
 		{"64:ff9b:2::a9fe:a9fe", false, false}, // just outside the /48: a public v6 neighbour
-		{"203.0.113.10", true, false},   // TEST-NET-3: documentation space is not globally reachable
-		{"192.31.196.1", false, false},  // AS112-v4 anycast: special-purpose but globally reachable (over-block guard)
+		{"203.0.113.10", true, false},          // TEST-NET-3: documentation space is not globally reachable
+		{"192.31.196.1", false, false},         // AS112-v4 anycast: special-purpose but globally reachable (over-block guard)
 	}
 	for _, tc := range cases {
 		ip := net.ParseIP(tc.literal)

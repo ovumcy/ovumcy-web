@@ -20,6 +20,8 @@
 #   - nolintlint: the zero-suppression line below, asked of the tree rather
 #     than of a reviewer. What it reaches and what it does not is in the
 #     paragraph on that line, further down.
+#   - gofmt (formatters, at the end): the toolchain's own canonical layout, so
+#     zero style choices; without it nothing in CI refused an unformatted file.
 #
 # Evaluated against the codebase and deliberately NOT enabled:
 #   - gocritic: its default set flags intentional test patterns here (mapKey
@@ -105,3 +107,7 @@ linters:
       # which misspell's default locale reads as a misspelling of "succession".
       ignore-rules:
         - successivo
+
+formatters:
+  enable:
+    - gofmt
