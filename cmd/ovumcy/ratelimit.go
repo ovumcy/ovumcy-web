@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"log"
 	"net"
 	"strconv"
@@ -82,8 +83,8 @@ func rightmostUntrustedIP(forwarded []string, trusted trustedProxyMatcher) strin
 
 // parseForwardedHop reads one X-Forwarded-For entry as an address, accepting
 // the v4:port and [v6]:port forms some proxies append. Nil when it is none of
-// these: net.SplitHostPort alone also passes an empty or non-numeric port and a
-// bracketed IPv4 host.
+// these: net.SplitHostPort alone also passes an empty, non-numeric, zero or
+// zero-padded port and a bracketed IPv4 host.
 func parseForwardedHop(hop string) net.IP {
 	if ip := net.ParseIP(hop); ip != nil {
 		return ip
@@ -92,13 +93,22 @@ func parseForwardedHop(hop string) net.IP {
 	if err != nil {
 		return nil
 	}
-	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+	if !isForwardedPort(port) {
 		return nil
 	}
 	if strings.HasPrefix(hop, "[") != strings.Contains(host, ":") {
 		return nil
 	}
 	return net.ParseIP(host)
+}
+
+// isForwardedPort accepts 1..65535 written without a leading zero.
+func isForwardedPort(port string) bool {
+	if port == "" || port[0] == '0' {
+		return false
+	}
+	_, err := strconv.ParseUint(port, 10, 16)
+	return err == nil
 }
 
 // forwardedHops splits every X-Forwarded-For line of the request's header
@@ -109,15 +119,17 @@ func parseForwardedHop(hop string) net.IP {
 // refuses an X-Forwarded-* trailer today (TestServerRefusesAForwardedForTrailer);
 // the key does not rest on that list (TestHeaderSectionValuesLeavesOutTrailers).
 func forwardedHops(c fiber.Ctx) []string {
-	return headerSectionValues(&c.Request().Header, fiber.HeaderXForwardedFor)
+	return headerSectionValues(&c.Request().Header, xForwardedForKey)
 }
+
+var xForwardedForKey = []byte(fiber.HeaderXForwardedFor)
 
 // headerSectionValues splits every comma-separated value of the named field in
 // the header section; trailer fields are left out.
-func headerSectionValues(header *fasthttp.RequestHeader, name string) []string {
+func headerSectionValues(header *fasthttp.RequestHeader, name []byte) []string {
 	var values []string
 	for key, value := range header.All() {
-		if strings.EqualFold(string(key), name) {
+		if bytes.EqualFold(key, name) {
 			values = append(values, strings.Split(string(value), ",")...)
 		}
 	}
@@ -131,9 +143,12 @@ func headerSectionValues(header *fasthttp.RequestHeader, name string) []string {
 // validate (an ip:port hop, for one) and, when every valid hop is trusted,
 // returns the leftmost — either way it can return an entry the original client
 // wrote, so an attacker behind an appending proxy can rotate that entry to mint
-// a fresh rate-limit bucket per request and defeat the limit entirely. These edge limiters key on IP alone (unlike the per-identity auth
-// limiters in internal/services, which also bucket on email/user id), so the IP
-// key must be attacker-proof on its own.
+// a fresh rate-limit bucket per request and defeat the limit entirely. This is
+// the one code-side explanation of that fiber behaviour (docs: SECURITY_INVARIANTS.md);
+// TestFiberCIPUnderForwardedForCanReturnAClientEntry pins it on fiberConfig.
+// These edge limiters key on IP alone (unlike the per-identity auth limiters in
+// internal/services, which also bucket on email/user id), so the IP key must be
+// attacker-proof on its own.
 //
 // The key is derived from our trust boundary outward:
 //   - Proxy support off, or the direct peer is not a trusted proxy: the only
@@ -167,12 +182,12 @@ func rateLimitKeyGenerator(proxy proxySettings) func(fiber.Ctx) string {
 // limiters nor the per-client auth-attempt buckets trust that header blindly —
 // both key on rateLimitKeyGenerator's rightmost untrusted hop (the buckets via
 // api.ClientKeyMiddleware). The residual is that fiber's c.IP() can still return
-// a client-supplied entry wherever else it is read (see rateLimitKeyGenerator), so PROXY_HEADER
-// should still name a header the proxy overwrites with the real client IP (for
-// example X-Real-IP).
+// a client-supplied entry wherever else it is read (why: rateLimitKeyGenerator),
+// so PROXY_HEADER should still name a header the proxy overwrites with the real
+// client IP (for example X-Real-IP).
 func proxyHeaderRateLimitWarning(proxy proxySettings) string {
 	if proxy.Enabled && strings.EqualFold(strings.TrimSpace(proxy.Header), fiber.HeaderXForwardedFor) {
-		return "NOTE: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the rate limiters and the per-client auth-attempt buckets key on the rightmost untrusted X-Forwarded-For hop and are not spoofable, but fiber's c.IP() can still return a client-supplied entry: it steps over a hop it cannot validate, and returns the leftmost one when every valid hop is trusted. Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP) for spoof-proof c.IP() values."
+		return "NOTE: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the rate limiters and the per-client auth-attempt buckets key on the rightmost untrusted X-Forwarded-For hop and are not spoofable, but fiber's c.IP() can still return a client-supplied entry (docs/SECURITY_INVARIANTS.md explains when). Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP) for spoof-proof c.IP() values."
 	}
 	return ""
 }
