@@ -110,7 +110,19 @@ func settingsOIDCIdentityLinkClaimedErrorSpec() APIErrorSpec {
 // cross-user claim keep their own specs so the owner learns what to do next;
 // everything else collapses into the generic SSO failure so provider state
 // never leaks through error granularity.
+//
+// Every answer targets the settings form: the link is a Settings flow, and an
+// auth-form spec on /api/v1/users/current/* falls through respondAuthError to
+// the bare envelope instead of the /settings flash (WEB-483).
 func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
+	spec := oidcIdentityLinkReauthErrorSpec(err)
+	if spec.Target == APIErrorTargetAuthForm {
+		spec.Target = APIErrorTargetSettingsForm
+	}
+	return spec
+}
+
+func oidcIdentityLinkReauthErrorSpec(err error) APIErrorSpec {
 	switch {
 	// Before the stale arm, always: ErrOIDCReauthAuthTimeMissing wraps
 	// ErrOIDCReauthStale, so the coarse match below would swallow it and tell
