@@ -2124,8 +2124,11 @@ jobs:
           # with the release cache header.
           asset="$(printf '%s' "$login" | grep -oE '/static/[^"?]+\?v=[A-Za-z0-9]+' | head -1)"
           if [ -z "$asset" ]; then echo "no versioned static asset found in /login"; exit 1; fi
-          curl -fsS -D - -o /dev/null "http://localhost:18080$asset" \
-            | tr -d '\r' | grep -iq '^cache-control: public, max-age=3600'
+          # Captured, then matched with no pipe into `grep -q`: under pipefail,
+          # grep exiting on its match closes the pipe, and a writer still
+          # writing then fails a check that passed (WEB-486).
+          headers="$(curl -fsS -D - -o /dev/null "http://localhost:18080$asset" | tr -d '\r')"
+          grep -iq '^cache-control: public, max-age=3600' <<<"$headers"
 
           # The container's own HEALTHCHECK command (the binary self-probe) and
           # its readiness sibling, which an operator runs by hand on a shell-free
