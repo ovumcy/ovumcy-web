@@ -60,31 +60,48 @@ func TestOpenAPIDescribesAConfirmedOvulationAsAnInferenceNotAMeasurement(t *test
 	if err != nil {
 		t.Fatalf("read docs/openapi.yaml: %v", err)
 	}
-	spec := strings.Join(strings.Fields(string(raw)), " ")
+	lines := strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n")
 
 	cases := []struct {
 		name   string
-		anchor string
 		phrase string
 	}{
-		{"ovulation_date", "ovulation_date: type: [string, \"null\"] format: date description: >-", "an inference from a recorded signal, never a measurement of the ovulation itself"},
-		{"ovulation_confirmed", "ovulation_confirmed: type: boolean description: >-", "`ovulation_date` is inferred from the owner's own temperature shift"},
+		{"ovulation_date", "an inference from a recorded signal, never a measurement of the ovulation itself"},
+		{"ovulation_confirmed", "`ovulation_date` is inferred from the owner's own temperature shift"},
 	}
 	for _, tc := range cases {
-		start := strings.Index(spec, tc.anchor)
-		if start < 0 {
+		block, found := openAPIPropertyBlock(lines, tc.name)
+		if !found {
 			t.Fatalf("%s: property block not found in docs/openapi.yaml", tc.name)
-		}
-		block := spec[start+len(tc.anchor):]
-		if next := strings.Index(block, " type:"); next >= 0 {
-			// The block runs to the next property's type line, so a phrase
-			// elsewhere in the document cannot satisfy this property.
-			block = block[:next]
 		}
 		if !strings.Contains(block, tc.phrase) {
 			t.Errorf("%s description lost the inference wording %q", tc.name, tc.phrase)
 		}
 	}
+}
+
+// openAPIPropertyBlock returns the text of the first `<name>:` mapping key and
+// everything nested under it, whitespace-flattened. The block ends at the next
+// line indented no deeper than the key, so a phrase in a sibling property or
+// elsewhere in the document cannot satisfy it and reformatting the block's own
+// keys cannot hide it.
+func openAPIPropertyBlock(lines []string, name string) (string, bool) {
+	indentOf := func(line string) int { return len(line) - len(strings.TrimLeft(line, " ")) }
+	for start, line := range lines {
+		if strings.TrimSpace(line) != name+":" {
+			continue
+		}
+		keyIndent := indentOf(line)
+		var block []string
+		for _, next := range lines[start+1:] {
+			if strings.TrimSpace(next) != "" && indentOf(next) <= keyIndent {
+				break
+			}
+			block = append(block, next)
+		}
+		return strings.Join(strings.Fields(strings.Join(block, " ")), " "), true
+	}
+	return "", false
 }
 
 func TestCalendarLegendFollowsTheGridForAnOwnerWhosePredictionsAreWithheld(t *testing.T) {
