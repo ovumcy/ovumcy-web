@@ -22,12 +22,14 @@ import (
 // step issues no auth cookie, retracts the pending cookie and answers the
 // "totp session expired" refusal.
 //
-// The operator command bumps the session version AND sets must_change_password,
-// so either gate alone refuses its grant. The cases separate them: the CLI case
-// runs the production reset end to end (both gates fire), the flag-only case
-// writes the flag and leaves the version where the grant was minted, so only the
-// must_change_password guard can be what refuses. The no-reset control issues a
-// session for the same code, so a refusal is the reset and not a dead path.
+// The operator command bumps the session version AND sets must_change_password.
+// The cases separate the two gates: the service case runs the production reset
+// end to end (both gates fire, and the version is asserted to have moved), the
+// flag-only case writes the flag and leaves the version where the grant was
+// minted, so only the must_change_password guard can be what refuses, and the
+// version-only case moves the version and leaves the flag off, so only the
+// version compare can be. The no-reset control issues a session for the same
+// code, so a refusal is the reset and not a dead path.
 func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing.T) {
 	cases := []struct {
 		name string
@@ -52,7 +54,7 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 			wantSession: true,
 		},
 		{
-			name: "operator cli reset",
+			name: "operator forced reset service",
 			reset: func(t *testing.T, database *gorm.DB, userID uint) {
 				t.Helper()
 				service := services.NewAuthService(db.NewUserRepository(database))
@@ -61,6 +63,17 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 				}
 			},
 			wantFlag:     true,
+			versionBumps: true,
+			totpKept:     true,
+		},
+		{
+			name: "version bump only, flag untouched",
+			reset: func(t *testing.T, database *gorm.DB, userID uint) {
+				t.Helper()
+				if err := database.Model(&models.User{}).Where("id = ?", userID).Update("auth_session_version", gorm.Expr("auth_session_version + 1")).Error; err != nil {
+					t.Fatalf("bump auth_session_version: %v", err)
+				}
+			},
 			versionBumps: true,
 			totpKept:     true,
 		},
