@@ -117,3 +117,25 @@ func TestOIDCCallbackUnlinkedAuditLinesKeepTheCausesDistinct(t *testing.T) {
 		t.Fatalf("account-unavailable audit line must not carry link_required: %q", accountUnavailable.String())
 	}
 }
+
+// A closed-registration refusal of auto-provision answers byte for byte as
+// any other account-unavailable refusal, and only its audit line names the
+// cause (WEB-493).
+func TestOIDCCallbackClosedRegistrationRefusalSharesTheReplyAndKeepsItsAuditCause(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	closedErr := fmt.Errorf("%w: %w", services.ErrOIDCAccountUnavailable, services.ErrAuthRegistrationDisabled)
+	var closedAudit bytes.Buffer
+	log.SetOutput(&closedAudit)
+	closed := runOIDCCallbackWithAuthError(t, closedErr, true)
+	log.SetOutput(io.Discard)
+	held := runOIDCCallbackWithAuthError(t, services.ErrOIDCLinkRequiresConfirmation, true)
+
+	if closed.authError == "" || closed != held {
+		t.Fatalf("expected the closed-registration refusal to match the held-email reply, got %+v vs %+v", closed, held)
+	}
+	if !strings.Contains(closedAudit.String(), "registration_closed") || strings.Contains(closedAudit.String(), "account_unavailable") {
+		t.Fatalf("expected only the registration_closed cause in the audit line, got %q", closedAudit.String())
+	}
+}

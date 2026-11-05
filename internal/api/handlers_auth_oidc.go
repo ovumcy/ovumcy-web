@@ -156,7 +156,10 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	if err != nil {
 		spec := mapAuthOIDCError(err)
 		var fields []SecurityEventField
-		if errors.Is(err, services.ErrOIDCAccountUnavailable) {
+		switch {
+		case errors.Is(err, services.ErrOIDCAccountUnavailable) && errors.Is(err, services.ErrAuthRegistrationDisabled):
+			fields = append(fields, securityEventField("cause", "registration_closed"))
+		case errors.Is(err, services.ErrOIDCAccountUnavailable):
 			fields = append(fields, securityEventField("cause", "account_unavailable"))
 		}
 		handler.logSecurityError(c, "auth.oidc_callback", spec, fields...)
