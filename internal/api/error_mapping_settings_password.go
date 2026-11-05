@@ -27,9 +27,9 @@ func mapLocalPasswordSetupReauthError(err error) APIErrorSpec {
 	case errors.Is(err, services.ErrOIDCReauthIdentityMismatch):
 		return settingsOIDCReauthMismatchErrorSpec()
 	case errors.Is(err, services.ErrOIDCDisabled), errors.Is(err, services.ErrOIDCUnavailable):
-		return authOIDCUnavailableErrorSpec()
+		return settingsOIDCUnavailableErrorSpec()
 	default:
-		return authOIDCAuthenticationFailedErrorSpec()
+		return settingsOIDCAuthenticationFailedErrorSpec()
 	}
 }
 
