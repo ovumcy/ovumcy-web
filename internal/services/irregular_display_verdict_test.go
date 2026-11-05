@@ -227,6 +227,33 @@ func TestIrregularModeDoesNotLiftTheThreeCycleFloorForTheDaySaveSentence(t *test
 	}
 }
 
+// TestDaySaveMessageHonoursTheFertilityVerdictBesideAPopulatedWindow pins the
+// verdict as its own barrier in the day-save policy. The published stats clear
+// the window whenever the fertility half is suppressed, so through the service
+// the window check alone would also withhold the sentence; here the policy is
+// handed a window that covers today together with the verdict, the pair the
+// service cannot produce, and the verdict alone must answer the neutral message.
+// The same stats with the verdict open are the control that the fertile
+// sentence is reachable.
+func TestDaySaveMessageHonoursTheFertilityVerdictBesideAPopulatedWindow(t *testing.T) {
+	t.Parallel()
+
+	user := irregularVerdictUser(false)
+	today := irregularVerdictBase.AddDate(0, 0, 40)
+	stats := CycleStats{
+		LastPeriodStart:      irregularVerdictBase.AddDate(0, 0, 28),
+		FertilityWindowStart: today.AddDate(0, 0, -2),
+		FertilityWindowEnd:   today.AddDate(0, 0, 2),
+	}
+
+	if got := resolveDaySaveMessageKey(user, today, today, stats, PredictionSuppression{}); got != daySaveMessageFertile {
+		t.Fatalf("control: an open verdict beside a window covering today answered %q, want the fertile message", got)
+	}
+	if got := resolveDaySaveMessageKey(user, today, today, stats, PredictionSuppression{FertilitySuppressed: true}); got != daySaveMessageNeutral {
+		t.Fatalf("a suppressed fertility half beside a window covering today answered %q, want the neutral message", got)
+	}
+}
+
 func irregularVerdictPaintedDays(maps calendarPredictionMaps) int {
 	return len(maps.predictedPeriod) + len(maps.predictedStartRange) + len(maps.preFertile) + len(maps.fertilityEdge) +
 		len(maps.fertilityPeak) + len(maps.ovulation) + len(maps.tentativeOvulation)

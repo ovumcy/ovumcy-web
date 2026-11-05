@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,8 +26,9 @@ func TestStatsCycleStackSaysHowManyCyclesItShowsAndWhatTheColoursMean(t *testing
 	if count == nil {
 		t.Fatal("expected a caption stating how many cycles the stack shows")
 	}
-	if text := htmlNodeText(count); !strings.Contains(text, "4") || !strings.Contains(text, "6") {
-		t.Fatalf("expected the caption to name 4 shown of 6, got %q", text)
+	wantCaption := fmt.Sprintf(messageForKey(t, "stats.cycle_stack_count"), 4, 6)
+	if got := strings.Join(strings.Fields(htmlNodeText(count)), " "); got != wantCaption {
+		t.Fatalf("expected the caption to name 4 shown of 6 as %q, got %q", wantCaption, got)
 	}
 	if !strings.Contains(body, "data-cycle-stack-hidden-note") {
 		t.Fatal("expected a note that older cycles are left out when some are")
@@ -85,17 +87,51 @@ func TestStatsCycleStackQualifiesInferredPhasesInItsLegend(t *testing.T) {
 	assertStatusCode(t, response, http.StatusOK)
 	body := mustReadBodyString(t, response.Body)
 
-	if !strings.Contains(body, `data-phase="ovulation"`) || !strings.Contains(body, `data-fertile="true"`) {
-		t.Fatal("expected the legend to explain the phase and fertile-window colours when inferred phases are on")
+	// The rows draw the same phase cells, so the swatches are looked up inside
+	// the legend node, never in the whole page.
+	legend := htmlFindElement(mustParseHTMLDocument(t, body), func(node *html.Node) bool { return htmlHasAttr(node, "data-cycle-stack-legend") })
+	if legend == nil {
+		t.Fatal("expected a legend explaining the stack's colours")
 	}
-	if !strings.Contains(body, "method of contraception") || !strings.Contains(body, "estimated from cycle lengths") {
-		t.Fatal("expected the estimate qualifier and the shared disclaimer beside the phase legend")
+	for _, swatch := range []struct{ attribute, value string }{{"data-phase", "ovulation"}, {"data-fertile", "true"}} {
+		found := htmlFindElement(legend, func(node *html.Node) bool { return htmlAttr(node, swatch.attribute) == swatch.value })
+		if found == nil {
+			t.Fatalf("expected the legend to carry a %s=%q swatch when inferred phases are on", swatch.attribute, swatch.value)
+		}
 	}
 
-	plain := statsBodyForCyclePattern(t, "stats-cycle-stack-unphased@example.com", 28, 3)
-	if strings.Contains(plain, "estimated from cycle lengths") {
-		t.Fatal("the estimate note belongs to inferred phases and must not render without them")
+	wantNote := messageForKey(t, "stats.cycle_stack_legend_estimate") + " " + messageForKey(t, "medical.disclaimer")
+	note := legendFollowingNote(legend)
+	if note == nil {
+		t.Fatal("expected the estimate note to follow the legend")
 	}
+	if got := strings.Join(strings.Fields(htmlNodeText(note)), " "); got != wantNote {
+		t.Fatalf("legend note = %q, want the estimate qualifier and the shared disclaimer %q", got, wantNote)
+	}
+
+	plain := mustParseHTMLDocument(t, statsBodyForCyclePattern(t, "stats-cycle-stack-unphased@example.com", 28, 3))
+	plainLegend := htmlFindElement(plain, func(node *html.Node) bool { return htmlHasAttr(node, "data-cycle-stack-legend") })
+	if plainLegend == nil {
+		t.Fatal("expected a legend without inferred phases too")
+	}
+	if note := legendFollowingNote(plainLegend); note != nil {
+		t.Fatalf("the estimate note belongs to inferred phases and must not render without them, got %q", htmlNodeText(note))
+	}
+}
+
+// legendFollowingNote is the paragraph element directly after the legend list,
+// or nil when the next element is not a paragraph.
+func legendFollowingNote(legend *html.Node) *html.Node {
+	for sibling := legend.NextSibling; sibling != nil; sibling = sibling.NextSibling {
+		if sibling.Type != html.ElementNode {
+			continue
+		}
+		if sibling.Data == "p" {
+			return sibling
+		}
+		return nil
+	}
+	return nil
 }
 
 func TestStatsCycleStackHasNoHiddenNoteWhenEveryCycleIsShown(t *testing.T) {

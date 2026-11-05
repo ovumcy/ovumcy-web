@@ -115,9 +115,12 @@ func TestCalendarLegendNamesOvulationAsAnEstimateInEveryLocale(t *testing.T) {
 func TestItalianDirectAddressIsNotGendered(t *testing.T) {
 	gendered := regexp.MustCompile(`(?i)\b(sicura|connessa|connesso|pronta|pronto|iscritta|iscritto)\b`)
 	messages := mustLoadAllLocaleMessages(t)[LangIT]
+	if len(messages) == 0 {
+		t.Fatal("the Italian catalogue loaded no messages")
+	}
 	for _, key := range []string{"confirm.delete_entry", "auth.remember_me"} {
-		if gendered.MatchString(messages[key]) {
-			t.Errorf("it %s addresses the reader with a gendered form: %q", key, messages[key])
+		if strings.TrimSpace(messages[key]) == "" {
+			t.Errorf("it %s is missing or empty", key)
 		}
 	}
 	for key, value := range messages {
