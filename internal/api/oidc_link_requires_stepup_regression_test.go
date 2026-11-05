@@ -61,11 +61,13 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 
 	staleSpec := settingsOIDCReauthStaleErrorSpec()
 
-	sealPending := func(t *testing.T, secret []byte, userID uint) string {
+	// sealPending seals at the session's CURRENT version, so the owner binding
+	// (or the key) is the only thing left that can refuse it.
+	sealPending := func(t *testing.T, secret []byte, userID uint, version int) string {
 		t.Helper()
 		serialized, err := json.Marshal(oidcLinkPendingCookiePayload{
 			UserID:         userID,
-			SessionVersion: 1,
+			SessionVersion: version,
 			Issuer:         "https://id.example.com",
 			Subject:        r3ForeignSubject,
 			ExpiresAt:      time.Now().Add(time.Minute),
@@ -93,13 +95,24 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 		request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(fixture.authCookie, csrfCookie), pending))
 		return mustAppResponse(t, fixture.app, request)
 	}
+	// callbackWith posts a callback that carries a VALID sealed sign-in state
+	// (minted by the real start route, state and code matching it) and the
+	// owner's session, with only the step-up cookie omitted or replaced. Past
+	// the state guard the only thing left deciding between a sign-in and a link
+	// is the step-up cookie.
 	callbackWith := func(t *testing.T, fixture *oidcStepupFixture, stepup string) *http.Response {
 		t.Helper()
-		form := url.Values{"state": {"attacker-state"}, "code": {"attacker-code"}}
+		start := mustAppResponse(t, fixture.app, httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil))
+		defer func() { _ = start.Body.Close() }()
+		stateCookie := responseCookie(start.Cookies(), oidcStateCookieName)
+		if stateCookie == nil || fixture.oidcStub.lastStartState == "" {
+			t.Fatal("fixture: the start route minted no sign-in state")
+		}
+		form := url.Values{"state": {fixture.oidcStub.lastStartState}, "code": {"attacker-code"}}
 		request := httptest.NewRequest(http.MethodPost, "/auth/oidc/callback", strings.NewReader(form.Encode()))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		request.Header.Set("Accept", "application/json")
-		request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, stepup))
+		request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, cookiePair(stateCookie), stepup))
 		return mustAppResponse(t, fixture.app, request)
 	}
 
@@ -117,15 +130,33 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 			defer func() { _ = response.Body.Close() }()
 			assertLinkStartRefusedBeforeAnyStepup(t, fixture, response)
 		}},
-		{"callback with no step-up cookie", func(t *testing.T, fixture *oidcStepupFixture) {
+		{"callback with a valid sign-in state and no step-up cookie", func(t *testing.T, fixture *oidcStepupFixture) {
 			response := callbackWith(t, fixture, "")
 			defer func() { _ = response.Body.Close() }()
-			assertCallbackParkedNothing(t, response)
+			assertCallbackWasAnOrdinarySignIn(t, fixture, response)
 		}},
-		{"callback with a forged step-up cookie", func(t *testing.T, fixture *oidcStepupFixture) {
+		{"callback with a valid sign-in state and a forged step-up cookie", func(t *testing.T, fixture *oidcStepupFixture) {
 			response := callbackWith(t, fixture, oidcStepupCookieName+"=forged-not-sealed")
 			defer func() { _ = response.Body.Close() }()
-			assertCallbackParkedNothing(t, response)
+			assertCallbackWasAnOrdinarySignIn(t, fixture, response)
+		}},
+		{"callback answering another state than the owner's step-up", func(t *testing.T, fixture *oidcStepupFixture) {
+			// The owner's genuine step-up is outstanding; a callback that does
+			// not answer its state (a cross-site post with another code) must
+			// neither complete it nor park the identity.
+			start := postOIDCIdentityLinkStepupStart(t, fixture)
+			defer func() { _ = start.Body.Close() }()
+			response := postOIDCStepupCallback(t, fixture, readStepupCookie(t, start), "another-state", "attacker-code")
+			defer func() { _ = response.Body.Close() }()
+			if cookie := responseCookie(response.Cookies(), oidcLinkPendingCookieName); cookie != nil && cookie.Value != "" {
+				t.Fatal("a callback for another state parked an identity for the owner to confirm")
+			}
+			if fixture.oidcStub.lastIdentityLinkCode != "" {
+				t.Fatal("a callback for another state reached the link verification")
+			}
+			if fixture.oidcStub.lastAuthCode != "" {
+				t.Fatal("a callback for another state was treated as an ordinary sign-in")
+			}
 		}},
 		{"confirm with no pending cookie", func(t *testing.T, fixture *oidcStepupFixture) {
 			response := confirmWith(t, fixture, "")
@@ -138,12 +169,12 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 			assertLinkConfirmRefused(t, response, staleSpec)
 		}},
 		{"confirm with a pending cookie sealed under another key", func(t *testing.T, fixture *oidcStepupFixture) {
-			response := confirmWith(t, fixture, sealPending(t, []byte("another-secret-key"), fixture.user.ID))
+			response := confirmWith(t, fixture, sealPending(t, []byte("another-secret-key"), fixture.user.ID, storedAuthSessionVersion(t, fixture.database, fixture.user.ID)))
 			defer func() { _ = response.Body.Close() }()
 			assertLinkConfirmRefused(t, response, staleSpec)
 		}},
 		{"confirm with another account's pending cookie", func(t *testing.T, fixture *oidcStepupFixture) {
-			response := confirmWith(t, fixture, sealPending(t, []byte(testAppSecretKey), fixture.user.ID+100))
+			response := confirmWith(t, fixture, sealPending(t, []byte(testAppSecretKey), fixture.user.ID+100, storedAuthSessionVersion(t, fixture.database, fixture.user.ID)))
 			defer func() { _ = response.Body.Close() }()
 			assertLinkConfirmRefused(t, response, staleSpec)
 		}},
@@ -216,14 +247,24 @@ func assertLinkStartRefusedBeforeAnyStepup(t *testing.T, fixture *oidcStepupFixt
 	}
 }
 
-// assertCallbackParkedNothing requires the callback to have refused the request
-// as an ordinary sign-in with no matching state (303 to /login) and parked no
-// identity for a later confirm.
-func assertCallbackParkedNothing(t *testing.T, response *http.Response) {
+// assertCallbackWasAnOrdinarySignIn requires a callback without a usable
+// step-up cookie to have run as an ordinary sign-in: the code reached the
+// sign-in exchange (so it passed the state guard and was not turned away
+// earlier), the link verification never ran, and no identity was parked for a
+// later confirm.
+func assertCallbackWasAnOrdinarySignIn(t *testing.T, fixture *oidcStepupFixture, response *http.Response) {
 	t.Helper()
-	if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/login" {
-		t.Fatalf("expected the callback refused with 303 /login, got %d %q", response.StatusCode, response.Header.Get("Location"))
+	assertNoPendingLinkParked(t, response)
+	if fixture.oidcStub.lastAuthCode != "attacker-code" {
+		t.Fatalf("expected the callback to run as an ordinary sign-in exchange, the exchange saw code %q", fixture.oidcStub.lastAuthCode)
 	}
+	if fixture.oidcStub.lastIdentityLinkCode != "" {
+		t.Fatal("a callback without a step-up cookie reached the link verification")
+	}
+}
+
+func assertNoPendingLinkParked(t *testing.T, response *http.Response) {
+	t.Helper()
 	if cookie := responseCookie(response.Cookies(), oidcLinkPendingCookieName); cookie != nil && cookie.Value != "" {
 		t.Fatal("the callback parked an identity for the owner to confirm")
 	}

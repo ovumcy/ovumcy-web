@@ -1,7 +1,6 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,11 +18,10 @@ import (
 // before; revoking just the presented session id would leave the other device
 // signed in, which the owner who left a shared machine cannot see.
 func TestLogoutOnOneDeviceEndsTheOwnersSessionOnTheOther(t *testing.T) {
-	app, database := newOnboardingTestAppWithCSRF(t)
-	user := createOnboardingTestUser(t, database, "cross-device-logout@example.com", "StrongPass1", true)
-
-	deviceA := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
-	deviceB := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+	// The prepared context signs the owner in once (device A) and yields the
+	// CSRF pair; device B is a second sign-in of the same account.
+	app, deviceA, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
+	deviceB := loginAndExtractAuthCookieWithCSRF(t, app, "logout-csrf@example.com", "StrongPass1")
 	if deviceA == deviceB {
 		t.Fatal("fixture: both devices hold the same cookie, so the test could not tell them apart")
 	}
@@ -37,24 +35,6 @@ func TestLogoutOnOneDeviceEndsTheOwnersSessionOnTheOther(t *testing.T) {
 		if status, _ := crossDeviceProbe(t, app, cookie, "/api/v1/stats/overview", "application/json"); status != http.StatusOK {
 			t.Fatalf("device %s api read before logout: want 200, got %d", name, status)
 		}
-	}
-
-	dashboard := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	dashboard.Header.Set("Accept-Language", "en")
-	dashboard.Header.Set("Cookie", deviceA)
-	dashboardResponse, err := app.Test(dashboard, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("dashboard request for csrf context failed: %v", err)
-	}
-	defer func() { _ = dashboardResponse.Body.Close() }()
-	body, err := io.ReadAll(dashboardResponse.Body)
-	if err != nil {
-		t.Fatalf("read dashboard body: %v", err)
-	}
-	csrfToken := extractCSRFTokenFromHTML(t, string(body))
-	csrfCookie := responseCookie(dashboardResponse.Cookies(), "ovumcy_csrf")
-	if csrfCookie == nil || strings.TrimSpace(csrfCookie.Value) == "" {
-		t.Fatal("csrf cookie is missing in the dashboard response")
 	}
 
 	logout := httptest.NewRequest(http.MethodPost, "/logout", strings.NewReader(url.Values{"csrf_token": {csrfToken}}.Encode()))
@@ -82,7 +62,7 @@ func TestLogoutOnOneDeviceEndsTheOwnersSessionOnTheOther(t *testing.T) {
 		t.Fatalf("device B api read after logout on A: want 401, got %d", status)
 	}
 
-	freshB := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+	freshB := loginAndExtractAuthCookieWithCSRF(t, app, "logout-csrf@example.com", "StrongPass1")
 	if status, _ := crossDeviceProbe(t, app, freshB, "/dashboard", ""); status != http.StatusOK {
 		t.Fatalf("device B dashboard after a fresh sign-in: want 200, got %d", status)
 	}

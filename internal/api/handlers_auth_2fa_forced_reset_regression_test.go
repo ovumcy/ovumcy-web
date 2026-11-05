@@ -3,6 +3,9 @@ package api
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,24 +19,34 @@ import (
 // TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset pins SEC-L1
 // at the handler: the owner passed the first factor and holds the pending-TOTP
 // cookie, an operator then forces a reset, and the correct code at the verify
-// step issues no auth cookie and retracts the pending cookie.
+// step issues no auth cookie, retracts the pending cookie and answers the
+// "totp session expired" refusal.
 //
 // The operator command bumps the session version AND sets must_change_password,
-// so either gate alone refuses its grant. The two cases separate them: "cli"
-// runs the production reset end to end (both gates fire), "flag only" writes the
-// flag and leaves the version where the grant was minted, so only the
-// must_change_password guard can be what refuses. The "no reset" control issues
-// a session for the same code, so a refusal is the reset and not a dead path.
+// so either gate alone refuses its grant. The cases separate them: the CLI case
+// runs the production reset end to end (both gates fire), the flag-only case
+// writes the flag and leaves the version where the grant was minted, so only the
+// must_change_password guard can be what refuses. The no-reset control issues a
+// session for the same code, so a refusal is the reset and not a dead path.
 func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing.T) {
 	cases := []struct {
-		name      string
-		reset     func(t *testing.T, database *gorm.DB, userID uint)
-		wantIssue bool
+		name string
+		// reset applies the operator's write; nil leaves the account untouched.
+		reset func(t *testing.T, database *gorm.DB, userID uint)
+		// wantFlag is the must_change_password the case must leave on the row.
+		wantFlag bool
+		// versionHolds marks the case whose write must not move the session
+		// version, so the version compare cannot be what refuses the grant.
+		versionHolds bool
+		// totpKept marks the case that must leave TOTP enabled, so the verify
+		// step reaches the grant check rather than an earlier branch.
+		totpKept bool
+		// wantSession marks the control: no reset, the valid code signs in.
+		wantSession bool
 	}{
 		{
-			name:      "no reset issues a session",
-			reset:     func(*testing.T, *gorm.DB, uint) {},
-			wantIssue: true,
+			name:        "no reset issues a session",
+			wantSession: true,
 		},
 		{
 			name: "operator cli reset",
@@ -44,6 +57,8 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 					t.Fatalf("operator forced reset: %v", err)
 				}
 			},
+			wantFlag: true,
+			totpKept: true,
 		},
 		{
 			name: "flag only, version untouched",
@@ -53,6 +68,9 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 					t.Fatalf("set must_change_password: %v", err)
 				}
 			},
+			wantFlag:     true,
+			versionHolds: true,
+			totpKept:     true,
 		},
 	}
 
@@ -72,19 +90,21 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 				t.Fatalf("fixture: the pending cookie is sealed at version 2, the row is at %d", granted.AuthSessionVersion)
 			}
 
-			tc.reset(t, database, user.ID)
+			if tc.reset != nil {
+				tc.reset(t, database, user.ID)
+			}
 
 			var after models.User
 			if err := database.First(&after, user.ID).Error; err != nil {
 				t.Fatalf("reload user: %v", err)
 			}
-			if after.MustChangePassword == tc.wantIssue {
-				t.Fatalf("fixture: must_change_password = %v, want %v", after.MustChangePassword, !tc.wantIssue)
+			if after.MustChangePassword != tc.wantFlag {
+				t.Fatalf("fixture: must_change_password = %v, want %v", after.MustChangePassword, tc.wantFlag)
 			}
-			if tc.name == "flag only, version untouched" && after.AuthSessionVersion != granted.AuthSessionVersion {
+			if tc.versionHolds && after.AuthSessionVersion != granted.AuthSessionVersion {
 				t.Fatalf("fixture: the version moved (%d -> %d), so the version compare could refuse the grant", granted.AuthSessionVersion, after.AuthSessionVersion)
 			}
-			if tc.name == "operator cli reset" && !after.TOTPEnabled {
+			if tc.totpKept && !after.TOTPEnabled {
 				t.Fatal("fixture: the reset cleared TOTP, so the verify step would stop at a different branch")
 			}
 
@@ -93,22 +113,35 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 				t.Fatalf("GenerateCode: %v", err)
 			}
 			csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
-			response := doTOTPChallengeRequest(t, app, joinCookieHeader(pendingCookie, csrfCookieHeader), code, csrfToken)
+			form := url.Values{"code": {code}, "csrf_token": {csrfToken}}
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if !tc.wantSession {
+				request.Header.Set("Accept", "application/json")
+			}
+			request.Header.Set("Cookie", joinCookieHeader(pendingCookie, csrfCookieHeader))
+			response := mustAppResponse(t, app, request)
 			defer func() { _ = response.Body.Close() }()
 
 			issued := responseCookie(response.Cookies(), authCookieName)
 			hasSession := issued != nil && issued.Value != ""
-			if tc.wantIssue {
-				if !hasSession || response.StatusCode != http.StatusSeeOther {
-					t.Fatalf("control: without a forced reset the valid code must issue a session, got status %d, cookie %v", response.StatusCode, hasSession)
+			if tc.wantSession {
+				// The form arm lands on "/" (the post-login landing page, which
+				// itself sends the owner on), as the success test above pins.
+				if !hasSession || response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/" {
+					t.Fatalf("control: without a forced reset the valid code must sign in to \"/\", got status %d Location %q, cookie %v", response.StatusCode, response.Header.Get("Location"), hasSession)
 				}
 				return
 			}
 			if hasSession {
 				t.Fatal("a valid code after an operator-forced reset must not issue an auth session")
 			}
-			if response.StatusCode == http.StatusSeeOther && response.Header.Get("Location") == "/" {
-				t.Fatalf("the verify step answered as a completed sign-in (303 to the landing page)")
+			refusal := totpSessionExpiredErrorSpec()
+			if response.StatusCode != refusal.Status {
+				t.Fatalf("expected the %d %q refusal, got status %d", refusal.Status, refusal.Key, response.StatusCode)
+			}
+			if got := readAPIError(t, response.Body); got != refusal.Key {
+				t.Fatalf("expected the refusal %q, got %q", refusal.Key, got)
 			}
 			assertTOTPCookieCleared(t, response, totpPendingCookieName)
 		})
