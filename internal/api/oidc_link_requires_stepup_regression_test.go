@@ -157,6 +157,11 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 			if fixture.oidcStub.lastAuthCode != "" {
 				t.Fatal("a callback for another state was treated as an ordinary sign-in")
 			}
+			// Not the owner's return trip, so it must not spend the owner's
+			// step-up: the cookie stays for the real callback.
+			if retracted := responseCookie(response.Cookies(), oidcStepupCookieName); retracted != nil {
+				t.Fatalf("a callback for another state touched the owner's step-up cookie: %+v", retracted)
+			}
 		}},
 		{"confirm with no pending cookie", func(t *testing.T, fixture *oidcStepupFixture) {
 			response := confirmWith(t, fixture, "")
@@ -205,6 +210,36 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 			}
 		})
 	}
+
+	// A link parked at version 1, then the account's sessions revoked (version
+	// 2) while this device keeps a session re-issued at 2: the owner's genuine
+	// step-up predates the revocation, so the confirm is stale and writes
+	// nothing. Without the freshness check the real write's own compare-and-set
+	// would still refuse, but as a signed-out answer, not as the stale refusal.
+	t.Run("confirm with a pending link parked before a revocation", func(t *testing.T) {
+		t.Parallel()
+
+		fixture := newOIDCLinkRealWriteFixture(t, "r3-direct-stale-pending@example.com")
+		pending := sealPending(t, []byte(testAppSecretKey), fixture.user.ID, storedAuthSessionVersion(t, fixture.database, fixture.user.ID))
+		if err := db.NewRepositories(fixture.database).Users.BumpAuthSessionVersion(context.Background(), fixture.user.ID); err != nil {
+			t.Fatalf("revoke the account's sessions: %v", err)
+		}
+		revoked := fixture.user
+		revoked.AuthSessionVersion = storedAuthSessionVersion(t, fixture.database, fixture.user.ID)
+		fixture.authCookie = issueAuthCookieForUser(t, revoked)
+		rowsBefore := oidcIdentityRowCount(t, fixture)
+
+		response := confirmWith(t, fixture, pending)
+		defer func() { _ = response.Body.Close() }()
+		assertLinkConfirmRefused(t, response, staleSpec)
+
+		if got := oidcIdentityRowCount(t, fixture); got != rowsBefore {
+			t.Fatalf("a stale pending link changed oidc_identities from %d to %d rows", rowsBefore, got)
+		}
+		if got := storedAuthSessionVersion(t, fixture.database, fixture.user.ID); got != revoked.AuthSessionVersion {
+			t.Fatalf("a stale pending link moved AuthSessionVersion from %d to %d", revoked.AuthSessionVersion, got)
+		}
+	})
 }
 
 func TestOIDCLinkBindsTheSubjectThroughTheLegitimateStepUp(t *testing.T) {
@@ -228,6 +263,9 @@ func TestOIDCLinkBindsTheSubjectThroughTheLegitimateStepUp(t *testing.T) {
 	}
 	if got := storedAuthSessionVersion(t, fixture.database, fixture.user.ID); got != versionBefore+1 {
 		t.Fatalf("control: expected AuthSessionVersion %d, got %d", versionBefore+1, got)
+	}
+	if reissued := responseCookie(response.Cookies(), authCookieName); reissued == nil || strings.TrimSpace(reissued.Value) == "" {
+		t.Fatal("control: the link must re-issue this device's session")
 	}
 }
 
