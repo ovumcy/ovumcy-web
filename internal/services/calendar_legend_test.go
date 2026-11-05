@@ -87,8 +87,16 @@ func TestOpenAPIDescribesAConfirmedOvulationAsAnInferenceNotAMeasurement(t *test
 // keys cannot hide it.
 func openAPIPropertyBlock(lines []string, name string) (string, bool) {
 	indentOf := func(line string) int { return len(line) - len(strings.TrimLeft(line, " ")) }
+	inProperties := false
 	for start, line := range lines {
-		if strings.TrimSpace(line) != name+":" {
+		// Only keys directly under a `properties:` mapping count, so a
+		// same-named key elsewhere in the document is not mistaken for it.
+		switch trimmed := strings.TrimSpace(line); {
+		case trimmed == "properties:":
+			inProperties = true
+			continue
+		case trimmed == name+":" && inProperties:
+		default:
 			continue
 		}
 		keyIndent := indentOf(line)
