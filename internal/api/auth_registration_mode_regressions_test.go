@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -191,14 +192,13 @@ const (
 	cellIdentitySubject = "never-seen-subject"
 	cellIdentityEmail   = "sso-newcomer@example.com"
 
-	// The two flash keys of the WEB-493 pair, as the literal strings the
-	// browser-side flash carries; written out so that renaming one in the
-	// error mapping shows up here.
-	cellFlashKeyProvisioningRefused = "sso temporarily unavailable"
-	cellFlashKeyAccountUnavailable  = "sso sign-in unavailable"
+	// The refusal key of every unprovisioned never-seen identity and of an
+	// email an account holds, as the literal string the browser-side flash
+	// carries; written out so that renaming it in the error mapping shows up
+	// here.
+	cellFlashKeyAccountUnavailable = "sso sign-in unavailable"
 
-	// What the start route flashes when OIDC is switched off; today the same
-	// string as the provisioning refusal, but a different refusal.
+	// What the start route flashes when OIDC is switched off.
 	cellFlashKeyOIDCDisabled = "sso temporarily unavailable"
 )
 
@@ -210,6 +210,23 @@ type cellOIDCProvider struct {
 	config    security.OIDCConfig
 	claims    security.OIDCClaims
 	lastState string
+	// provisionErrs records what each auto-provision attempt returned, so a
+	// refusal can be pinned to the provisioning step itself: the flash key it
+	// shares with every earlier refusal cannot say where the callback stopped.
+	provisionErrs []error
+}
+
+// cellRecordingProvisioner passes through to the composition root's
+// registration service and records each result on the cell's provider.
+type cellRecordingProvisioner struct {
+	inner    services.OIDCAutoProvisioner
+	provider *cellOIDCProvider
+}
+
+func (recorder cellRecordingProvisioner) AutoProvisionOwnerAccount(ctx context.Context, email string, createdAt time.Time) (models.User, error) {
+	user, err := recorder.inner.AutoProvisionOwnerAccount(ctx, email, createdAt)
+	recorder.provider.provisionErrs = append(recorder.provider.provisionErrs, err)
+	return user, err
 }
 
 func (provider *cellOIDCProvider) Enabled() bool { return provider.config.Enabled }
@@ -234,6 +251,13 @@ func (provider *cellOIDCProvider) UserInfoClaims(context.Context, security.OIDCE
 // the routes and services answer.
 func newLoginRegistrationCellApp(t *testing.T, cell loginRegistrationCell, claims security.OIDCClaims) (*fiber.App, *gorm.DB, *cellOIDCProvider) {
 	t.Helper()
+	return newLoginRegistrationCellAppInResponseMode(t, cell, claims, security.OIDCResponseModeFormPost)
+}
+
+// newLoginRegistrationCellAppInResponseMode is the same app with the callback
+// answered in the given response mode: form_post POSTs it, query GETs it.
+func newLoginRegistrationCellAppInResponseMode(t *testing.T, cell loginRegistrationCell, claims security.OIDCClaims, responseMode security.OIDCResponseMode) (*fiber.App, *gorm.DB, *cellOIDCProvider) {
+	t.Helper()
 
 	provider := &cellOIDCProvider{
 		config: security.OIDCConfig{
@@ -241,6 +265,7 @@ func newLoginRegistrationCellApp(t *testing.T, cell loginRegistrationCell, claim
 			LoginMode:     cell.loginMode,
 			AutoProvision: cell.autoProvision,
 			IssuerURL:     testOIDCIssuerURL,
+			ResponseMode:  responseMode,
 		},
 		claims: claims,
 	}
@@ -254,7 +279,7 @@ func newLoginRegistrationCellApp(t *testing.T, cell loginRegistrationCell, claim
 			if !ok {
 				t.Fatalf("the composition root's registration service %T does not provision OIDC owners", dependencies.RegistrationService)
 			}
-			service := services.NewOIDCLoginService(provider, repositories.OIDCIdentities, repositories.Users, provisioner)
+			service := services.NewOIDCLoginService(provider, repositories.OIDCIdentities, repositories.Users, cellRecordingProvisioner{inner: provisioner, provider: provider})
 			// The composition root hands the same second-factor verifier to the
 			// OIDC service; a hand-built one without it would sign in on fewer
 			// factors than production.
@@ -408,11 +433,17 @@ func runCellOIDCCallback(t *testing.T, app *fiber.App, provider *cellOIDCProvide
 	if stateCookie == nil || provider.lastState == "" {
 		return cellCallbackReply{response: startResponse}
 	}
-	callback := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
+	values := url.Values{
 		"state": {provider.lastState},
 		"code":  {"provider-code"},
-	}.Encode()))
-	callback.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	var callback *http.Request
+	if provider.config.ResponseMode == security.OIDCResponseModeQuery {
+		callback = httptest.NewRequest(http.MethodGet, security.OIDCCallbackPath+"?"+values.Encode(), nil)
+	} else {
+		callback = httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(values.Encode()))
+		callback.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
 	callback.Header.Set("Cookie", stateCookie.String())
 	return cellCallbackReply{response: mustAppResponse(t, app, callback), started: true}
 }
@@ -592,12 +623,17 @@ func TestOIDCCallbackForANeverSeenIdentityHonoursTheRegistrationModeAtEveryCell(
 			//     account-unavailable before it reaches the registration service.
 			//   - auto-provision on with closed registration: boot refuses this
 			//     configuration, so the cell is defence in depth; the provisioner
-			//     refuses and the key is the provisioning one. WEB-493 may change it.
-			want := cellFlashKeyAccountUnavailable
+			//     refuses, and since WEB-493 with the same account-unavailable key.
+			// The key is shared, so the step that refused is pinned by the
+			// provisioner's own record.
 			if cell.autoProvision {
-				want = cellFlashKeyProvisioningRefused
+				if len(provider.provisionErrs) != 1 || !errors.Is(provider.provisionErrs[0], services.ErrAuthRegistrationDisabled) {
+					t.Fatalf("expected exactly one provisioning attempt refused as registration disabled, got %v", provider.provisionErrs)
+				}
+			} else if len(provider.provisionErrs) != 0 {
+				t.Fatalf("auto-provision off must not reach the provisioner, got %v", provider.provisionErrs)
 			}
-			if got := cellReplyFlashKey(t, response); got != want {
+			if got, want := cellReplyFlashKey(t, response), cellFlashKeyAccountUnavailable; got != want {
 				t.Fatalf("expected the refusal flash %q, got %q", want, got)
 			}
 		})
@@ -620,17 +656,17 @@ func TestOIDCCallbackForANeverSeenIdentityHonoursTheRegistrationModeAtEveryCell(
 // held identity's line carries cause=link_required, the never-seen one's
 // cause=account_unavailable, which only the service's own refusal writes.
 //
-// WEB-493: with auto-provision on and registration closed (a configuration
-// boot refuses, so defence in depth) a never-seen identity is answered "sso
-// temporarily unavailable", an identity whose email an account holds "sso
-// sign-in unavailable". The test pins that difference as a tripwire (it goes
-// red when the oracle is fixed) and holds everything else equal meanwhile.
+// With auto-provision on and registration closed (a configuration boot
+// refuses, so defence in depth) the never-seen identity gets the same key
+// too, and its audit line carries cause=registration_closed. Before WEB-493
+// it was answered "sso temporarily unavailable". Both response modes are
+// driven: form_post POSTs the callback, query GETs it.
 //
 // Not parallel: the audit stream is the process-wide logger, swapped here.
 func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(t *testing.T) {
-	replyFor := func(t *testing.T, cell loginRegistrationCell, accountHoldsEmail bool) cellObservation {
+	replyFor := func(t *testing.T, cell loginRegistrationCell, responseMode security.OIDCResponseMode, accountHoldsEmail bool) cellObservation {
 		t.Helper()
-		app, database, provider := newLoginRegistrationCellApp(t, cell, freshCellIdentityClaims(cellIdentityEmail))
+		app, database, provider := newLoginRegistrationCellAppInResponseMode(t, cell, freshCellIdentityClaims(cellIdentityEmail), responseMode)
 		var seeded int64
 		if accountHoldsEmail {
 			createOnboardingTestUser(t, database, cellIdentityEmail, "StrongPass1", true)
@@ -653,85 +689,72 @@ func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(
 		if !cell.oidc {
 			continue
 		}
-		t.Run(cell.name, func(t *testing.T) {
-			fresh := replyFor(t, cell, false)
-			held := replyFor(t, cell, true)
+		for _, responseMode := range []security.OIDCResponseMode{security.OIDCResponseModeFormPost, security.OIDCResponseModeQuery} {
+			t.Run(cell.name+"/"+string(responseMode), func(t *testing.T) {
+				fresh := replyFor(t, cell, responseMode, false)
+				held := replyFor(t, cell, responseMode, true)
 
-			// The identity whose email an account holds is never signed in, never
-			// linked, never parked as a pending link, and answered with the
-			// account-unavailable flash; nothing of the asserted identity is echoed.
-			if held.hasAuthCookie || held.hasPendingCookie {
-				t.Fatalf("an email held by an account must not sign in or park a link: auth cookie=%v pending cookie=%v", held.hasAuthCookie, held.hasPendingCookie)
-			}
-			if held.identities != 0 || held.created != 0 {
-				t.Fatalf("an identity whose email an account holds must link no identity and create no user, got %d identities and %d users", held.identities, held.created)
-			}
-			if held.status != http.StatusSeeOther || held.location != "/login" {
-				t.Fatalf("expected 303 to /login for the held email, got %d %q", held.status, held.location)
-			}
-			if want := cellFlashKeyAccountUnavailable; held.flashKey != want {
-				t.Fatalf("expected the account-unavailable flash %q for the held email, got %q", want, held.flashKey)
-			}
-			if !strings.Contains(held.audit, `cause="link_required"`) {
-				t.Fatalf("the held email's audit line must carry cause=link_required, got %q", held.audit)
-			}
-			assertCellReplyHoldsNoIdentity(t, held)
-
-			if cell.provisionsNewcomers() {
-				if fresh.created != 1 || held.created != 0 {
-					t.Fatalf("control: the fresh identity must provision and the held email must not, got %d and %d new users", fresh.created, held.created)
+				// The identity whose email an account holds is never signed in, never
+				// linked, never parked as a pending link, and answered with the
+				// account-unavailable flash; nothing of the asserted identity is echoed.
+				if held.hasAuthCookie || held.hasPendingCookie {
+					t.Fatalf("an email held by an account must not sign in or park a link: auth cookie=%v pending cookie=%v", held.hasAuthCookie, held.hasPendingCookie)
 				}
-				return
-			}
-			if fresh.created != 0 || held.created != 0 {
-				t.Fatalf("no callback may create a user, got %d and %d", fresh.created, held.created)
-			}
-			if fresh.identities != 0 {
-				t.Fatalf("closed registration: no callback may link an identity, got %d", fresh.identities)
-			}
-			if fresh.hasAuthCookie || fresh.hasPendingCookie {
-				t.Fatalf("closed registration: a never-seen identity must not sign in or park a link: auth cookie=%v pending cookie=%v", fresh.hasAuthCookie, fresh.hasPendingCookie)
-			}
-			assertCellReplyHoldsNoIdentity(t, fresh)
-			// Everything but the flash key is already identical.
-			if fresh.status != held.status || fresh.location != held.location {
-				t.Fatalf("status/redirect tell the cases apart: never-seen identity %d %q, email held by an account %d %q", fresh.status, fresh.location, held.status, held.location)
-			}
-			if strings.Join(fresh.cookieLines, "\n") != strings.Join(held.cookieLines, "\n") {
-				t.Fatalf("the Set-Cookie lines tell the cases apart (flash value masked):\n%q\nvs\n%q", fresh.cookieLines, held.cookieLines)
-			}
-			if fresh.headers != held.headers {
-				t.Fatalf("the response headers tell the cases apart:\n%s\nvs\n%s", fresh.headers, held.headers)
-			}
-			if fresh.body != held.body {
-				t.Fatalf("the body tells the cases apart (%d vs %d bytes)", len(fresh.body), len(held.body))
-			}
-			if !cell.autoProvision {
-				// The reachable instance: the never-seen identity is refused by the
-				// service itself, with the held email's own flash key.
+				if held.identities != 0 || held.created != 0 {
+					t.Fatalf("an identity whose email an account holds must link no identity and create no user, got %d identities and %d users", held.identities, held.created)
+				}
+				if held.status != http.StatusSeeOther || held.location != "/login" {
+					t.Fatalf("expected 303 to /login for the held email, got %d %q", held.status, held.location)
+				}
+				if want := cellFlashKeyAccountUnavailable; held.flashKey != want {
+					t.Fatalf("expected the account-unavailable flash %q for the held email, got %q", want, held.flashKey)
+				}
+				if !strings.Contains(held.audit, `cause="link_required"`) {
+					t.Fatalf("the held email's audit line must carry cause=link_required, got %q", held.audit)
+				}
+				assertCellReplyHoldsNoIdentity(t, held)
+
+				if cell.provisionsNewcomers() {
+					if fresh.created != 1 || held.created != 0 {
+						t.Fatalf("control: the fresh identity must provision and the held email must not, got %d and %d new users", fresh.created, held.created)
+					}
+					return
+				}
+				if fresh.created != 0 || held.created != 0 {
+					t.Fatalf("no callback may create a user, got %d and %d", fresh.created, held.created)
+				}
+				if fresh.identities != 0 {
+					t.Fatalf("closed registration: no callback may link an identity, got %d", fresh.identities)
+				}
+				if fresh.hasAuthCookie || fresh.hasPendingCookie {
+					t.Fatalf("closed registration: a never-seen identity must not sign in or park a link: auth cookie=%v pending cookie=%v", fresh.hasAuthCookie, fresh.hasPendingCookie)
+				}
+				assertCellReplyHoldsNoIdentity(t, fresh)
+				if fresh.status != held.status || fresh.location != held.location {
+					t.Fatalf("status/redirect tell the cases apart: never-seen identity %d %q, email held by an account %d %q", fresh.status, fresh.location, held.status, held.location)
+				}
+				if strings.Join(fresh.cookieLines, "\n") != strings.Join(held.cookieLines, "\n") {
+					t.Fatalf("the Set-Cookie lines tell the cases apart (flash value masked):\n%q\nvs\n%q", fresh.cookieLines, held.cookieLines)
+				}
+				if fresh.headers != held.headers {
+					t.Fatalf("the response headers tell the cases apart:\n%s\nvs\n%s", fresh.headers, held.headers)
+				}
+				if fresh.body != held.body {
+					t.Fatalf("the body tells the cases apart (%d vs %d bytes)", len(fresh.body), len(held.body))
+				}
+				// The never-seen identity is refused with the held email's own flash
+				// key; the audit line names which refusal it was.
 				if fresh.flashKey == "" || fresh.flashKey != held.flashKey {
 					t.Fatalf("the flash key tells the cases apart: never-seen identity %q, email held by an account %q", fresh.flashKey, held.flashKey)
 				}
-				if !strings.Contains(fresh.audit, `cause="account_unavailable"`) {
-					t.Fatalf("the never-seen identity's audit line must carry cause=account_unavailable, got %q", fresh.audit)
+				wantCause := `cause="account_unavailable"`
+				if cell.autoProvision {
+					wantCause = `cause="registration_closed"`
 				}
-				return
-			}
-			// WEB-493 tripwire: this configuration is refused at boot, so the fix is
-			// defence in depth. The flash key still tells the cases apart; the test
-			// goes red when the oracle is fixed.
-			if fresh.flashKey == held.flashKey {
-				t.Fatalf("WEB-493 fixed: replace this inequality with an equality requirement and drop the two exact pins (both keys are now %q)", fresh.flashKey)
-			}
-			// The exact keys, as literals: a key renamed in the error mapping must
-			// not pass unseen, and a difference between two unrelated failures must
-			// not satisfy the tripwire above.
-			if fresh.flashKey != cellFlashKeyProvisioningRefused {
-				t.Fatalf("WEB-493: the never-seen identity's key is %q, expected %q. A pair of new, different keys means the oracle is still open: do not re-pin", fresh.flashKey, cellFlashKeyProvisioningRefused)
-			}
-			if held.flashKey != cellFlashKeyAccountUnavailable {
-				t.Fatalf("WEB-493: the held email's key is %q, expected %q. A pair of new, different keys means the oracle is still open: do not re-pin", held.flashKey, cellFlashKeyAccountUnavailable)
-			}
-		})
+				if !strings.Contains(fresh.audit, wantCause) {
+					t.Fatalf("the never-seen identity's audit line must carry %s, got %q", wantCause, fresh.audit)
+				}
+			})
+		}
 	}
 }
