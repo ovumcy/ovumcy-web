@@ -21,6 +21,7 @@ type runtimeConfig struct {
 	SecretKey        string
 	DatabaseConfig   db.Config
 	Port             string
+	ListenAddress    string
 	DefaultLanguage  string
 	RegistrationMode services.RegistrationMode
 	CookieSecure     bool
@@ -251,6 +252,11 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		return runtimeConfig{}, fmt.Errorf("invalid PORT: %w", err)
 	}
 
+	listenAddress, err := resolveListenAddress()
+	if err != nil {
+		return runtimeConfig{}, fmt.Errorf("invalid LISTEN_ADDRESS: %w", err)
+	}
+
 	proxy, err := resolveProxySettings()
 	if err != nil {
 		return runtimeConfig{}, err
@@ -326,6 +332,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		SecretKey:               secretKey,
 		DatabaseConfig:          databaseConfig,
 		Port:                    port,
+		ListenAddress:           listenAddress,
 		DefaultLanguage:         getEnv("DEFAULT_LANGUAGE", "en"),
 		CalendarFeedFencePath:   calendarFeedFencePath,
 		CalendarFeedFenceOptOut: calendarFeedFenceOptOut,
@@ -644,4 +651,16 @@ func resolvePort() (string, error) {
 		return "", fmt.Errorf("PORT must be a number between 1 and 65535")
 	}
 	return strconv.Itoa(port), nil
+}
+
+func resolveListenAddress() (string, error) {
+	raw := strings.TrimSpace(os.Getenv("LISTEN_ADDRESS"))
+	if raw == "" {
+		return "", nil
+	}
+	address := net.ParseIP(raw)
+	if address == nil {
+		return "", fmt.Errorf("LISTEN_ADDRESS must be an IP address such as 127.0.0.1 or ::1")
+	}
+	return address.String(), nil
 }

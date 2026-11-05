@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,7 @@ func setValidBootEnv(t *testing.T) {
 	t.Setenv("DB_PATH", "data/ovumcy.db")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("PORT", "8080")
+	t.Setenv("LISTEN_ADDRESS", "")
 	t.Setenv("TRUST_PROXY_ENABLED", "false")
 	t.Setenv("REGISTRATION_MODE", "closed")
 	t.Setenv("OIDC_ENABLED", "false")
@@ -115,6 +117,7 @@ func TestLoadRuntimeConfigRejectsInvalidInputs(t *testing.T) {
 		{"invalid secret key", func(t *testing.T) { t.Setenv("SECRET_KEY", "too-short") }},
 		{"invalid database config", func(t *testing.T) { t.Setenv("DB_DRIVER", "bogus") }},
 		{"invalid port", func(t *testing.T) { t.Setenv("PORT", "70000") }},
+		{"invalid listen address", func(t *testing.T) { t.Setenv("LISTEN_ADDRESS", "localhost") }},
 		{"invalid proxy config", func(t *testing.T) {
 			t.Setenv("TRUST_PROXY_ENABLED", "true")
 			// A non-empty value that parseCSV reduces to zero entries: an empty
@@ -345,10 +348,21 @@ func TestTryRunCLICommandWithHandlersUsersAndHealthcheckErrorBranches(t *testing
 		setValidBootEnv(t)
 		t.Setenv("PORT", "70000")
 		handled, err := tryRunCLICommandWithHandlers([]string{"healthcheck"}, cliCommandHandlers{
-			runHealthcheck: func(string, time.Duration) error { return nil },
+			runHealthcheck: func(string, string, time.Duration) error { return nil },
 		})
 		if !handled || err == nil {
 			t.Fatalf("expected handled port error, got (%t, %v)", handled, err)
+		}
+	})
+
+	t.Run("healthcheck reports invalid listen address", func(t *testing.T) {
+		setValidBootEnv(t)
+		t.Setenv("LISTEN_ADDRESS", "localhost")
+		handled, err := tryRunCLICommandWithHandlers([]string{"healthcheck"}, cliCommandHandlers{
+			runHealthcheck: func(string, string, time.Duration) error { return nil },
+		})
+		if !handled || err == nil || !strings.Contains(err.Error(), "invalid LISTEN_ADDRESS") {
+			t.Fatalf("expected handled listen address error, got (%t, %v)", handled, err)
 		}
 	})
 }

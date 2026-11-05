@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net"
 
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -9,8 +10,8 @@ import (
 
 func logStartup(config runtimeConfig) {
 	log.Printf(
-		"Ovumcy listening on :%s (rev: %s, tz: %s, registration=%s, oidc=%t, audit_log=%t, hsts=%t, rate_limits: login=%d/%s api=%d/%s, trusted_proxy=%t)",
-		config.Port,
+		"Ovumcy listening on %s (rev: %s, tz: %s, registration=%s, oidc=%t, audit_log=%t, hsts=%t, rate_limits: login=%d/%s api=%d/%s, trusted_proxy=%t)",
+		net.JoinHostPort(config.ListenAddress, config.Port),
 		buildRevision(),
 		config.Location.String(),
 		config.RegistrationMode,

@@ -27,8 +27,8 @@ func tryRunCLICommand() (bool, error) {
 type cliCommandHandlers struct {
 	runResetPassword    func(databaseConfig db.Config, args []string) error
 	runUsers            func(databaseConfig db.Config, localSignInEnabled func() (bool, error), args []string) error
-	runHealthcheck      func(port string, timeout time.Duration) error
-	runReadycheck       func(port string, timeout time.Duration) error
+	runHealthcheck      func(listenAddress string, port string, timeout time.Duration) error
+	runReadycheck       func(listenAddress string, port string, timeout time.Duration) error
 	runNotify           func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, fenceOptOut bool, args []string) error
 	runWebhook          func(databaseConfig db.Config, secretKey string, args []string) error
 	runRepair           func(databaseConfig db.Config, args []string) error
@@ -119,7 +119,11 @@ func handleHealthcheckCommand(args []string, handlers cliCommandHandlers) (bool,
 	if err != nil {
 		return true, fmt.Errorf("invalid PORT: %w", err)
 	}
-	return true, handlers.runHealthcheck(port, 0)
+	listenAddress, err := resolveListenAddress()
+	if err != nil {
+		return true, fmt.Errorf("invalid LISTEN_ADDRESS: %w", err)
+	}
+	return true, handlers.runHealthcheck(listenAddress, port, 0)
 }
 
 func handleReadycheckCommand(args []string, handlers cliCommandHandlers) (bool, error) {
@@ -133,7 +137,11 @@ func handleReadycheckCommand(args []string, handlers cliCommandHandlers) (bool, 
 	if err != nil {
 		return true, fmt.Errorf("invalid PORT: %w", err)
 	}
-	return true, handlers.runReadycheck(port, 0)
+	listenAddress, err := resolveListenAddress()
+	if err != nil {
+		return true, fmt.Errorf("invalid LISTEN_ADDRESS: %w", err)
+	}
+	return true, handlers.runReadycheck(listenAddress, port, 0)
 }
 
 func handleNotifyCommand(args []string, handlers cliCommandHandlers) (bool, error) {
