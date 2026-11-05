@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,7 +17,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-const r3ForeignSubject = "r3-foreign-subject"
+const linkForeignSubject = "link-foreign-subject"
 
 // newOIDCLinkRealWriteFixture is the identity-link fixture with the write the
 // link ends in routed through the REAL service and repository: the provider
@@ -34,9 +35,47 @@ func newOIDCLinkRealWriteFixture(t *testing.T, email string) *oidcStepupFixture 
 	})
 	repositories := db.NewRepositories(fixture.database)
 	workflow.real = services.NewOIDCLoginService(enabledOIDCProviderForLinkTest{}, repositories.OIDCIdentities, repositories.Users, nil)
-	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: fixture.stepupIssuer, Subject: r3ForeignSubject}
+	fixture.oidcStub.identityLinkClaims = security.OIDCClaims{Issuer: fixture.stepupIssuer, Subject: linkForeignSubject}
 	giveLinkFixtureAPassword(t, fixture)
 	return fixture
+}
+
+// sealPendingLinkCookie seals a pending-link cookie for userID at version under
+// secret, so the owner binding, the version and the key are the only things
+// that can refuse it.
+func sealPendingLinkCookie(t *testing.T, secret []byte, userID uint, version int) string {
+	t.Helper()
+	serialized, err := json.Marshal(oidcLinkPendingCookiePayload{
+		UserID:         userID,
+		SessionVersion: version,
+		Issuer:         "https://id.example.com",
+		Subject:        linkForeignSubject,
+		ExpiresAt:      time.Now().Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("marshal pending payload: %v", err)
+	}
+	codec, err := newSecureCookieCodec(secret)
+	if err != nil {
+		t.Fatalf("codec: %v", err)
+	}
+	sealed, err := codec.seal(oidcLinkPendingCookieName, serialized)
+	if err != nil {
+		t.Fatalf("seal pending: %v", err)
+	}
+	return oidcLinkPendingCookieName + "=" + sealed
+}
+
+// confirmLinkWithPendingCookie posts the interstitial's confirm as the
+// fixture's owner, carrying the given pending-link cookie pair.
+func confirmLinkWithPendingCookie(t *testing.T, fixture *oidcStepupFixture, pending string) *http.Response {
+	t.Helper()
+	csrfCookie, csrfToken := fixture.settingsCSRF(t)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/confirm", strings.NewReader(url.Values{"csrf_token": {csrfToken}}.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(fixture.authCookie, csrfCookie), pending))
+	return mustAppResponse(t, fixture.app, request)
 }
 
 func oidcIdentityRowCount(t *testing.T, fixture *oidcStepupFixture) int64 {
@@ -48,8 +87,8 @@ func oidcIdentityRowCount(t *testing.T, fixture *oidcStepupFixture) int64 {
 	return count
 }
 
-// TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp pins R3 directly:
-// holding only the owner's live session cookie and CSRF token, with no fresh
+// TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp pins that an OIDC
+// identity link needs a fresh step-up: holding only the owner's live session cookie and CSRF token, with no fresh
 // step-up proof, no link entry binds a foreign provider subject. Each entry is
 // refused at its own guard (the refusal is asserted, not only the absent row),
 // and oidc_identities and AuthSessionVersion are unchanged after it.
@@ -61,40 +100,6 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 
 	staleSpec := settingsOIDCReauthStaleErrorSpec()
 
-	// sealPending seals at the session's CURRENT version, so the owner binding
-	// (or the key) is the only thing left that can refuse it.
-	sealPending := func(t *testing.T, secret []byte, userID uint, version int) string {
-		t.Helper()
-		serialized, err := json.Marshal(oidcLinkPendingCookiePayload{
-			UserID:         userID,
-			SessionVersion: version,
-			Issuer:         "https://id.example.com",
-			Subject:        r3ForeignSubject,
-			ExpiresAt:      time.Now().Add(time.Minute),
-		})
-		if err != nil {
-			t.Fatalf("marshal pending payload: %v", err)
-		}
-		codec, err := newSecureCookieCodec(secret)
-		if err != nil {
-			t.Fatalf("codec: %v", err)
-		}
-		sealed, err := codec.seal(oidcLinkPendingCookieName, serialized)
-		if err != nil {
-			t.Fatalf("seal pending: %v", err)
-		}
-		return oidcLinkPendingCookieName + "=" + sealed
-	}
-
-	confirmWith := func(t *testing.T, fixture *oidcStepupFixture, pending string) *http.Response {
-		t.Helper()
-		csrfCookie, csrfToken := fixture.settingsCSRF(t)
-		request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/oidc/link/confirm", strings.NewReader(url.Values{"csrf_token": {csrfToken}}.Encode()))
-		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		request.Header.Set("Accept", "application/json")
-		request.Header.Set("Cookie", joinCookieHeader(settingsCookieHeader(fixture.authCookie, csrfCookie), pending))
-		return mustAppResponse(t, fixture.app, request)
-	}
 	// callbackWith posts a callback that carries a VALID sealed sign-in state
 	// (minted by the real start route, state and code matching it) and the
 	// owner's session, with only the step-up cookie omitted or replaced. Past
@@ -123,12 +128,12 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 		{"step-up start without the password", func(t *testing.T, fixture *oidcStepupFixture) {
 			response := postOIDCIdentityLinkStepupStartWithPassword(t, fixture, "")
 			defer func() { _ = response.Body.Close() }()
-			assertLinkStartRefusedBeforeAnyStepup(t, fixture, response)
+			assertLinkStartRefusedBeforeAnyStepup(t, fixture, response, settingsMissingPasswordErrorSpec())
 		}},
 		{"step-up start with a wrong password", func(t *testing.T, fixture *oidcStepupFixture) {
 			response := postOIDCIdentityLinkStepupStartWithPassword(t, fixture, "WrongPass1")
 			defer func() { _ = response.Body.Close() }()
-			assertLinkStartRefusedBeforeAnyStepup(t, fixture, response)
+			assertLinkStartRefusedBeforeAnyStepup(t, fixture, response, settingsInvalidPasswordErrorSpec())
 		}},
 		{"callback with a valid sign-in state and no step-up cookie", func(t *testing.T, fixture *oidcStepupFixture) {
 			response := callbackWith(t, fixture, "")
@@ -146,11 +151,11 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 			// neither complete it nor park the identity.
 			start := postOIDCIdentityLinkStepupStart(t, fixture)
 			defer func() { _ = start.Body.Close() }()
-			response := postOIDCStepupCallback(t, fixture, readStepupCookie(t, start), "another-state", "attacker-code")
+			stepup := readStepupCookie(t, start)
+			response := postOIDCStepupCallback(t, fixture, stepup, "another-state", "attacker-code")
 			defer func() { _ = response.Body.Close() }()
-			if cookie := responseCookie(response.Cookies(), oidcLinkPendingCookieName); cookie != nil && cookie.Value != "" {
-				t.Fatal("a callback for another state parked an identity for the owner to confirm")
-			}
+			assertSettingsRefusalRedirect(t, response, authOIDCAuthenticationFailedErrorSpec())
+			assertNoPendingLinkParked(t, response)
 			if fixture.oidcStub.lastIdentityLinkCode != "" {
 				t.Fatal("a callback for another state reached the link verification")
 			}
@@ -162,34 +167,86 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 			if retracted := responseCookie(response.Cookies(), oidcStepupCookieName); retracted != nil {
 				t.Fatalf("a callback for another state touched the owner's step-up cookie: %+v", retracted)
 			}
+
+			// Positive anchor: the same step-up cookie answered with its own
+			// state parks the identity, so the refusal above was the state and
+			// not a cookie or fixture that never worked.
+			answered := postOIDCStepupCallback(t, fixture, stepup, extractStepupCallbackState(t, fixture), "owner-code")
+			defer func() { _ = answered.Body.Close() }()
+			_ = readOIDCLinkPendingCookie(t, answered)
+		}},
+		{"callback carrying another owner's step-up under this owner's session", func(t *testing.T, fixture *oidcStepupFixture) {
+			// The step-up was started by the fixture's owner; the callback
+			// arrives with a different owner's live session. The session user
+			// is not the one the sealed step-up names, so nothing is parked.
+			start := postOIDCIdentityLinkStepupStart(t, fixture)
+			defer func() { _ = start.Body.Close() }()
+			stepup := readStepupCookie(t, start)
+
+			other := models.User{
+				Email:               "link-other-owner@example.com",
+				LocalAuthEnabled:    false,
+				Role:                models.RoleOwner,
+				OnboardingCompleted: true,
+				AuthSessionVersion:  1,
+				CycleLength:         28,
+				PeriodLength:        5,
+				AutoPeriodFill:      true,
+				CreatedAt:           time.Now().UTC(),
+			}
+			if err := fixture.database.Create(&other).Error; err != nil {
+				t.Fatalf("create the second owner: %v", err)
+			}
+			rowsBefore := oidcIdentityRowCount(t, fixture)
+			otherVersion := storedAuthSessionVersion(t, fixture.database, other.ID)
+
+			form := url.Values{"state": {extractStepupCallbackState(t, fixture)}, "code": {"owner-code"}}
+			request := httptest.NewRequest(http.MethodPost, "/auth/oidc/callback", strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			request.Header.Set("Accept", "application/json")
+			request.Header.Set("Cookie", joinCookieHeader(issueAuthCookieForUser(t, other), stepup))
+			response := mustAppResponse(t, fixture.app, request)
+			defer func() { _ = response.Body.Close() }()
+
+			assertSettingsRefusalRedirect(t, response, settingsOIDCReauthMismatchErrorSpec())
+			assertNoPendingLinkParked(t, response)
+			if fixture.oidcStub.lastIdentityLinkCode != "" {
+				t.Fatal("a step-up under another owner's session reached the link verification")
+			}
+			if got := oidcIdentityRowCount(t, fixture); got != rowsBefore {
+				t.Fatalf("oidc_identities changed from %d to %d rows", rowsBefore, got)
+			}
+			if got := storedAuthSessionVersion(t, fixture.database, other.ID); got != otherVersion {
+				t.Fatalf("the second owner's AuthSessionVersion moved from %d to %d", otherVersion, got)
+			}
 		}},
 		{"confirm with no pending cookie", func(t *testing.T, fixture *oidcStepupFixture) {
-			response := confirmWith(t, fixture, "")
+			response := confirmLinkWithPendingCookie(t, fixture, "")
 			defer func() { _ = response.Body.Close() }()
 			assertLinkConfirmRefused(t, response, staleSpec)
 		}},
 		{"confirm with a forged pending cookie", func(t *testing.T, fixture *oidcStepupFixture) {
-			response := confirmWith(t, fixture, oidcLinkPendingCookieName+"=forged-not-sealed")
+			response := confirmLinkWithPendingCookie(t, fixture, oidcLinkPendingCookieName+"=forged-not-sealed")
 			defer func() { _ = response.Body.Close() }()
 			assertLinkConfirmRefused(t, response, staleSpec)
 		}},
 		{"confirm with a pending cookie sealed under another key", func(t *testing.T, fixture *oidcStepupFixture) {
-			response := confirmWith(t, fixture, sealPending(t, []byte("another-secret-key"), fixture.user.ID, storedAuthSessionVersion(t, fixture.database, fixture.user.ID)))
+			response := confirmLinkWithPendingCookie(t, fixture, sealPendingLinkCookie(t, []byte("another-secret-key"), fixture.user.ID, storedAuthSessionVersion(t, fixture.database, fixture.user.ID)))
 			defer func() { _ = response.Body.Close() }()
 			assertLinkConfirmRefused(t, response, staleSpec)
 		}},
-		{"confirm with another account's pending cookie", func(t *testing.T, fixture *oidcStepupFixture) {
-			response := confirmWith(t, fixture, sealPending(t, []byte(testAppSecretKey), fixture.user.ID+100, storedAuthSessionVersion(t, fixture.database, fixture.user.ID)))
+		{"confirm with a pending cookie bound to another user id", func(t *testing.T, fixture *oidcStepupFixture) {
+			response := confirmLinkWithPendingCookie(t, fixture, sealPendingLinkCookie(t, []byte(testAppSecretKey), fixture.user.ID+100, storedAuthSessionVersion(t, fixture.database, fixture.user.ID)))
 			defer func() { _ = response.Body.Close() }()
 			assertLinkConfirmRefused(t, response, staleSpec)
 		}},
 	}
 
-	for _, tc := range cases {
+	for index, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			fixture := newOIDCLinkRealWriteFixture(t, "r3-direct-"+strings.NewReplacer(" ", "-", "'", "").Replace(tc.name)+"@example.com")
+			fixture := newOIDCLinkRealWriteFixture(t, fmt.Sprintf("link-direct-%d@example.com", index))
 			rowsBefore := oidcIdentityRowCount(t, fixture)
 			versionBefore := storedAuthSessionVersion(t, fixture.database, fixture.user.ID)
 			if rowsBefore != 1 {
@@ -198,10 +255,15 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 
 			tc.run(t, fixture)
 
+			// The callback cases run through the stub's exchange, which writes
+			// nothing, so these row and version checks cannot fail for them: the
+			// callback cases are pinned by their own assertions above, and these
+			// checks bind the start and confirm cases, which reach the real
+			// service and repository.
 			if got := oidcIdentityRowCount(t, fixture); got != rowsBefore {
 				t.Fatalf("oidc_identities changed from %d to %d rows without a fresh step-up", rowsBefore, got)
 			}
-			_, linked, err := db.NewRepositories(fixture.database).OIDCIdentities.FindByIssuerSubject(context.Background(), fixture.stepupIssuer, r3ForeignSubject)
+			_, linked, err := db.NewRepositories(fixture.database).OIDCIdentities.FindByIssuerSubject(context.Background(), fixture.stepupIssuer, linkForeignSubject)
 			if err != nil || linked {
 				t.Fatalf("the foreign subject is bound without a fresh step-up: linked=%v err=%v", linked, err)
 			}
@@ -219,8 +281,8 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 	t.Run("confirm with a pending link parked before a revocation", func(t *testing.T) {
 		t.Parallel()
 
-		fixture := newOIDCLinkRealWriteFixture(t, "r3-direct-stale-pending@example.com")
-		pending := sealPending(t, []byte(testAppSecretKey), fixture.user.ID, storedAuthSessionVersion(t, fixture.database, fixture.user.ID))
+		fixture := newOIDCLinkRealWriteFixture(t, "link-direct-stale-pending@example.com")
+		pending := sealPendingLinkCookie(t, []byte(testAppSecretKey), fixture.user.ID, storedAuthSessionVersion(t, fixture.database, fixture.user.ID))
 		if err := db.NewRepositories(fixture.database).Users.BumpAuthSessionVersion(context.Background(), fixture.user.ID); err != nil {
 			t.Fatalf("revoke the account's sessions: %v", err)
 		}
@@ -229,7 +291,7 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 		fixture.authCookie = issueAuthCookieForUser(t, revoked)
 		rowsBefore := oidcIdentityRowCount(t, fixture)
 
-		response := confirmWith(t, fixture, pending)
+		response := confirmLinkWithPendingCookie(t, fixture, pending)
 		defer func() { _ = response.Body.Close() }()
 		assertLinkConfirmRefused(t, response, staleSpec)
 
@@ -242,10 +304,40 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 	})
 }
 
+// TestOIDCLinkConfirmAcceptsAPendingCookieSealedForTheOwner is the acceptance
+// proof for the sealed-cookie helper the refusal cases use: the same helper,
+// sealed under the app key for the session's own user at its current version,
+// is accepted by confirm and links exactly one row. Without it, every confirm
+// refusal above could be the helper producing a cookie nothing accepts.
+func TestOIDCLinkConfirmAcceptsAPendingCookieSealedForTheOwner(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCLinkRealWriteFixture(t, "link-direct-sealed-accept@example.com")
+	rowsBefore := oidcIdentityRowCount(t, fixture)
+	version := storedAuthSessionVersion(t, fixture.database, fixture.user.ID)
+
+	response := confirmLinkWithPendingCookie(t, fixture, sealPendingLinkCookie(t, []byte(testAppSecretKey), fixture.user.ID, version))
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode >= http.StatusBadRequest {
+		t.Fatalf("a pending cookie sealed for the owner must be accepted, got %d: %s", response.StatusCode, mustReadBodyString(t, response.Body))
+	}
+	if got := oidcIdentityRowCount(t, fixture); got != rowsBefore+1 {
+		t.Fatalf("expected exactly one new oidc_identities row (%d -> %d), got %d", rowsBefore, rowsBefore+1, got)
+	}
+	_, linked, err := db.NewRepositories(fixture.database).OIDCIdentities.FindByIssuerSubject(context.Background(), fixture.stepupIssuer, linkForeignSubject)
+	if err != nil || !linked {
+		t.Fatalf("the sealed subject must be bound: linked=%v err=%v", linked, err)
+	}
+}
+
+// TestOIDCLinkBindsTheSubjectThroughTheLegitimateStepUp is the positive control
+// for the refusal cases above: the same fixture and claims, the full step-up
+// path (start, callback, confirm), writing exactly one row and bumping the
+// session version once.
 func TestOIDCLinkBindsTheSubjectThroughTheLegitimateStepUp(t *testing.T) {
 	t.Parallel()
 
-	fixture := newOIDCLinkRealWriteFixture(t, "r3-direct-control@example.com")
+	fixture := newOIDCLinkRealWriteFixture(t, "link-direct-control@example.com")
 	rowsBefore := oidcIdentityRowCount(t, fixture)
 	versionBefore := storedAuthSessionVersion(t, fixture.database, fixture.user.ID)
 
@@ -257,7 +349,7 @@ func TestOIDCLinkBindsTheSubjectThroughTheLegitimateStepUp(t *testing.T) {
 	if got := oidcIdentityRowCount(t, fixture); got != rowsBefore+1 {
 		t.Fatalf("control: expected exactly one new oidc_identities row (%d -> %d), got %d", rowsBefore, rowsBefore+1, got)
 	}
-	_, linked, err := db.NewRepositories(fixture.database).OIDCIdentities.FindByIssuerSubject(context.Background(), fixture.stepupIssuer, r3ForeignSubject)
+	_, linked, err := db.NewRepositories(fixture.database).OIDCIdentities.FindByIssuerSubject(context.Background(), fixture.stepupIssuer, linkForeignSubject)
 	if err != nil || !linked {
 		t.Fatalf("control: the stepped-up subject must be bound: linked=%v err=%v", linked, err)
 	}
@@ -269,13 +361,31 @@ func TestOIDCLinkBindsTheSubjectThroughTheLegitimateStepUp(t *testing.T) {
 	}
 }
 
-// assertLinkStartRefusedBeforeAnyStepup requires the start to stop at the
-// password gate: refused, no step-up cookie, and the provider never asked to
-// start a re-authentication.
-func assertLinkStartRefusedBeforeAnyStepup(t *testing.T, fixture *oidcStepupFixture, response *http.Response) {
+// assertSettingsRefusalRedirect requires a callback refusal to land on
+// /settings as a 303 carrying the spec's key in the sealed flash.
+func assertSettingsRefusalRedirect(t *testing.T, response *http.Response, want APIErrorSpec) {
 	t.Helper()
-	if response.StatusCode < http.StatusBadRequest {
-		t.Fatalf("the link step-up started without the account password: status %d", response.StatusCode)
+	if response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/settings" {
+		t.Fatalf("expected a 303 to /settings, got %d %q", response.StatusCode, response.Header.Get("Location"))
+	}
+	// A request that does not state Sec-Fetch-Site: same-origin lands its
+	// refusal in the CSRF-exempt flash slot, a stated one in the ordinary slot.
+	flash := mustReadExemptFlashPayload
+	if responseCookie(response.Cookies(), flashCookieName) != nil {
+		flash = mustReadFlashPayload
+	}
+	if got := flash(t, []byte(testAppSecretKey), response.Cookies()).SettingsError; got != want.Key {
+		t.Fatalf("expected the settings flash %q, got %q", want.Key, got)
+	}
+}
+
+// assertLinkStartRefusedBeforeAnyStepup requires the start to stop at the
+// password gate with the exact refusal: no step-up cookie, and the provider
+// never asked to start a re-authentication.
+func assertLinkStartRefusedBeforeAnyStepup(t *testing.T, fixture *oidcStepupFixture, response *http.Response, want APIErrorSpec) {
+	t.Helper()
+	if response.StatusCode != want.Status {
+		t.Fatalf("expected the link step-up refused with %d, got %d", want.Status, response.StatusCode)
 	}
 	if cookie := responseCookie(response.Cookies(), oidcStepupCookieName); cookie != nil && cookie.Value != "" {
 		t.Fatal("a step-up cookie was minted without the account password")
