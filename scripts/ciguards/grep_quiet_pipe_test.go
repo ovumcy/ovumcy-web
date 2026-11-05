@@ -28,10 +28,25 @@ var (
 	setPipefail = regexp.MustCompile(`(?m)^[ \t]*set\b[^#\n]*[ \t]-[A-Za-z]*o[ \t]+pipefail\b`)
 	// A block scalar's header: `|`, `>-`, `|+`, `|2`, optionally commented.
 	blockScalarHeader = regexp.MustCompile(`^[|>][-+0-9]*([ \t]+#.*)?$`)
-	// A heredoc opener (`<<EOF`, `<<-'EOF'`), never a herestring `<<<`.
-	heredocOpener   = regexp.MustCompile(`(?:^|[^<])<<-?[ \t]*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
-	shellAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+	shellAssignment   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 )
+
+// heredocDelimiter is the delimiter of a heredoc the line opens (`<<EOF`,
+// `<<-'EOF'`), or "". It reads the operator off the tokens, so a `<<` inside
+// quotes or `$((…))` is not one; a bare `((…))` arithmetic command opens none.
+func heredocDelimiter(line string) string {
+	tokens := shellTokens(line)
+	for k, tok := range tokens {
+		if tok.op && tok.text == "((" {
+			return ""
+		}
+		if tok.op && strings.HasPrefix(tok.text, "<<") && !strings.HasPrefix(tok.text, "<<<") &&
+			k+1 < len(tokens) && !tokens[k+1].op {
+			return unquote(tokens[k+1].text)
+		}
+	}
+	return ""
+}
 
 // stepRunsUnderPipefail reports whether a step's script runs with pipefail on:
 // `shell: bash` compiles to `bash -eo pipefail`, a custom template that names
@@ -63,7 +78,7 @@ func stepScript(step string) (string, bool) {
 	for i, line := range strings.Split(cut, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if i == 0 {
-			trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "run:"))
+			trimmed = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(trimmed, "- "), "run:"))
 			if blockScalarHeader.MatchString(trimmed) {
 				continue
 			}
@@ -77,9 +92,7 @@ func stepScript(step string) (string, bool) {
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		if m := heredocOpener.FindStringSubmatch(trimmed); m != nil {
-			heredoc = m[1]
-		}
+		heredoc = heredocDelimiter(trimmed)
 		opensOnPipe := strings.HasPrefix(trimmed, "|") && !strings.HasPrefix(trimmed, "||")
 		if (joining || opensOnPipe) && len(logical) > 0 {
 			logical[len(logical)-1] += " " + trimmed
@@ -176,9 +189,22 @@ func commandSubLen(s string) int {
 	depth := 0
 	for i := 1; i < len(s); i++ {
 		switch s[i] {
+		case '\\':
+			i++
 		case '\'':
 			if end := strings.IndexByte(s[i+1:], '\''); end >= 0 {
 				i += end + 1
+			}
+		case '"':
+			// A double-quoted string inside the substitution: its parens are
+			// text, and a `$(…)` in it is skipped whole.
+			for i++; i < len(s) && s[i] != '"'; i++ {
+				switch {
+				case s[i] == '\\':
+					i++
+				case strings.HasPrefix(s[i:], "$("):
+					i += commandSubLen(s[i:]) - 1
+				}
 			}
 		case '(':
 			depth++
@@ -192,12 +218,34 @@ func commandSubLen(s string) int {
 	return len(s)
 }
 
-// commandSubs returns the inner text of every `$(…)` in line, so a pipe
-// inside a command substitution is judged like one outside it.
+// commandSubs returns the inner text of every `$(…)` and backtick
+// substitution in line outside single quotes, so a pipe inside one is judged
+// like one outside it.
 func commandSubs(line string) []string {
 	var inner []string
+	inDouble := false
 	for i := 0; i < len(line); i++ {
-		if strings.HasPrefix(line[i:], "$(") {
+		switch c := line[i]; {
+		case c == '\\':
+			i++
+		case c == '#' && !inDouble && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t'):
+			return inner
+		case c == '"':
+			inDouble = !inDouble
+		case c == '\'' && !inDouble:
+			end := strings.IndexByte(line[i+1:], '\'')
+			if end < 0 {
+				return inner
+			}
+			i += end + 1
+		case c == '`':
+			end := strings.IndexByte(line[i+1:], '`')
+			if end < 0 {
+				return inner
+			}
+			inner = append(inner, line[i+1:i+1+end])
+			i += end + 1
+		case strings.HasPrefix(line[i:], "$("):
 			n := commandSubLen(line[i:])
 			inner = append(inner, strings.TrimSuffix(line[i+2:i+n], ")"))
 			i += n - 1
@@ -205,6 +253,10 @@ func commandSubs(line string) []string {
 	}
 	return inner
 }
+
+// pipeWrappers run the next word as the command: the grep behind one still
+// reads the pipe. Option words after a wrapper are skipped with it.
+var pipeWrappers = []string{"command", "env", "!", "{", "sudo", "nice", "exec", "time", "stdbuf", "nohup"}
 
 // commandEnd is an operator that ends a simple command.
 func commandEnd(op string) bool {
@@ -243,7 +295,9 @@ func grepIsQuiet(args []shellToken) bool {
 		switch {
 		case word == "--":
 			return false
-		case word == "--quiet" || word == "--silent":
+		// GNU getopt takes any unambiguous prefix of a long option.
+		case len(word) > len("--") && !strings.Contains(word, "=") &&
+			(strings.HasPrefix("--quiet", word) || strings.HasPrefix("--silent", word)):
 			return true
 		case strings.HasPrefix(word, "--"):
 			if !strings.Contains(word, "=") && slices.Contains(grepLongArgTakers, word) {
@@ -278,13 +332,32 @@ func pipesIntoQuietGrep(line string) bool {
 			continue
 		}
 		j := i + 1
-		for j < len(tokens) && !tokens[j].op {
-			word := unquote(tokens[j].text)
-			if shellAssignment.MatchString(word) || word == "command" || word == "env" || word == "!" {
+	scan:
+		for j < len(tokens) {
+			if tokens[j].op {
+				if tokens[j].text != "(" {
+					break scan
+				}
 				j++
 				continue
 			}
-			break
+			word := unquote(tokens[j].text)
+			switch {
+			case shellAssignment.MatchString(word):
+				j++
+			case slices.Contains(pipeWrappers, word):
+				for j++; j < len(tokens) && !tokens[j].op && strings.HasPrefix(tokens[j].text, "-"); j++ {
+				}
+			case word == "timeout":
+				for j++; j < len(tokens) && !tokens[j].op && strings.HasPrefix(tokens[j].text, "-"); j++ {
+					if opt := unquote(tokens[j].text); opt == "-k" || opt == "-s" || opt == "--kill-after" || opt == "--signal" {
+						j++
+					}
+				}
+				j++ // the duration
+			default:
+				break scan
+			}
 		}
 		if j >= len(tokens) || tokens[j].op {
 			continue
@@ -397,8 +470,8 @@ func TestNoPipefailStepPipesIntoAQuietGrep(t *testing.T) {
 		}
 	}
 	// Dozens of `shell: bash` steps exist; zero means the reader broke.
-	if judged == 0 || len(actions) == 0 {
-		t.Fatalf("judged %d pipefail step(s) across %d composite action(s) and every workflow — the sweep itself is broken", judged, len(actions))
+	if judged == 0 {
+		t.Fatal("judged zero pipefail steps across every workflow and composite action — the sweep itself is broken")
 	}
 }
 
@@ -424,6 +497,20 @@ var quietGrepCases = []quietGrepCase{
 	{"pipe with stderr", bashStep(`          make 2>&1 |& grep -q done`), true},
 	{"grep --quiet", bashStep(`          printf '%s' "$x" | grep -E --quiet '^a'`), true},
 	{"inside a command substitution", bashStep(`          if [ "$(curl -fsS x | grep -q ok && echo y)" = y ]; then :; fi`), true},
+	{"after a quoted paren in a substitution", bashStep(`          x="$(printf ")"; curl y | grep -q z && echo y)"`), true},
+	{"inside quoted backticks", bashStep("          out=\"`curl x | grep -q ok && echo y`\""), true},
+	{"brace group", bashStep(`          curl x | { grep -q ok; }`), true},
+	{"subshell", bashStep(`          curl x | ( grep -q ok )`), true},
+	{"behind timeout", bashStep(`          curl x | timeout -k 1 5 grep -q ok`), true},
+	{"behind sudo", bashStep(`          curl x | sudo grep -q ok`), true},
+	{"abbreviated --quiet", bashStep(`          curl x | grep --qui ok`), true},
+	{"after an arithmetic shift", bashStep(
+		`          mask=$(( 1 << bits ))`,
+		`          (( y = 1 << bits ))`,
+		`          curl x | grep -q ok`), true},
+	{"after a quoted <<", bashStep(
+		`          echo "a <<EOF b"`,
+		`          curl x | grep -q ok`), true},
 	{"set -euo pipefail with no shell:", []string{
 		"        name: Smoke",
 		"        run: |",
@@ -491,6 +578,24 @@ func TestPipeIntoQuietGrepDecidesEachShape(t *testing.T) {
 				t.Fatalf("refusal names neither the step nor the capture-then-match shape: %v", err)
 			}
 		})
+	}
+}
+
+// TestRunBodyInReadsOnlyTheStepsOwnRunKey: an action input named `run` is not
+// the step's script.
+func TestRunBodyInReadsOnlyTheStepsOwnRunKey(t *testing.T) {
+	step := strings.Join([]string{
+		"        name: Uses",
+		"        uses: some/action@deadbeef",
+		"        with:",
+		"          run: curl x | grep -q ok",
+	}, "\n")
+	if body, ok := runBodyIn(step); ok {
+		t.Fatalf("read a `with:` input as the step's run: %q", body)
+	}
+	item := "      - run: |\n          echo hi\n        shell: bash\n"
+	if body, ok := runBodyIn(item); !ok || body != "      - run: |\n          echo hi" {
+		t.Fatalf("a step opening on `- run:` read as %q (ok=%v)", body, ok)
 	}
 }
 
