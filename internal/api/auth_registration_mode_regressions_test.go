@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -416,8 +417,11 @@ func TestOIDCCallbackForANeverSeenIdentityHonoursTheRegistrationModeAtEveryCell(
 			if users != 0 || linked != 0 {
 				t.Fatalf("closed registration: the callback must create no user and link no identity, got %d users and %d identities", users, linked)
 			}
-			if cellReplyFlashKey(t, response) == "" {
-				t.Fatal("closed registration: expected the refusal flash on the exempt channel (the zero rows come from the registration check, not a dropped request)")
+			// The refusal key is pinned, not just "some flash": the zero rows must
+			// come from the provisioning refusal, not an earlier failure. WEB-493
+			// may change this key to the account-unavailable one.
+			if got, want := cellReplyFlashKey(t, response), authOIDCUnavailableErrorSpec().Key; got != want {
+				t.Fatalf("closed registration: expected the provisioning refusal flash %q, got %q", want, got)
 			}
 		})
 	}
@@ -430,13 +434,22 @@ func TestOIDCCallbackForANeverSeenIdentityHonoursTheRegistrationModeAtEveryCell(
 // that the fixture tells the two apart at all (one provisions, the other is
 // refused).
 //
-// Red on the closed cells until WEB-493 is fixed: a never-seen identity is
-// answered "sso temporarily unavailable", an identity whose email an account
-// holds "sso sign-in unavailable".
+// WEB-493: on the closed cells a never-seen identity is answered "sso
+// temporarily unavailable", an identity whose email an account holds "sso
+// sign-in unavailable". The test pins that difference as a tripwire (it goes
+// red when the oracle is fixed) and holds everything else equal meanwhile.
 func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(t *testing.T) {
 	t.Parallel()
 
-	replyFor := func(t *testing.T, cell loginRegistrationCell, accountHoldsEmail bool) (*http.Response, string, int64) {
+	type observedReply struct {
+		status      int
+		location    string
+		flashKey    string
+		cookieNames string
+		body        string
+		created     int64
+	}
+	replyFor := func(t *testing.T, cell loginRegistrationCell, accountHoldsEmail bool) observedReply {
 		t.Helper()
 		app, database, provider := newLoginRegistrationCellApp(t, cell, freshCellIdentityClaims(cellIdentityEmail))
 		var seeded int64
@@ -448,7 +461,19 @@ func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(
 		if !reply.started {
 			t.Fatalf("anchor: the sign-in did not start (status %d)", reply.response.StatusCode)
 		}
-		return reply.response, cellReplyFlashKey(t, reply.response), countUsers(t, database) - seeded
+		names := make([]string, 0, len(reply.response.Cookies()))
+		for _, cookie := range reply.response.Cookies() {
+			names = append(names, cookie.Name)
+		}
+		sort.Strings(names)
+		return observedReply{
+			status:      reply.response.StatusCode,
+			location:    reply.response.Header.Get("Location"),
+			flashKey:    cellReplyFlashKey(t, reply.response),
+			cookieNames: strings.Join(names, ","),
+			body:        mustReadBodyString(t, reply.response.Body),
+			created:     countUsers(t, database) - seeded,
+		}
 	}
 
 	for _, cell := range loginRegistrationCells() {
@@ -458,29 +483,34 @@ func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(
 		t.Run(cell.name, func(t *testing.T) {
 			t.Parallel()
 
-			if cell.registration == services.RegistrationModeClosed {
-				t.Skip("WEB-493: closed registration answers a never-seen identity with a different flash key than an email-held one; remove this skip with the fix")
-			}
-			fresh, freshKey, freshCreated := replyFor(t, cell, false)
-			held, heldKey, heldCreated := replyFor(t, cell, true)
+			fresh := replyFor(t, cell, false)
+			held := replyFor(t, cell, true)
 
 			if cell.registration == services.RegistrationModeOpen {
-				if freshCreated != 1 || heldCreated != 0 {
-					t.Fatalf("control: the fresh identity must provision and the held email must not, got %d and %d new users", freshCreated, heldCreated)
+				if fresh.created != 1 || held.created != 0 {
+					t.Fatalf("control: the fresh identity must provision and the held email must not, got %d and %d new users", fresh.created, held.created)
 				}
 				return
 			}
-			if freshCreated != 0 || heldCreated != 0 {
-				t.Fatalf("closed registration: no callback may create a user, got %d and %d", freshCreated, heldCreated)
+			if fresh.created != 0 || held.created != 0 {
+				t.Fatalf("closed registration: no callback may create a user, got %d and %d", fresh.created, held.created)
 			}
-			if fresh.StatusCode != held.StatusCode {
-				t.Fatalf("status tells the cases apart: never-seen identity %d, email held by an account %d", fresh.StatusCode, held.StatusCode)
+			// Everything but the flash key is already identical.
+			if fresh.status != held.status || fresh.location != held.location {
+				t.Fatalf("status/redirect tell the cases apart: never-seen identity %d %q, email held by an account %d %q", fresh.status, fresh.location, held.status, held.location)
 			}
-			if fresh.Header.Get("Location") != held.Header.Get("Location") {
-				t.Fatalf("redirect tells the cases apart: %q vs %q", fresh.Header.Get("Location"), held.Header.Get("Location"))
+			if fresh.cookieNames != held.cookieNames {
+				t.Fatalf("the Set-Cookie names tell the cases apart: %q vs %q", fresh.cookieNames, held.cookieNames)
 			}
-			if freshKey == "" || freshKey != heldKey {
-				t.Fatalf("flash key tells the cases apart: never-seen identity %q, email held by an account %q", freshKey, heldKey)
+			if fresh.body != held.body {
+				t.Fatalf("the body tells the cases apart (%d vs %d bytes)", len(fresh.body), len(held.body))
+			}
+			// WEB-493 tripwire: the flash key still tells the cases apart. This
+			// pins the known-bad difference so the test goes red when the fix
+			// lands; the fix flips it to require equal, non-empty keys.
+			wantFresh, wantHeld := authOIDCUnavailableErrorSpec().Key, authOIDCAccountUnavailableErrorSpec().Key
+			if fresh.flashKey != wantFresh || held.flashKey != wantHeld {
+				t.Fatalf("WEB-493: expected the known flash-key difference (%q vs %q); got %q vs %q. If the keys are now equal the oracle is fixed: require fresh.flashKey == held.flashKey instead", wantFresh, wantHeld, fresh.flashKey, held.flashKey)
 			}
 		})
 	}
