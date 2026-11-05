@@ -41,7 +41,7 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 		// codecov:ignore:end
 	}
 	if handler.oidcService == nil || !handler.oidcService.Enabled() {
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -60,7 +60,7 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 	state, err := newOIDCIdentityLinkStepupState(time.Now(), user.ID)
 	if err != nil {
 		// codecov:ignore:start -- defensive: state minting fails only on a crypto/rand error
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.respondMappedError(c, spec)
 		// codecov:ignore:end
@@ -70,7 +70,7 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 		// cookie posture, and boot refuses OIDC_ENABLED=true without
 		// COOKIE_SECURE=true, so an instance that can reach this line cannot be
 		// configured to fail it.
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.respondMappedError(c, spec)
 		// codecov:ignore:end
@@ -85,7 +85,7 @@ func (handler *Handler) StartOIDCIdentityLinkStepup(c fiber.Ctx) error {
 	authURL, err := handler.oidcService.StartReauth(ctx, state.State, state.Nonce, state.CodeVerifier)
 	if err != nil {
 		handler.clearOIDCStepupCookie(c)
-		spec := mapAuthOIDCError(err)
+		spec := mapSettingsOIDCError(err)
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -116,7 +116,7 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 		// codecov:ignore:start -- forward-compat guard: validAt already refused a
 		// payload whose purpose does not match its own shape, so a mismatching
 		// sealed payload cannot be minted and dispatched here.
-		spec := authOIDCAuthenticationFailedErrorSpec()
+		spec := settingsOIDCAuthenticationFailedErrorSpec()
 		return handler.redirectSettingsRefusal(c, spec)
 		// codecov:ignore:end
 	}
@@ -139,7 +139,7 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 	// fixed the class at N of N+1, because the next purpose inherits nothing.
 	code := exchange.Code
 	if exchange.Error != "" {
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
@@ -160,7 +160,7 @@ func (handler *Handler) completeOIDCIdentityLinkStepup(c fiber.Ctx, state oidcSt
 		// codecov:ignore:start -- VerifyIdentityLinkReauth returns only claims
 		// carrying an (issuer, subject) and the user id is the resolved session's,
 		// so the setter's refusals cannot be reached from here.
-		spec := authOIDCAuthenticationFailedErrorSpec()
+		spec := settingsOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, oidcIdentityLinkStepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 		// codecov:ignore:end
@@ -296,7 +296,7 @@ const oidcIdentityUnlinkAction = "settings.oidc_identity_unlink"
 // is re-issued a session.
 func (handler *Handler) UnlinkOIDCIdentity(c fiber.Ctx) error {
 	if handler.oidcService == nil || !handler.oidcService.Enabled() {
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, oidcIdentityUnlinkAction, spec)
 		return handler.respondMappedError(c, spec)
 	}

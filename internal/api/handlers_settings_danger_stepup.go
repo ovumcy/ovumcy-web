@@ -118,7 +118,7 @@ func (handler *Handler) startErasureStepupReauth(c fiber.Ctx, operation oidcStep
 		return handler.respondMappedError(c, spec)
 	}
 	if handler.oidcService == nil || !handler.oidcService.Enabled() {
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -126,7 +126,7 @@ func (handler *Handler) startErasureStepupReauth(c fiber.Ctx, operation oidcStep
 	state, err := newOIDCErasureStepupState(time.Now(), user.ID, operation)
 	if err != nil {
 		// codecov:ignore:start -- defensive: state minting fails only on a crypto/rand error
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
 		return handler.respondMappedError(c, spec)
 		// codecov:ignore:end
@@ -136,7 +136,7 @@ func (handler *Handler) startErasureStepupReauth(c fiber.Ctx, operation oidcStep
 		// cookie posture, and boot refuses OIDC_ENABLED=true without
 		// COOKIE_SECURE=true, so an instance that can reach this line cannot be
 		// configured to fail it.
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
 		return handler.respondMappedError(c, spec)
 		// codecov:ignore:end
@@ -151,7 +151,7 @@ func (handler *Handler) startErasureStepupReauth(c fiber.Ctx, operation oidcStep
 	authURL, err := handler.oidcService.StartReauth(ctx, state.State, state.Nonce, state.CodeVerifier)
 	if err != nil {
 		handler.clearOIDCStepupCookie(c)
-		spec := mapAuthOIDCError(err)
+		spec := mapSettingsOIDCError(err)
 		handler.logSecurityError(c, flow.stepupAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -176,7 +176,7 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 	if state.Purpose != oidcStepupPurposeErasure || !known {
 		// codecov:ignore:start -- validAt already refused a payload whose purpose
 		// and operation do not agree; this is the dispatch-side half of that check.
-		spec := authOIDCAuthenticationFailedErrorSpec()
+		spec := settingsOIDCAuthenticationFailedErrorSpec()
 		return handler.redirectSettingsRefusal(c, spec)
 		// codecov:ignore:end
 	}
@@ -212,7 +212,7 @@ func (handler *Handler) completeErasureStepupReauth(c fiber.Ctx, state oidcStepu
 	// fixed the class at N of N+1, because the next purpose inherits nothing.
 	code := exchange.Code
 	if exchange.Error != "" {
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
