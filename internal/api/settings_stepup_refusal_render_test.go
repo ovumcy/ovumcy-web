@@ -233,8 +233,6 @@ var stepupSessionHelpers = map[string]string{
 // fails as a stale one. Regression:
 // TestStepupCallbackInlineRefusalSpecsMatchTheHandlerSources.
 var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
-	"authOIDCAuthenticationFailedErrorSpec":        authOIDCAuthenticationFailedErrorSpec,
-	"authOIDCUnavailableErrorSpec":                 authOIDCUnavailableErrorSpec,
 	"settingsOIDCAuthenticationFailedErrorSpec":    settingsOIDCAuthenticationFailedErrorSpec,
 	"settingsOIDCUnavailableErrorSpec":             settingsOIDCUnavailableErrorSpec,
 	"settingsOIDCReauthMismatchErrorSpec":          settingsOIDCReauthMismatchErrorSpec,

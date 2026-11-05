@@ -158,7 +158,7 @@ func (handler *Handler) clearOIDCStepupContinuationCookie(c fiber.Ctx) {
 // (WEB-40): the exempt channel, not the shared page slot a same-origin
 // navigation may have pending. See exemptFlashCookieSpec.
 func (handler *Handler) refuseOIDCStepupContinueRequest(c fiber.Ctx, reason string) error {
-	spec := authOIDCAuthenticationFailedErrorSpec()
+	spec := settingsOIDCAuthenticationFailedErrorSpec()
 	handler.logSecurityError(c, "auth.oidc_callback", spec, SecurityEventField{Key: "refused", Value: reason})
 	return handler.redirectSettingsRefusalCSRFExempt(c, spec)
 }
@@ -251,7 +251,7 @@ func callbackArrivedCrossSite(c fiber.Ctx) bool {
 // names. An unhandled purpose falls through to the ordinary refusal.
 func (handler *Handler) dispatchStepupCompletion(c fiber.Ctx, state oidcStepupState, exchange oidcCallbackExchange) error {
 	if !state.matchesState(exchange.State) {
-		spec := authOIDCAuthenticationFailedErrorSpec()
+		spec := settingsOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, stepupActionForPurpose(state), spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
@@ -267,7 +267,7 @@ func (handler *Handler) dispatchStepupCompletion(c fiber.Ctx, state oidcStepupSt
 	// codecov:ignore:start -- forward-compat guard: validAt refuses an unknown
 	// purpose before dispatch, so a fourth purpose can only reach here by being
 	// taught to validAt without being taught to this switch.
-	spec := authOIDCAuthenticationFailedErrorSpec()
+	spec := settingsOIDCAuthenticationFailedErrorSpec()
 	handler.logSecurityError(c, "auth.oidc_callback", spec)
 	return handler.redirectSettingsRefusal(c, spec)
 	// codecov:ignore:end
@@ -309,23 +309,23 @@ func (handler *Handler) bounceStepupToSameSiteContinue(c fiber.Ctx, state oidcSt
 		// codecov:ignore:start -- unreachable from the only caller: the callback
 		// refuses a mismatching state before it spends the step-up cookie, so
 		// this arm guards a second caller rather than that one.
-		return handler.refuseOIDCStepupCallback(c, action, authOIDCAuthenticationFailedErrorSpec())
+		return handler.refuseOIDCStepupCallback(c, action, settingsOIDCAuthenticationFailedErrorSpec())
 		// codecov:ignore:end
 	}
 	if exchange.Error != "" {
-		return handler.refuseOIDCStepupCallback(c, action, authOIDCUnavailableErrorSpec())
+		return handler.refuseOIDCStepupCallback(c, action, settingsOIDCUnavailableErrorSpec())
 	}
 
 	continuation, err := newOIDCStepupContinuation(time.Now(), state, exchange.Code)
 	if err != nil {
-		return handler.refuseOIDCStepupCallback(c, action, authOIDCAuthenticationFailedErrorSpec())
+		return handler.refuseOIDCStepupCallback(c, action, settingsOIDCAuthenticationFailedErrorSpec())
 	}
 	if err := handler.setOIDCStepupContinuationCookie(c, continuation); err != nil {
 		// codecov:ignore:start -- defensive: the payload validated one line above
 		// and the route only runs on a secure deployment, so the two refusals
 		// inside the setter are unreachable from here; what is left is an AEAD
 		// seal error.
-		return handler.refuseOIDCStepupCallback(c, action, authOIDCUnavailableErrorSpec())
+		return handler.refuseOIDCStepupCallback(c, action, settingsOIDCUnavailableErrorSpec())
 		// codecov:ignore:end
 	}
 
@@ -354,7 +354,7 @@ func (handler *Handler) ContinueOIDCStepup(c fiber.Ctx) error {
 	// continuation and is already retracted by the response this handler is
 	// writing into. No payload the reader honours carries an empty Code.
 	if continuation.Code == "" {
-		spec := authOIDCAuthenticationFailedErrorSpec()
+		spec := settingsOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		// requireFirstPartyRequest guards this route but is deliberately
 		// monotone (see firstPartyRequestRefusal): a stated "same-site" origin
