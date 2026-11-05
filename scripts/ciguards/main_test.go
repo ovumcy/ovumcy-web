@@ -204,6 +204,15 @@ func TestNoIgnoreUnfixedAmongVulnScansRefusesAnOffendingLine(t *testing.T) {
 func runBody(t *testing.T, block string) string {
 	t.Helper()
 
+	body, ok := runBodyIn(block)
+	if !ok {
+		t.Fatalf("step has no `run:` key")
+	}
+	return body
+}
+
+// runBodyIn is runBody's whole answer; ok is false when block has no `run:`.
+func runBodyIn(block string) (string, bool) {
 	lines := strings.Split(block, "\n")
 
 	start, indent := -1, 0
@@ -216,7 +225,7 @@ func runBody(t *testing.T, block string) string {
 		}
 	}
 	if start < 0 {
-		t.Fatalf("step has no `run:` key")
+		return "", false
 	}
 
 	end := len(lines)
@@ -230,7 +239,7 @@ func runBody(t *testing.T, block string) string {
 			break
 		}
 	}
-	return strings.Join(lines[start:end], "\n")
+	return strings.Join(lines[start:end], "\n"), true
 }
 
 // NoUntrustedRefSplicedIntoRun refuses a `run:` body that reaches a GitHub
