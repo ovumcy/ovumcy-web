@@ -213,18 +213,43 @@ func TestDBSnapshotDiffSeesEveryKindOfChange(t *testing.T) {
 // stronger no-IP/no-UA statement; the copy of the format below is pinned to the
 // production constant by a test in cmd/ovumcy. The standard-library log, where
 // the audit stream writes, is scanned the same way.
+//
+// Two rows are polled: a current one, and a pre-032 one with no verifier MAC,
+// whose first poll legitimately also backfills calendar_feed_verifier_mac.
 func TestCalendarFeedPollRecordsNoAccessTelemetryBeyondTheDayMark(t *testing.T) {
+	t.Run("current row", func(t *testing.T) {
+		checkFeedPollTelemetry(t, false)
+	})
+	t.Run("pre-032 row, MAC backfilled by the poll", func(t *testing.T) {
+		checkFeedPollTelemetry(t, true)
+	})
+}
+
+func checkFeedPollTelemetry(t *testing.T, clearMAC bool) {
+	t.Helper()
 	_, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "feed-telemetry@example.com", "StrongPass1", true)
-	token := armCalendarFeedForUser(t, database, user.ID)
+	token := armCalendarFeedForUserWithColumns(t, database, user.ID, func(columns models.CalendarFeedTokenColumns) models.CalendarFeedTokenColumns {
+		if clearMAC {
+			columns.VerifierMAC = ""
+		}
+		return columns
+	})
 	selector, verifier := mustSplitFeedToken(t, token)
 	badToken := strings.Repeat("Z", len(selector)) + verifier
+	permittedChange := []string{"users.calendar_feed_last_polled_on"}
+	if clearMAC {
+		permittedChange = []string{"users.calendar_feed_last_polled_on", "users.calendar_feed_verifier_mac"}
+	}
 
-	const userAgent = "TelemetryProbeCalendarClient/9.87.6 (zz-distinctive-ua-4f1c)"
+	// The distinctive marker leads the agent string, so a log or column that
+	// truncates the agent to its first bytes still carries it and is caught.
+	const uaMarker = "zz-distinctive-ua-4f1c"
+	const userAgent = uaMarker + " TelemetryProbeCalendarClient/9.87.6"
 	clientIPs := []string{"203.0.113.77", "198.51.100.23", "192.0.2.201"}
 	// Every form an address can be stored in: text, and the 4- and 16-byte binary
 	// forms a blob column would hold.
-	needles := []string{userAgent, "zz-distinctive-ua-4f1c"}
+	needles := []string{userAgent, uaMarker}
 	for _, ip := range clientIPs {
 		parsed := net.ParseIP(ip)
 		needles = append(needles, ip, string(parsed.To4()), string(parsed.To16()))
@@ -233,7 +258,9 @@ func TestCalendarFeedPollRecordsNoAccessTelemetryBeyondTheDayMark(t *testing.T) 
 	var stdLog bytes.Buffer
 	originalWriter := log.Writer()
 	log.SetOutput(&stdLog)
-	t.Cleanup(func() { log.SetOutput(originalWriter) })
+	originalFlags := log.Flags()
+	log.SetFlags(0)
+	t.Cleanup(func() { log.SetOutput(originalWriter); log.SetFlags(originalFlags) })
 	log.Printf("audit-capture anchor")
 
 	i18nManager, err := i18n.NewManager("en")
@@ -305,6 +332,13 @@ func TestCalendarFeedPollRecordsNoAccessTelemetryBeyondTheDayMark(t *testing.T) 
 	if !strings.Contains(unfoldICS(firstBody), "not medical advice or a method of contraception") {
 		t.Fatal("the polled body is not the owner's feed")
 	}
+	// A HEAD poll is a poll too: it serves the headers and takes the same path.
+	headRequest := httptest.NewRequest(http.MethodHead, calendarFeedURL(token), nil)
+	headRequest.Header.Set("X-Forwarded-For", clientIPs[1])
+	headRequest.Header.Set("User-Agent", userAgent)
+	if status := mustAppResponse(t, app, headRequest).StatusCode; status != http.StatusOK {
+		t.Fatalf("the HEAD poll answered %d, want 200", status)
+	}
 	// A refused poll is telemetry-free too.
 	badRequest := httptest.NewRequest(http.MethodGet, calendarFeedURL(badToken), nil)
 	badRequest.Header.Set("X-Forwarded-For", clientIPs[0])
@@ -321,8 +355,10 @@ func TestCalendarFeedPollRecordsNoAccessTelemetryBeyondTheDayMark(t *testing.T) 
 			t.Fatalf("the proxy config did not surface client %s with its user agent, so a clean scan proves nothing; control log:\n%s", ip, control)
 		}
 	}
-	if !strings.Contains(stdLog.String(), "audit-capture anchor") {
-		t.Fatal("the standard log was not captured, so scanning it proves nothing")
+	// A poll legitimately writes nothing to the standard log: after the requests
+	// it holds exactly the anchor line, so any line a poll adds is a finding.
+	if got := stdLog.String(); got != "audit-capture anchor\n" {
+		t.Fatalf("the standard log must hold exactly the anchor line (a poll writes nothing there), got %q", got)
 	}
 
 	after := snapshotWholeDatabase(t, database)
@@ -336,8 +372,8 @@ func TestCalendarFeedPollRecordsNoAccessTelemetryBeyondTheDayMark(t *testing.T) 
 
 	// (b) the only changed cell in the whole database is the day mark.
 	changed := before.changedCells(after)
-	if len(changed) != 1 || changed[0] != "users.calendar_feed_last_polled_on" {
-		t.Fatalf("polling changed %v; the only permitted change is users.calendar_feed_last_polled_on", changed)
+	if strings.Join(changed, ",") != strings.Join(permittedChange, ",") {
+		t.Fatalf("polling changed %v; the only permitted change is %v", changed, permittedChange)
 	}
 	var reloaded models.User
 	if err := database.First(&reloaded, user.ID).Error; err != nil {
@@ -354,11 +390,12 @@ func TestCalendarFeedPollRecordsNoAccessTelemetryBeyondTheDayMark(t *testing.T) 
 
 	// (c) the access log: route template only, no token, selector, address or agent.
 	logText := accessLog.String()
-	if strings.Count(logText, "\n") != len(clientIPs)+1 {
+	// the GET polls, the HEAD poll and the refused poll: one line each.
+	if strings.Count(logText, "\n") != len(clientIPs)+2 {
 		t.Fatalf("expected one access-log line per request, got:\n%s", logText)
 	}
-	if strings.Count(logText, "| 200 |") != len(clientIPs) || strings.Count(logText, "| 404 |") != 1 ||
-		strings.Count(logText, "| /calendar/feed/:token.ics |") != len(clientIPs)+1 {
+	if strings.Count(logText, "| 200 |") != len(clientIPs)+1 || strings.Count(logText, "| 404 |") != 1 ||
+		strings.Count(logText, "| /calendar/feed/:token.ics |") != len(clientIPs)+2 {
 		t.Fatalf("the access log does not show the requests by route template, so absence checks are vacuous:\n%s", logText)
 	}
 	// Both logs: the access log and the standard log the audit stream writes to.

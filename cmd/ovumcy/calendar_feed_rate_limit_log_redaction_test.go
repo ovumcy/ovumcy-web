@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/db"
@@ -29,17 +31,48 @@ func TestCalendarFeedRateLimitLogMasksTheTokenOnEveryCaseOfTheSuffix(t *testing.
 			var logged bytes.Buffer
 			log.SetOutput(&logged)
 
-			app := newCalendarFeedTestApp(t, handler, calendarFeedLimiterBudget)
+			// The production stack behind a trusted proxy: the forwarded address
+			// and the agent are distinctive, and neither sink may carry them.
+			const clientIP = "203.0.113.77"
+			const userAgent = "zz-distinctive-ua-4f1c RateLimitProbe/1.0"
+			settings := uniformRateLimits(t, 100000, time.Hour)
+			settings.CalendarFeedMax = calendarFeedLimiterBudget
+			app := newFiberApp(runtimeConfig{
+				Location:        time.UTC,
+				DefaultLanguage: "en",
+				RateLimits:      settings,
+				Proxy: proxySettings{
+					Enabled:        true,
+					Header:         "X-Forwarded-For",
+					TrustedProxies: []string{"0.0.0.0"},
+				},
+			}, handler)
 			target := api.CalendarFeedRateLimitPrefix + "/" + token + suffix
 			spelling := api.CalendarFeedRateLimitPrefix + "/<token>" + suffix
-			calendarFeedSend(t, app, http.MethodGet, spelling, target)
-			if status := calendarFeedSend(t, app, http.MethodGet, spelling, target); status != http.StatusTooManyRequests {
+			send := func() int {
+				request := httptest.NewRequest(http.MethodGet, target, nil)
+				request.Header.Set("X-Forwarded-For", clientIP)
+				request.Header.Set("User-Agent", userAgent)
+				response, err := app.Test(request, testConfigNoTimeout)
+				if err != nil {
+					t.Fatalf("GET %s: %v", spelling, err)
+				}
+				_ = response.Body.Close()
+				return response.StatusCode
+			}
+			send()
+			if status := send(); status != http.StatusTooManyRequests {
 				t.Fatalf("GET %s answered %d, want 429: the log assertion below needs the limiter to fire", spelling, status)
 			}
 
 			output := logged.String()
 			if strings.Contains(output, token) {
 				t.Fatalf("the 429 path for %s logged the feed token verbatim", spelling)
+			}
+			for _, identity := range []string{clientIP, "zz-distinctive-ua-4f1c", userAgent} {
+				if strings.Contains(output, identity) {
+					t.Fatalf("the 429 path for %s logged client identity %q: %q", spelling, identity, output)
+				}
 			}
 			if !strings.Contains(output, "rate limit reached") || !strings.Contains(output, `action="rate_limit"`) {
 				t.Fatalf("expected the rate-limit log line and audit event for %s, got %q", spelling, output)
