@@ -81,11 +81,19 @@ test.describe('Reduced motion', () => {
       await waitForAppReady(page);
       const seconds = await maxTransitionSeconds(button);
       await button.click();
+      const scrollCount = () =>
+        page.evaluate(
+          () => (window as unknown as { __scrollCalls: ScrollArg[] }).__scrollCalls.length
+        );
+      // Poll, so a scroll deferred past the click cannot race the read.
+      await expect
+        .poll(scrollCount, { message: 'one scroll for the hash target, one for the quick action' })
+        .toBe(2);
       const calls = await page.evaluate(
         () => (window as unknown as { __scrollCalls: ScrollArg[] }).__scrollCalls
       );
       // Exactly these two: an extra call must not be able to stand in for one.
-      expect(calls, 'one scroll for the hash target, one for the quick action').toHaveLength(2);
+      expect(calls).toHaveLength(2);
       const rootScrollBehavior = await page.evaluate(
         () => getComputedStyle(document.documentElement).scrollBehavior
       );
