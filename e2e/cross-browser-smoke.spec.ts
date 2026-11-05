@@ -125,12 +125,15 @@ test.describe('Cross-browser smoke', () => {
           status: 200,
           contentType: 'text/html',
           headers: { 'Content-Security-Policy': policy },
-          body: `<!doctype html><html><body>${entry.reproducer}</body></html>`,
+          body: `<!doctype html><html><body>${typeof entry.reproducer === 'string' ? entry.reproducer : ''}</body></html>`,
         })
       );
       // Count from here, so a line an earlier entry's probe produced cannot pass this one.
       const before = browserErrors.countReported(entry.pattern);
       await page.goto(probe);
+      if (typeof entry.reproducer === 'function') {
+        await entry.reproducer(page, probe);
+      }
       await expect
         .poll(() => browserErrors.countReported(entry.pattern), {
           message: `${browserName} no longer reports ${entry.pattern}; drop it from ALLOWED_PER_BROWSER`,
