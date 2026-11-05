@@ -398,6 +398,33 @@ func TestResolvePort(t *testing.T) {
 	}
 }
 
+func TestResolveListenAddress(t *testing.T) {
+	accepted := []struct {
+		raw  string
+		want string
+	}{
+		{"", ""},
+		{" 127.0.0.1 ", "127.0.0.1"},
+		{"::1", "::1"},
+		{"::", "::"},
+		{"::ffff:127.0.0.1", "127.0.0.1"},
+	}
+	for _, tc := range accepted {
+		t.Setenv("LISTEN_ADDRESS", tc.raw)
+		got, err := resolveListenAddress()
+		if err != nil || got != tc.want {
+			t.Fatalf("LISTEN_ADDRESS=%q: expected %q, got %q (%v)", tc.raw, tc.want, got, err)
+		}
+	}
+
+	for _, raw := range []string{"localhost", "127.0.0.1:8080", "[::1]"} {
+		t.Setenv("LISTEN_ADDRESS", raw)
+		if _, err := resolveListenAddress(); err == nil {
+			t.Fatalf("expected LISTEN_ADDRESS=%q to be refused", raw)
+		}
+	}
+}
+
 func TestResolveProxySettingsDefaultsWhenDisabled(t *testing.T) {
 	t.Setenv("TRUST_PROXY_ENABLED", "")
 	t.Setenv("PROXY_HEADER", "")
@@ -904,6 +931,7 @@ func TestLoadRuntimeConfigBuildsExpectedSettings(t *testing.T) {
 	t.Setenv("DB_PATH", "data\\custom.db")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("PORT", "9090")
+	t.Setenv("LISTEN_ADDRESS", "::1")
 	t.Setenv("DEFAULT_LANGUAGE", "ru")
 	t.Setenv("REGISTRATION_MODE", "closed")
 	t.Setenv("COOKIE_SECURE", "true")
@@ -946,6 +974,9 @@ func assertBaseRuntimeConfig(t *testing.T, config runtimeConfig, location *time.
 	}
 	if config.Port != "9090" {
 		t.Fatalf("expected port 9090, got %q", config.Port)
+	}
+	if config.ListenAddress != "::1" {
+		t.Fatalf("expected listen address ::1, got %q", config.ListenAddress)
 	}
 	if config.DefaultLanguage != "ru" {
 		t.Fatalf("expected default language ru, got %q", config.DefaultLanguage)
@@ -1942,6 +1973,27 @@ func TestLogStartupDoesNotAdviseTrustProxyWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestLogStartupNamesTheListenAddress(t *testing.T) {
+	cases := []struct {
+		listenAddress string
+		want          string
+	}{
+		{"", "Ovumcy listening on :9090 "},
+		{"127.0.0.1", "Ovumcy listening on 127.0.0.1:9090 "},
+		{"::1", "Ovumcy listening on [::1]:9090 "},
+	}
+	for _, tc := range cases {
+		originalWriter := log.Writer()
+		var output bytes.Buffer
+		log.SetOutput(&output)
+		logStartup(runtimeConfig{Location: time.UTC, Port: "9090", ListenAddress: tc.listenAddress})
+		log.SetOutput(originalWriter)
+		if !strings.Contains(output.String(), tc.want) {
+			t.Fatalf("expected %q in startup log, got %q", tc.want, output.String())
+		}
+	}
+}
+
 func TestTryRunCLICommandWithHandlersDispatchesUsersCommand(t *testing.T) {
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("DB_PATH", filepath.Join(t.TempDir(), "cli-users.db"))
@@ -2018,10 +2070,12 @@ func TestTryRunCLICommandWithHandlersPropagatesUsersError(t *testing.T) {
 
 func TestTryRunCLICommandWithHandlersDispatchesHealthcheck(t *testing.T) {
 	t.Setenv("PORT", "9876")
+	t.Setenv("LISTEN_ADDRESS", "::1")
 
-	var receivedPort string
+	var receivedAddress, receivedPort string
 	handled, err := tryRunCLICommandWithHandlers([]string{"healthcheck"}, cliCommandHandlers{
-		runHealthcheck: func(port string, _ time.Duration) error {
+		runHealthcheck: func(listenAddress string, port string, _ time.Duration) error {
+			receivedAddress = listenAddress
 			receivedPort = port
 			return nil
 		},
@@ -2035,11 +2089,14 @@ func TestTryRunCLICommandWithHandlersDispatchesHealthcheck(t *testing.T) {
 	if receivedPort != "9876" {
 		t.Fatalf("expected port forwarded from PORT env, got %q", receivedPort)
 	}
+	if receivedAddress != "::1" {
+		t.Fatalf("expected address forwarded from LISTEN_ADDRESS env, got %q", receivedAddress)
+	}
 }
 
 func TestTryRunCLICommandWithHandlersRejectsHealthcheckExtraArgs(t *testing.T) {
 	handled, err := tryRunCLICommandWithHandlers([]string{"healthcheck", "extra"}, cliCommandHandlers{
-		runHealthcheck: func(string, time.Duration) error {
+		runHealthcheck: func(string, string, time.Duration) error {
 			t.Fatal("did not expect healthcheck handler to be called")
 			return nil
 		},
@@ -2055,7 +2112,7 @@ func TestTryRunCLICommandWithHandlersRejectsHealthcheckExtraArgs(t *testing.T) {
 func TestTryRunCLICommandWithHandlersPropagatesHealthcheckError(t *testing.T) {
 	expectedErr := errors.New("probe failed")
 	handled, err := tryRunCLICommandWithHandlers([]string{"healthcheck"}, cliCommandHandlers{
-		runHealthcheck: func(string, time.Duration) error {
+		runHealthcheck: func(string, string, time.Duration) error {
 			return expectedErr
 		},
 	})
@@ -2074,10 +2131,12 @@ func TestTryRunCLICommandWithHandlersPropagatesHealthcheckError(t *testing.T) {
 func TestTryRunCLICommandWithHandlersReadycheckBranches(t *testing.T) {
 	t.Run("forwards the configured port", func(t *testing.T) {
 		t.Setenv("PORT", "9877")
+		t.Setenv("LISTEN_ADDRESS", "::1")
 
-		var receivedPort string
+		var receivedAddress, receivedPort string
 		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck"}, cliCommandHandlers{
-			runReadycheck: func(port string, _ time.Duration) error {
+			runReadycheck: func(listenAddress string, port string, _ time.Duration) error {
+				receivedAddress = listenAddress
 				receivedPort = port
 				return nil
 			},
@@ -2091,11 +2150,14 @@ func TestTryRunCLICommandWithHandlersReadycheckBranches(t *testing.T) {
 		if receivedPort != "9877" {
 			t.Fatalf("expected port forwarded from PORT env, got %q", receivedPort)
 		}
+		if receivedAddress != "::1" {
+			t.Fatalf("expected address forwarded from LISTEN_ADDRESS env, got %q", receivedAddress)
+		}
 	})
 
 	t.Run("rejects extra args", func(t *testing.T) {
 		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck", "extra"}, cliCommandHandlers{
-			runReadycheck: func(string, time.Duration) error {
+			runReadycheck: func(string, string, time.Duration) error {
 				t.Fatal("did not expect readycheck handler to be called")
 				return nil
 			},
@@ -2118,17 +2180,27 @@ func TestTryRunCLICommandWithHandlersReadycheckBranches(t *testing.T) {
 	t.Run("reports an invalid port", func(t *testing.T) {
 		t.Setenv("PORT", "70000")
 		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck"}, cliCommandHandlers{
-			runReadycheck: func(string, time.Duration) error { return nil },
+			runReadycheck: func(string, string, time.Duration) error { return nil },
 		})
 		if !handled || err == nil {
 			t.Fatalf("expected handled port error, got (%t, %v)", handled, err)
 		}
 	})
 
+	t.Run("reports an invalid listen address", func(t *testing.T) {
+		t.Setenv("LISTEN_ADDRESS", "localhost")
+		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck"}, cliCommandHandlers{
+			runReadycheck: func(string, string, time.Duration) error { return nil },
+		})
+		if !handled || err == nil || !strings.Contains(err.Error(), "invalid LISTEN_ADDRESS") {
+			t.Fatalf("expected handled listen address error, got (%t, %v)", handled, err)
+		}
+	})
+
 	t.Run("propagates the probe error", func(t *testing.T) {
 		expectedErr := errors.New("not ready")
 		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck"}, cliCommandHandlers{
-			runReadycheck: func(string, time.Duration) error { return expectedErr },
+			runReadycheck: func(string, string, time.Duration) error { return expectedErr },
 		})
 		if !handled {
 			t.Fatal("expected readycheck command to be handled")

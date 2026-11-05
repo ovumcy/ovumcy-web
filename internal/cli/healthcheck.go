@@ -24,8 +24,8 @@ const (
 // nil on a successful 2xx response. It is designed for use as a container
 // healthcheck in scratch-based runtime images where no external HTTP client
 // (curl/wget) is available.
-func RunHealthcheckCommand(port string, timeout time.Duration) error {
-	return probeHealthEndpoint(localProbeURL(healthcheckPath, port), probeTimeoutOrDefault(timeout))
+func RunHealthcheckCommand(listenAddress string, port string, timeout time.Duration) error {
+	return probeHealthEndpoint(localProbeURL(healthcheckPath, listenAddress, port), probeTimeoutOrDefault(timeout))
 }
 
 // RunReadycheckCommand probes the local server's /readyz endpoint the same way,
@@ -33,18 +33,30 @@ func RunHealthcheckCommand(port string, timeout time.Duration) error {
 // actually serve traffic rather than only whether it is alive. It is
 // deliberately NOT the container healthcheck: that stays on /healthz so a
 // transient storage failure cannot turn into a restart loop.
-func RunReadycheckCommand(port string, timeout time.Duration) error {
-	return probeHealthEndpoint(localProbeURL(readycheckPath, port), probeTimeoutOrDefault(timeout))
+func RunReadycheckCommand(listenAddress string, port string, timeout time.Duration) error {
+	return probeHealthEndpoint(localProbeURL(readycheckPath, listenAddress, port), probeTimeoutOrDefault(timeout))
 }
 
-// localProbeURL addresses the probe at the loopback listener, falling back to
+// localProbeURL addresses the probe at the server's listener, falling back to
 // the image's default port when PORT is unset.
-func localProbeURL(path string, port string) string {
+func localProbeURL(path string, listenAddress string, port string) string {
 	port = strings.TrimSpace(port)
 	if port == "" {
 		port = defaultHealthcheckPort
 	}
-	return "http://127.0.0.1:" + port + path
+	return "http://" + net.JoinHostPort(probeHost(listenAddress), port) + path
+}
+
+func probeHost(listenAddress string) string {
+	ip := net.ParseIP(listenAddress)
+	switch {
+	case ip == nil, ip.Equal(net.IPv4zero):
+		return "127.0.0.1"
+	case ip.IsUnspecified():
+		return "::1"
+	default:
+		return ip.String()
+	}
 }
 
 func probeTimeoutOrDefault(timeout time.Duration) time.Duration {

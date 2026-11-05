@@ -89,7 +89,7 @@ func TestRunHealthcheckCommandHitsConfiguredPort(t *testing.T) {
 	}
 	port := parsed.Port()
 
-	if err := RunHealthcheckCommand(port, time.Second); err != nil {
+	if err := RunHealthcheckCommand("", port, time.Second); err != nil {
 		t.Fatalf("expected healthcheck to succeed, got %v", err)
 	}
 	if requested != healthcheckPath {
@@ -127,7 +127,7 @@ func TestRunReadycheckCommandProbesTheReadinessPath(t *testing.T) {
 		t.Fatalf("parse listener addr: %v", err)
 	}
 
-	if err := RunReadycheckCommand(parsed.Port(), time.Second); err != nil {
+	if err := RunReadycheckCommand("", parsed.Port(), time.Second); err != nil {
 		t.Fatalf("expected readycheck to succeed, got %v", err)
 	}
 	if requested != readycheckPath {
@@ -190,11 +190,56 @@ func TestProbeHealthEndpointRefusesOversizedResponseHeaders(t *testing.T) {
 }
 
 func TestLocalProbeURLFallsBackToTheImageDefaultPort(t *testing.T) {
-	if got := localProbeURL(healthcheckPath, "  "); got != "http://127.0.0.1:"+defaultHealthcheckPort+healthcheckPath {
+	if got := localProbeURL(healthcheckPath, "", "  "); got != "http://127.0.0.1:"+defaultHealthcheckPort+healthcheckPath {
 		t.Fatalf("expected the default port for a blank PORT, got %q", got)
 	}
-	if got := localProbeURL(readycheckPath, "9123"); got != "http://127.0.0.1:9123"+readycheckPath {
+	if got := localProbeURL(readycheckPath, "", "9123"); got != "http://127.0.0.1:9123"+readycheckPath {
 		t.Fatalf("expected the configured port to be used, got %q", got)
+	}
+	if got := localProbeURL(healthcheckPath, "::1", "9123"); got != "http://[::1]:9123"+healthcheckPath {
+		t.Fatalf("expected a bracketed IPv6 host, got %q", got)
+	}
+}
+
+func TestProbeHostReachesTheListener(t *testing.T) {
+	cases := map[string]string{
+		"":           "127.0.0.1",
+		"0.0.0.0":    "127.0.0.1",
+		"::":         "::1",
+		"::1":        "::1",
+		"192.0.2.10": "192.0.2.10",
+	}
+	for listenAddress, want := range cases {
+		if got := probeHost(listenAddress); got != want {
+			t.Fatalf("probeHost(%q): expected %q, got %q", listenAddress, want, got)
+		}
+	}
+}
+
+func TestRunHealthcheckCommandReachesAnIPv6Listener(t *testing.T) {
+	listener, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("no IPv6 loopback on this host: %v", err)
+	}
+	server := &http.Server{
+		Handler: http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.WriteHeader(http.StatusOK)
+		}),
+		ReadHeaderTimeout: time.Second,
+	}
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	defer func() {
+		_ = server.Close()
+	}()
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("split listener addr: %v", err)
+	}
+	if err := RunHealthcheckCommand("::1", port, time.Second); err != nil {
+		t.Fatalf("expected healthcheck to reach [::1]:%s, got %v", port, err)
 	}
 }
 

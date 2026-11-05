@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os/signal"
 	"syscall"
 	"time"
@@ -83,7 +84,7 @@ func main() {
 	schedulerDone := startReminderScheduler(sigCtx, config, repositories, i18nManager)
 
 	logStartup(config)
-	err = runServer(app, ":"+config.Port)
+	err = runServer(app, net.JoinHostPort(config.ListenAddress, config.Port))
 	close(served)
 	// The server has stopped. If the scheduler is running, wait (bounded) for any
 	// in-flight pass to finish reading/writing the DB, THEN close the DB — so the
