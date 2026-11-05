@@ -1,5 +1,5 @@
 none
 
-Test-suite change with no user-visible effect: the browser-error guard
-tolerates WebKit's report of a same-origin fetch cancelled by navigation,
-with a reproducer the cross-browser smoke re-proves on every run.
+Test-suite change with no user-visible effect: the cross-browser settings
+smoke waits for the export summary fetch to settle before it navigates away,
+so WebKit no longer reports the cancelled fetch as a page error.

@@ -1,5 +1,5 @@
 import { test as base, expect } from '@playwright/test';
-import type { BrowserContext, Page } from '@playwright/test';
+import type { BrowserContext } from '@playwright/test';
 
 /**
  * The suite's own `test`, and the only one specs may import.
@@ -47,23 +47,15 @@ const ALLOWED_EVERYWHERE: readonly AllowedBrowserError[] = [
   },
 ];
 
-/** An engine's own error, with a reproducer that still makes the engine emit it. */
+/** An engine's own error, with markup that still makes the engine emit it. */
 interface EngineBrowserError extends AllowedBrowserError {
   /**
-   * Body markup that reproduces the error under the app's CSP, or — for an
-   * error markup alone cannot provoke — a driver run on that probe page once
-   * it has loaded (`probe` is its path). The cross-browser smoke runs it and
-   * fails once the engine stops emitting the line, so the entry cannot
-   * outlive its reason.
+   * Body markup that reproduces the error under the app's CSP. The
+   * cross-browser smoke serves it and fails once the engine stops emitting
+   * the line, so the entry cannot outlive its reason.
    */
-  readonly reproducer: string | ((page: Page, probe: string) => Promise<void>);
+  readonly reproducer: string;
 }
-
-const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-// The app's own origin, read the way playwright.config.ts reads it, so the
-// entry below cannot cover a request to any other host or port.
-const appHost = escapeRegExp(new URL(process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080').host);
 
 /** Errors one engine emits on pages the other engines render cleanly. */
 export const ALLOWED_PER_BROWSER: Readonly<Record<string, readonly EngineBrowserError[]>> = {
@@ -80,34 +72,6 @@ export const ALLOWED_PER_BROWSER: Readonly<Record<string, readonly EngineBrowser
         'an inline <style> or style attribute of ours in its own wording, which this pattern ' +
         'does not match.',
       reproducer: '<select aria-label="probe"><option>probe</option></select>',
-    },
-    {
-      // The recorded text is WebKit's "Fetch API cannot load http://<host>/…
-      // due to access control checks." split at "http:" into name and message.
-      pattern: new RegExp(
-        `^pageerror: (?:Fetch API cannot load )?(?:https?:)?/*${appHost}/\\S* due to access control checks\\.$`
-      ),
-      reason:
-        'WebKit 27.2 (Playwright 1.64) cancels a fetch still in flight when the page navigates ' +
-        'away and reports the cancellation in this wording as a page error, even when the page ' +
-        "catches the rejection: settings-export's debounced summary refresh does " +
-        '(`10-context-range-summary.js`), and the trace of WEB-487 shows the line 11 ms after ' +
-        'the spec left /settings. The pattern is pinned to the app origin, where no ' +
-        'access-control check exists, so on that host the line can only be a cancellation; a ' +
-        'refused request to any other host still fails the test.',
-      reproducer: async (page, probe) => {
-        const held = '/__allowlist-probe/held-fetch';
-        // Never answered, so the fetch is still pending when the page leaves.
-        const hold = (): Promise<void> => new Promise<void>(() => {});
-        await page.route(held, hold);
-        const started = page.waitForRequest((request) => request.url().endsWith(held));
-        await page.evaluate((url) => {
-          void fetch(url).catch(() => {});
-        }, held);
-        await started;
-        await page.goto(probe);
-        await page.unroute(held, hold);
-      },
     },
   ],
 };
