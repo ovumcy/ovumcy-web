@@ -201,6 +201,31 @@ func TestIrregularSpreadSendsTheDashboardRangeNotTheMedian(t *testing.T) {
 	}
 }
 
+// TestIrregularThinHistoryDaySaveIsNotTheFertileWindowToast pins the day-save
+// sentence of the same verdict: an irregular-mode account on one or two
+// completed cycles saved on a day the median window would cover is answered
+// with the neutral message, not the fertile one. The three-cycle twin on the
+// same cycle day is the positive control that the fixture reaches the fertile
+// sentence at all.
+func TestIrregularThinHistoryDaySaveIsNotTheFertileWindowToast(t *testing.T) {
+	t.Parallel()
+
+	user := irregularVerdictUser(true)
+	// Cycle day 12 of the running cycle (started on day 84 and day 56): inside
+	// the 28-day pattern's window on days 9-14.
+	today := irregularVerdictBase.AddDate(0, 0, 84+11)
+
+	control := irregularVerdictLogs(0, 28, 56, 84)
+	if got := dayFeedbackKeyOn(t, user, control, time.UTC, today, today); got != daySaveMessageFertile {
+		t.Fatalf("control: three completed irregular cycles answered %q on cycle day 12, want the fertile message", got)
+	}
+
+	thin := irregularVerdictLogs(28, 56, 84)
+	if got := dayFeedbackKeyOn(t, user, thin, time.UTC, today, today); got != daySaveMessageNeutral {
+		t.Fatalf("two completed irregular cycles answered %q on cycle day 12, want the neutral message", got)
+	}
+}
+
 func irregularVerdictPaintedDays(maps calendarPredictionMaps) int {
 	return len(maps.predictedPeriod) + len(maps.predictedStartRange) + len(maps.preFertile) + len(maps.fertilityEdge) +
 		len(maps.fertilityPeak) + len(maps.ovulation) + len(maps.tentativeOvulation)

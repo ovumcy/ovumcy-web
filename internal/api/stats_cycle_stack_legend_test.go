@@ -108,3 +108,74 @@ func TestStatsCycleStackHasNoHiddenNoteWhenEveryCycleIsShown(t *testing.T) {
 		t.Fatal("the hidden-cycles note must not render when nothing is left out")
 	}
 }
+
+// TestStatsPageMakesNoOvulationOrFertileWindowClaimForIrregularHistoryBelowThreeCycles
+// pins the /stats half of the irregular thin-history verdict. An irregular-cycle
+// account with fewer than three completed cycles has no range to show, so no
+// surface names an ovulation day or a fertile window for it: neither the
+// current-phase card's fertile status and window line, nor the cycle stack's
+// ovulation and fertile-window cells and the legend that explains them. Both
+// accounts are on cycle day 12 of a 28-day pattern with phases switched on, so
+// the three-cycle twin is the positive control: it renders at least one of the
+// hooks the thin account must not. The page's empty state (the insights gate)
+// withholds them for this account on its own, so the prediction-suppression
+// verdict is the second barrier: it is the one standing when that gate is
+// lowered.
+func TestStatsPageMakesNoOvulationOrFertileWindowClaimForIrregularHistoryBelowThreeCycles(t *testing.T) {
+	claimHooks := []string{
+		`data-fertile-window`,
+		`data-fertility-status="fertile"`,
+		`data-phase="ovulation"`,
+		`data-fertile="true"`,
+	}
+	render := func(t *testing.T, email string, completedCycles int) string {
+		t.Helper()
+
+		app, database := newOnboardingTestApp(t)
+		user := createOnboardingTestUser(t, database, email, "StrongPass1", true)
+		authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+		today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+		var logs []models.DailyLog
+		var latestStart time.Time
+		for i := completedCycles; i >= 0; i-- {
+			latestStart = today.AddDate(0, 0, -11-28*i)
+			logs = append(logs, models.DailyLog{UserID: user.ID, Date: latestStart, IsPeriod: true, CycleStart: true})
+		}
+		if err := database.Create(&logs).Error; err != nil {
+			t.Fatalf("seed period logs: %v", err)
+		}
+		if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+			"last_period_start":      latestStart,
+			"irregular_cycle":        true,
+			"show_historical_phases": true,
+		}).Error; err != nil {
+			t.Fatalf("update user: %v", err)
+		}
+
+		request := httptest.NewRequest(http.MethodGet, "/stats", nil)
+		request.Header.Set("Accept-Language", "en")
+		request.Header.Set("Cookie", authCookie)
+		response := mustAppResponse(t, app, request)
+		assertStatusCode(t, response, http.StatusOK)
+		return mustReadBodyString(t, response.Body)
+	}
+
+	control := render(t, "stats-irregular-three-cycles@example.com", 3)
+	rendered := 0
+	for _, hook := range claimHooks {
+		if strings.Contains(control, hook) {
+			rendered++
+		}
+	}
+	if rendered == 0 {
+		t.Fatalf("control: an irregular account with three completed cycles rendered none of %v", claimHooks)
+	}
+
+	thin := render(t, "stats-irregular-two-cycles@example.com", 2)
+	for _, hook := range claimHooks {
+		if strings.Contains(thin, hook) {
+			t.Errorf("/stats for an irregular account with two completed cycles rendered %s", hook)
+		}
+	}
+}
