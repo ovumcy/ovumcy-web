@@ -179,7 +179,8 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyTwentyIsKept(t *te
 func bbtPlateau(first time.Time, days int, value float64) []models.DailyLog {
 	logs := make([]models.DailyLog, 0, days)
 	for offset := range days {
-		logs = append(logs, models.DailyLog{Date: first.AddDate(0, 0, offset), BBT: &value})
+		reading := value
+		logs = append(logs, models.DailyLog{Date: first.AddDate(0, 0, offset), BBT: &reading})
 	}
 	return logs
 }
