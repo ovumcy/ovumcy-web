@@ -164,6 +164,11 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 			// A refused grant is refused on every transport: a check that ran
 			// only for one of them would leave the other issuing the session.
 			refusal := totpSessionExpiredErrorSpec()
+			// The wire is compared with the spec below; the spec is pinned to
+			// its literal so a rename cannot move both together.
+			if refusal.Status != http.StatusUnauthorized || refusal.Key != "totp session expired" {
+				t.Fatalf("refusal spec drifted: want 401 %q, got %d %q", "totp session expired", refusal.Status, refusal.Key)
+			}
 			jsonResponse := submit(true)
 			if hasSession(jsonResponse) {
 				t.Fatal("json arm: a valid code after an operator-forced reset must not issue an auth session")

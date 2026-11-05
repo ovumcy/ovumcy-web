@@ -99,6 +99,24 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 	t.Parallel()
 
 	staleSpec := settingsOIDCReauthStaleErrorSpec()
+	// The refusals below are compared against these specs; pinning each spec to
+	// its literal status and key keeps the comparison from following a rename
+	// or a re-mapping of the spec itself.
+	for _, pinned := range []struct {
+		spec   APIErrorSpec
+		status int
+		key    string
+	}{
+		{staleSpec, http.StatusUnauthorized, "oidc reauth stale"},
+		{settingsOIDCReauthMismatchErrorSpec(), http.StatusUnauthorized, "oidc reauth identity mismatch"},
+		{settingsMissingPasswordErrorSpec(), http.StatusBadRequest, "invalid password"},
+		{settingsInvalidPasswordErrorSpec(), http.StatusUnauthorized, "invalid password"},
+		{authOIDCAuthenticationFailedErrorSpec(), http.StatusUnauthorized, "sso authentication failed"},
+	} {
+		if pinned.spec.Status != pinned.status || pinned.spec.Key != pinned.key {
+			t.Fatalf("refusal spec drifted: want %d %q, got %d %q", pinned.status, pinned.key, pinned.spec.Status, pinned.spec.Key)
+		}
+	}
 
 	// callbackWith posts a callback that carries a VALID sealed sign-in state
 	// (minted by the real start route, state and code matching it) and the
@@ -232,6 +250,14 @@ func TestOIDCLinkNeverBindsAForeignSubjectWithoutAFreshStepUp(t *testing.T) {
 		}},
 		{"confirm with a pending cookie sealed under another key", func(t *testing.T, fixture *oidcStepupFixture) {
 			response := confirmLinkWithPendingCookie(t, fixture, sealPendingLinkCookie(t, []byte("another-secret-key"), fixture.user.ID, storedAuthSessionVersion(t, fixture.database, fixture.user.ID)))
+			defer func() { _ = response.Body.Close() }()
+			assertLinkConfirmRefused(t, response, staleSpec)
+		}},
+		{"confirm with a pending cookie carrying no user id", func(t *testing.T, fixture *oidcStepupFixture) {
+			// An absent id is invalid input, never a reason to skip the owner
+			// comparison: the cookie is sealed under the app key at the
+			// session's current version, so only the zero id can refuse it.
+			response := confirmLinkWithPendingCookie(t, fixture, sealPendingLinkCookie(t, []byte(testAppSecretKey), 0, storedAuthSessionVersion(t, fixture.database, fixture.user.ID)))
 			defer func() { _ = response.Body.Close() }()
 			assertLinkConfirmRefused(t, response, staleSpec)
 		}},
