@@ -2,10 +2,12 @@ package api
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 
@@ -121,20 +123,32 @@ func TestSettingsStepupRefusalsLandOnSettings(t *testing.T) {
 func TestSettingsStepupHandlersRaiseNoSignInSpec(t *testing.T) {
 	t.Parallel()
 
+	signIn := map[string]bool{
+		"authOIDCUnavailableErrorSpec":          true,
+		"authOIDCAuthenticationFailedErrorSpec": true,
+		"authOIDCAccountUnavailableErrorSpec":   true,
+		"mapAuthOIDCError":                      true,
+	}
 	for _, file := range []string{
 		"handlers_settings_password.go",
 		"handlers_settings_oidc_link.go",
 		"handlers_settings_danger_stepup.go",
+		"oidc_stepup_continuation.go",
 	} {
-		source, err := os.ReadFile(file)
+		parsed, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
 		if err != nil {
-			t.Fatalf("read %s: %v", file, err)
+			t.Fatalf("parse %s: %v", file, err)
 		}
-		for _, call := range []string{"authOIDCUnavailableErrorSpec(", "authOIDCAuthenticationFailedErrorSpec(", "authOIDCAccountUnavailableErrorSpec(", "mapAuthOIDCError("} {
-			if strings.Contains(string(source), call) {
-				t.Errorf("%s calls %s): a Settings route answers through the settings-form specs (WEB-490)", file, call)
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
 			}
-		}
+			if ident, ok := call.Fun.(*ast.Ident); ok && signIn[ident.Name] {
+				t.Errorf("%s calls %s: a Settings step-up answers through the settings-form specs (WEB-490)", file, ident.Name)
+			}
+			return true
+		})
 	}
 }
 

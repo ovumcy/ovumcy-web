@@ -112,14 +112,21 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c fiber.Ctx) error {
 
 	state, err := newOIDCStepupState(time.Now(), oidcStepupPurposeLocalPasswordSetup, user.ID, preparedHash)
 	if err != nil {
+		// codecov:ignore:start -- defensive: state minting fails only on a crypto/rand error
 		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.start", spec)
 		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
 	}
 	if err := handler.setOIDCStepupCookie(c, state); err != nil {
+		// codecov:ignore:start -- the setter's only failure is a non-secure
+		// cookie posture, and boot refuses OIDC_ENABLED=true without
+		// COOKIE_SECURE=true, so an instance that can reach this line cannot be
+		// configured to fail it.
 		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.start", spec)
 		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
 	}
 	// Drop any in-flight ordinary login state — at the callback we will look
 	// for the stepup cookie first, but two competing flows for the same user
