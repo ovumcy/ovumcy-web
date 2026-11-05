@@ -175,6 +175,15 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyTwentyIsKept(t *te
 	}
 }
 
+// bbtPlateau is days consecutive readings of one value starting on first.
+func bbtPlateau(first time.Time, days int, value float64) []models.DailyLog {
+	logs := make([]models.DailyLog, 0, days)
+	for offset := range days {
+		logs = append(logs, models.DailyLog{Date: first.AddDate(0, 0, offset), BBT: &value})
+	}
+	return logs
+}
+
 // TestCycleSignals_InferUserLutealPhase_LutealLengthBelowMinIsDroppedNotClamped
 // is the rejecting half of the lower filter: the case above keeps exactly
 // minLutealPhaseDays, this one feeds a length one day under it. A cycle whose
@@ -187,20 +196,10 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthBelowMinIsDroppedNotClamp
 
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
 	flatWindow := func(start string) []models.DailyLog {
-		first := day(start)
-		window := make([]models.DailyLog, 0, bbtCoverlineWindow)
-		for offset := range bbtCoverlineWindow {
-			window = append(window, models.DailyLog{Date: first.AddDate(0, 0, offset), BBT: new(36.20)})
-		}
-		return window
+		return bbtPlateau(day(start), bbtCoverlineWindow, 36.20)
 	}
 	rise := func(first string) []models.DailyLog {
-		firstHigh := day(first)
-		streak := make([]models.DailyLog, 0, bbtElevatedStreakDays)
-		for offset := range bbtElevatedStreakDays {
-			streak = append(streak, models.DailyLog{Date: firstHigh.AddDate(0, 0, offset), BBT: new(36.50)})
-		}
-		return streak
+		return bbtPlateau(day(first), bbtElevatedStreakDays, 36.50)
 	}
 
 	logs := []models.DailyLog{
@@ -244,11 +243,7 @@ func TestCycleSignals_InferBBTOvulationDate_IgnoresReadingsOutsideTheValidRange(
 		return models.DailyLog{Date: day(date), BBT: &value}
 	}
 	flat := func(from, through int) []models.DailyLog {
-		logs := make([]models.DailyLog, 0, through-from+1)
-		for dayOfMonth := from; dayOfMonth <= through; dayOfMonth++ {
-			logs = append(logs, models.DailyLog{Date: cycleStart.AddDate(0, 0, dayOfMonth-1), BBT: new(36.20)})
-		}
-		return logs
+		return bbtPlateau(cycleStart.AddDate(0, 0, from-1), through-from+1, 36.20)
 	}
 	join := func(parts ...[]models.DailyLog) []models.DailyLog {
 		var all []models.DailyLog
