@@ -1,3 +1,3 @@
 none
 
-Tests only: new coverage for the luteal-personalised flag, the ovulation-as-inference wording, BBT outlier handling, the short-luteal filter and irregular-mode history suppression.
+Tests only: coverage for LutealPhasePersonalised, the luteal outlier filter and out-of-range BBT readings, the calendar legend and OpenAPI inference wording, locale estimate qualifiers, and the three-cycle floor in irregular mode.

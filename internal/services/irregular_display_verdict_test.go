@@ -201,13 +201,14 @@ func TestIrregularSpreadSendsTheDashboardRangeNotTheMedian(t *testing.T) {
 	}
 }
 
-// TestIrregularThinHistoryDaySaveIsNotTheFertileWindowToast pins the day-save
-// sentence of the same verdict: an irregular-mode account on one or two
-// completed cycles saved on a day the median window would cover is answered
-// with the neutral message, not the fertile one. The three-cycle twin on the
-// same cycle day is the positive control that the fixture reaches the fertile
-// sentence at all.
-func TestIrregularThinHistoryDaySaveIsNotTheFertileWindowToast(t *testing.T) {
+// TestIrregularModeDoesNotLiftTheThreeCycleFloorForTheDaySaveSentence pins the
+// shared three-completed-cycle fertility floor on the day-save sentence, not
+// the irregular verdict itself: irregular mode does not lift that floor, so an
+// account on one or two completed cycles saved on a day the median window
+// would cover is answered with the neutral message, not the fertile one. The
+// three-cycle twin on the same cycle day is the positive control that the
+// fixture reaches the fertile sentence at all.
+func TestIrregularModeDoesNotLiftTheThreeCycleFloorForTheDaySaveSentence(t *testing.T) {
 	t.Parallel()
 
 	user := irregularVerdictUser(true)

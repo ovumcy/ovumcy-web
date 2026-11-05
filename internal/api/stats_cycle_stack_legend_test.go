@@ -109,24 +109,25 @@ func TestStatsCycleStackHasNoHiddenNoteWhenEveryCycleIsShown(t *testing.T) {
 	}
 }
 
-// TestStatsPageMakesNoOvulationOrFertileWindowClaimForIrregularHistoryBelowThreeCycles
-// pins the /stats half of the irregular thin-history verdict. An irregular-cycle
-// account with fewer than three completed cycles has no range to show, so no
-// surface names an ovulation day or a fertile window for it: neither the
-// current-phase card's fertile status and window line, nor the cycle stack's
-// ovulation and fertile-window cells and the legend that explains them. Both
-// accounts are on cycle day 12 of a 28-day pattern with phases switched on, so
-// the three-cycle twin is the positive control: it renders at least one of the
-// hooks the thin account must not. The page's empty state (the insights gate)
-// withholds them for this account on its own, so the prediction-suppression
-// verdict is the second barrier: it is the one standing when that gate is
-// lowered.
-func TestStatsPageMakesNoOvulationOrFertileWindowClaimForIrregularHistoryBelowThreeCycles(t *testing.T) {
+// TestStatsIrregularAccountStaysBehindTheThreeCycleInsightsFloor pins the
+// shared three-completed-cycle floor on /stats for an irregular-cycle account,
+// not the irregular verdict itself: with fewer than three completed cycles the
+// page is the empty state, so the current-phase card's fertile status and
+// window line and the cycle stack's fertile cells are not rendered at all. Both
+// accounts are on cycle day 12 of a 28-day pattern with phases switched on; the
+// three-cycle twin is the positive control and must render the dynamic fertile
+// status and window hooks the thin account must not. The legend swatch for the
+// ovulation phase is static markup present whenever the stack is, so it is not
+// a claim hook.
+func TestStatsIrregularAccountStaysBehindTheThreeCycleInsightsFloor(t *testing.T) {
 	claimHooks := []string{
 		`data-fertile-window`,
 		`data-fertility-status="fertile"`,
-		`data-phase="ovulation"`,
 		`data-fertile="true"`,
+	}
+	controlHooks := []string{
+		`data-fertile-window`,
+		`data-fertility-status="fertile"`,
 	}
 	render := func(t *testing.T, email string, completedCycles int) string {
 		t.Helper()
@@ -162,17 +163,16 @@ func TestStatsPageMakesNoOvulationOrFertileWindowClaimForIrregularHistoryBelowTh
 	}
 
 	control := render(t, "stats-irregular-three-cycles@example.com", 3)
-	rendered := 0
-	for _, hook := range claimHooks {
-		if strings.Contains(control, hook) {
-			rendered++
+	for _, hook := range controlHooks {
+		if !strings.Contains(control, hook) {
+			t.Fatalf("control: an irregular account with three completed cycles did not render %s", hook)
 		}
-	}
-	if rendered == 0 {
-		t.Fatalf("control: an irregular account with three completed cycles rendered none of %v", claimHooks)
 	}
 
 	thin := render(t, "stats-irregular-two-cycles@example.com", 2)
+	if !strings.Contains(thin, `data-stats-empty-state data-stats-completed-cycles="2"`) {
+		t.Fatal("expected the empty state for an irregular account with two completed cycles")
+	}
 	for _, hook := range claimHooks {
 		if strings.Contains(thin, hook) {
 			t.Errorf("/stats for an irregular account with two completed cycles rendered %s", hook)

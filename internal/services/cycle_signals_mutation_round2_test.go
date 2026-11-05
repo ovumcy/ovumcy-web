@@ -185,15 +185,38 @@ func bbtPlateau(first time.Time, days int, value float64) []models.DailyLog {
 	return logs
 }
 
-// TestCycleSignals_InferUserLutealPhase_LutealLengthBelowMinIsDroppedNotClamped
-// is the rejecting half of the lower filter: the case above keeps exactly
-// minLutealPhaseDays, this one feeds a length one day under it. A cycle whose
-// observed luteal length is 9 is an outlier and must contribute nothing —
-// neither its own 9 nor a clamp to 10 — so the two remaining cycles (14 each)
-// decide the result alone. Without the `< minLutealPhaseDays` condition the 9
-// joins the average and the personalised phase drops to 12.
-func TestCycleSignals_InferUserLutealPhase_LutealLengthBelowMinIsDroppedNotClamped(t *testing.T) {
+// TestCycleSignals_InferUserLutealPhase_LutealLengthOutsideTheBoundsIsDroppedNotClamped
+// is the rejecting half of both outlier filters: the cases above keep exactly
+// minLutealPhaseDays and maxPlausibleLutealPhaseDays, these feed a length one
+// day outside each. A cycle whose observed luteal length is outside the bounds
+// is an outlier and must contribute nothing — neither its own length nor a
+// clamp to the nearest bound — so the two remaining cycles (14 each) decide the
+// result alone. Without the lower condition the short length joins the average
+// (12) and a clamp gives 13; without the upper condition the long length joins
+// it and the result is 16.
+func TestCycleSignals_InferUserLutealPhase_LutealLengthOutsideTheBoundsIsDroppedNotClamped(t *testing.T) {
 	t.Parallel()
+
+	cases := []struct {
+		name string
+		// outlierRise is the first high day of the 28-day first cycle: ovulation
+		// is the day before it, and the luteal length is 28 minus that day.
+		outlierRise string
+		length      int
+	}{
+		{name: "one day under minLutealPhaseDays", outlierRise: "2025-01-20", length: minLutealPhaseDays - 1},
+		{name: "one day over maxPlausibleLutealPhaseDays", outlierRise: "2025-01-08", length: maxPlausibleLutealPhaseDays + 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assertOutlierLutealLengthIsDropped(t, tc.outlierRise, tc.length)
+		})
+	}
+}
+
+func assertOutlierLutealLengthIsDropped(t *testing.T, outlierRise string, outlierLength int) {
+	t.Helper()
 
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
 	flatWindow := func(start string) []models.DailyLog {
@@ -209,10 +232,9 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthBelowMinIsDroppedNotClamp
 		{Date: day("2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		{Date: day("2025-03-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 	}
-	// Cycle 1 (28 days): first high day Jan20 = cycle day 20, ovulation on day
-	// 19, luteal = 28-19 = 9, one under minLutealPhaseDays.
+	// Cycle 1 (28 days): the outlier, ovulation on the day before outlierRise.
 	logs = append(logs, flatWindow("2025-01-01")...)
-	logs = append(logs, rise("2025-01-20")...)
+	logs = append(logs, rise(outlierRise)...)
 	// Cycles 2 and 3 (28 days each): first high day = start+14, ovulation on
 	// day 14, luteal = 14.
 	logs = append(logs, flatWindow("2025-01-29")...)
@@ -225,7 +247,7 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthBelowMinIsDroppedNotClamp
 		t.Fatal("expected ok=true: the two 14-day cycles are enough on their own")
 	}
 	if phase != 14 {
-		t.Fatalf("inferred luteal phase = %d, want 14: the 9-day cycle must be dropped (9 counted gives 12, a clamp to %d gives 13)", phase, minLutealPhaseDays)
+		t.Fatalf("inferred luteal phase = %d, want 14: the cycle with luteal length %d must be dropped, neither counted nor clamped", phase, outlierLength)
 	}
 }
 
