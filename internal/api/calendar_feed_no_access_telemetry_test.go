@@ -113,7 +113,8 @@ func tableRowCounts(t *testing.T, database *gorm.DB) map[string]int64 {
 	counts := make(map[string]int64, len(tables))
 	for _, table := range tables {
 		var count int64
-		if err := database.Raw(`SELECT COUNT(*) FROM "` + table + `"`).Scan(&count).Error; err != nil {
+		quoted := `"` + strings.ReplaceAll(table, `"`, `""`) + `"`
+		if err := database.Raw(`SELECT COUNT(*) FROM ` + quoted).Scan(&count).Error; err != nil {
 			t.Fatalf("count %s: %v", table, err)
 		}
 		counts[table] = count
@@ -391,9 +392,6 @@ func checkFeedPollTelemetry(t *testing.T, clearMAC bool) {
 	if got := stdLog.String(); got != "audit-capture anchor\n" {
 		t.Fatalf("the standard log must hold exactly the anchor line (a poll writes nothing there), got %q", got)
 	}
-	if lines := strings.Count(stdLog.String(), "\n"); lines != 1 {
-		t.Fatalf("a poll wrote to the standard log; it should hold only the anchor, got:\n%s", stdLog.String())
-	}
 
 	after := snapshotWholeDatabase(t, database)
 
@@ -406,6 +404,8 @@ func checkFeedPollTelemetry(t *testing.T, clearMAC bool) {
 
 	// (b) the only changed cell in the whole database is the day mark.
 	changed := before.changedCells(after)
+	sort.Strings(changed)
+	sort.Strings(permittedChange)
 	if strings.Join(changed, ",") != strings.Join(permittedChange, ",") {
 		t.Fatalf("polling changed %v; the only permitted change is %v", changed, permittedChange)
 	}

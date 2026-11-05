@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 )
@@ -37,7 +39,7 @@ func TestCalendarFeedRateLimitLogMasksTheTokenOnEveryCaseOfTheSuffix(t *testing.
 			const userAgent = "zz-distinctive-ua-4f1c RateLimitProbe/1.0"
 			settings := uniformRateLimits(t, 100000, time.Hour)
 			settings.CalendarFeedMax = calendarFeedLimiterBudget
-			app := newFiberApp(runtimeConfig{
+			config := runtimeConfig{
 				Location:        time.UTC,
 				DefaultLanguage: "en",
 				RateLimits:      settings,
@@ -46,7 +48,19 @@ func TestCalendarFeedRateLimitLogMasksTheTokenOnEveryCaseOfTheSuffix(t *testing.
 					Header:         "X-Forwarded-For",
 					TrustedProxies: []string{"0.0.0.0"},
 				},
-			}, handler)
+			}
+			// The production chain, as newFiberApp builds it, with one control
+			// logger ahead of it that DOES print the client address and agent: it
+			// proves both reached the request context, so the absence checks below
+			// are not green for a client that never arrived.
+			var controlLog bytes.Buffer
+			app := fiber.New(fiberConfig(config.Proxy, handler))
+			app.Use(logger.New(logger.Config{Stream: &controlLog, Format: "${status} ${ip} ${ua}\n"}))
+			configureFiberMiddleware(app, config, handler)
+			registerStaticContentTypes()
+			app.Use("/static", newStaticAssetHandler())
+			api.RegisterRoutes(app, handler)
+			app.Use(handler.NotFound)
 			target := api.CalendarFeedRateLimitPrefix + "/" + token + suffix
 			spelling := api.CalendarFeedRateLimitPrefix + "/<token>" + suffix
 			send := func() int {
@@ -63,6 +77,10 @@ func TestCalendarFeedRateLimitLogMasksTheTokenOnEveryCaseOfTheSuffix(t *testing.
 			send()
 			if status := send(); status != http.StatusTooManyRequests {
 				t.Fatalf("GET %s answered %d, want 429: the log assertion below needs the limiter to fire", spelling, status)
+			}
+
+			if want := "429 " + clientIP + " " + userAgent; !strings.Contains(controlLog.String(), want) {
+				t.Fatalf("the control logger did not see the refused request from %s with its agent, so the absence checks below prove nothing; control log:\n%s", spelling, controlLog.String())
 			}
 
 			output := logged.String()
