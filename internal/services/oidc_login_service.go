@@ -793,6 +793,12 @@ func (service *OIDCLoginService) autoProvisionOrLookupUser(ctx context.Context, 
 	if err == nil {
 		return user, true, nil
 	}
+	// Closed registration refuses with the answer an address an account holds
+	// gets (WEB-493): a distinct reply here would tell any user of the
+	// configured IdP whether the asserted email has an account.
+	if errors.Is(err, ErrAuthRegistrationDisabled) {
+		return models.User{}, false, ErrOIDCAccountUnavailable
+	}
 	if !errors.Is(err, ErrAuthEmailExists) {
 		return models.User{}, false, ErrOIDCProvisionFailed
 	}

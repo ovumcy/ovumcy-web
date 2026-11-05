@@ -364,3 +364,34 @@ func TestOIDCLoginServiceBuildLogoutStatePopulatedWhenAllFieldsPresent(t *testin
 		t.Fatal("expected non-empty PostLogoutRedirectURL derived from RedirectURL")
 	}
 }
+
+// A closed-registration refusal of auto-provision answers as an address an
+// account holds does (WEB-493), never as a transient provision failure.
+func TestOIDCLoginServiceClosedRegistrationAutoProvisionReturnsAccountUnavailable(t *testing.T) {
+	t.Parallel()
+
+	provisioner := &stubOIDCAutoProvisioner{err: ErrAuthRegistrationDisabled}
+	service := NewOIDCLoginService(&stubOIDCProviderClient{
+		enabled: true,
+		config: security.OIDCConfig{
+			Enabled:       true,
+			AutoProvision: true,
+		},
+		exchange: security.OIDCExchangeResult{
+			Claims: security.OIDCClaims{
+				Issuer:        "https://id.example.com",
+				Subject:       "closed-sub",
+				Email:         "closed@example.com",
+				EmailVerified: true,
+			},
+		},
+	}, &stubOIDCIdentityStore{}, &stubOIDCUserStore{byEmailFound: false}, provisioner)
+
+	_, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Time{})
+	if !provisioner.called {
+		t.Fatal("anchor: the never-seen address must reach the provisioner")
+	}
+	if !errors.Is(err, ErrOIDCAccountUnavailable) || errors.Is(err, ErrOIDCProvisionFailed) {
+		t.Fatalf("expected ErrOIDCAccountUnavailable for a closed-registration refusal, got %v", err)
+	}
+}
