@@ -235,6 +235,8 @@ var stepupSessionHelpers = map[string]string{
 var inlineStepupRefusalSpecs = map[string]func() APIErrorSpec{
 	"authOIDCAuthenticationFailedErrorSpec":        authOIDCAuthenticationFailedErrorSpec,
 	"authOIDCUnavailableErrorSpec":                 authOIDCUnavailableErrorSpec,
+	"settingsOIDCAuthenticationFailedErrorSpec":    settingsOIDCAuthenticationFailedErrorSpec,
+	"settingsOIDCUnavailableErrorSpec":             settingsOIDCUnavailableErrorSpec,
 	"settingsOIDCReauthMismatchErrorSpec":          settingsOIDCReauthMismatchErrorSpec,
 	"settingsErasureNeedsAccountPasswordErrorSpec": settingsErasureNeedsAccountPasswordErrorSpec,
 	"settingsSessionFaultErrorSpec":                settingsSessionFaultErrorSpec,

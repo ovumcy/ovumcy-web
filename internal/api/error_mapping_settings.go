@@ -117,11 +117,29 @@ func settingsOIDCIdentityLinkClaimedErrorSpec() APIErrorSpec {
 // sibling refusals (stale, claimed) answer with, HTMX a non-2xx fragment
 // (WEB-483).
 func mapOIDCIdentityLinkReauthError(err error) APIErrorSpec {
-	spec := oidcIdentityLinkReauthErrorSpec(err)
+	return onSettingsForm(oidcIdentityLinkReauthErrorSpec(err))
+}
+
+// onSettingsForm aims an SSO refusal shared with sign-in at the settings form,
+// for the Settings routes that raise one (WEB-483, WEB-490).
+func onSettingsForm(spec APIErrorSpec) APIErrorSpec {
 	if spec.Target == APIErrorTargetAuthForm {
 		spec.Target = APIErrorTargetSettingsForm
 	}
 	return spec
+}
+
+// mapSettingsOIDCError is mapAuthOIDCError for a Settings step-up start.
+func mapSettingsOIDCError(err error) APIErrorSpec {
+	return onSettingsForm(mapAuthOIDCError(err))
+}
+
+func settingsOIDCUnavailableErrorSpec() APIErrorSpec {
+	return onSettingsForm(authOIDCUnavailableErrorSpec())
+}
+
+func settingsOIDCAuthenticationFailedErrorSpec() APIErrorSpec {
+	return onSettingsForm(authOIDCAuthenticationFailedErrorSpec())
 }
 
 func oidcIdentityLinkReauthErrorSpec(err error) APIErrorSpec {
@@ -166,7 +184,7 @@ func mapOIDCIdentityUnlinkError(err error) APIErrorSpec {
 	case errors.Is(err, services.ErrOIDCUnlinkLastSignIn):
 		return settingsLocalPasswordRequiredErrorSpec()
 	default:
-		return authOIDCUnavailableErrorSpec()
+		return settingsOIDCUnavailableErrorSpec()
 	}
 }
 
