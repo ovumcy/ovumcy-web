@@ -107,7 +107,10 @@ func main() {
 func runServer(app *fiber.App, address string) error {
 	// Fiber v3 moved DisableStartupMessage out of fiber.Config and into the
 	// per-listen ListenConfig; keep the banner suppressed as before.
-	return app.Listen(address, fiber.ListenConfig{DisableStartupMessage: true})
+	return app.Listen(address, fiber.ListenConfig{
+		DisableStartupMessage: true,
+		ListenerNetwork:       fiber.NetworkTCP,
+	})
 }
 
 // startReminderScheduler builds and launches the optional built-in reminder

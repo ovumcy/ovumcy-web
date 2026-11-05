@@ -2995,6 +2995,45 @@ func TestRunServerReturnsAfterGracefulStop(t *testing.T) {
 	}
 }
 
+func TestRunServerListensOnIPv4AndIPv6(t *testing.T) {
+	probe, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("no IPv6 loopback on this host: %v", err)
+	}
+	_ = probe.Close()
+
+	app := fiber.New()
+	portCh := make(chan string, 1)
+	app.Hooks().OnListen(func(listenData fiber.ListenData) error {
+		portCh <- listenData.Port
+		return nil
+	})
+	served := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		err := runServer(app, ":0")
+		close(served)
+		done <- err
+	}()
+	port := <-portCh
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		retryShutdown(app, ctx, served)
+		if err := <-done; err != nil {
+			t.Errorf("runServer after shutdown: %v", err)
+		}
+	})
+
+	for _, host := range []string{"127.0.0.1", "::1"} {
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second)
+		if err != nil {
+			t.Fatalf("expected the default listener to accept %s, got %v", host, err)
+		}
+		_ = conn.Close()
+	}
+}
+
 // TestRetryShutdownBridgesBootWindow pins the boot-window hardening: a single
 // app.ShutdownWithContext call is a silent no-op while fasthttp's s.ln is
 // still nil (the gap between fiber's net.Listen and fasthttp's Serve
