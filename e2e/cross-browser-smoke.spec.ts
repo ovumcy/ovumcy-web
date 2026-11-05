@@ -94,9 +94,19 @@ test.describe('Cross-browser smoke', () => {
     // Bind the language save to its own PATCH before navigating away — a bare
     // save click followed by page.goto races the in-flight request and can drop
     // the just-chosen language (saveSettingsLanguage documents the mechanism).
+    // The export panel then refreshes its range summary under the new language;
+    // WebKit reports that fetch as a page error if navigation cancels it, even
+    // though the page catches the rejection (WEB-487). Its Accept-Language
+    // tells it apart from the summary the first /settings load fetched.
+    const summaryUnderEs = page.waitForResponse(
+      (response) =>
+        response.url().includes('/api/v1/exports/summary') &&
+        response.request().headers()['accept-language'] === 'es'
+    );
     await saveSettingsLanguage(page, 'es');
     await expect(html).toHaveAttribute('lang', 'es');
     await expectPageTitle(page, 'settings.title', 'es');
+    await summaryUnderEs;
 
     await page.goto('/calendar');
     await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
@@ -125,15 +135,12 @@ test.describe('Cross-browser smoke', () => {
           status: 200,
           contentType: 'text/html',
           headers: { 'Content-Security-Policy': policy },
-          body: `<!doctype html><html><body>${typeof entry.reproducer === 'string' ? entry.reproducer : ''}</body></html>`,
+          body: `<!doctype html><html><body>${entry.reproducer}</body></html>`,
         })
       );
       // Count from here, so a line an earlier entry's probe produced cannot pass this one.
       const before = browserErrors.countReported(entry.pattern);
       await page.goto(probe);
-      if (typeof entry.reproducer === 'function') {
-        await entry.reproducer(page, probe);
-      }
       await expect
         .poll(() => browserErrors.countReported(entry.pattern), {
           message: `${browserName} no longer reports ${entry.pattern}; drop it from ALLOWED_PER_BROWSER`,
