@@ -3,7 +3,6 @@ package services
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -52,11 +51,9 @@ func TestBuildCalendarLegendNamesOnlyTheStatesTheGridCarries(t *testing.T) {
 // published API says the day is inferred from the owner's recorded signal, so
 // no client reads it as a measured ovulation.
 func TestOpenAPIDescribesAConfirmedOvulationAsAnInferenceNotAMeasurement(t *testing.T) {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve test file path: runtime.Caller failed")
-	}
-	raw, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "..", "..", "docs", "openapi.yaml"))
+	// A test runs in its package directory, so the path holds under -trimpath,
+	// where a compiled-in source path would not.
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "openapi.yaml"))
 	if err != nil {
 		t.Fatalf("read docs/openapi.yaml: %v", err)
 	}
@@ -70,9 +67,9 @@ func TestOpenAPIDescribesAConfirmedOvulationAsAnInferenceNotAMeasurement(t *test
 		{"ovulation_confirmed", "`ovulation_date` is inferred from the owner's own temperature shift"},
 	}
 	for _, tc := range cases {
-		block, found := openAPIPropertyBlock(lines, tc.name)
+		block, found := openAPIPropertyBlock(lines, "StatsOverview", tc.name)
 		if !found {
-			t.Fatalf("%s: property block not found in docs/openapi.yaml", tc.name)
+			t.Fatalf("%s: property block not found in the StatsOverview schema of docs/openapi.yaml", tc.name)
 		}
 		if !strings.Contains(block, tc.phrase) {
 			t.Errorf("%s description lost the inference wording %q", tc.name, tc.phrase)
@@ -80,34 +77,33 @@ func TestOpenAPIDescribesAConfirmedOvulationAsAnInferenceNotAMeasurement(t *test
 	}
 }
 
-// openAPIPropertyBlock returns the text of the first `<name>:` mapping key and
-// everything nested under it, whitespace-flattened. The block ends at the next
-// line indented no deeper than the key, so a phrase in a sibling property or
-// elsewhere in the document cannot satisfy it and reformatting the block's own
-// keys cannot hide it.
-func openAPIPropertyBlock(lines []string, name string) (string, bool) {
+// openAPIPropertyBlock returns the text of the `<name>:` mapping key inside the
+// named component schema and everything nested under it, whitespace-flattened.
+// The schema ends at the next line indented no deeper than its own key, and the
+// property block at the next line indented no deeper than the property key, so
+// a same-named property in another schema, a phrase in a sibling property, or
+// reformatting of the block's own keys cannot change the result.
+func openAPIPropertyBlock(lines []string, schema, name string) (string, bool) {
 	indentOf := func(line string) int { return len(line) - len(strings.TrimLeft(line, " ")) }
-	inProperties := false
+	blockEnd := func(from, keyIndent int) int {
+		end := from + 1
+		for end < len(lines) && (strings.TrimSpace(lines[end]) == "" || indentOf(lines[end]) > keyIndent) {
+			end++
+		}
+		return end
+	}
 	for start, line := range lines {
-		// Only keys directly under a `properties:` mapping count, so a
-		// same-named key elsewhere in the document is not mistaken for it.
-		switch trimmed := strings.TrimSpace(line); {
-		case trimmed == "properties:":
-			inProperties = true
-			continue
-		case trimmed == name+":" && inProperties:
-		default:
+		if strings.TrimSpace(line) != schema+":" {
 			continue
 		}
-		keyIndent := indentOf(line)
-		var block []string
-		for _, next := range lines[start+1:] {
-			if strings.TrimSpace(next) != "" && indentOf(next) <= keyIndent {
-				break
+		schemaEnd := blockEnd(start, indentOf(line))
+		for propStart := start + 1; propStart < schemaEnd; propStart++ {
+			if strings.TrimSpace(lines[propStart]) != name+":" {
+				continue
 			}
-			block = append(block, next)
+			propEnd := blockEnd(propStart, indentOf(lines[propStart]))
+			return strings.Join(strings.Fields(strings.Join(lines[propStart+1:propEnd], " ")), " "), true
 		}
-		return strings.Join(strings.Fields(strings.Join(block, " ")), " "), true
 	}
 	return "", false
 }
