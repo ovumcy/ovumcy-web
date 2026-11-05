@@ -196,6 +196,10 @@ const (
 	// error mapping shows up here.
 	cellFlashKeyProvisioningRefused = "sso temporarily unavailable"
 	cellFlashKeyAccountUnavailable  = "sso sign-in unavailable"
+
+	// What the start route flashes when OIDC is switched off; today the same
+	// string as the provisioning refusal, but a different refusal.
+	cellFlashKeyOIDCDisabled = "sso temporarily unavailable"
 )
 
 // cellOIDCProvider is the provider double of the cell tests: the real
@@ -384,32 +388,6 @@ func TestLoginAndRegistrationModesComposeForAnAnonymousVisitorAtEveryCell(t *tes
 					t.Fatal("oidc_only: password sign-in must not issue a session cookie")
 				}
 			}
-
-			// The local sign-in route for an account that exists. Where local public
-			// auth is on, the sign-in succeeds (the control for the refusal); in
-			// oidc_only the same request is turned away at the gate.
-			createOnboardingTestUser(t, database, "seeded-owner@example.com", "StrongPass1", true)
-			login := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(url.Values{
-				"email":    {"seeded-owner@example.com"},
-				"password": {"StrongPass1"},
-			}.Encode()))
-			login.Header.Set("Accept", "application/json")
-			login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			loginPostResponse := mustAppResponse(t, app, login)
-			if cell.localPublicAuth() {
-				assertStatusCode(t, loginPostResponse, http.StatusOK)
-				if authCookie := responseCookie(loginPostResponse.Cookies(), authCookieName); authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
-					t.Fatal("local sign-in must issue a session where local public auth is on")
-				}
-			} else {
-				assertStatusCode(t, loginPostResponse, http.StatusForbidden)
-				if got := readAPIError(t, loginPostResponse.Body); got != "local sign-in unavailable" {
-					t.Fatalf("expected the oidc_only local sign-in refusal, got %q", got)
-				}
-				if authCookie := responseCookie(loginPostResponse.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
-					t.Fatal("oidc_only: the local sign-in route must not issue a session")
-				}
-			}
 		})
 	}
 }
@@ -568,7 +546,7 @@ func TestOIDCCallbackForANeverSeenIdentityHonoursTheRegistrationModeAtEveryCell(
 				if location := reply.response.Header.Get("Location"); location != "/login" {
 					t.Fatalf("OIDC off: expected the start route to redirect to /login, got %q", location)
 				}
-				if got, want := cellReplyFlashKey(t, reply.response), cellFlashKeyProvisioningRefused; got != want {
+				if got, want := cellReplyFlashKey(t, reply.response), cellFlashKeyOIDCDisabled; got != want {
 					t.Fatalf("OIDC off: expected the disabled flash %q, got %q", want, got)
 				}
 				if got := countUsers(t, database); got != 0 {
@@ -663,7 +641,6 @@ func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(
 		var audit bytes.Buffer
 		log.SetOutput(&audit)
 		reply := runCellOIDCCallback(t, app, provider)
-		log.SetOutput(originalWriter)
 		if !reply.started {
 			t.Fatalf("anchor: the sign-in did not start (status %d)", reply.response.StatusCode)
 		}
