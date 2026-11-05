@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,10 +21,11 @@ func TestSettingsStepupRefusalsLandOnSettings(t *testing.T) {
 	t.Parallel()
 
 	const (
-		linkStart   = "/api/v1/users/current/oidc/link/step-up"
-		wipeStart   = "/api/v1/users/current/data-wipe/step-up"
-		deleteStart = "/api/v1/users/current/deletion/step-up"
-		unlink      = "/api/v1/users/current/oidc/identities/4242"
+		passwordStart = "/api/v1/users/current/password/step-up"
+		linkStart     = "/api/v1/users/current/oidc/link/step-up"
+		wipeStart     = "/api/v1/users/current/data-wipe/step-up"
+		deleteStart   = "/api/v1/users/current/deletion/step-up"
+		unlink        = "/api/v1/users/current/oidc/identities/4242"
 	)
 	unmapped := errors.New("unmapped provider error")
 
@@ -31,20 +33,25 @@ func TestSettingsStepupRefusalsLandOnSettings(t *testing.T) {
 		method      string
 		path        string
 		password    bool
+		newPassword bool
+		bound       bool
 		disabled    bool
 		reauthStart error
 		unlinkErr   error
 		want        string
 	}{
+		"password start, oidc disabled":       {method: http.MethodPost, path: passwordStart, newPassword: true, disabled: true, want: "sso temporarily unavailable"},
+		"password start, provider failure":    {method: http.MethodPost, path: passwordStart, newPassword: true, reauthStart: services.ErrOIDCUnavailable, want: "sso temporarily unavailable"},
+		"password start, unmapped failure":    {method: http.MethodPost, path: passwordStart, newPassword: true, reauthStart: unmapped, want: "sso authentication failed"},
 		"link start, oidc disabled":           {method: http.MethodPost, path: linkStart, password: true, disabled: true, want: "sso temporarily unavailable"},
 		"link start, provider unreachable":    {method: http.MethodPost, path: linkStart, password: true, reauthStart: services.ErrOIDCUnavailable, want: "sso temporarily unavailable"},
 		"link start, unmapped provider error": {method: http.MethodPost, path: linkStart, password: true, reauthStart: unmapped, want: "sso authentication failed"},
 		"unlink, oidc disabled":               {method: http.MethodDelete, path: unlink, password: true, disabled: true, want: "sso temporarily unavailable"},
 		"unlink, unmapped service failure":    {method: http.MethodDelete, path: unlink, password: true, unlinkErr: unmapped, want: "sso temporarily unavailable"},
-		"data wipe start, oidc disabled":      {method: http.MethodPost, path: wipeStart, disabled: true, want: "sso temporarily unavailable"},
-		"data wipe start, provider failure":   {method: http.MethodPost, path: wipeStart, reauthStart: services.ErrOIDCUnavailable, want: "sso temporarily unavailable"},
-		"deletion start, oidc disabled":       {method: http.MethodPost, path: deleteStart, disabled: true, want: "sso temporarily unavailable"},
-		"deletion start, unmapped failure":    {method: http.MethodPost, path: deleteStart, reauthStart: unmapped, want: "sso authentication failed"},
+		"data wipe start, oidc disabled":      {method: http.MethodPost, path: wipeStart, bound: true, disabled: true, want: "sso temporarily unavailable"},
+		"data wipe start, provider failure":   {method: http.MethodPost, path: wipeStart, bound: true, reauthStart: services.ErrOIDCUnavailable, want: "sso temporarily unavailable"},
+		"deletion start, oidc disabled":       {method: http.MethodPost, path: deleteStart, bound: true, disabled: true, want: "sso temporarily unavailable"},
+		"deletion start, unmapped failure":    {method: http.MethodPost, path: deleteStart, bound: true, reauthStart: unmapped, want: "sso authentication failed"},
 	}
 	for name, tc := range refusals {
 		t.Run(name, func(t *testing.T) {
@@ -54,16 +61,25 @@ func TestSettingsStepupRefusalsLandOnSettings(t *testing.T) {
 			if tc.password {
 				giveLinkFixtureAPassword(t, fixture)
 			}
+			csrfCookie, csrfToken := fixture.settingsCSRF(t)
+			form := url.Values{"csrf_token": {csrfToken}}
+			if tc.password {
+				form.Set("password", linkFixturePassword)
+			}
+			if tc.newPassword {
+				form.Set("new_password", "FreshStrong2")
+				form.Set("confirm_password", "FreshStrong2")
+			}
+			if tc.bound {
+				// The erasure starts refuse a rendered-page form that does not
+				// carry the account binding before the handler runs.
+				form.Set(dayFormAccountField, renderedDayFormAccount(t, fixture.app, fixture.authCookie, "/settings"))
+			}
 			fixture.oidcStub.enabled = !tc.disabled
 			fixture.oidcStub.reauthStartErr = tc.reauthStart
 			fixture.oidcStub.unlinkErr = tc.unlinkErr
 
 			send := func(htmx bool) *http.Response {
-				csrfCookie, csrfToken := fixture.settingsCSRF(t)
-				form := url.Values{"csrf_token": {csrfToken}, dayFormAccountField: {renderedDayFormAccount(t, fixture.app, fixture.authCookie, "/settings")}}
-				if tc.password {
-					form.Set("password", linkFixturePassword)
-				}
 				request := httptest.NewRequest(tc.method, tc.path, strings.NewReader(form.Encode()))
 				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				if htmx {
@@ -98,17 +114,59 @@ func TestSettingsStepupRefusalsLandOnSettings(t *testing.T) {
 	}
 }
 
-// TestSettingsStepupSpecsNeverTargetTheAuthForm pins the mapper the unlink
-// answers through: no arm may aim at a sign-in form a Settings route lacks.
+// TestSettingsStepupHandlersRaiseNoSignInSpec covers the arms the route test
+// cannot reach — the step-up callbacks, whose redirectSettingsRefusal carries
+// any spec to /settings whatever its target, and the codecov-ignored guards: a
+// handler file that raises a sign-in SSO spec again fails here by name.
+func TestSettingsStepupHandlersRaiseNoSignInSpec(t *testing.T) {
+	t.Parallel()
+
+	for _, file := range []string{
+		"handlers_settings_password.go",
+		"handlers_settings_oidc_link.go",
+		"handlers_settings_danger_stepup.go",
+	} {
+		source, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		for _, call := range []string{"authOIDCUnavailableErrorSpec(", "authOIDCAuthenticationFailedErrorSpec(", "authOIDCAccountUnavailableErrorSpec(", "mapAuthOIDCError("} {
+			if strings.Contains(string(source), call) {
+				t.Errorf("%s calls %s): a Settings route answers through the settings-form specs (WEB-490)", file, call)
+			}
+		}
+	}
+}
+
+// TestSettingsStepupSpecsNeverTargetTheAuthForm pins the mappers the routes
+// above and the step-up callbacks answer through: no arm may aim at a sign-in
+// form a Settings route lacks.
 func TestSettingsStepupSpecsNeverTargetTheAuthForm(t *testing.T) {
 	t.Parallel()
 
-	for _, err := range []error{services.ErrOIDCIdentityNotFound, services.ErrOIDCUnlinkLastSignIn, errors.New("unmapped")} {
-		if got := mapOIDCIdentityUnlinkError(err); got.Target == APIErrorTargetAuthForm {
-			t.Fatalf("%v: expected no auth-form target on the unlink, got %q", err, got.Target)
-		}
+	specs := map[string]APIErrorSpec{
+		"unavailable":           settingsOIDCUnavailableErrorSpec(),
+		"authentication failed": settingsOIDCAuthenticationFailedErrorSpec(),
 	}
-	if got := settingsOIDCUnavailableErrorSpec(); got.Target != APIErrorTargetSettingsForm {
-		t.Fatalf("expected the settings form, got %q", got.Target)
+	for _, err := range []error{
+		services.ErrOIDCDisabled,
+		services.ErrOIDCUnavailable,
+		services.ErrOIDCAccountUnavailable,
+		services.ErrOIDCIdentityResolveFailed,
+		services.ErrOIDCReauthStale,
+		services.ErrOIDCReauthAuthTimeMissing,
+		services.ErrOIDCReauthIdentityMismatch,
+		services.ErrOIDCIdentityNotFound,
+		services.ErrOIDCUnlinkLastSignIn,
+		errors.New("unmapped"),
+	} {
+		specs["start "+err.Error()] = mapSettingsOIDCError(err)
+		specs["callback "+err.Error()] = mapLocalPasswordSetupReauthError(err)
+		specs["unlink "+err.Error()] = mapOIDCIdentityUnlinkError(err)
+	}
+	for name, spec := range specs {
+		if spec.Target == APIErrorTargetAuthForm {
+			t.Errorf("%s: expected no auth-form target on a Settings step-up, got %q (key %q)", name, spec.Target, spec.Key)
+		}
 	}
 }

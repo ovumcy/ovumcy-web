@@ -261,18 +261,7 @@ components:
         endpoints this is the identity provider: the account has no local
         password, so the re-authentication can only be satisfied through SSO,
         and SSO is disabled or unreachable. Retryable once the provider is back.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ApiError' }
-          example:
-            error: "sso temporarily unavailable"
-            error_detail: { key: "sso temporarily unavailable", category: "internal", target: "auth_form" }
-    SettingsServiceUnavailable:
-      description: |
-        The identity provider the erasure step-up needs is not available: the
-        account has no local password, so the re-authentication can only be
-        satisfied through SSO, and SSO is disabled or unreachable. Retryable
-        once the provider is back. A browser form submit gets a 303 to
+        The step-ups are Settings forms: a browser form submit gets a 303 to
         `/settings` with the refusal flashed there, an HTMX submit a 200
         status fragment.
       content:
@@ -3865,7 +3854,7 @@ paths:
                 error: "invalid settings input"
                 error_detail: { key: "invalid settings input", category: "validation", target: "settings_form" }
         '429': { $ref: '#/components/responses/RateLimited' }
-        '503': { $ref: '#/components/responses/SettingsServiceUnavailable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /api/v1/users/current/deletion/step-up:
     post:
@@ -3917,7 +3906,7 @@ paths:
                 error: "invalid settings input"
                 error_detail: { key: "invalid settings input", category: "validation", target: "settings_form" }
         '429': { $ref: '#/components/responses/RateLimited' }
-        '503': { $ref: '#/components/responses/SettingsServiceUnavailable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /api/v1/users/current/oidc/link/step-up:
     post:

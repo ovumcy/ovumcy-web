@@ -93,7 +93,7 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	if handler.oidcService == nil || !handler.oidcService.Enabled() {
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.start", spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -112,12 +112,12 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c fiber.Ctx) error {
 
 	state, err := newOIDCStepupState(time.Now(), oidcStepupPurposeLocalPasswordSetup, user.ID, preparedHash)
 	if err != nil {
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.start", spec)
 		return handler.respondMappedError(c, spec)
 	}
 	if err := handler.setOIDCStepupCookie(c, state); err != nil {
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.start", spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -132,7 +132,7 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c fiber.Ctx) error {
 	authURL, err := handler.oidcService.StartReauth(ctx, state.State, state.Nonce, state.CodeVerifier)
 	if err != nil {
 		handler.clearOIDCStepupCookie(c)
-		spec := mapAuthOIDCError(err)
+		spec := mapSettingsOIDCError(err)
 		handler.logSecurityError(c, "auth.local_password_setup.start", spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -158,7 +158,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	if state.Purpose != oidcStepupPurposeLocalPasswordSetup {
 		// codecov:ignore:start -- forward-compat guard: local_password_setup is the only stepup
 		// purpose value today, so a mismatching sealed payload cannot be minted.
-		spec := authOIDCAuthenticationFailedErrorSpec()
+		spec := settingsOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		return handler.redirectSettingsRefusal(c, spec)
 		// codecov:ignore:end
@@ -186,7 +186,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 	// fixed the class at N of N+1, because the next purpose inherits nothing.
 	code := exchange.Code
 	if exchange.Error != "" {
-		spec := authOIDCUnavailableErrorSpec()
+		spec := settingsOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		return handler.redirectSettingsRefusal(c, spec)
 	}
