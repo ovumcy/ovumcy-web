@@ -2109,16 +2109,18 @@ jobs:
           done
           if [ "$ready" -ne 1 ]; then echo "app did not become healthy"; docker logs "$cid" || true; exit 1; fi
 
-          curl -fsS http://localhost:18080/healthz | grep -q '"status":"ok"'
+          healthz="$(curl -fsS http://localhost:18080/healthz)"
+          grep -q '"status":"ok"' <<<"$healthz"
 
           # /readyz additionally proves the storage layer answers inside the
           # image: it runs a real query against the container's own database,
           # which no other assertion here reaches.
-          curl -fsS http://localhost:18080/readyz | grep -q '"status":"ok"'
+          readyz="$(curl -fsS http://localhost:18080/readyz)"
+          grep -q '"status":"ok"' <<<"$readyz"
 
           # /login renders from embedded templates.
           login="$(curl -fsS http://localhost:18080/login)"
-          printf '%s' "$login" | grep -q 'id="login-form"'
+          grep -q 'id="login-form"' <<<"$login"
 
           # A versioned /static asset serves via static.New from the embedded FS
           # with the release cache header.
