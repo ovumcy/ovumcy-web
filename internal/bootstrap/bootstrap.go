@@ -176,7 +176,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	// and onto the concrete OIDC login service below, before the latter is
 	// boxed into the apideps.OIDCWorkflowService interface.
 	loginService.SetTOTPVerifier(totpService)
-	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
+	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout, secretKey)
 
 	oidcLoginService := services.NewOIDCLoginService(
 		security.NewOIDCClient(opts.OIDCConfig),

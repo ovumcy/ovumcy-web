@@ -2,10 +2,13 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 const defaultOIDCLogoutStateTTL = 7 * 24 * time.Hour
@@ -32,12 +35,22 @@ type OIDCLogoutStateStore interface {
 	DeleteExpired(ctx context.Context, cutoff time.Time) error
 }
 
+// The id_token_hint is an ID token the provider signed for this owner, kept for
+// up to defaultOIDCLogoutStateTTL. It is stored sealed under the instance
+// secret and bound to its owner, so a database dump or backup alone does not
+// carry a usable token and a row moved to another user_id does not open
+// (WEB-489). Regression: TestOIDCLogoutStateServiceStoresTheHintSealed.
 type OIDCLogoutStateService struct {
-	store OIDCLogoutStateStore
+	store     OIDCLogoutStateStore
+	secretKey []byte
 }
 
-func NewOIDCLogoutStateService(store OIDCLogoutStateStore) *OIDCLogoutStateService {
-	return &OIDCLogoutStateService{store: store}
+func NewOIDCLogoutStateService(store OIDCLogoutStateStore, secretKey []byte) *OIDCLogoutStateService {
+	return &OIDCLogoutStateService{store: store, secretKey: secretKey}
+}
+
+func oidcLogoutIDTokenHintAAD(userID uint) []byte {
+	return []byte(fmt.Sprintf("ovumcy.field.oidc_logout_id_token_hint:%d", userID))
 }
 
 // Save persists the provider-logout material for one session. The owner rides
@@ -61,6 +74,15 @@ func (service *OIDCLogoutStateService) Save(ctx context.Context, sessionID strin
 	now = now.UTC()
 	expiresAt := now.Add(defaultOIDCLogoutStateTTL)
 
+	sealedHint := ""
+	if hint := strings.TrimSpace(state.IDTokenHint); hint != "" {
+		sealed, err := security.EncryptField(hint, service.secretKey, oidcLogoutIDTokenHintAAD(state.UserID))
+		if err != nil {
+			return err
+		}
+		sealedHint = sealed
+	}
+
 	if err := service.store.DeleteExpired(ctx, now); err != nil {
 		return err
 	}
@@ -68,7 +90,7 @@ func (service *OIDCLogoutStateService) Save(ctx context.Context, sessionID strin
 		SessionID:             sessionID,
 		UserID:                state.UserID,
 		EndSessionEndpoint:    strings.TrimSpace(state.EndSessionEndpoint),
-		IDTokenHint:           strings.TrimSpace(state.IDTokenHint),
+		IDTokenHint:           sealedHint,
 		PostLogoutRedirectURL: strings.TrimSpace(state.PostLogoutRedirectURL),
 		ExpiresAt:             expiresAt,
 		CreatedAt:             now,
@@ -129,10 +151,12 @@ func (service *OIDCLogoutStateService) load(ctx context.Context, sessionID strin
 	return service.resolve(ctx, sessionID, record, now, consume)
 }
 
-// resolve applies the expiry check and the optional one-time delete to a
-// record the caller has already established belongs to the owner it acts for.
+// resolve applies the expiry check, the hint unseal and the optional one-time
+// delete to a record the caller has already established belongs to the owner
+// it acts for. A row whose hint does not open is dropped like an expired one.
 func (service *OIDCLogoutStateService) resolve(ctx context.Context, sessionID string, record models.OIDCLogoutState, now time.Time, consume bool) (OIDCLogoutState, bool, error) {
-	if !record.ExpiresAt.IsZero() && !record.ExpiresAt.After(now) {
+	hint, opened := service.openIDTokenHint(record)
+	if !opened || (!record.ExpiresAt.IsZero() && !record.ExpiresAt.After(now)) {
 		if deleteErr := service.store.DeleteBySessionID(ctx, sessionID, record.UserID); deleteErr != nil {
 			return OIDCLogoutState{}, false, deleteErr
 		}
@@ -150,9 +174,28 @@ func (service *OIDCLogoutStateService) resolve(ctx context.Context, sessionID st
 		// instead of re-supplying it from somewhere else.
 		UserID:                record.UserID,
 		EndSessionEndpoint:    strings.TrimSpace(record.EndSessionEndpoint),
-		IDTokenHint:           strings.TrimSpace(record.IDTokenHint),
+		IDTokenHint:           hint,
 		PostLogoutRedirectURL: strings.TrimSpace(record.PostLogoutRedirectURL),
 	}, true, nil
+}
+
+// openIDTokenHint fails closed: a cleartext row written before WEB-489, a row
+// sealed for another owner, and a payload sealed without the owner binding all
+// report false, so the caller drops the row and the sign-out stays local.
+func (service *OIDCLogoutStateService) openIDTokenHint(record models.OIDCLogoutState) (string, bool) {
+	stored := strings.TrimSpace(record.IDTokenHint)
+	if stored == "" {
+		return "", true
+	}
+	hint, isLegacy, err := security.DecryptField(stored, service.secretKey, oidcLogoutIDTokenHintAAD(record.UserID))
+	if err != nil || isLegacy {
+		// Without this line a SECRET_KEY that no longer matches the stored rows
+		// reads exactly like an instance with no provider-logout state at all.
+		// Neither the session id nor the stored value is logged.
+		log.Printf("oidc logout state: id_token_hint did not open, row dropped: owner id=%d unbound=%t", record.UserID, isLegacy)
+		return "", false
+	}
+	return strings.TrimSpace(hint), true
 }
 
 func effectiveLogoutStateTime(now time.Time) time.Time {

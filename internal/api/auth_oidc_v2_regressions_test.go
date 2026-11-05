@@ -525,7 +525,7 @@ func persistOIDCLogoutStateForAuthCookie(t *testing.T, database *gorm.DB, authCo
 	t.Helper()
 
 	sessionID := mustExtractAuthSessionIDFromCookieHeader(t, authCookie)
-	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
+	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout, []byte(testAppSecretKey))
 	if err := stateService.Save(context.Background(), sessionID, logoutState, time.Now().UTC()); err != nil {
 		t.Fatalf("save oidc logout state: %v", err)
 	}
