@@ -200,6 +200,10 @@ func (provider *cellOIDCProvider) UserInfoClaims(context.Context, security.OIDCE
 	return security.OIDCClaims{}, security.ErrOIDCUserInfoUnavailable
 }
 
+// newLoginRegistrationCellApp builds the cell's app from the composition root.
+// Like the other onboarding test apps it mounts no CSRF middleware and no
+// rate limiters, so these cells say nothing about either; they pin only what
+// the routes and services answer.
 func newLoginRegistrationCellApp(t *testing.T, cell loginRegistrationCell, claims security.OIDCClaims) (*fiber.App, *gorm.DB, *cellOIDCProvider) {
 	t.Helper()
 
@@ -215,12 +219,18 @@ func newLoginRegistrationCellApp(t *testing.T, cell loginRegistrationCell, claim
 	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
 		cookieSecure:     true,
 		registrationMode: cell.registration,
+		oidcEnabled:      cell.oidc,
 		oidcServiceFromDeps: func(dependencies Dependencies, repositories *db.Repositories) OIDCWorkflowService {
 			provisioner, ok := dependencies.RegistrationService.(services.OIDCAutoProvisioner)
 			if !ok {
 				t.Fatalf("the composition root's registration service %T does not provision OIDC owners", dependencies.RegistrationService)
 			}
-			return services.NewOIDCLoginService(provider, repositories.OIDCIdentities, repositories.Users, provisioner)
+			service := services.NewOIDCLoginService(provider, repositories.OIDCIdentities, repositories.Users, provisioner)
+			// The composition root hands the same second-factor verifier to the
+			// OIDC service; a hand-built one without it would sign in on fewer
+			// factors than production.
+			service.SetTOTPVerifier(dependencies.TOTPService)
+			return service
 		},
 	})
 	return app, database, provider
@@ -358,6 +368,85 @@ func cellReplyFlashKey(t *testing.T, response *http.Response) string {
 	return decodeExemptFlashCookieForTest(t, cookie.Value).AuthError
 }
 
+// cellObservation is everything a callback reply shows an observer, plus the
+// rows it left behind. cookieLines are the full Set-Cookie lines, sorted, with
+// the flash value masked (it is sealed with a fresh nonce per reply, so two
+// equal answers differ in it) and every Expires normalised; the flash key is
+// compared separately.
+type cellObservation struct {
+	status           int
+	location         string
+	flashKey         string
+	cookieLines      []string
+	headers          string
+	body             string
+	hasAuthCookie    bool
+	hasPendingCookie bool
+	created          int64
+	identities       int64
+}
+
+// observeCellReply reads the reply and the database; seededUsers is the
+// number of user rows the test created before the callback.
+func observeCellReply(t *testing.T, response *http.Response, database *gorm.DB, seededUsers int64) cellObservation {
+	t.Helper()
+
+	observation := cellObservation{
+		status:   response.StatusCode,
+		location: response.Header.Get("Location"),
+		flashKey: cellReplyFlashKey(t, response),
+		body:     mustReadBodyString(t, response.Body),
+		created:  countUsers(t, database) - seededUsers,
+	}
+	if err := database.Model(&models.OIDCIdentity{}).Count(&observation.identities).Error; err != nil {
+		t.Fatalf("count identities: %v", err)
+	}
+	for _, cookie := range response.Cookies() {
+		masked := *cookie
+		// Expires is now plus a lifetime, so two replies a second apart differ
+		// in it; keep that one is set, not its value.
+		if !masked.Expires.IsZero() {
+			masked.Expires = time.Unix(1, 0).UTC()
+		}
+		masked.RawExpires = ""
+		switch cookie.Name {
+		case exemptFlashCookieName:
+			masked.Value = "<flash>"
+		case authCookieName:
+			observation.hasAuthCookie = observation.hasAuthCookie || strings.TrimSpace(cookie.Value) != ""
+		case oidcLinkPendingCookieName:
+			observation.hasPendingCookie = observation.hasPendingCookie || strings.TrimSpace(cookie.Value) != ""
+		}
+		observation.cookieLines = append(observation.cookieLines, masked.String())
+	}
+	sort.Strings(observation.cookieLines)
+
+	var headers []string
+	for name, values := range response.Header {
+		if name == "Set-Cookie" || name == "Date" {
+			continue
+		}
+		headers = append(headers, name+": "+strings.Join(values, ", "))
+	}
+	sort.Strings(headers)
+	observation.headers = strings.Join(headers, "\n")
+	return observation
+}
+
+// assertCellReplyHoldsNoIdentity requires that neither the asserted email nor
+// the subject shows in the redirect, any cookie line or the body, in any of
+// the forms a URL or a form would carry them.
+func assertCellReplyHoldsNoIdentity(t *testing.T, observation cellObservation) {
+	t.Helper()
+
+	surface := observation.location + "\n" + strings.Join(observation.cookieLines, "\n") + "\n" + observation.body
+	for _, needle := range []string{cellIdentityEmail, url.QueryEscape(cellIdentityEmail), cellIdentitySubject} {
+		if strings.Contains(surface, needle) {
+			t.Fatalf("the callback reply carries the asserted identity %q", needle)
+		}
+	}
+}
+
 // TestOIDCCallbackForANeverSeenIdentityHonoursTheRegistrationModeAtEveryCell
 // drives the callback with OIDC_AUTO_PROVISION on. Where registration is open
 // the identity is provisioned (the positive control); where it is closed the
@@ -389,34 +478,33 @@ func TestOIDCCallbackForANeverSeenIdentityHonoursTheRegistrationModeAtEveryCell(
 			}
 
 			response := reply.response
-			authCookie := responseCookie(response.Cookies(), authCookieName)
-			var linked int64
-			if err := database.Model(&models.OIDCIdentity{}).Count(&linked).Error; err != nil {
-				t.Fatalf("count identities: %v", err)
-			}
-			users := countUsers(t, database)
+			seen := observeCellReply(t, response, database, 0)
 
 			if cell.registration == services.RegistrationModeOpen {
 				assertStatusCode(t, response, http.StatusSeeOther)
-				if authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+				if !seen.hasAuthCookie {
 					t.Fatal("open registration: expected the provisioned owner to be signed in")
 				}
-				if users != 1 || linked != 1 {
-					t.Fatalf("open registration: expected one user and one linked identity, got %d and %d", users, linked)
+				if seen.created != 1 || seen.identities != 1 {
+					t.Fatalf("open registration: expected one user and one linked identity, got %d and %d", seen.created, seen.identities)
 				}
 				return
 			}
 
 			assertStatusCode(t, response, http.StatusSeeOther)
-			if location := response.Header.Get("Location"); location != "/login" {
-				t.Fatalf("closed registration: expected redirect to /login, got %q", location)
+			if seen.location != "/login" {
+				t.Fatalf("closed registration: expected redirect to /login, got %q", seen.location)
 			}
-			if authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
+			if seen.hasAuthCookie {
 				t.Fatal("closed registration: no session may be issued for a never-seen identity")
 			}
-			if users != 0 || linked != 0 {
-				t.Fatalf("closed registration: the callback must create no user and link no identity, got %d users and %d identities", users, linked)
+			if seen.hasPendingCookie {
+				t.Fatal("closed registration: no pending-link cookie may be parked for a never-seen identity")
 			}
+			if seen.created != 0 || seen.identities != 0 {
+				t.Fatalf("closed registration: the callback must create no user and link no identity, got %d users and %d identities", seen.created, seen.identities)
+			}
+			assertCellReplyHoldsNoIdentity(t, seen)
 			// The refusal key is pinned, not just "some flash": the zero rows must
 			// come from the provisioning refusal, not an earlier failure. WEB-493
 			// may change this key to the account-unavailable one.
@@ -441,15 +529,7 @@ func TestOIDCCallbackForANeverSeenIdentityHonoursTheRegistrationModeAtEveryCell(
 func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(t *testing.T) {
 	t.Parallel()
 
-	type observedReply struct {
-		status      int
-		location    string
-		flashKey    string
-		cookieNames string
-		body        string
-		created     int64
-	}
-	replyFor := func(t *testing.T, cell loginRegistrationCell, accountHoldsEmail bool) observedReply {
+	replyFor := func(t *testing.T, cell loginRegistrationCell, accountHoldsEmail bool) cellObservation {
 		t.Helper()
 		app, database, provider := newLoginRegistrationCellApp(t, cell, freshCellIdentityClaims(cellIdentityEmail))
 		var seeded int64
@@ -461,19 +541,7 @@ func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(
 		if !reply.started {
 			t.Fatalf("anchor: the sign-in did not start (status %d)", reply.response.StatusCode)
 		}
-		names := make([]string, 0, len(reply.response.Cookies()))
-		for _, cookie := range reply.response.Cookies() {
-			names = append(names, cookie.Name)
-		}
-		sort.Strings(names)
-		return observedReply{
-			status:      reply.response.StatusCode,
-			location:    reply.response.Header.Get("Location"),
-			flashKey:    cellReplyFlashKey(t, reply.response),
-			cookieNames: strings.Join(names, ","),
-			body:        mustReadBodyString(t, reply.response.Body),
-			created:     countUsers(t, database) - seeded,
-		}
+		return observeCellReply(t, reply.response, database, seeded)
 	}
 
 	for _, cell := range loginRegistrationCells() {
@@ -486,6 +554,20 @@ func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(
 			fresh := replyFor(t, cell, false)
 			held := replyFor(t, cell, true)
 
+			// In every OIDC cell the identity whose email an account holds is
+			// refused: no session, no parked link, back to /login, nothing linked,
+			// and nothing of the asserted identity echoed.
+			if held.hasAuthCookie || held.hasPendingCookie {
+				t.Fatalf("an email held by an account must not sign in or park a link: auth cookie=%v pending cookie=%v", held.hasAuthCookie, held.hasPendingCookie)
+			}
+			if held.location != "/login" {
+				t.Fatalf("an email held by an account: expected redirect to /login, got %q", held.location)
+			}
+			if held.identities != 0 {
+				t.Fatalf("an email held by an account must link no identity, got %d", held.identities)
+			}
+			assertCellReplyHoldsNoIdentity(t, held)
+
 			if cell.registration == services.RegistrationModeOpen {
 				if fresh.created != 1 || held.created != 0 {
 					t.Fatalf("control: the fresh identity must provision and the held email must not, got %d and %d new users", fresh.created, held.created)
@@ -495,22 +577,39 @@ func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(
 			if fresh.created != 0 || held.created != 0 {
 				t.Fatalf("closed registration: no callback may create a user, got %d and %d", fresh.created, held.created)
 			}
+			if fresh.identities != 0 {
+				t.Fatalf("closed registration: no callback may link an identity, got %d", fresh.identities)
+			}
+			if fresh.hasAuthCookie || fresh.hasPendingCookie {
+				t.Fatalf("closed registration: a never-seen identity must not sign in or park a link: auth cookie=%v pending cookie=%v", fresh.hasAuthCookie, fresh.hasPendingCookie)
+			}
+			assertCellReplyHoldsNoIdentity(t, fresh)
 			// Everything but the flash key is already identical.
 			if fresh.status != held.status || fresh.location != held.location {
 				t.Fatalf("status/redirect tell the cases apart: never-seen identity %d %q, email held by an account %d %q", fresh.status, fresh.location, held.status, held.location)
 			}
-			if fresh.cookieNames != held.cookieNames {
-				t.Fatalf("the Set-Cookie names tell the cases apart: %q vs %q", fresh.cookieNames, held.cookieNames)
+			if strings.Join(fresh.cookieLines, "\n") != strings.Join(held.cookieLines, "\n") {
+				t.Fatalf("the Set-Cookie lines tell the cases apart (flash value masked):\n%q\nvs\n%q", fresh.cookieLines, held.cookieLines)
+			}
+			if fresh.headers != held.headers {
+				t.Fatalf("the response headers tell the cases apart:\n%s\nvs\n%s", fresh.headers, held.headers)
 			}
 			if fresh.body != held.body {
 				t.Fatalf("the body tells the cases apart (%d vs %d bytes)", len(fresh.body), len(held.body))
 			}
-			// WEB-493 tripwire: the flash key still tells the cases apart. This
-			// pins the known-bad difference so the test goes red when the fix
-			// lands; the fix flips it to require equal, non-empty keys.
-			wantFresh, wantHeld := authOIDCUnavailableErrorSpec().Key, authOIDCAccountUnavailableErrorSpec().Key
-			if fresh.flashKey != wantFresh || held.flashKey != wantHeld {
-				t.Fatalf("WEB-493: expected the known flash-key difference (%q vs %q); got %q vs %q. If the keys are now equal the oracle is fixed: require fresh.flashKey == held.flashKey instead", wantFresh, wantHeld, fresh.flashKey, held.flashKey)
+			// WEB-493 tripwire: the flash key still tells the cases apart. It goes
+			// red when the oracle is fixed, and then the right move is to make the
+			// two replies equal, not to update the pair below.
+			if fresh.flashKey == held.flashKey {
+				t.Fatalf("WEB-493 fixed: the never-seen identity and the held email now get the same flash key %q; make them equal, do not update the pair", fresh.flashKey)
+			}
+			// The exact keys, so a difference between two unrelated failures does
+			// not satisfy the tripwire.
+			if want := authOIDCUnavailableErrorSpec().Key; fresh.flashKey != want {
+				t.Fatalf("closed registration, never-seen identity: expected the provisioning refusal %q, got %q", want, fresh.flashKey)
+			}
+			if want := authOIDCAccountUnavailableErrorSpec().Key; held.flashKey != want {
+				t.Fatalf("closed registration, email held by an account: expected %q, got %q", want, held.flashKey)
 			}
 		})
 	}
