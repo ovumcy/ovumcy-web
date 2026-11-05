@@ -38,6 +38,9 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 		// versionHolds marks the case whose write must not move the session
 		// version, so the version compare cannot be what refuses the grant.
 		versionHolds bool
+		// versionBumps marks the production reset, which must advance the version
+		// by exactly one in the same write that sets the flag.
+		versionBumps bool
 		// totpKept marks the case that must leave TOTP enabled, so the verify
 		// step reaches the grant check rather than an earlier branch.
 		totpKept bool
@@ -57,8 +60,9 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 					t.Fatalf("operator forced reset: %v", err)
 				}
 			},
-			wantFlag: true,
-			totpKept: true,
+			wantFlag:     true,
+			versionBumps: true,
+			totpKept:     true,
 		},
 		{
 			name: "flag only, version untouched",
@@ -104,6 +108,9 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 			if tc.versionHolds && after.AuthSessionVersion != granted.AuthSessionVersion {
 				t.Fatalf("fixture: the version moved (%d -> %d), so the version compare could refuse the grant", granted.AuthSessionVersion, after.AuthSessionVersion)
 			}
+			if tc.versionBumps && after.AuthSessionVersion != granted.AuthSessionVersion+1 {
+				t.Fatalf("fixture: the operator reset must bump the session version once (%d -> %d)", granted.AuthSessionVersion, after.AuthSessionVersion)
+			}
 			if tc.totpKept && !after.TOTPEnabled {
 				t.Fatal("fixture: the reset cleared TOTP, so the verify step would stop at a different branch")
 			}
@@ -112,38 +119,62 @@ func TestTOTPVerifyRefusesAPendingChallengeAfterAnOperatorForcedReset(t *testing
 			if err != nil {
 				t.Fatalf("GenerateCode: %v", err)
 			}
-			csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
-			form := url.Values{"code": {code}, "csrf_token": {csrfToken}}
-			request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(form.Encode()))
-			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			if !tc.wantSession {
-				request.Header.Set("Accept", "application/json")
+			submit := func(asJSON bool) *http.Response {
+				t.Helper()
+				csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+				form := url.Values{"code": {code}, "csrf_token": {csrfToken}}
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(form.Encode()))
+				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				if asJSON {
+					request.Header.Set("Accept", "application/json")
+				}
+				request.Header.Set("Cookie", joinCookieHeader(pendingCookie, csrfCookieHeader))
+				response := mustAppResponse(t, app, request)
+				t.Cleanup(func() { _ = response.Body.Close() })
+				return response
 			}
-			request.Header.Set("Cookie", joinCookieHeader(pendingCookie, csrfCookieHeader))
-			response := mustAppResponse(t, app, request)
-			defer func() { _ = response.Body.Close() }()
+			hasSession := func(response *http.Response) bool {
+				issued := responseCookie(response.Cookies(), authCookieName)
+				return issued != nil && issued.Value != ""
+			}
 
-			issued := responseCookie(response.Cookies(), authCookieName)
-			hasSession := issued != nil && issued.Value != ""
 			if tc.wantSession {
 				// The form arm lands on "/" (the post-login landing page, which
 				// itself sends the owner on), as the success test above pins.
-				if !hasSession || response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/" {
-					t.Fatalf("control: without a forced reset the valid code must sign in to \"/\", got status %d Location %q, cookie %v", response.StatusCode, response.Header.Get("Location"), hasSession)
+				response := submit(false)
+				if !hasSession(response) || response.StatusCode != http.StatusSeeOther || response.Header.Get("Location") != "/" {
+					t.Fatalf("control: without a forced reset the valid code must sign in to \"/\", got status %d Location %q, cookie %v", response.StatusCode, response.Header.Get("Location"), hasSession(response))
 				}
 				return
 			}
-			if hasSession {
-				t.Fatal("a valid code after an operator-forced reset must not issue an auth session")
-			}
+
+			// A refused grant is refused on every transport: a check that ran
+			// only for one of them would leave the other issuing the session.
 			refusal := totpSessionExpiredErrorSpec()
-			if response.StatusCode != refusal.Status {
-				t.Fatalf("expected the %d %q refusal, got status %d", refusal.Status, refusal.Key, response.StatusCode)
+			jsonResponse := submit(true)
+			if hasSession(jsonResponse) {
+				t.Fatal("json arm: a valid code after an operator-forced reset must not issue an auth session")
 			}
-			if got := readAPIError(t, response.Body); got != refusal.Key {
-				t.Fatalf("expected the refusal %q, got %q", refusal.Key, got)
+			if jsonResponse.StatusCode != refusal.Status {
+				t.Fatalf("json arm: expected the %d %q refusal, got status %d", refusal.Status, refusal.Key, jsonResponse.StatusCode)
 			}
-			assertTOTPCookieCleared(t, response, totpPendingCookieName)
+			if got := readAPIError(t, jsonResponse.Body); got != refusal.Key {
+				t.Fatalf("json arm: expected the refusal %q, got %q", refusal.Key, got)
+			}
+			assertTOTPCookieCleared(t, jsonResponse, totpPendingCookieName)
+
+			formResponse := submit(false)
+			if hasSession(formResponse) {
+				t.Fatal("form arm: a valid code after an operator-forced reset must not issue an auth session")
+			}
+			if formResponse.StatusCode != http.StatusSeeOther || formResponse.Header.Get("Location") != "/auth/2fa" {
+				t.Fatalf("form arm: expected 303 back to /auth/2fa, got %d %q", formResponse.StatusCode, formResponse.Header.Get("Location"))
+			}
+			flash := responseCookie(formResponse.Cookies(), flashCookieName)
+			if flash == nil || decodeFlashCookieForTest(t, flash.Value).AuthError != refusal.Key {
+				t.Fatalf("form arm: expected the %q flash on the redirect", refusal.Key)
+			}
+			assertTOTPCookieCleared(t, formResponse, totpPendingCookieName)
 		})
 	}
 }
