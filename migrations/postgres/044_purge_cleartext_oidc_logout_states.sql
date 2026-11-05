@@ -1,0 +1,22 @@
+-- Postgres mirror of migrations/044_purge_cleartext_oidc_logout_states.sql
+-- (purge every oidc_logout_states row written before the id_token_hint was
+-- sealed). Same version number so schema history stays aligned across engines.
+--
+-- Until WEB-489 the id_token_hint column held the provider-signed ID token in
+-- cleartext for up to 7 days, so a database dump or a backup carried a usable
+-- token for every recent OIDC session. The server now stores the hint sealed
+-- under the instance secret and bound to the row's user_id, and it refuses a
+-- value that does not open. Deleting the whole table removes the cleartext rows
+-- at upgrade time. A session whose row is purged signs out locally, without the
+-- RP-initiated end-session redirect. A plain DELETE is naturally idempotent, so
+-- the file is safe to re-run through the runner, and a restored pre-044 backup
+-- has it applied again on start.
+--
+-- Rollback: none needed. Downgrading to a release that reads the hint as
+-- cleartext needs the same DELETE run by hand (docs/self-hosted.md, Downgrade
+-- Caveats).
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments.
+
+DELETE FROM oidc_logout_states;

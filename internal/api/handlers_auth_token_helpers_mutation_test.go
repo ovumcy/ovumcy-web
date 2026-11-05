@@ -58,7 +58,7 @@ func TestRotateOIDCLogoutStateMovesStateToNewSessionOnPasswordChange(t *testing.
 	ctx := newSettingsSecurityTestContext(t, "token-rotate-move@example.com")
 
 	oldSessionID := mustExtractAuthSessionIDFromCookieHeader(t, ctx.authCookie)
-	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(ctx.database).OIDCLogout)
+	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(ctx.database).OIDCLogout, []byte(testAppSecretKey))
 	if err := stateService.Save(context.Background(), oldSessionID, validRotationLogoutState(ctx.user.ID), time.Now().UTC()); err != nil {
 		t.Fatalf("seed logout state for old session: %v", err)
 	}
@@ -92,6 +92,11 @@ func TestRotateOIDCLogoutStateMovesStateToNewSessionOnPasswordChange(t *testing.
 	if movedState.EndSessionEndpoint != validRotationLogoutState(ctx.user.ID).EndSessionEndpoint {
 		t.Fatalf("rotated logout state end_session_endpoint = %q, want %q", movedState.EndSessionEndpoint, validRotationLogoutState(ctx.user.ID).EndSessionEndpoint)
 	}
+	// The rotated row is re-sealed for the same owner, so the hint the next
+	// sign-out hands the provider still opens (WEB-489).
+	if want := validRotationLogoutState(ctx.user.ID).IDTokenHint; movedState.IDTokenHint != want {
+		t.Fatalf("rotated logout state id_token_hint = %q, want %q", movedState.IDTokenHint, want)
+	}
 
 	staleState, staleFound, err := stateService.Load(context.Background(), oldSessionID, ctx.user.ID, time.Now().UTC())
 	if err != nil {
@@ -117,7 +122,7 @@ func TestRefreshCurrentSessionDoesNotLogRotationFailureOnSuccess(t *testing.T) {
 	ctx := newSettingsSecurityTestContextWithOptions(t, "token-rotate-nolog@example.com", onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
 
 	oldSessionID := mustExtractAuthSessionIDFromCookieHeader(t, ctx.authCookie)
-	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(ctx.database).OIDCLogout)
+	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(ctx.database).OIDCLogout, []byte(testAppSecretKey))
 	if err := stateService.Save(context.Background(), oldSessionID, validRotationLogoutState(ctx.user.ID), time.Now().UTC()); err != nil {
 		t.Fatalf("seed logout state for old session: %v", err)
 	}

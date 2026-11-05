@@ -37,7 +37,7 @@ func newLogoutTestApp(t *testing.T, repo *countingLogoutAuthRepo, limit int, ses
 		authService: authSvc,
 		// Wired as in production; no provider-logout state is stored, so the
 		// sign-out stays local.
-		oidcLogoutStateSvc: services.NewOIDCLogoutStateService(&moveLogoutStateStub{findFound: false}),
+		oidcLogoutStateSvc: newMoveLogoutStateService(&moveLogoutStateStub{findFound: false}),
 	}
 
 	app := fiber.New()
@@ -102,7 +102,7 @@ func TestARefusedSignOutKeepsTheSessionForARetry(t *testing.T) {
 		location:           time.UTC,
 		secretKey:          []byte("test-secret-key"),
 		authService:        authSvc,
-		oidcLogoutStateSvc: services.NewOIDCLogoutStateService(&moveLogoutStateStub{findFound: false}),
+		oidcLogoutStateSvc: newMoveLogoutStateService(&moveLogoutStateStub{findFound: false}),
 	}
 	app := fiber.New()
 	app.Use(func(c fiber.Ctx) error {

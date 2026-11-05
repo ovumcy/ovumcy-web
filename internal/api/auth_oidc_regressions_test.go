@@ -900,7 +900,7 @@ func TestOIDCCallbackForLinkedTOTPAccountGatesOnTheSecondFactor(t *testing.T) {
 		t.Fatal("expected the pending cookie to carry an opaque OIDC logout-state id, since the stubbed result carries provider-logout material")
 	}
 
-	logoutStateSvc := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
+	logoutStateSvc := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout, []byte(testHandlerSecretKey))
 	stagedState, stagedFound, err := logoutStateSvc.Load(context.Background(), pendingLogoutStateID, linked.ID, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("load staged logout state: %v", err)
@@ -1033,7 +1033,7 @@ func TestOIDCCallbackForLinkedTOTPAccountWithNoLogoutStateCompletesChallengeClea
 	}
 	newSessionID := mustExtractAuthSessionIDFromCookieHeader(t, sessionCookie.Name+"="+sessionCookie.Value)
 
-	logoutStateSvc := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
+	logoutStateSvc := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout, []byte(testHandlerSecretKey))
 	_, found, err := logoutStateSvc.Load(context.Background(), newSessionID, linked.ID, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("load logout state for new session: %v", err)
@@ -1145,7 +1145,7 @@ func TestOIDCCallbackPersistsProviderLogoutStateOnSuccessfulLogin(t *testing.T) 
 	// the freshly issued session id. Loading it back proves we were on the
 	// err == nil path the mutant inverts.
 	newSessionID := mustExtractAuthSessionIDFromCookieHeader(t, authCookie.Name+"="+authCookie.Value)
-	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
+	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout, []byte(testHandlerSecretKey))
 	saved, found, err := stateService.Load(context.Background(), newSessionID, result.User.ID, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("load persisted logout state: %v", err)

@@ -22,6 +22,7 @@ type moveLogoutStateStub struct {
 	findCalls  int
 
 	savedSessionID string
+	savedRecord    models.OIDCLogoutState
 	saveErr        error
 	saveCalls      int
 
@@ -34,6 +35,7 @@ func (s *moveLogoutStateStub) Save(ctx context.Context, state *models.OIDCLogout
 	s.saveCalls++
 	if state != nil {
 		s.savedSessionID = state.SessionID
+		s.savedRecord = *state
 	}
 	return s.saveErr
 }
@@ -57,16 +59,28 @@ func (s *moveLogoutStateStub) DeleteExpired(ctx context.Context, cutoff time.Tim
 	return nil
 }
 
+const moveLogoutStateHint = "eyJhbGciOiJSUzI1NiJ9.header.signature"
+
+func newMoveLogoutStateService(store services.OIDCLogoutStateStore) *services.OIDCLogoutStateService {
+	return services.NewOIDCLogoutStateService(store, []byte(testAppSecretKey))
+}
+
 // validMoveLogoutStateRecord returns a record that passes validOIDCLogoutState,
 // so a test using it exercises the Save/Delete arm of moveOIDCLogoutState
-// rather than the invalid-state Delete-only arm.
-func validMoveLogoutStateRecord(ownerID uint) models.OIDCLogoutState {
-	return models.OIDCLogoutState{
+// rather than the invalid-state Delete-only arm. The row is written by the
+// service itself, so its hint is sealed for ownerID exactly as a stored row is.
+func validMoveLogoutStateRecord(t *testing.T, ownerID uint) models.OIDCLogoutState {
+	t.Helper()
+	capture := &moveLogoutStateStub{}
+	if err := newMoveLogoutStateService(capture).Save(context.Background(), "seed-session", services.OIDCLogoutState{
 		UserID:                ownerID,
 		EndSessionEndpoint:    testOIDCIssuerURL + "/logout",
-		IDTokenHint:           "eyJhbGciOiJSUzI1NiJ9.header.signature",
+		IDTokenHint:           moveLogoutStateHint,
 		PostLogoutRedirectURL: "https://app.example.com/",
+	}, time.Now()); err != nil {
+		t.Fatalf("seal the fixture logout state: %v", err)
 	}
+	return capture.savedRecord
 }
 
 // TestMoveOIDCLogoutStateNilHandlerIsANoOp pins the `handler == nil` arm of
@@ -104,8 +118,8 @@ func TestMoveOIDCLogoutStateEmptyOrIdenticalSessionIDsAreANoOp(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			store := &moveLogoutStateStub{findFound: true, findRecord: validMoveLogoutStateRecord(7)}
-			handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store)}
+			store := &moveLogoutStateStub{findFound: true, findRecord: validMoveLogoutStateRecord(t, 7)}
+			handler := &Handler{oidcLogoutStateSvc: newMoveLogoutStateService(store)}
 			if err := handler.moveOIDCLogoutState(context.Background(), testCase.old, testCase.new, 7, time.Now()); err != nil {
 				t.Fatalf("expected a no-op, got %v", err)
 			}
@@ -123,7 +137,7 @@ func TestMoveOIDCLogoutStateEmptyOrIdenticalSessionIDsAreANoOp(t *testing.T) {
 // same as an OIDC login whose account had none to begin with.
 func TestMoveOIDCLogoutStateNotFoundIsANoOp(t *testing.T) {
 	store := &moveLogoutStateStub{findFound: false}
-	handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store)}
+	handler := &Handler{oidcLogoutStateSvc: newMoveLogoutStateService(store)}
 	if err := handler.moveOIDCLogoutState(context.Background(), "old-session", "new-session", 7, time.Now()); err != nil {
 		t.Fatalf("expected a not-found row to no-op rather than error, got %v", err)
 	}
@@ -137,7 +151,7 @@ func TestMoveOIDCLogoutStateNotFoundIsANoOp(t *testing.T) {
 // miss) propagates to the caller instead of being swallowed as a quiet no-op.
 func TestMoveOIDCLogoutStateLoadErrorPropagates(t *testing.T) {
 	store := &moveLogoutStateStub{findErr: errors.New("storage unavailable")}
-	handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store)}
+	handler := &Handler{oidcLogoutStateSvc: newMoveLogoutStateService(store)}
 	if err := handler.moveOIDCLogoutState(context.Background(), "old-session", "new-session", 7, time.Now()); err == nil {
 		t.Fatal("expected the Load error to propagate")
 	}
@@ -156,7 +170,7 @@ func TestMoveOIDCLogoutStateInvalidRecordDeletesWithoutSaving(t *testing.T) {
 			// first check before any URL parsing.
 		},
 	}
-	handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store)}
+	handler := &Handler{oidcLogoutStateSvc: newMoveLogoutStateService(store)}
 	if err := handler.moveOIDCLogoutState(context.Background(), "old-session", "new-session", 7, time.Now()); err != nil {
 		t.Fatalf("expected an invalid record to be dropped without error, got %v", err)
 	}
@@ -175,10 +189,10 @@ func TestMoveOIDCLogoutStateInvalidRecordDeletesWithoutSaving(t *testing.T) {
 func TestMoveOIDCLogoutStateSaveErrorPropagates(t *testing.T) {
 	store := &moveLogoutStateStub{
 		findFound:  true,
-		findRecord: validMoveLogoutStateRecord(7),
+		findRecord: validMoveLogoutStateRecord(t, 7),
 		saveErr:    errors.New("storage unavailable"),
 	}
-	handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store), oidcService: newStubOIDCWorkflowService(true)}
+	handler := &Handler{oidcLogoutStateSvc: newMoveLogoutStateService(store), oidcService: newStubOIDCWorkflowService(true)}
 	if err := handler.moveOIDCLogoutState(context.Background(), "old-session", "new-session", 7, time.Now()); err == nil {
 		t.Fatal("expected the Save error to propagate")
 	}
@@ -192,8 +206,8 @@ func TestMoveOIDCLogoutStateSaveErrorPropagates(t *testing.T) {
 // the same shape end to end): a valid record found under the old session id
 // is saved under the new one, then deleted from the old one.
 func TestMoveOIDCLogoutStateValidRecordMovesAndDeletesOld(t *testing.T) {
-	store := &moveLogoutStateStub{findFound: true, findRecord: validMoveLogoutStateRecord(7)}
-	handler := &Handler{oidcLogoutStateSvc: services.NewOIDCLogoutStateService(store), oidcService: newStubOIDCWorkflowService(true)}
+	store := &moveLogoutStateStub{findFound: true, findRecord: validMoveLogoutStateRecord(t, 7)}
+	handler := &Handler{oidcLogoutStateSvc: newMoveLogoutStateService(store), oidcService: newStubOIDCWorkflowService(true)}
 	if err := handler.moveOIDCLogoutState(context.Background(), "old-session", "new-session", 7, time.Now()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,5 +216,20 @@ func TestMoveOIDCLogoutStateValidRecordMovesAndDeletesOld(t *testing.T) {
 	}
 	if store.deleteCalls != 1 || store.deleteBySessionID != "old-session" {
 		t.Fatalf("expected the old session id's row deleted, got calls=%d sessionID=%q", store.deleteCalls, store.deleteBySessionID)
+	}
+
+	// The relocated row is re-sealed, never copied as cleartext, and it still
+	// opens for its owner: the logout after a TOTP sign-in keeps its hint.
+	moved := store.savedRecord
+	if moved.IDTokenHint == moveLogoutStateHint {
+		t.Fatal("the relocated row stores the id_token_hint in cleartext")
+	}
+	reread := &moveLogoutStateStub{findFound: true, findRecord: moved}
+	state, found, err := newMoveLogoutStateService(reread).Load(context.Background(), "new-session", 7, time.Now())
+	if err != nil || !found {
+		t.Fatalf("the relocated row does not open for its owner (found=%t, err=%v)", found, err)
+	}
+	if state.IDTokenHint != moveLogoutStateHint {
+		t.Fatalf("the relocated row opened to hint %q, want the original", state.IDTokenHint)
 	}
 }

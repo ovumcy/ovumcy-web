@@ -68,7 +68,7 @@ func TestOIDCSignInWritesALogoutStateAccountErasureCanReach(t *testing.T) {
 		t.Fatalf("the OIDC sign-in built a logout state owned by %d, want owner %d — an unattributed state is written with user_id = 0 and account erasure can never reach it", result.Logout.UserID, owner.ID)
 	}
 
-	stateService := NewOIDCLogoutStateService(repositories.OIDCLogout)
+	stateService := NewOIDCLogoutStateService(repositories.OIDCLogout, testOIDCLogoutStateKey)
 	if err := stateService.Save(ctx, sessionID, *result.Logout, now); err != nil {
 		t.Fatalf("persist the sign-in's logout state: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestOIDCSignInWritesALogoutStateAccountErasureCanReach(t *testing.T) {
 		t.Fatalf("erase the account: %v", err)
 	}
 	if count := countLogoutStates(t, database, sessionID); count != 0 {
-		t.Fatalf("account erasure left %d provider-logout row(s) — with them the raw id_token_hint — behind: the row is not attributable to the erased owner", count)
+		t.Fatalf("account erasure left %d provider-logout row(s) — with them the sealed id_token_hint — behind: the row is not attributable to the erased owner", count)
 	}
 }
 
@@ -126,12 +126,12 @@ func TestOIDCLogoutStateServiceRefusesARecordThatIsNotTheAskingOwners(t *testing
 			SessionID:             "sess-owned-by-b",
 			UserID:                ownerB,
 			EndSessionEndpoint:    "https://id.example.com/logout",
-			IDTokenHint:           "owner-b-id-token",
+			IDTokenHint:           sealOIDCLogoutHintForTest(t, "owner-b-id-token", ownerB),
 			PostLogoutRedirectURL: "https://app.example.com/login",
 			ExpiresAt:             time.Now().Add(time.Hour).UTC(),
 		},
 	}
-	service := NewOIDCLogoutStateService(store)
+	service := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	got, found, err := service.Load(context.Background(), "sess-owned-by-b", ownerA, time.Now())
 	if err != nil {
@@ -174,7 +174,7 @@ func TestOIDCLogoutStateServiceRefusesAnAbsentOwner(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{findFound: true}
-	service := NewOIDCLogoutStateService(store)
+	service := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 	ctx := context.Background()
 
 	if _, found, err := service.Load(ctx, "sess", 0, time.Now()); !errors.Is(err, ErrOIDCLogoutStateUnattributed) || found {

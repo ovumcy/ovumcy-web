@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
 // oidclogoutstateserviceCovStore is a test-local stub for OIDCLogoutStateStore.
@@ -75,7 +76,7 @@ func TestOIDCLogoutStateServiceSaveTTLIs7Days(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	state := OIDCLogoutState{
@@ -127,7 +128,7 @@ func TestOIDCLogoutStateServiceSaveEmptySessionIDReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	if err := svc.Save(context.Background(), "   ", OIDCLogoutState{}, time.Now()); err != nil {
 		t.Fatalf("Save() with whitespace-only sessionID should return nil, got %v", err)
@@ -146,7 +147,7 @@ func TestOIDCLogoutStateServiceSaveDeleteExpiredErrorPropagates(t *testing.T) {
 
 	wantErr := errors.New("db error deleting expired")
 	store := &oidclogoutstateserviceCovStore{deleteExpiredErr: wantErr}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	err := svc.Save(context.Background(), "sess-del-err", OIDCLogoutState{UserID: oidclogoutstateserviceCovOwner}, time.Now())
 	if !errors.Is(err, wantErr) {
@@ -184,7 +185,7 @@ func TestOIDCLogoutStateServiceDeleteTrimSpaceAndDelegates(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	if err := svc.Delete(context.Background(), "  sess-del  ", oidclogoutstateserviceCovOwner); err != nil {
 		t.Fatalf("Delete() unexpected error: %v", err)
@@ -226,7 +227,7 @@ func TestOIDCLogoutStateServiceLoadEmptySessionIDReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	got, found, err := svc.Load(context.Background(), "  ", oidclogoutstateserviceCovOwner, time.Now())
 	if err != nil || found || got != (OIDCLogoutState{}) {
@@ -246,7 +247,7 @@ func TestOIDCLogoutStateServiceLoadDeleteExpiredErrorPropagates(t *testing.T) {
 
 	wantErr := errors.New("db error in load")
 	store := &oidclogoutstateserviceCovStore{deleteExpiredErr: wantErr}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	_, found, err := svc.Load(context.Background(), "sess-load-err", oidclogoutstateserviceCovOwner, time.Now())
 	if !errors.Is(err, wantErr) {
@@ -265,7 +266,7 @@ func TestOIDCLogoutStateServiceLoadNotFoundReturnsFalse(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{findFound: false}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	got, found, err := svc.Load(context.Background(), "no-such-session", oidclogoutstateserviceCovOwner, time.Now())
 	if err != nil || found || got != (OIDCLogoutState{}) {
@@ -279,7 +280,7 @@ func TestOIDCLogoutStateServiceLoadFindErrorPropagates(t *testing.T) {
 
 	wantErr := errors.New("find error")
 	store := &oidclogoutstateserviceCovStore{findErr: wantErr}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	_, found, err := svc.Load(context.Background(), "sess-find-err", oidclogoutstateserviceCovOwner, time.Now())
 	if !errors.Is(err, wantErr) {
@@ -309,7 +310,7 @@ func TestOIDCLogoutStateServiceLoadExpiredRecordDeletedAndNotFound(t *testing.T)
 			ExpiresAt:          expiredAt,
 		},
 	}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	got, found, err := svc.Load(context.Background(), "sess-expired", oidclogoutstateserviceCovOwner, now)
 	if err != nil || found || got != (OIDCLogoutState{}) {
@@ -334,7 +335,7 @@ func TestOIDCLogoutStateServiceLoadExactExpiryBoundaryIsExpired(t *testing.T) {
 			ExpiresAt: now, // exactly at boundary → !After(now) → expired
 		},
 	}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	_, found, err := svc.Load(context.Background(), "sess-boundary", oidclogoutstateserviceCovOwner, now)
 	if err != nil || found {
@@ -357,7 +358,7 @@ func TestOIDCLogoutStateServiceLoadExpiredDeleteErrorPropagates(t *testing.T) {
 		},
 		deleteBySessionErr: wantErr,
 	}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	_, _, err := svc.Load(context.Background(), "sess-exp-del-err", oidclogoutstateserviceCovOwner, now)
 	if !errors.Is(err, wantErr) {
@@ -379,12 +380,12 @@ func TestOIDCLogoutStateServiceLoadValidRecordReturnsData(t *testing.T) {
 			UserID:                oidclogoutstateserviceCovOwner,
 			SessionID:             "sess-ok",
 			EndSessionEndpoint:    " https://id.example.com/logout ",
-			IDTokenHint:           " tok ",
+			IDTokenHint:           " " + sealOIDCLogoutHintForTest(t, " tok ", oidclogoutstateserviceCovOwner) + " ",
 			PostLogoutRedirectURL: " https://app.example.com/done ",
 			ExpiresAt:             now.Add(time.Hour),
 		},
 	}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	got, found, err := svc.Load(context.Background(), "sess-ok", oidclogoutstateserviceCovOwner, now)
 	if err != nil {
@@ -422,7 +423,7 @@ func TestOIDCLogoutStateServiceLoadZeroExpiresAtNotExpired(t *testing.T) {
 			ExpiresAt:          time.Time{}, // zero
 		},
 	}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	_, found, err := svc.Load(context.Background(), "sess-zero-exp", oidclogoutstateserviceCovOwner, now)
 	if err != nil || !found {
@@ -445,11 +446,11 @@ func TestOIDCLogoutStateServiceConsumeDeletesRecord(t *testing.T) {
 			UserID:             oidclogoutstateserviceCovOwner,
 			SessionID:          "sess-consume",
 			EndSessionEndpoint: "https://id.example.com/logout",
-			IDTokenHint:        "tok-consume",
+			IDTokenHint:        sealOIDCLogoutHintForTest(t, "tok-consume", oidclogoutstateserviceCovOwner),
 			ExpiresAt:          now.Add(time.Hour),
 		},
 	}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	got, found, err := svc.Consume(context.Background(), "sess-consume", oidclogoutstateserviceCovOwner, now)
 	if err != nil {
@@ -481,7 +482,7 @@ func TestOIDCLogoutStateServiceLoadDoesNotDeleteRecord(t *testing.T) {
 			ExpiresAt:          now.Add(time.Hour),
 		},
 	}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	_, found, err := svc.Load(context.Background(), "sess-load-nodelete", oidclogoutstateserviceCovOwner, now)
 	if err != nil || !found {
@@ -507,7 +508,7 @@ func TestOIDCLogoutStateServiceConsumeDeleteErrorPropagates(t *testing.T) {
 		},
 		deleteBySessionErr: wantErr,
 	}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	_, _, err := svc.Consume(context.Background(), "sess-consume-err", oidclogoutstateserviceCovOwner, now)
 	if !errors.Is(err, wantErr) {
@@ -523,7 +524,7 @@ func TestOIDCLogoutStateServiceSaveFieldsTrimmedAndUTC(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	loc, _ := time.LoadLocation("America/New_York")
 	now := time.Date(2026, 6, 1, 8, 0, 0, 0, loc) // non-UTC input
@@ -555,8 +556,10 @@ func TestOIDCLogoutStateServiceSaveFieldsTrimmedAndUTC(t *testing.T) {
 	if store.saved.EndSessionEndpoint != "https://id.example.com/logout" {
 		t.Fatalf("EndSessionEndpoint not trimmed: %q", store.saved.EndSessionEndpoint)
 	}
-	if store.saved.IDTokenHint != "tok123" {
-		t.Fatalf("IDTokenHint not trimmed: %q", store.saved.IDTokenHint)
+	// The hint is sealed, so its trim shows only once it is opened again.
+	hint, isLegacy, err := security.DecryptField(store.saved.IDTokenHint, testOIDCLogoutStateKey, oidcLogoutIDTokenHintAAD(ownerID))
+	if err != nil || isLegacy || hint != "tok123" {
+		t.Fatalf("IDTokenHint not sealed trimmed for its owner: hint=%q isLegacy=%t err=%v", hint, isLegacy, err)
 	}
 	if store.saved.PostLogoutRedirectURL != "https://app.example.com/done" {
 		t.Fatalf("PostLogoutRedirectURL not trimmed: %q", store.saved.PostLogoutRedirectURL)
@@ -571,7 +574,7 @@ func TestOIDCLogoutStateServiceSaveDeleteExpiredCalledWithNow(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	if err := svc.Save(context.Background(), "sess-de", OIDCLogoutState{UserID: oidclogoutstateserviceCovOwner}, now); err != nil {
@@ -608,7 +611,7 @@ func TestOIDCLogoutStateServiceLoadWithNoClockUsesTheCurrentTime(t *testing.T) {
 			ExpiresAt:          time.Now().UTC().Add(-time.Hour),
 		},
 	}
-	svc := NewOIDCLogoutStateService(store)
+	svc := NewOIDCLogoutStateService(store, testOIDCLogoutStateKey)
 
 	before := time.Now().UTC()
 	state, found, err := svc.Load(context.Background(), "sess-no-clock", oidclogoutstateserviceCovOwner, time.Time{})
