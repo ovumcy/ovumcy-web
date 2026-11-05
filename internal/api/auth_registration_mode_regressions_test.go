@@ -677,6 +677,9 @@ func TestOIDCCallbackDoesNotTellANeverSeenIdentityFromOneWhoseEmailHasAnAccount(
 		var audit bytes.Buffer
 		log.SetOutput(&audit)
 		reply := runCellOIDCCallback(t, app, provider)
+		// The capture window is the callback alone; the defer stays as the
+		// safety net for a Fatal above.
+		log.SetOutput(originalWriter)
 		if !reply.started {
 			t.Fatalf("anchor: the sign-in did not start (status %d)", reply.response.StatusCode)
 		}
