@@ -211,16 +211,35 @@ func runBody(t *testing.T, block string) string {
 	return body
 }
 
-// runBodyIn is runBody's whole answer; ok is false when block has no `run:`.
+// runBodyIn is runBody's whole answer; ok is false when block has no `run:`
+// among the step's own keys. Only a key at the depth of the block's first key
+// counts, so a `with:` input named `run` is never read as the step's script.
 func runBodyIn(block string) (string, bool) {
 	lines := strings.Split(block, "\n")
 
-	start, indent := -1, 0
+	depth := -1
+	for _, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		depth = len(line) - len(trimmed)
+		if strings.HasPrefix(trimmed, "- ") {
+			depth += len("- ")
+		}
+		break
+	}
+
+	start, indent := -1, depth
 	for i, line := range lines {
 		trimmed := strings.TrimLeft(line, " ")
-		if strings.HasPrefix(trimmed, "run:") {
+		lineIndent := len(line) - len(trimmed)
+		if lineIndent == depth-len("- ") && strings.HasPrefix(trimmed, "- ") {
+			trimmed = trimmed[len("- "):]
+			lineIndent = depth
+		}
+		if lineIndent == depth && strings.HasPrefix(trimmed, "run:") {
 			start = i
-			indent = len(line) - len(trimmed)
 			break
 		}
 	}
