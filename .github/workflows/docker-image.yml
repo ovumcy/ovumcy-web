@@ -1704,7 +1704,7 @@ jobs:
           # appeared during the build takes `latest` with its own run; this one
           # still publishes its version tag and `sha-…`.
           latest_dropped=false
-          if printf '%s' "${tags}" | grep -qx 'latest'; then
+          if grep -qx 'latest' <<<"${tags}"; then
             if ! still_highest_stable_tag; then
               tags="$(printf '%s' "${tags}" | { grep -vx 'latest' || true; })"
               latest_dropped=true
@@ -2225,7 +2225,8 @@ jobs:
           # `latest` the promotion already dropped stays dropped, without
           # asking again.
           latest_dropped=false
-          if printf '%s\n' "${tags[@]}" | grep -qx 'latest'; then
+          tag_lines="$(printf '%s\n' "${tags[@]}")"
+          if grep -qx 'latest' <<<"${tag_lines}"; then
             if [ "${PROMOTE_LATEST_DROPPED:-}" = "true" ] || ! still_highest_stable_tag; then
               kept=()
               for tag in "${tags[@]}"; do
