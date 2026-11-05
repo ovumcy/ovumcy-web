@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -101,6 +102,25 @@ func snapshotWholeDatabase(t *testing.T, database *gorm.DB) dbSnapshot {
 	return snapshot
 }
 
+// tableRowCounts returns the true number of rows of every table, counted by the
+// database, so rows a snapshot key collapses are still counted.
+func tableRowCounts(t *testing.T, database *gorm.DB) map[string]int64 {
+	t.Helper()
+	tables, err := database.Migrator().GetTables()
+	if err != nil {
+		t.Fatalf("list tables: %v", err)
+	}
+	counts := make(map[string]int64, len(tables))
+	for _, table := range tables {
+		var count int64
+		if err := database.Raw(`SELECT COUNT(*) FROM "` + table + `"`).Scan(&count).Error; err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		counts[table] = count
+	}
+	return counts
+}
+
 // locate returns "table.column" for every cell that contains needle.
 func (snapshot dbSnapshot) locate(needle string) []string {
 	var found []string
@@ -198,11 +218,14 @@ func TestDBSnapshotDiffSeesEveryKindOfChange(t *testing.T) {
 //
 // The app is the real route table (RegisterRoutes behind the language and
 // method-override middleware, the not-found handler last, the audit stream
-// switched on) under a Fiber config that trusts X-Forwarded-For, the shape the
-// proxy deployment runs. The edge rate limiters and the CSRF middleware are
-// mounted by the composition root in cmd/ovumcy and are not part of this app;
-// neither stores anything per request. A request logger carries the production
-// format and SafeRequestLogPath tag, and a control logger that DOES print ${ip}
+// switched on, though a poll emits no audit event) under a Fiber config that
+// trusts X-Forwarded-For, the shape the proxy deployment runs. The edge rate
+// limiters and the CSRF middleware are mounted by the composition root in
+// cmd/ovumcy and are not part of this app; the feed limiter keeps per-window
+// counters keyed by client address in process memory, and nothing it holds
+// reaches the database. A request logger carries a hand-written mirror of the
+// production format and SafeRequestLogPath tag (the production logger itself is
+// driven by a test in cmd/ovumcy), and a control logger that does print ${ip}
 // and ${ua} proves the distinctive client address and user agent reached the
 // request context, so a clean scan is not green for a client that never arrived.
 //
@@ -210,9 +233,10 @@ func TestDBSnapshotDiffSeesEveryKindOfChange(t *testing.T) {
 // latency, method, route template, redacted error): the operator access log
 // carries NO client address and NO user agent at all, and the path is the route
 // template ("/calendar/feed/:token.ics"), never the token. The test asserts the
-// stronger no-IP/no-UA statement; the copy of the format below is pinned to the
-// production constant by a test in cmd/ovumcy. The standard-library log, where
-// the audit stream writes, is scanned the same way.
+// stronger no-IP/no-UA statement. The standard-library log is scanned the same
+// way and must hold nothing but its anchor line. The GORM query logger writes
+// through its own writer to stdout, outside both captured logs; the database
+// scan is what covers what a query could have stored.
 //
 // Two rows are polled: a current one, and a pre-032 one with no verifier MAC,
 // whose first poll legitimately also backfills calendar_feed_verifier_mac.
@@ -229,6 +253,11 @@ func checkFeedPollTelemetry(t *testing.T, clearMAC bool) {
 	t.Helper()
 	_, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "feed-telemetry@example.com", "StrongPass1", true)
+	// The day mark is the owner-local day; with the zone fixed at UTC it is the UTC
+	// day the window check below compares against.
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("timezone", "UTC").Error; err != nil {
+		t.Fatalf("set the owner timezone: %v", err)
+	}
 	token := armCalendarFeedForUserWithColumns(t, database, user.ID, func(columns models.CalendarFeedTokenColumns) models.CalendarFeedTokenColumns {
 		if clearMAC {
 			columns.VerifierMAC = ""
@@ -247,12 +276,13 @@ func checkFeedPollTelemetry(t *testing.T, clearMAC bool) {
 	const uaMarker = "zz-distinctive-ua-4f1c"
 	const userAgent = uaMarker + " TelemetryProbeCalendarClient/9.87.6"
 	clientIPs := []string{"203.0.113.77", "198.51.100.23", "192.0.2.201"}
-	// Every form an address can be stored in: text, and the 4- and 16-byte binary
-	// forms a blob column would hold.
+	// The forms an address is likely to be stored in: dotted text, the 4- and
+	// 16-byte binary forms a blob column would hold, and the 4-byte form as hex.
+	// A decimal-integer or other encoding is not searched for.
 	needles := []string{userAgent, uaMarker}
 	for _, ip := range clientIPs {
 		parsed := net.ParseIP(ip)
-		needles = append(needles, ip, string(parsed.To4()), string(parsed.To16()))
+		needles = append(needles, ip, string(parsed.To4()), string(parsed.To16()), hex.EncodeToString(parsed.To4()))
 	}
 
 	var stdLog bytes.Buffer
@@ -300,6 +330,7 @@ func checkFeedPollTelemetry(t *testing.T, clearMAC bool) {
 	app.Use(handler.NotFound)
 
 	before := snapshotWholeDatabase(t, database)
+	rowsBefore := tableRowCounts(t, database)
 	if hits := before.locate(userAgent); len(hits) != 0 {
 		t.Fatalf("the user agent is in the database before any poll: %v", hits)
 	}
@@ -360,6 +391,9 @@ func checkFeedPollTelemetry(t *testing.T, clearMAC bool) {
 	if got := stdLog.String(); got != "audit-capture anchor\n" {
 		t.Fatalf("the standard log must hold exactly the anchor line (a poll writes nothing there), got %q", got)
 	}
+	if lines := strings.Count(stdLog.String(), "\n"); lines != 1 {
+		t.Fatalf("a poll wrote to the standard log; it should hold only the anchor, got:\n%s", stdLog.String())
+	}
 
 	after := snapshotWholeDatabase(t, database)
 
@@ -374,6 +408,14 @@ func checkFeedPollTelemetry(t *testing.T, clearMAC bool) {
 	changed := before.changedCells(after)
 	if strings.Join(changed, ",") != strings.Join(permittedChange, ",") {
 		t.Fatalf("polling changed %v; the only permitted change is %v", changed, permittedChange)
+	}
+	// A table without a primary key keys its rows by their whole content, which
+	// collapses duplicates; the true row counts catch a duplicate row appended.
+	rowsAfter := tableRowCounts(t, database)
+	for table, count := range rowsBefore {
+		if rowsAfter[table] != count {
+			t.Fatalf("polling changed the row count of %s from %d to %d", table, count, rowsAfter[table])
+		}
 	}
 	var reloaded models.User
 	if err := database.First(&reloaded, user.ID).Error; err != nil {

@@ -9,15 +9,18 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/ovumcy/ovumcy-web/internal/api"
+	"github.com/ovumcy/ovumcy-web/internal/db"
 )
 
 // TestRequestLoggerFormatCarriesNoClientIdentity pins the operator access log
 // to the fields the privacy documentation promises: time, status, latency,
 // method, the redacted route template and the redacted error. A client address,
 // user agent, raw URL or any header or query value is not among them. The
-// calendar-feed telemetry regression in internal/api keeps a copy of this
-// format, so a change here that adds a field must be decided on both sides.
+// calendar-feed telemetry regression in internal/api mirrors this format by
+// hand, so a change here that adds a field must be decided on both sides; the
+// test below this one drives the production logger itself.
 func TestRequestLoggerFormatCarriesNoClientIdentity(t *testing.T) {
 	allowed := map[string]bool{
 		"time": true, "status": true, "latency": true, "method": true,
@@ -84,5 +87,81 @@ func TestRequestLoggerWritesOnlyTheRedactedFeedLine(t *testing.T) {
 	pattern := regexp.MustCompile(`^[^|]+ \| 200 \| [^|]+ \| GET \| /calendar/feed/:token\.ics \| $`)
 	if strings.Count(output.String(), "\n") != 1 || !pattern.MatchString(line) {
 		t.Fatalf("the access line is not exactly the redacted shape, got %q", output.String())
+	}
+}
+
+// TestRequestLoggerKeepsTheCalendarFeedTokenAndClientIdentityOutOfTheLine mounts
+// the production request logger (newRequestLogger, with its request_path tag
+// body) over the real route table and polls the real feed route with GET and
+// HEAD, each carrying a forwarded client address and a user agent. The format
+// pin above checks the tag names only; this checks what the tags write: the
+// line carries the route template and neither the capability token, the client
+// address nor the user agent. A second logger that does print ${ip} and ${ua}
+// proves both reached the request context, so the absence is not vacuous.
+func TestRequestLoggerKeepsTheCalendarFeedTokenAndClientIdentityOutOfTheLine(t *testing.T) {
+	handler, database := newRateLimitTestHandlerAndDB(t)
+	owner := seedOwner(t, db.NewRepositories(database), "feed-access-log@example.com", 14)
+	token := armCalendarFeedToken(t, database, owner.ID)
+	if len(token) <= 16 {
+		t.Fatalf("the minted feed token is implausibly short (%d)", len(token))
+	}
+
+	var accessLog, controlLog bytes.Buffer
+	app := fiber.New(fiberConfig(proxySettings{
+		Enabled:        true,
+		Header:         fiber.HeaderXForwardedFor,
+		TrustedProxies: []string{"0.0.0.0"},
+	}, handler))
+	app.Use(newRequestLogger(&accessLog))
+	app.Use(logger.New(logger.Config{Stream: &controlLog, Format: "${method} ${ip} ${ua}\n"}))
+	app.Use(api.MethodOverride(handler))
+	app.Use(handler.LanguageMiddleware)
+	api.RegisterRoutes(app, handler)
+	app.Use(handler.NotFound)
+
+	const (
+		clientIP  = "203.0.113.77"
+		userAgent = "AccessLogProbeClient/9.87.6 (zz-distinctive-ua-4f1c)"
+		template  = "/calendar/feed/:token.ics"
+	)
+	methods := []string{http.MethodGet, http.MethodHead}
+	for _, method := range methods {
+		request := httptest.NewRequest(method, api.CalendarFeedRateLimitPrefix+"/"+token+".ics", nil)
+		request.Header.Set("X-Forwarded-For", clientIP)
+		request.Header.Set("User-Agent", userAgent)
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("%s feed request failed: %v", method, err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("%s answered %d; the scan below would measure a refused request", method, response.StatusCode)
+		}
+	}
+
+	control := controlLog.String()
+	for _, method := range methods {
+		if !strings.Contains(control, method+" "+clientIP+" "+userAgent) {
+			t.Fatalf("the proxy config did not surface the %s client address and agent, so a clean line proves nothing; control log:\n%s", method, control)
+		}
+	}
+
+	lines := strings.Split(strings.TrimSuffix(accessLog.String(), "\n"), "\n")
+	if len(lines) != len(methods) {
+		t.Fatalf("expected one access-log line per request, got %d:\n%s", len(lines), accessLog.String())
+	}
+	selector, verifier := token[:16], token[16:]
+	for index, method := range methods {
+		line := lines[index]
+		for _, want := range []string{"| 200 |", "| " + method + " |", "| " + template + " |"} {
+			if !strings.Contains(line, want) {
+				t.Fatalf("the %s line lacks %q, so it is not the route-template entry:\n%s", method, want, line)
+			}
+		}
+		for _, secret := range []string{token, selector, verifier, clientIP, userAgent, "zz-distinctive-ua-4f1c"} {
+			if strings.Contains(line, secret) {
+				t.Fatalf("the %s access-log line carries %q:\n%s", method, secret, line)
+			}
+		}
 	}
 }
