@@ -39,6 +39,19 @@
     border-color: var(--color-gray-200, currentcolor);
   }
 
+  /* A fieldset's UA min-inline-size is min-content: one long legend word
+     ("Schwangerschaftstest") at 200% text size widened the card and the page. */
+  fieldset {
+    min-inline-size: 0;
+  }
+
+  /* A legend shrinks to fit but never below its longest word; capped at the
+     line, that word breaks instead. */
+  legend {
+    max-width: 100%;
+    overflow-wrap: break-word;
+  }
+
   /* A control that stands in for a script (data-nojs-only) is for browsers
      without JavaScript. theme-bootstrap.js marks the root before first paint,
      so with scripts on it never flashes before app.js removes it. */
@@ -1070,6 +1083,9 @@
 
 @utility dashboard-status-header {
   display: grid;
+  /* An implicit auto track grows to its widest word at 200% text size (German
+     dates and mode labels); the card's break-word then wraps inside it. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.7rem;
   padding: 1rem 1.1rem;
 
@@ -2833,15 +2849,20 @@
   gap: 0.55rem;
   width: min(100%, 14rem);
   margin-left: auto;
+  grid-template-columns: minmax(0, 1fr);
 
+  /* "personalizzato" at 200% text size is wider than a phone card's line: the
+     label breaks inside the button rather than the button overhanging. */
   & .btn-primary {
     width: 100%;
     justify-content: center;
+    overflow-wrap: anywhere;
   }
 
   & .btn-secondary {
     width: 100%;
     justify-content: center;
+    overflow-wrap: anywhere;
   }
 }
 
@@ -3435,7 +3456,9 @@
   display: grid;
   gap: 0.65rem;
   max-width: 22rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Two columns while a 6rem chip fits; at 200% text size the rem minimum
+     doubles and the chips stack, so "°F Fahrenheit" keeps a full line. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 6rem), 1fr));
 
   & .chip-stack.chip {
     min-height: 2.7rem;
