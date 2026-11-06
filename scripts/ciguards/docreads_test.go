@@ -452,6 +452,7 @@ func runDetectOnList(t *testing.T, bash, dir string, detect scriptStep, name str
 		"github.event.merge_group.base_sha":  "",
 		"github.event.merge_group.head_ref":  "",
 		"github.token":                       "",
+		"github.sha":                         "",
 	}
 	listed := map[string]string{"files-path": filepath.ToSlash(list), "verdict": ""}
 	env := append(hermeticGitEnv(), "RUNNER_TEMP="+filepath.ToSlash(t.TempDir()), "LC_ALL=C.UTF-8")
