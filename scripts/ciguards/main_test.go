@@ -817,6 +817,61 @@ type detectRun struct {
 	listLog *string
 	// od, when non-empty, is a script that shadows od on PATH in every step.
 	od string
+	// push, when non-nil, serves a push run's two queue-evidence reads; it
+	// shadows gh on PATH like api does, so the two are not combined.
+	push *pushAPI
+	// detectLog, when non-nil, receives what the detect step printed.
+	detectLog *string
+}
+
+// pushSHA is github.sha for a push run: the commit the queue run is looked up by.
+const pushSHA = "0123456789abcdef0123456789abcdef01234567"
+
+// pushQueueRunID is the id the runs answer carries; the jobs route is keyed by it.
+const pushQueueRunID = "777"
+
+// pushAPI is the two answers the push arm reads: the merge_group runs of
+// ci.yml for the sha, and the jobs of the one it names. An empty string makes
+// that route exit 1, as a failed API call does.
+type pushAPI struct{ runs, jobs string }
+
+// pushGHStubScript answers `gh api --paginate <path> --jq <program>` for the
+// two exact paths the push arm reads, running the step's own jq program over
+// the recorded document; any other call shape or path exits non-zero.
+const pushGHStubScript = `#!/bin/sh
+if [ "$#" -ne 5 ] || [ "$1" != api ] || [ "$2" != --paginate ] || [ "$4" != --jq ]; then
+  echo "gh stub: unexpected call: $*" >&2
+  exit 2
+fi
+case "$3" in
+  "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GH_STUB_SHA&event=merge_group&per_page=100") file=runs.json ;;
+  "repos/$GITHUB_REPOSITORY/actions/runs/$GH_STUB_RUN/jobs?per_page=100") file=jobs.json ;;
+  *) echo "gh stub: no answer for $3" >&2; exit 1 ;;
+esac
+[ -s "$GH_STUB_DIR/$file" ] || exit 1
+exec jq -r "$5" "$GH_STUB_DIR/$file"
+`
+
+// install writes the stub and returns the environment that puts it first on PATH.
+func (p *pushAPI) install(t *testing.T, bash string) []string {
+	t.Helper()
+	requireJq(t, bash)
+	dir := t.TempDir()
+	for name, content := range map[string]string{"runs.json": p.runs, "jobs.json": p.jobs} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(pushGHStubScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return []string{
+		"GITHUB_REPOSITORY=" + stubRepository,
+		"GH_STUB_DIR=" + filepath.ToSlash(dir),
+		"GH_STUB_SHA=" + pushSHA,
+		"GH_STUB_RUN=" + pushQueueRunID,
+		"PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH"),
+	}
 }
 
 // failingGitScript shadows git on PATH: it refuses a call carrying
@@ -915,6 +970,7 @@ func (r detectRun) run(t *testing.T) map[string]string {
 		"github.event.merge_group.base_sha":  baseSHA,
 		"github.event.merge_group.head_ref":  "",
 		"github.token":                       "",
+		"github.sha":                         pushSHA,
 	}
 	if r.event == "pull_request" {
 		github["github.event.pull_request.base.ref"] = "main"
@@ -923,6 +979,12 @@ func (r detectRun) run(t *testing.T) map[string]string {
 		// The stub is job-wide, as the runner's PATH and GITHUB_REPOSITORY
 		// are; the payload fields it bends reach every step alike.
 		env = append(env, r.api.install(t, bash, git, github)...)
+	}
+	if r.push != nil {
+		if r.api != nil {
+			t.Fatal("detectRun: api and push both stub gh; use one")
+		}
+		env = append(env, r.push.install(t, bash)...)
 	}
 	shims := map[string]string{}
 	if r.failGit != "" {
@@ -962,7 +1024,10 @@ func (r detectRun) run(t *testing.T) map[string]string {
 			*r.listLog = log
 		}
 	}
-	outputs, _ := runScriptStep(t, bash, dir, env, detect, github, listed, r.workflow+" detect step")
+	outputs, log := runScriptStep(t, bash, dir, env, detect, github, listed, r.workflow+" detect step")
+	if r.detectLog != nil {
+		*r.detectLog = log
+	}
 	return outputs
 }
 
@@ -1184,6 +1249,72 @@ func TestDetectStepMergeGroupFallbacksRunEverything(t *testing.T) {
 			for _, k := range []string{"run_e2e", "run_core", "run_frontend"} {
 				if got[k] != "true" {
 					t.Errorf("%s = %q, want \"true\" (all outputs: %v)", k, got[k], got)
+				}
+			}
+		})
+	}
+}
+
+// TestDetectStepPushKeepsAGoLaneClearedOnlyOnTheQueuesProof drives the push
+// arm: the Go lanes stay cleared only for the lane whose representative job
+// the merge queue's run of ci.yml for this sha lists as `success`. Every other
+// outcome runs the lane, and the e2e shards (run_core) stay cleared throughout.
+func TestDetectStepPushKeepsAGoLaneClearedOnlyOnTheQueuesProof(t *testing.T) {
+	runs := func(entries ...string) string {
+		return `{"workflow_runs":[` + strings.Join(entries, ",") + `]}`
+	}
+	ciRunEntry := `{"id":` + pushQueueRunID + `,"path":".github/workflows/ci.yml"}`
+	otherRunEntry := `{"id":888,"path":".github/workflows/other.yml"}`
+	jobs := func(entries ...string) string {
+		return `{"jobs":[` + strings.Join(entries, ",") + `]}`
+	}
+	job := func(name, conclusion string) string {
+		return `{"name":"` + name + `","conclusion":` + conclusion + `}`
+	}
+	const (
+		unit = "test-go-shard (1)"
+		race = "race-db (1)"
+	)
+	for _, c := range []struct {
+		name               string
+		api                pushAPI
+		wantUnit, wantRace string
+		wantLog            []string
+	}{
+		{"queue proves both", pushAPI{runs(otherRunEntry, ciRunEntry), jobs(job(unit, `"success"`), job(race, `"success"`))},
+			"false", "false", []string{"unit lanes stay cleared", "race lanes stay cleared"}},
+		{"queue proves unit only", pushAPI{runs(ciRunEntry), jobs(job(unit, `"success"`), job(race, `"skipped"`))},
+			"false", "true", []string{"unit lanes stay cleared", "race-db (1) succeeded on this commit (run 777): the race lanes run"}},
+		{"queue skipped both", pushAPI{runs(ciRunEntry), jobs(job(unit, `"skipped"`), job(race, `"skipped"`))},
+			"true", "true", []string{"test-go-shard (1) succeeded on this commit (run 777): the unit lanes run", "the race lanes run"}},
+		{"queue jobs lack both", pushAPI{runs(ciRunEntry), jobs(job("test-frontend", `"success"`))},
+			"true", "true", []string{"the unit lanes run", "the race lanes run"}},
+		{"a job still without a conclusion", pushAPI{runs(ciRunEntry), jobs(job(unit, `null`), job(race, `"failure"`))},
+			"true", "true", []string{"the unit lanes run", "the race lanes run"}},
+		{"only another workflow's queue run", pushAPI{runs(otherRunEntry), jobs(job(unit, `"success"`), job(race, `"success"`))},
+			"true", "true", []string{"no single merge_group run of ci.yml", "(run <none>): the unit lanes run"}},
+		{"no queue run", pushAPI{runs(), jobs(job(unit, `"success"`), job(race, `"success"`))},
+			"true", "true", []string{"no single merge_group run of ci.yml", "(run <none>): the race lanes run"}},
+		{"two queue runs", pushAPI{runs(ciRunEntry, `{"id":999,"path":".github/workflows/ci.yml"}`), jobs(job(unit, `"success"`), job(race, `"success"`))},
+			"true", "true", []string{"no single merge_group run of ci.yml", "the unit lanes run"}},
+		{"runs read fails", pushAPI{"", jobs(job(unit, `"success"`), job(race, `"success"`))},
+			"true", "true", []string{"no single merge_group run of ci.yml", "the race lanes run"}},
+		{"jobs read fails", pushAPI{runs(ciRunEntry), ""},
+			"true", "true", []string{"(run 777): the unit lanes run", "(run 777): the race lanes run"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var log string
+			api := c.api
+			got := detectRun{workflow: ciWorkflow, event: "push", files: []string{"docs/a.md"}, push: &api, detectLog: &log}.run(t)
+			want := map[string]string{"run_unit": c.wantUnit, "run_race": c.wantRace, "run_core": "false", "run_frontend": "false"}
+			for k, v := range want {
+				if got[k] != v {
+					t.Errorf("%s = %q, want %q (all outputs: %v)\n%s", k, got[k], v, got, log)
+				}
+			}
+			for _, s := range c.wantLog {
+				if !strings.Contains(log, s) {
+					t.Errorf("the verdict lacks %q:\n%s", s, log)
 				}
 			}
 		})

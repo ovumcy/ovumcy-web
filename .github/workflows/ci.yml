@@ -61,7 +61,8 @@ jobs:
     runs-on: ubuntu-latest
     # Whole-job skip on `run_unit` (see the `changes` job), the narrower slice
     # of `run_core`: it clears for a docs-only diff, for a `push` to `main`
-    # where the merge queue already ran this lane on the identical commit, and
+    # where the queue's run is proven to have executed this lane on the
+    # identical commit (a push the queue skipped for a proven tree runs it), and
     # for a diff that is browser specs alone — a Playwright spec is neither
     # compiled into the Go binary nor go:embed'ed, so it can move no Go test,
     # lint finding or coverage line. coverage-merge, and through it
@@ -1009,7 +1010,8 @@ jobs:
     # (api.codecov.io/api/v2/github/ovumcy/repos/ovumcy-web, queried
     # 2026-08-18). The push run only ever added a second session for the same
     # numbers. It no longer runs at all: this job cascades to skipped off the
-    # unit lanes, which `run_core` clears on push.
+    # unit lanes, which clear on push only when the queue's run executed them;
+    # when it skipped them for a proven tree they run on the push, and so does this.
     #
     # A merge_group entry the `changes` job finds already proven clears the
     # unit lanes too, so for that commit Codecov receives no upload from the
@@ -1164,7 +1166,8 @@ jobs:
       # "Run the core suite" — the unit halves, both race lanes and the browser
       # shards: every lane whose evidence the merge queue has already produced
       # for this exact tree. It is `run_e2e` minus the work the queue did, so it
-      # clears on a docs-only diff, on a `push` to `main`, AND on a
+      # clears on a docs-only diff, on a `push` to `main` (where the Go lanes
+      # run again if the queue's run did not execute them), AND on a
       # `merge_group` run whose one queued PR already ran this exact tree
       # through `ci.yml`'s own `pull_request` suite to success (detected
       # below); `run_e2e` above stays true on push, because e2e-cross-browser,
@@ -1205,7 +1208,8 @@ jobs:
       # opposite of what `run_unit` decides for the same diff. Unlike
       # `run_frontend`'s own event-level fail-safes, `push` IS narrowed here,
       # same as `run_core` and for the same reason (below): the merge queue
-      # already ran this job on the identical commit.
+      # already ran this job on the identical commit. `run_unit` and `run_race`
+      # clear on push only when the queue's run proves its lane executed.
       run_frontend: ${{ steps.detect.outputs.run_frontend }}
 
     steps:
@@ -1261,6 +1265,7 @@ jobs:
           QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
           GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           # This job must never fail: the required e2e jobs depend on it. The
           # runner executes a step with no `shell:` as `bash -e`, so errexit IS
@@ -1429,7 +1434,9 @@ jobs:
           # becomes `main` — measured 2026-08-18, 97f641e2… identical in run
           # 32081210308 and at the head of `main` — so the unit, frontend, race
           # and browser-shard lanes here would re-test a tree proven minutes
-          # earlier. What the queue does NOT run stays: e2e-cross-browser and
+          # earlier — except the Go lanes when the queue's proven-tree skip
+          # cleared them; those are re-decided after the slices below. What
+          # the queue does NOT run stays: e2e-cross-browser and
           # image-smoke gate themselves on the event, and e2e-postgres-smoke's
           # own RUN_HEAVY keeps its work off pull requests and off the queue, so
           # `push` is the only place it ever executes.
@@ -1458,7 +1465,7 @@ jobs:
           if [ "$EVENT_NAME" = "push" ]; then
             run_core=false
             run_frontend=false
-            echo "push to main: the merge queue already ran the core suite (test-frontend included) on this exact commit; running only the lanes it skips."
+            echo "push to main: the merge queue already ran the core suite (test-frontend included) on this exact commit, unless it skipped the Go lanes for a proven tree (decided below); running only the lanes it skips."
           fi
 
           # merge_group's own proven-tree skip. Every OTHER queue entry still
@@ -1592,6 +1599,42 @@ jobs:
             if [ -z "$beyond_specs" ] && [ -z "${runbook_changes:-}" ] && [ -z "${licenses_changes:-}" ] && [ -z "${doc_reader_changes:-}" ]; then
               run_unit=false
               echo "browser specs only: the Go suite reports success without running."
+            fi
+          fi
+
+          # `push` clears the Go lanes above on the ground that the merge queue
+          # ran them on this exact commit, which is false when the queue's own
+          # proven-tree skip cleared them. Each is therefore kept cleared only
+          # when the queue's run of ci.yml for this sha lists its representative
+          # job (the two the release gate reads) as `success`; every other
+          # outcome — no run, more than one, a failed read, any other
+          # conclusion — runs the lane. run_core stays false, so the e2e shards
+          # still do not run. The jobs are the run's own list, never the Checks
+          # API. Inside the `push` branch, so the release gate's re-execution
+          # of this step as a pull request never reaches the API.
+          if [ "$EVENT_NAME" = "push" ]; then
+            queue_run="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${HEAD_SHA}&event=merge_group&per_page=100" --jq '.workflow_runs[] | select(.path == ".github/workflows/ci.yml") | .id' 2>/dev/null || true)"
+            case "$queue_run" in
+              ''|*[!0-9]*) queue_run="" ;;
+            esac
+            queue_job_conclusion() {
+              [ -n "$queue_run" ] || return 0
+              gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${queue_run}/jobs?per_page=100" --jq ".jobs[] | select(.name == \"$1\") | .conclusion // \"\"" 2>/dev/null || true
+            }
+            if [ -z "$queue_run" ]; then
+              echo "no single merge_group run of ci.yml found for $HEAD_SHA: the queue's work on it is unproven."
+            fi
+            if [ "$(queue_job_conclusion 'test-go-shard (1)')" = "success" ]; then
+              echo "the queue's run $queue_run executed test-go-shard (1) on this commit: the unit lanes stay cleared."
+            else
+              run_unit=true
+              echo "no queue run proves test-go-shard (1) succeeded on this commit (run ${queue_run:-<none>}): the unit lanes run."
+            fi
+            if [ "$(queue_job_conclusion 'race-db (1)')" = "success" ]; then
+              echo "the queue's run $queue_run executed race-db (1) on this commit: the race lanes stay cleared."
+            else
+              run_race=true
+              echo "no queue run proves race-db (1) succeeded on this commit (run ${queue_run:-<none>}): the race lanes run."
             fi
           fi
 
@@ -2186,7 +2229,8 @@ jobs:
     # their OWN dependencies (`test-go-shard`, `test-go-rest`,
     # `test-go-analysis`, `coverage-merge`, `test-frontend`, both race lanes)
     # are `skipped` on `push` — `test-go-shard` through `coverage-merge`
-    # because `changes` clears `run_core` there unconditionally, and
+    # because `changes` clears `run_core` there unconditionally (the Go lanes
+    # alone run again when the queue's own run skipped them), and
     # `test-frontend` for the matching reason on its own `run_frontend`
     # output — which is also why this holds for every push and not only for
     # those six: nothing about a particular commit takes part in it.
@@ -2223,7 +2267,8 @@ jobs:
     # documentation-only merge, where `image-smoke` reports `success` in the
     # push run. Only `run_core` and `run_frontend` are cleared on push, and
     # together they clear the other three lanes (`test` included, through
-    # both its Go dependencies and `test-frontend`).
+    # both its Go dependencies and `test-frontend`) — except the Go and race
+    # lanes the queue skipped for a proven tree, which run on the push.
     if: >-
       ${{ !cancelled()
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
