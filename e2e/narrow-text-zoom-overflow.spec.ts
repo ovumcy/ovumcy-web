@@ -44,9 +44,13 @@ async function seedAccountWithCycles(
     await page.goto('/dashboard');
     const options = page.locator('fieldset[data-dashboard-section="symptoms"] input[name="symptom_ids"]');
     const builtInID = await options.first().getAttribute('value');
-    const customID = await page
-      .locator(`fieldset[data-dashboard-section="symptoms"] label.choice-option:has-text("${LONG_SYMPTOM_NAME}") input[name="symptom_ids"]`)
-      .getAttribute('value');
+    // A rejected name comes back as a 2xx form partial, so the status alone does
+    // not prove the symptom exists; the dashboard listing it does.
+    const custom = page.locator(
+      `fieldset[data-dashboard-section="symptoms"] label.choice-option:has-text("${LONG_SYMPTOM_NAME}") input[name="symptom_ids"]`,
+    );
+    await expect(custom, 'the long custom symptom was created').toHaveCount(1);
+    const customID = await custom.getAttribute('value');
     expect(builtInID, 'the dashboard lists a built-in symptom').toMatch(/^\d+$/);
     expect(customID, 'the dashboard lists the custom symptom').toMatch(/^\d+$/);
     for (const daysAgo of [15, 12]) {
@@ -106,9 +110,17 @@ async function zoomTextTo200(page: Page): Promise<void> {
 async function horizontalOverflow(page: Page): Promise<{ scrollWidth: number; clientWidth: number; wide: string[] }> {
   return page.evaluate(() => {
     const root = document.documentElement;
+    // Content clipped or scrolled by an ancestor (a scrolling pill row) cannot
+    // widen the document; naming it would only bury the real offender.
+    const contained = (el: Element): boolean => {
+      for (let up = el.parentElement; up && up !== document.body; up = up.parentElement) {
+        if (getComputedStyle(up).overflowX !== 'visible') return true;
+      }
+      return Boolean(el.closest('[data-settings-section-nav], .sr-only'));
+    };
     const wide = Array.from(document.body.querySelectorAll<HTMLElement>('*'))
       .filter((el) => el.getBoundingClientRect().right > root.clientWidth + 1 && el.getClientRects().length > 0)
-      .filter((el) => !el.closest('[data-settings-section-nav], .sr-only'))
+      .filter((el) => !contained(el))
       .slice(0, 5)
       .map((el) => `${el.tagName}.${el.className}`);
     // Text overhanging a box that itself fits (one unbreakable word) shows up
@@ -117,7 +129,7 @@ async function horizontalOverflow(page: Page): Promise<{ scrollWidth: number; cl
     const range = document.createRange();
     for (let node = walker.nextNode(); node && wide.length < 8; node = walker.nextNode()) {
       const parent = node.parentElement;
-      if (!parent || parent.closest('[data-settings-section-nav], .sr-only')) continue;
+      if (!parent || getComputedStyle(parent).overflowX !== 'visible' || contained(parent)) continue;
       range.selectNodeContents(node);
       const box = range.getBoundingClientRect();
       if (box.width > 0 && box.right > root.clientWidth + 1) {
@@ -128,11 +140,11 @@ async function horizontalOverflow(page: Page): Promise<{ scrollWidth: number; cl
   });
 }
 
-const statsLanguages: Lang[] = ['de', 'en', 'es', 'fr', 'it', 'ru'];
+// Every language on every page: one long word in a single locale (Italian
+// "Approfondimenti") was enough to widen the page.
+const languages: Lang[] = ['de', 'en', 'es', 'fr', 'it', 'ru'];
 const pages: { path: string; lang: Lang }[] = [
-  ...statsLanguages.map((lang) => ({ path: '/stats', lang })),
-  { path: '/dashboard', lang: 'ru' },
-  { path: '/settings', lang: 'ru' },
+  ...['/stats', '/dashboard', '/settings'].flatMap((path) => languages.map((lang) => ({ path, lang }))),
 ];
 
 for (const width of [320, 375]) {
