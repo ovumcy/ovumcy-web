@@ -2951,7 +2951,8 @@
   align-items: center;
   justify-content: space-between;
   /* At 200% text size the name and its frequency no longer fit one 320px row:
-     the frequency drops under the name instead of pushing the page sideways. */
+     the frequency drops under the name instead of pushing the page sideways
+     (stats-symptom-meta's basis decides when). */
   flex-wrap: wrap;
   gap: 0.55rem;
 }
@@ -2961,7 +2962,9 @@
   align-items: center;
   gap: 0.45rem;
   min-width: 0;
-  flex: 1 1 auto;
+  /* A 4rem basis keeps a long name wrapping beside its frequency at normal
+     text, and lets the row wrap the frequency under it only at 200% text. */
+  flex: 1 1 4rem;
 }
 
 @utility stats-symptom-icon {
