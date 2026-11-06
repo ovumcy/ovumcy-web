@@ -30,6 +30,7 @@ async function seedAccountWithCycles(page: Page, prefix: string, lang: 'en' | 'r
     .locator('fieldset[data-dashboard-section="symptoms"] input[name="symptom_ids"]')
     .first()
     .getAttribute('value');
+  expect(symptomID, 'the dashboard lists a symptom to log').toMatch(/^\d+$/);
   const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
   for (const daysAgo of [15, 12]) {
     const response = await page.request.put(`/api/v1/days/${shiftISODate(today, -daysAgo)}`, {
@@ -93,7 +94,14 @@ for (const width of [320, 375]) {
         if (path === '/stats') {
           // The WEB-496 offenders must be on the page, or the width check proves nothing.
           await expect(page.locator('[data-stats-recent-cycles-caption]')).toBeVisible();
-          await expect(page.locator('[data-stats-last-cycle-symptoms] .stats-symptom-frequency').first()).toBeVisible();
+          const row = page.locator('[data-stats-last-cycle-symptoms] .stats-symptom-row').first();
+          await expect(row.locator('.stats-symptom-frequency')).toBeVisible();
+          // At normal text the frequency stays on the name's line; only 200% text wraps it.
+          const [name, frequency] = await Promise.all([
+            row.locator('.stats-symptom-name').boundingBox(),
+            row.locator('.stats-symptom-frequency').boundingBox(),
+          ]);
+          expect(frequency!.y, 'frequency shares the name line at normal text').toBeLessThan(name!.y + name!.height);
         }
         await zoomTextTo200(page);
 
