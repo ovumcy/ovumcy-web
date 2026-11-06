@@ -418,9 +418,9 @@
         {{/* The caption names the window the chart covers. With no chart there
              is no window, and the same sentence used to be printed twice on
              one card — once here and once as the body. */}}
-        <div class="mb-3 flex items-center justify-between gap-3">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
           <h2 id="stats-cycle-trend-title" class="journal-subtitle">{{t .Messages "stats.cycle_trend"}}</h2>
-          {{if .HasTrendData}}<span class="journal-muted text-xs">{{t .Messages "stats.recent_cycles"}}</span>{{end}}
+          {{if .HasTrendData}}<span class="journal-muted text-xs" data-stats-recent-cycles-caption>{{t .Messages "stats.recent_cycles"}}</span>{{end}}
         </div>
         <div class="mb-3 flex flex-wrap items-center gap-3 text-xs journal-muted">
           <span class="inline-flex items-center gap-2">
