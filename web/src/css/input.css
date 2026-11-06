@@ -830,6 +830,10 @@
   font-size: var(--text-display);
   font-weight: 700;
   line-height: 1.2;
+  /* One long word ("Approfondimenti") at 200% text size is wider than a phone:
+     it breaks, hyphenated where the browser can, instead of widening the page. */
+  overflow-wrap: break-word;
+  hyphens: auto;
 
   @media (max-width: 640px) {
     font-size: var(--text-2xl);
