@@ -2950,6 +2950,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* At 200% text size the name and its frequency no longer fit one 320px row:
+     the frequency drops under the name instead of pushing the page sideways. */
+  flex-wrap: wrap;
   gap: 0.55rem;
 }
 
@@ -2983,7 +2986,10 @@
 
 @utility stats-symptom-frequency {
   flex: 0 0 auto;
-  white-space: nowrap;
+  /* One line while it fits; on its own wrapped line it is capped at the row and
+     wraps at its spaces ("2 times (in 38 days)") rather than overhanging. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-size: var(--text-xs);
   font-weight: 700;
 }

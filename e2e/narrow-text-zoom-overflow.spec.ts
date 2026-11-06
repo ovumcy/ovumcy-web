@@ -6,27 +6,52 @@ import {
   shiftISODate,
 } from './support/stats-helpers';
 import { saveInterfaceSettingsForm } from './support/settings-interface-helpers';
+import { apiOriginHeader } from './support/auth-helpers';
 
 /**
- * Narrow phones at 200% text (WEB-441, WEB-442, WEB-439): the document never
- * scrolls sideways, and the danger-zone re-authentication row stacks its field
- * over its button instead of squeezing the two side by side.
+ * Narrow phones at 200% text (WEB-441, WEB-442, WEB-439, WEB-496): the document
+ * never scrolls sideways, and the danger-zone re-authentication row stacks its
+ * field over its button instead of squeezing the two side by side.
  */
-/** Several completed cycles and Russian copy: the widest the pages get. */
-async function seedRussianAccountWithCycles(page: Page, prefix: string): Promise<void> {
-  await registerAndOnboardWithStartDaysAgo(page, prefix, 40);
-  for (const daysAgo of [14]) {
-    await markCycleStartViaAPI(page, shiftISODate(isoToday(), -daysAgo));
+/**
+ * Three completed cycles with a symptom logged twice in the last one, so /stats
+ * renders the cycle chart's "recent cycles" caption and the symptom frequency
+ * chips (WEB-496): the widest content the pages get.
+ */
+async function seedAccountWithCycles(page: Page, prefix: string, lang: 'en' | 'ru' = 'ru'): Promise<void> {
+  await registerAndOnboardWithStartDaysAgo(page, prefix, 60);
+  const today = isoToday();
+  // 18-day gaps stay clear of the short-gap confirmation (see stats-insights.spec.ts).
+  for (const daysAgo of [42, 24, 6]) {
+    await markCycleStartViaAPI(page, shiftISODate(today, -daysAgo));
   }
+  await page.goto('/dashboard');
+  const symptomID = await page
+    .locator('fieldset[data-dashboard-section="symptoms"] input[name="symptom_ids"]')
+    .first()
+    .getAttribute('value');
+  const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
+  for (const daysAgo of [15, 12]) {
+    const response = await page.request.put(`/api/v1/days/${shiftISODate(today, -daysAgo)}`, {
+      headers: { ...apiOriginHeader(page), 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
+      data: { symptom_ids: [Number(symptomID)] },
+    });
+    expect(response.status(), `save symptom ${daysAgo} days ago`).toBeLessThan(400);
+  }
+
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto('/settings');
+  // Re-picking the current language is not a change, and the form never submits.
+  if ((await page.locator('html').getAttribute('lang')) === lang) {
+    return;
+  }
   const section = page.locator('#settings-interface');
   if ((await section.getAttribute('open')) === null) {
     await section.locator('summary').click();
   }
-  await section.locator('[data-settings-interface-language-option="ru"] .chip-stack').click();
+  await section.locator(`[data-settings-interface-language-option="${lang}"] .chip-stack`).click();
   await saveInterfaceSettingsForm(page, { expectSuccessFlash: true });
-  await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
+  await expect(page.locator('html')).toHaveAttribute('lang', lang);
 }
 
 /** Every collapsible section open too: the settings toggle rows only overflow expanded. */
@@ -51,13 +76,25 @@ async function horizontalOverflow(page: Page): Promise<{ scrollWidth: number; cl
   });
 }
 
+const pages: { path: string; lang: 'en' | 'ru' }[] = [
+  { path: '/stats', lang: 'ru' },
+  { path: '/stats', lang: 'en' },
+  { path: '/dashboard', lang: 'ru' },
+  { path: '/settings', lang: 'ru' },
+];
+
 for (const width of [320, 375]) {
   test.describe(`200% text at ${width}px`, () => {
-    for (const path of ['/stats', '/dashboard', '/settings']) {
-      test(`${path} does not scroll sideways`, async ({ page }) => {
-        await seedRussianAccountWithCycles(page, `zoom-${width}-${path.slice(1)}`);
+    for (const { path, lang } of pages) {
+      test(`${path} (${lang}) does not scroll sideways`, async ({ page }) => {
+        await seedAccountWithCycles(page, `zoom-${width}-${lang}-${path.slice(1)}`, lang);
         await page.setViewportSize({ width, height: 700 });
         await page.goto(path);
+        if (path === '/stats') {
+          // The WEB-496 offenders must be on the page, or the width check proves nothing.
+          await expect(page.locator('[data-stats-recent-cycles-caption]')).toBeVisible();
+          await expect(page.locator('[data-stats-last-cycle-symptoms] .stats-symptom-frequency').first()).toBeVisible();
+        }
         await zoomTextTo200(page);
 
         const { scrollWidth, clientWidth, wide } = await horizontalOverflow(page);
@@ -72,7 +109,7 @@ for (const width of [320, 375]) {
 }
 
 test('the danger-zone password rows stack the field over the button on a phone (WEB-439)', async ({ page }) => {
-  await seedRussianAccountWithCycles(page, 'zoom-danger-rows');
+  await seedAccountWithCycles(page, 'zoom-danger-rows');
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto('/settings');
   const danger = page.locator('#settings-danger-zone');
