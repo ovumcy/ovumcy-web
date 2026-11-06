@@ -1,5 +1,6 @@
 import { expect, test, type Page } from './support/fixtures';
-import { localeText } from './support/locale-helpers';
+import { saveSettingsLanguage } from './support/language-helpers';
+import { localeText, SUPPORTED_LOCALES } from './support/locale-helpers';
 import { assertNoHorizontalOverflow } from './support/mobile-layout-helpers';
 import {
   markCycleStartViaAPI,
@@ -67,6 +68,53 @@ test.describe('Dashboard on small screens', () => {
     await expect(today).toHaveAttribute('aria-label', new RegExp(localeText('en', 'nav.today')));
     const fertile = page.locator('[data-cycle-ribbon-day][data-fertile="true"]').first();
     await expect(fertile).toHaveAttribute('aria-label', new RegExp(localeText('en', 'dashboard.fertile_window').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+
+  test('the ribbon labels today, its ends and its key in every locale, inside the card', async ({
+    page,
+  }) => {
+    // Uneven completed cycles (31, 29, 29 days) give the next period a start
+    // window, so every key entry the owner can meet is on the ribbon.
+    const anchor = await registerAndOnboardWithStartDaysAgo(page, 'dash-ribbon-key', 10);
+    for (const offset of [-89, -58, -29]) {
+      await markCycleStartViaAPI(page, shiftISODate(anchor, offset));
+    }
+
+    for (const locale of SUPPORTED_LOCALES) {
+      // The interface form is folded on a phone; switch at desktop width.
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto('/settings');
+      await saveSettingsLanguage(page, locale);
+      await page.setViewportSize({ width: 320, height: 700 });
+      await page.goto('/dashboard');
+
+      const ribbon = page.locator('[data-dashboard-cycle-ribbon]');
+      const todayDay = await ribbon.locator('[data-cycle-ribbon-day][data-today="true"]').getAttribute('data-cycle-ribbon-day');
+      const lastDay = await ribbon.locator('[data-cycle-ribbon-day]').last().getAttribute('data-cycle-ribbon-day');
+      expect(todayDay, 'fixture: today is cycle day 11').toBe('11');
+
+      await expect(ribbon.locator('[data-cycle-ribbon-today-marker]')).toHaveText(localeText(locale, 'nav.today'));
+      const scale = ribbon.locator('[data-cycle-ribbon-scale] > *');
+      await expect(scale.first()).toHaveText('1');
+      await expect(scale.last()).toHaveText(lastDay ?? '');
+      await expect(ribbon.locator('[data-cycle-ribbon-scale] > [data-today="true"]')).toHaveText(todayDay ?? '');
+
+      const legend = ribbon.locator('[data-cycle-ribbon-legend]');
+      await expect(legend.locator('[data-cycle-ribbon-legend-item="fertile"]')).toHaveText(localeText(locale, 'calendar.legend.fertility'));
+      await expect(legend.locator('[data-cycle-ribbon-legend-item="start-window"]')).toHaveText(localeText(locale, 'calendar.legend.start_window'));
+      await expect(legend.locator('[data-cycle-ribbon-legend-item="phase-menstrual"]')).toHaveText(localeText(locale, 'phases.menstrual'));
+
+      const summary = ribbon.locator('[data-cycle-ribbon-summary]');
+      await expect(summary).toContainText(localeText(locale, 'calendar.legend.fertility'));
+      await expect(summary).toContainText(localeText(locale, 'calendar.legend.start_window'));
+
+      const card = await page.locator('[data-dashboard-status-header]').boundingBox();
+      for (const label of [ribbon.locator('[data-cycle-ribbon-today-marker]'), scale.first(), scale.last(), legend]) {
+        const box = await label.boundingBox();
+        expect(box && card && box.x >= card.x && box.x + box.width <= card.x + card.width, `${locale}: a ribbon label stays inside the card`).toBe(true);
+      }
+      await assertNoHorizontalOverflow(page);
+    }
   });
 
   test('a cycle past the 60-day ribbon says it is cut off', async ({ page }) => {

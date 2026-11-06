@@ -199,6 +199,24 @@
         data-dashboard-cycle-ribbon
         data-cycle-ribbon-visible="{{if .CycleHero.Visible}}true{{else}}false{{end}}">
         {{if .CycleHero.Visible}}
+        {{/* The ribbon in words, read before the cells: today's day and phase,
+             then every span the legend below names, with its own qualifier. It
+             reads the same Legend the visible key does, so it can name nothing
+             the cells do not draw. */}}
+        {{$legend := .CycleHero.Legend}}
+        <p class="sr-only" data-cycle-ribbon-summary>
+          {{- printf (t .Messages "dashboard.cycle_ribbon_summary") .CycleHero.CurrentDay .CycleHero.CycleLength (phaseLabel .Messages .CycleHero.CurrentPhase) -}}
+          {{- if $legend.Fertile.Present}} {{t .Messages "calendar.legend.fertility"}}{{t .Messages "common.colon"}} {{template "dashboard_cycle_ribbon_range" (dict "Messages" .Messages "Range" $legend.Fertile)}}{{end -}}
+          {{- if $legend.PredictedFlow.Present}} {{t .Messages "calendar.legend.predicted_period"}}{{t .Messages "common.colon"}} {{template "dashboard_cycle_ribbon_range" (dict "Messages" .Messages "Range" $legend.PredictedFlow)}}{{end -}}
+          {{- if $legend.StartWindow.Present}} {{t .Messages "calendar.legend.start_window"}}{{t .Messages "common.colon"}} {{template "dashboard_cycle_ribbon_range" (dict "Messages" .Messages "Range" $legend.StartWindow)}}{{end -}}
+        </p>
+        {{/* The marker and scale rows repeat the ribbon's columns so a label
+             sits over or under its own day without a computed offset (strict
+             CSP: no inline style). Both are visual restatements of the summary
+             above, hidden from assistive tech so nothing is read twice. */}}
+        <div class="dashboard-cycle-ribbon-axis" aria-hidden="true" data-cycle-ribbon-marker-row>
+          {{range .CycleHero.Days}}<span class="dashboard-cycle-ribbon-tick"{{if .IsToday}} data-today="true" data-align="{{$.CycleHero.TodayMarkerAlign}}"{{end}}>{{if .IsToday}}<span class="dashboard-cycle-ribbon-today-label" data-cycle-ribbon-today-marker>{{t $.Messages "nav.today"}}</span>{{end}}</span>{{end}}
+        </div>
         <div class="dashboard-cycle-ribbon">
           {{range .CycleHero.Days}}
           <span
@@ -215,6 +233,31 @@
             {{if .IsLogged}}data-logged="true"{{end}}></span>
           {{end}}
         </div>
+        <div class="dashboard-cycle-ribbon-axis" aria-hidden="true" data-cycle-ribbon-scale>
+          {{range .CycleHero.Days}}<span class="dashboard-cycle-ribbon-tick"{{if .IsToday}} data-today="true"{{end}}>{{if .ScaleLabel}}{{.Day}}{{end}}</span>{{end}}
+        </div>
+        {{/* The key: each swatch is a ribbon cell itself, so a colour here is the
+             colour above by construction, and only what the ribbon draws gets an
+             entry — a withheld tier names no phase it hides. The predicted
+             entries carry their own estimate wording; the disclaimer stays
+             below the hero. */}}
+        <ul class="dashboard-cycle-ribbon-legend" aria-label="{{t .Messages "dashboard.cycle_ribbon_legend"}}" data-cycle-ribbon-legend>
+          {{range $legend.Phases}}
+          <li data-cycle-ribbon-legend-item="phase-{{.}}"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="{{.}}" aria-hidden="true"></span>{{phaseLabel $.Messages .}}</li>
+          {{end}}
+          {{if $legend.Fertile.Present}}
+          <li data-cycle-ribbon-legend-item="fertile"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="beyond" data-fertile="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.fertility"}}</li>
+          {{end}}
+          {{if $legend.PredictedFlow.Present}}
+          <li data-cycle-ribbon-legend-item="predicted-flow"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="menstrual" data-predicted-flow="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period"}}</li>
+          {{end}}
+          {{if $legend.StartWindow.Present}}
+          <li data-cycle-ribbon-legend-item="start-window"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="{{$legend.StartWindowPhase}}" data-start-window="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.start_window"}}</li>
+          {{end}}
+          {{if $legend.Logged}}
+          <li data-cycle-ribbon-legend-item="logged"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="beyond" data-logged="true" aria-hidden="true"></span>{{t .Messages "calendar.data_logged"}}</li>
+          {{end}}
+        </ul>
         {{if .CycleHero.AxisTruncated}}<p class="journal-muted text-xs" data-dashboard-cycle-ribbon-truncated>{{printf (t .Messages "dashboard.cycle_ribbon_truncated") .CycleHero.AxisDays}}</p>{{end}}
         {{end}}
       </div>
