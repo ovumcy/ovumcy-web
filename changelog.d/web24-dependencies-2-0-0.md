@@ -2,7 +2,7 @@
 
 - **Everything that moved between v1.9.2 and v2.0.0, in one place.** The advisory-driven bumps
   have their own entries (the Go toolchain under *Security*; `go-jose`, `brace-expansion`,
-  `@parcel/watcher`, `minimatch` and `@humanfs/node` above). The rest came in as routine
+  `@parcel/watcher`, `minimatch` and `@humanfs/node` in this section). The rest came in as routine
   Dependabot group updates; the number of those pull requests says nothing about how many
   advisories were fixed.
   - **Runtime — what ships in the image.** Go 1.26.5 → 1.27.3 (`go.mod` and the
