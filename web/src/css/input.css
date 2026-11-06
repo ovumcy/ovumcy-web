@@ -831,9 +831,9 @@
   font-weight: 700;
   line-height: 1.2;
   /* One long word ("Approfondimenti") at 200% text size is wider than a phone:
-     it breaks, hyphenated where the browser can, instead of widening the page. */
+     it breaks instead of widening the page. Only an overlong word breaks;
+     ordinary titles still wrap at their spaces. */
   overflow-wrap: break-word;
-  hyphens: auto;
 
   @media (max-width: 640px) {
     font-size: var(--text-2xl);
@@ -844,6 +844,7 @@
   font-size: var(--text-xl);
   font-weight: 700;
   line-height: 1.25;
+  overflow-wrap: break-word;
 
   @media (max-width: 640px) {
     font-size: var(--text-lg);
