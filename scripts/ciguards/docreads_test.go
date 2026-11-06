@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -481,20 +482,25 @@ func TestNoDocumentAGoTestReadsIsInertToTheDetectFilter(t *testing.T) {
 		t.Fatalf("the derivation no longer finds %s among the paths Go tests name (%d probes): it reads them from internal/api/openapi_contract_test.go, so the extraction stopped seeing a read it must see", loadBearing, len(probes))
 	}
 	// The directory branch has its own load-bearing member: the changelog tool's
-	// test reads the real fragments through a bare directory name. A fragment
-	// markdown file probed on that test's account can only come from expanding
-	// the directory — no test names a real fragment file there — so a derivation
-	// that drops bare directories fails here instead of passing every file read
-	// above while a fragment-only diff goes unjudged.
-	const loadBearingDir, loadBearingDirSource = "changelog.d/", "scripts/changelogd/main_test.go"
-	directoryRead := false
-	for name, sources := range probes {
-		if strings.HasPrefix(name, loadBearingDir) && strings.HasSuffix(name, ".md") && strings.Contains(strings.Join(sources, ","), loadBearingDirSource) {
-			directoryRead = true
-		}
+	// test reads the real fragments through a bare directory name. It is held by
+	// the declaration, not by what the directory holds: release assembly empties
+	// changelog.d down to .gitkeep, and .gitkeep is also named as a literal, so
+	// "a probe under changelog.d" proves nothing about the directory read there.
+	const loadBearingDir, loadBearingDirSource = "changelog.d", "scripts/changelogd/main_test.go"
+	if !joined[loadBearingDir] || !slices.Contains(references[loadBearingDir], loadBearingDirSource) {
+		t.Fatalf("the derivation no longer sees %s read %s through a bare name (joined=%v, sources=%v): the extraction stopped seeing a directory read it must see", loadBearingDirSource, loadBearingDir, joined[loadBearingDir], references[loadBearingDir])
 	}
-	if !directoryRead {
-		t.Fatalf("the derivation no longer expands %s into the files under it: %s reads that directory through a bare name, so the extraction stopped seeing a directory read it must see (%d probes)", strings.TrimSuffix(loadBearingDir, "/"), loadBearingDirSource, len(probes))
+	// The expansion is run over that one reference alone, so a probe can only
+	// come from walking the directory; assembly keeps .gitkeep, so the walk has
+	// a file to find whether the fragments are there or consumed.
+	expanded := docReadProbes(t, root, map[string][]string{loadBearingDir: {loadBearingDirSource}}, joined)
+	if len(expanded) == 0 {
+		t.Fatalf("the derivation no longer expands %s into the files under it: a diff touching only a file there would go unjudged", loadBearingDir)
+	}
+	for name := range expanded {
+		if !strings.HasPrefix(name, loadBearingDir+"/") {
+			t.Fatalf("expanding %s probed %s, outside it", loadBearingDir, name)
+		}
 	}
 	if len(probes) > docReadProbeBudget {
 		t.Fatalf("%d probes exceed the budget of %d: the derived set is sweeping in more than documents", len(probes), docReadProbeBudget)
