@@ -85,6 +85,27 @@ func TestDashboardRibbonNamesNoOvulationBeforeThreeCompletedCycles(t *testing.T)
 			if published && !sawOvulation {
 				t.Fatal("control: with three completed cycles the ribbon must name the ovulation day")
 			}
+
+			// The key and the summary restate the cells in words, so they
+			// withhold exactly what the cells withhold.
+			legendItems := htmlFindElements(document, htmlNodeHasAttr("data-cycle-ribbon-legend-item"))
+			summaries := htmlFindElements(document, htmlNodeHasAttr("data-cycle-ribbon-summary"))
+			if len(legendItems) == 0 || len(summaries) != 1 {
+				t.Fatalf("expected the ribbon key and one summary, got %d items and %d summaries", len(legendItems), len(summaries))
+			}
+			keyNamesOvulation := false
+			for _, item := range legendItems {
+				if htmlAttr(item, "data-cycle-ribbon-legend-item") == "phase-ovulation" || strings.Contains(htmlNodeText(item), ovulationLabel) {
+					keyNamesOvulation = true
+				}
+			}
+			summaryNamesOvulation := strings.Contains(htmlNodeText(summaries[0]), ovulationLabel)
+			if !published && (keyNamesOvulation || summaryNamesOvulation) {
+				t.Errorf("ribbon key (%v) or summary (%v) names ovulation before three completed cycles", keyNamesOvulation, summaryNamesOvulation)
+			}
+			if published && !keyNamesOvulation {
+				t.Error("control: with three completed cycles the ribbon key must list the ovulation swatch")
+			}
 		})
 	}
 }

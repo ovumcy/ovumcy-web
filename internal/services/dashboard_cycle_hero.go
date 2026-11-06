@@ -45,6 +45,46 @@ type DashboardCycleHero struct {
 	// equal-width cells rather than SVG geometry so that no coordinate is
 	// computed twice and no inline style is needed (strict CSP).
 	Days []DashboardCycleHeroDay
+	// Legend restates the drawn cells in words — the visible key and the
+	// screen-reader summary both read it. It is derived from Days after they
+	// are built, so it can name nothing the ribbon does not draw: a withheld
+	// tier, whose cells name no phase past menstrual, gets no such entry.
+	Legend DashboardCycleHeroLegend
+	// TodayMarkerAlign anchors the "today" label to its cell's start or end
+	// near the ribbon's edges, where a centred label would overflow the card.
+	TodayMarkerAlign string
+}
+
+// DashboardCycleHeroLegend lists what the ribbon draws, in axis order for the
+// phases. A range is the span of cells carrying that flag, clipped to the axis.
+type DashboardCycleHeroLegend struct {
+	Phases        []string
+	Fertile       DashboardCycleHeroDayRange
+	PredictedFlow DashboardCycleHeroDayRange
+	StartWindow   DashboardCycleHeroDayRange
+	// StartWindowPhase is the phase under the window's first cell. The window's
+	// shading darkens whatever phase it lands on, so the swatch is drawn over
+	// that phase or it would explain a colour the ribbon does not show.
+	StartWindowPhase string
+	Logged           bool
+}
+
+// DashboardCycleHeroDayRange is a closed run of cycle days; zero is absent.
+type DashboardCycleHeroDayRange struct {
+	StartDay int
+	EndDay   int
+}
+
+func (r DashboardCycleHeroDayRange) Present() bool { return r.StartDay > 0 }
+
+func (r DashboardCycleHeroDayRange) SingleDay() bool { return r.StartDay > 0 && r.StartDay == r.EndDay }
+
+func (r DashboardCycleHeroDayRange) extend(day int) DashboardCycleHeroDayRange {
+	if r.StartDay == 0 {
+		r.StartDay = day
+	}
+	r.EndDay = day
+	return r
 }
 
 type DashboardCycleHeroPhaseCard struct {
@@ -68,6 +108,9 @@ type DashboardCycleHeroDay struct {
 	IsFertilePeak   bool
 	IsStartWindow   bool
 	IsPredictedFlow bool
+	// ScaleLabel prints the day number under the cell: day 1, today and the
+	// last axis day, minus an end label too close to today's to share the row.
+	ScaleLabel bool
 }
 
 // dashboardCycleHeroInput is everything the ribbon needs beyond the cycle
@@ -171,6 +214,16 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 
 	startWindow := dashboardCycleHeroStartWindow(cycleContext, cycleStart)
 	axisDays := dashboardCycleHeroAxisDays(cycleLength, startWindow)
+	days := dashboardCycleHeroDays(
+		axisDays,
+		currentDay,
+		phaseCards,
+		startWindow,
+		dashboardCycleHeroFertileSpan(stats, cycleContext, cycleStart, location),
+		dashboardCycleHeroLoggedDays(input.Logs, cycleStart, input.Today, location),
+		periodLength,
+	)
+	dashboardCycleHeroMarkScale(days, currentDay)
 
 	return DashboardCycleHero{
 		Visible:       true,
@@ -180,17 +233,75 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 		AxisDays:      axisDays,
 		AxisTruncated: dashboardCycleHeroUncappedAxisDays(cycleLength, startWindow) > dashboardCycleHeroMaxAxisDays,
 		CurrentPhase:  currentPhase,
-		PhaseCards:    phaseCards,
-		Days: dashboardCycleHeroDays(
-			axisDays,
-			currentDay,
-			phaseCards,
-			startWindow,
-			dashboardCycleHeroFertileSpan(stats, cycleContext, cycleStart, location),
-			dashboardCycleHeroLoggedDays(input.Logs, cycleStart, input.Today, location),
-			periodLength,
-		),
+		PhaseCards:       phaseCards,
+		Days:             days,
+		Legend:           dashboardCycleHeroLegendFor(days),
+		TodayMarkerAlign: dashboardCycleHeroTodayMarkerAlign(currentDay, axisDays),
 	}
+}
+
+// dashboardCycleHeroScaleGap is how many cells apart two scale labels must sit
+// to stay legible at phone width, where a cell is a few pixels wide.
+const dashboardCycleHeroScaleGap = 3
+
+func dashboardCycleHeroMarkScale(days []DashboardCycleHeroDay, currentDay int) {
+	if len(days) == 0 {
+		return
+	}
+	last := len(days)
+	for index := range days {
+		day := days[index].Day
+		switch {
+		case day == currentDay:
+			days[index].ScaleLabel = true
+		case day == 1 || day == last:
+			todayOnAxis := currentDay >= 1 && currentDay <= last
+			days[index].ScaleLabel = !todayOnAxis || absInt(day-currentDay) >= dashboardCycleHeroScaleGap
+		}
+	}
+}
+
+func dashboardCycleHeroTodayMarkerAlign(currentDay int, axisDays int) string {
+	switch {
+	case currentDay <= dashboardCycleHeroScaleGap:
+		return "start"
+	case currentDay > axisDays-dashboardCycleHeroScaleGap:
+		return "end"
+	default:
+		return "center"
+	}
+}
+
+func dashboardCycleHeroLegendFor(days []DashboardCycleHeroDay) DashboardCycleHeroLegend {
+	legend := DashboardCycleHeroLegend{}
+	seen := map[string]bool{}
+	for _, day := range days {
+		if day.Phase != phaseBeyondProjectedCycle && !seen[day.Phase] {
+			seen[day.Phase] = true
+			legend.Phases = append(legend.Phases, day.Phase)
+		}
+		if day.IsFertile {
+			legend.Fertile = legend.Fertile.extend(day.Day)
+		}
+		if day.IsPredictedFlow {
+			legend.PredictedFlow = legend.PredictedFlow.extend(day.Day)
+		}
+		if day.IsStartWindow {
+			if !legend.StartWindow.Present() {
+				legend.StartWindowPhase = day.Phase
+			}
+			legend.StartWindow = legend.StartWindow.extend(day.Day)
+		}
+		legend.Logged = legend.Logged || day.IsLogged
+	}
+	return legend
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 // dashboardCycleHeroOvulationDay anchors the phase-card geometry — and so the

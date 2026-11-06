@@ -1,0 +1,1 @@
+{{define "dashboard_cycle_ribbon_range"}}{{if .Range.SingleDay}}{{printf (t .Messages "dashboard.cycle_ribbon_day_single") .Range.StartDay}}{{else}}{{printf (t .Messages "dashboard.cycle_ribbon_days_range") .Range.StartDay .Range.EndDay}}{{end}}{{end}}

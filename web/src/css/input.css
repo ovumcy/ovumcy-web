@@ -1281,6 +1281,113 @@
     box-shadow: inset 0 0 0 2px rgb(var(--cal-today));
     z-index: 1;
   }
+
+  /* A legend swatch is a ribbon cell, so its colour cannot drift from the
+     cell it explains. 'beyond' is transparent on the ribbon, where the track
+     shows through; a swatch has no track, so it paints the track itself. */
+  &[data-swatch='true'] {
+    flex: 0 0 auto;
+    width: 1.25rem;
+    height: 0.875rem;
+    border-radius: 3px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px var(--border-hairline);
+  }
+
+  &[data-swatch='true'][data-phase='beyond'] {
+    background-color: var(--surface-quiet);
+  }
+}
+
+/* The rows above and below the ribbon repeat its columns (same flex, same
+   gap), so a label sits over its own day with no computed offset. A label is
+   wider than a cell on a phone; it overflows its column, centred, and the
+   edge columns pin it inward so it never leaves the card. */
+@utility dashboard-cycle-ribbon-axis {
+  display: flex;
+  gap: 1px;
+  font-size: var(--text-xs);
+  line-height: 1.2;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+
+  &[data-cycle-ribbon-marker-row] {
+    margin-bottom: 0.3rem;
+  }
+
+  &[data-cycle-ribbon-scale] {
+    margin-top: 0.25rem;
+  }
+}
+
+@utility dashboard-cycle-ribbon-tick {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  white-space: nowrap;
+
+  &:first-child {
+    justify-content: flex-start;
+  }
+
+  &:last-child {
+    justify-content: flex-end;
+  }
+
+  &[data-today='true'] {
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  &[data-align='start'] {
+    justify-content: flex-start;
+  }
+
+  &[data-align='center'] {
+    justify-content: center;
+  }
+
+  &[data-align='end'] {
+    justify-content: flex-end;
+  }
+
+  /* The pointer under "Today" stays on the cell's centre whichever way the
+     label is anchored. */
+  &[data-today='true']:has([data-cycle-ribbon-today-marker])::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -0.3rem;
+    transform: translateX(-50%);
+    border-inline: 0.3rem solid transparent;
+    border-top: 0.3rem solid rgb(var(--cal-today));
+  }
+}
+
+@utility dashboard-cycle-ribbon-today-label {
+  padding-bottom: 0.15rem;
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+@utility dashboard-cycle-ribbon-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+
+  & > li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
 }
 
 @utility dashboard-status-notice {
@@ -5577,6 +5684,14 @@
   .dashboard-cycle-ribbon,
   .stats-cycle-stack-band {
     forced-color-adjust: none;
+  }
+
+  /* The key's swatches are ribbon cells and keep the ribbon's palette, or the
+     key would explain colours the ribbon no longer matches; the outline keeps
+     each swatch's edge against the repainted card. */
+  .dashboard-cycle-ribbon-legend [data-swatch='true'] {
+    forced-color-adjust: none;
+    outline: 1px solid CanvasText;
   }
 
   /* The toggle is a picture of a switch drawn with fills, so it draws itself
