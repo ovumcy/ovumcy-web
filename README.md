@@ -78,7 +78,7 @@ The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v2.
 OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v2.0.0 docker compose up -d
 ```
 
-The base compose file binds to loopback. For a deliberate LAN or private-network bind, set `HOST_BIND_ADDRESS` in `.env` to a specific private IP you control; only compose reads it, the binary itself listens on `PORT` on every interface.
+The base compose file binds to loopback. For a deliberate LAN or private-network bind, set `HOST_BIND_ADDRESS` in `.env` to a specific private IP you control; only compose reads it. Inside the container the server listens on `PORT` on every interface, which the port publish needs, so leave `LISTEN_ADDRESS` unset under compose.
 
 For production-style setups:
 
@@ -125,7 +125,7 @@ docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v2.0.0 --format '{{ .
 <a id="manual" name="manual"></a>
 ### From source
 
-A binary started this way listens on `PORT` (default `8080`) on every interface; `HOST_BIND_ADDRESS` has no effect outside compose. On a machine other hosts can reach, block the port with a firewall.
+A binary started this way listens on `PORT` (default `8080`) on every interface, IPv4 and IPv6; set `LISTEN_ADDRESS` to one IP address, such as `127.0.0.1` or `::1`, to listen on that address alone. `HOST_BIND_ADDRESS` has no effect outside compose.
 
 Requirements:
 
@@ -354,7 +354,7 @@ The essentials:
 - `DEFAULT_LANGUAGE` accepts `en`, `ru`, `es`, `fr`, `de`, and `it`.
 - `REGISTRATION_MODE` is `open` or `closed`; use `closed` for pre-provisioned or otherwise operator-restricted internet-facing instances where self-service sign-up must stay disabled.
 - Set `COOKIE_SECURE=true` when serving over HTTPS, and enable `TRUST_PROXY_ENABLED` only behind a trusted reverse proxy.
-- `HOST_BIND_ADDRESS=127.0.0.1` keeps the base compose path local. It is a compose setting, not an app setting: the binary ignores it and listens on `PORT` on every interface.
+- `HOST_BIND_ADDRESS=127.0.0.1` keeps the base compose path local. It is a compose setting, not an app setting: the binary ignores it. The app setting is `LISTEN_ADDRESS`, the one IP address the binary listens on when run outside a container; unset, it listens on `PORT` on every interface.
 - `AUDIT_LOG_ENABLED` is off by default. Flip it to `true` only while investigating a specific incident: the resulting stream contains `user_id` and is as sensitive as the database. See [docs/security/logging.md](docs/security/logging.md#logging-policy).
 - Keep database storage persistent, whether that is a SQLite volume/bind mount or operator-managed Postgres storage. Postgres requires `DATABASE_URL`.
 
