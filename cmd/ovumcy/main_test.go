@@ -1978,9 +1978,10 @@ func TestLogStartupNamesTheListenAddress(t *testing.T) {
 		listenAddress string
 		want          string
 	}{
-		{"", "Ovumcy listening on :9090 "},
-		{"127.0.0.1", "Ovumcy listening on 127.0.0.1:9090 "},
-		{"::1", "Ovumcy listening on [::1]:9090 "},
+		{"", "Ovumcy listening on http://0.0.0.0:9090 "},
+		{"127.0.0.1", "Ovumcy listening on http://127.0.0.1:9090 "},
+		{"::1", "Ovumcy listening on http://[::1]:9090 "},
+		{"::", "Ovumcy listening on http://[::]:9090 "},
 	}
 	for _, tc := range cases {
 		originalWriter := log.Writer()
@@ -2981,7 +2982,7 @@ func TestRunServerReturnsListenError(t *testing.T) {
 	}
 	app := fiber.New()
 
-	if err := runServer(app, "256.256.256.256:0"); err == nil {
+	if err := runServer(app, fiber.NetworkTCP4, "256.256.256.256:0"); err == nil {
 		t.Fatal("expected runServer to fail on an unbindable address")
 	}
 
@@ -3045,7 +3046,7 @@ func TestRunServerReturnsAfterGracefulStop(t *testing.T) {
 	}()
 
 	done := make(chan error, 1)
-	go func() { done <- runServer(app, "127.0.0.1:0") }()
+	go func() { done <- runServer(app, fiber.NetworkTCP4, "127.0.0.1:0") }()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -3067,13 +3068,67 @@ func TestRunServerReturnsAfterGracefulStop(t *testing.T) {
 	}
 }
 
-func TestRunServerListensOnIPv4AndIPv6(t *testing.T) {
+func TestListenTargetKeepsTheUnsetBindOnIPv4(t *testing.T) {
+	cases := []struct {
+		listenAddress string
+		network       string
+		address       string
+	}{
+		{"", fiber.NetworkTCP4, "0.0.0.0:8080"},
+		{"0.0.0.0", fiber.NetworkTCP4, "0.0.0.0:8080"},
+		{"127.0.0.1", fiber.NetworkTCP4, "127.0.0.1:8080"},
+		{"::", fiber.NetworkTCP, "[::]:8080"},
+		{"::1", fiber.NetworkTCP, "[::1]:8080"},
+	}
+	for _, tc := range cases {
+		network, address := listenTarget(tc.listenAddress, "8080")
+		if network != tc.network || address != tc.address {
+			t.Fatalf("listenTarget(%q): expected %s %s, got %s %s", tc.listenAddress, tc.network, tc.address, network, address)
+		}
+	}
+}
+
+// TestRunServerBindsIPv6OnlyWhenAsked dials the real listener: an unset
+// LISTEN_ADDRESS, and 0.0.0.0, must refuse IPv6 as every earlier release did,
+// and only "::" may open the dual-stack wildcard.
+func TestRunServerBindsIPv6OnlyWhenAsked(t *testing.T) {
 	probe, err := net.Listen("tcp6", "[::1]:0")
 	if err != nil {
 		t.Skipf("no IPv6 loopback on this host: %v", err)
 	}
 	_ = probe.Close()
 
+	cases := []struct {
+		listenAddress string
+		acceptsIPv6   bool
+	}{
+		{"", false},
+		{"0.0.0.0", false},
+		{"::", true},
+	}
+	for _, tc := range cases {
+		t.Run("LISTEN_ADDRESS="+tc.listenAddress, func(t *testing.T) {
+			port := startServerOnListenTarget(t, tc.listenAddress)
+
+			conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), time.Second)
+			if err != nil {
+				t.Fatalf("expected the listener to accept IPv4 loopback, got %v", err)
+			}
+			_ = conn.Close()
+
+			conn, err = net.DialTimeout("tcp", net.JoinHostPort("::1", port), time.Second)
+			if err == nil {
+				_ = conn.Close()
+			}
+			if accepted := err == nil; accepted != tc.acceptsIPv6 {
+				t.Fatalf("expected IPv6 loopback accepted=%t, got accepted=%t (%v)", tc.acceptsIPv6, accepted, err)
+			}
+		})
+	}
+}
+
+func startServerOnListenTarget(t *testing.T, listenAddress string) string {
+	t.Helper()
 	app := fiber.New()
 	portCh := make(chan string, 1)
 	app.Hooks().OnListen(func(listenData fiber.ListenData) error {
@@ -3082,12 +3137,18 @@ func TestRunServerListensOnIPv4AndIPv6(t *testing.T) {
 	})
 	served := make(chan struct{})
 	done := make(chan error, 1)
+	network, address := listenTarget(listenAddress, "0")
 	go func() {
-		err := runServer(app, ":0")
+		err := runServer(app, network, address)
 		close(served)
 		done <- err
 	}()
-	port := <-portCh
+	var port string
+	select {
+	case port = <-portCh:
+	case err := <-done:
+		t.Fatalf("runServer(%s %s): %v", network, address, err)
+	}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -3096,14 +3157,7 @@ func TestRunServerListensOnIPv4AndIPv6(t *testing.T) {
 			t.Errorf("runServer after shutdown: %v", err)
 		}
 	})
-
-	for _, host := range []string{"127.0.0.1", "::1"} {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second)
-		if err != nil {
-			t.Fatalf("expected the default listener to accept %s, got %v", host, err)
-		}
-		_ = conn.Close()
-	}
+	return port
 }
 
 // TestRetryShutdownBridgesBootWindow pins the boot-window hardening: a single
@@ -3132,7 +3186,7 @@ func TestRetryShutdownBridgesBootWindow(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		err := runServer(app, "127.0.0.1:0")
+		err := runServer(app, fiber.NetworkTCP4, "127.0.0.1:0")
 		close(served)
 		done <- err
 	}()
@@ -3299,7 +3353,7 @@ func TestInstallGracefulShutdownBridgesSIGTERM(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		err := runServer(app, "127.0.0.1:0")
+		err := runServer(app, fiber.NetworkTCP4, "127.0.0.1:0")
 		close(served)
 		done <- err
 	}()

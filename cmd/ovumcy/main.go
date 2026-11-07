@@ -84,7 +84,8 @@ func main() {
 	schedulerDone := startReminderScheduler(sigCtx, config, repositories, i18nManager)
 
 	logStartup(config)
-	err = runServer(app, net.JoinHostPort(config.ListenAddress, config.Port))
+	network, address := listenTarget(config.ListenAddress, config.Port)
+	err = runServer(app, network, address)
 	close(served)
 	// The server has stopped. If the scheduler is running, wait (bounded) for any
 	// in-flight pass to finish reading/writing the DB, THEN close the DB — so the
@@ -105,13 +106,30 @@ func main() {
 // drain (see main). The database is still closed on BOTH exit paths — there is
 // one main return path and main always closes it — SQLite still checkpoints its
 // WAL and releases the file before the process exits.
-func runServer(app *fiber.App, address string) error {
+func runServer(app *fiber.App, network string, address string) error {
 	// Fiber v3 moved DisableStartupMessage out of fiber.Config and into the
 	// per-listen ListenConfig; keep the banner suppressed as before.
 	return app.Listen(address, fiber.ListenConfig{
 		DisableStartupMessage: true,
-		ListenerNetwork:       fiber.NetworkTCP,
+		ListenerNetwork:       network,
 	})
+}
+
+// listenTarget returns the network and address the server binds. Unset keeps
+// the IPv4-only wildcard every earlier release bound, so an upgrade opens no
+// IPv6 port a host firewall may not cover. An IPv4 address keeps tcp4 because
+// Go's "tcp" turns any wildcard, 0.0.0.0 included, into a dual-stack socket;
+// only an IPv6 address takes "tcp", which makes "::" dual-stack.
+func listenTarget(listenAddress string, port string) (string, string) {
+	ip := net.ParseIP(listenAddress)
+	switch {
+	case ip == nil:
+		return fiber.NetworkTCP4, net.JoinHostPort(net.IPv4zero.String(), port)
+	case ip.To4() != nil:
+		return fiber.NetworkTCP4, net.JoinHostPort(ip.String(), port)
+	default:
+		return fiber.NetworkTCP, net.JoinHostPort(ip.String(), port)
+	}
 }
 
 // startReminderScheduler builds and launches the optional built-in reminder
