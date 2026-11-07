@@ -1231,8 +1231,8 @@
      themes: the dark ladder's recessive fills (follicular, luteal, withheld)
      sit low enough that 0.65/0.55 black measured 2.50-3.02:1 over them
      (luteal 2.49:1 in the e2e, WEB-285). The dark gradient is 0.80/0.75:
-     worst stop menstrual 5.81, follicular 3.47, ovulation 7.73, luteal 3.28,
-     withheld 3.34:1. Light keeps 0.65/0.55 (worst stop ovulation 3.05:1). The
+     worst stop menstrual 5.81, follicular 3.28, ovulation 7.24, luteal 3.28,
+     withheld 3.34:1. Light keeps 0.65/0.55 (worst stop ovulation 3.08:1). The
      dark-mode e2e measures every DISTINCT phase a flag is painted over and
      pins luteal + start-window by name. */
   --ribbon-fill-start-window: linear-gradient(180deg, rgb(0 0 0 / 0.65) 0%, rgb(0 0 0 / 0.55) 100%);
@@ -5025,9 +5025,13 @@
        consumer composes its own alpha.
 
        Measured against the white card (light) with the ribbon's own fills:
-       menstrual 3.39:1, ovulation 3.61:1 — the two phases a reader actually
-       looks for clear the 3:1 non-text floor — while follicular 1.71:1 and
-       luteal 2.32:1 sit under it deliberately. The phase fill is a REDUNDANT
+       menstrual 3.39:1, ovulation 3.55:1 — the two phases a reader actually
+       looks for clear the 3:1 non-text floor — while follicular 1.82:1 and
+       luteal 2.32:1 sit under it deliberately. Ovulation is teal because a
+       yellow cannot reach 3:1 on white without turning mustard brown; teal
+       keeps the floor at a clean hue, and the follicular blue beside it is
+       the light end of the same cool side, so the warm period and the cool
+       follicular days no longer share a brown. The phase fill is a REDUNDANT
        graphic: the current phase it paints is already stated as visible text
        in the status line beside it, so 1.4.11 does not bind it (this is
        independent of aria-hidden — the ribbon now carries a per-day
@@ -5037,8 +5041,16 @@
        where neighbouring phases stop being separable at all (measured:
        adjacent pairs collapse from ~2:1 to ~1.05:1). What the band needs
        instead is a lightness ladder, which is what these four are: adjacent
-       pairs stay ≥1.46:1 in light and ≥1.96:1 in dark, hue separating them
-       further.
+       pairs stay ≥1.46:1 in light and ≥2.10:1 in dark, hue separating them
+       further. Ovulation is 24 152 142 rather than a deeper teal for the
+       start-window overlay: its black gradient over this fill measures
+       3.08:1, the worst stop of any phase, and every 1% darker costs it.
+
+       The fertile strip under the band (--cal-fertile-ink, peak
+       --cal-fertile-peak) is told apart from the phase above it by hue, not
+       lightness: green over teal measures 1.10:1 ink / 1.86:1 peak, about
+       what it measured over the old mustard (1.12 / 1.90), and 1.64:1 ink
+       over the follicular blue where most fertile days fall.
 
        --phase-withheld is the fifth fill and the one phase colour that is not a
        phase: it paints the days a suppressed tier keeps but may not name. It
@@ -5339,8 +5351,13 @@
        values — the same rule the chart line follows. The ladder inverts with
        the ground: follicular and luteal are the recessive pair here as there,
        but on a dark card recessive means darker. Measured against the card:
-       menstrual 6.39:1, ovulation 9.67:1, follicular 3.26:1, luteal 3.04:1;
-       adjacent pairs ≥1.96:1.
+       menstrual 6.39:1, ovulation 8.72:1, follicular 3.04:1, luteal 3.04:1;
+       adjacent pairs ≥2.10:1. Follicular is 68 110 160, a step lighter than
+       the deep blue it started as (62 102 150): there the dark start-window
+       gradient measured 2.97:1 over it, and the step buys 3.28:1, level with
+       luteal. The fertile strip reads by hue here too: green over the mint
+       ovulation measures 1.02:1 ink / 1.07:1 peak, as over the old gold
+       (1.08 / 1.04), and 2.68:1 ink over follicular.
 
        --phase-withheld (see the light block for what it is) is 3.14:1 against
        the card and 2.04:1 against the menstrual block it always follows. It is
