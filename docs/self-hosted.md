@@ -457,6 +457,26 @@ docker run --rm \
 docker compose up -d
 ```
 
+The shipped `docker-compose.yml` hard-codes `container_name: ovumcy` and the volume names `ovumcy_data` and `ovumcy_fence`. A restore into a second (scratch) compose project on the same host would therefore reuse the live stack's container and volumes, and the volume removal above would delete the live data. For a scratch restore, give the project its own names with an override file and substitute the scratch volume name in the commands above:
+
+```yaml
+# docker-compose.scratch.yml
+services:
+  ovumcy:
+    container_name: ovumcy-scratch
+volumes:
+  ovumcy_data:
+    name: ovumcy_scratch_data
+  ovumcy_fence:
+    name: ovumcy_scratch_fence
+```
+
+```bash
+docker compose -p ovumcy-scratch -f docker-compose.yml -f docker-compose.scratch.yml up -d
+```
+
+You may also need a different published port so it does not collide with the live stack.
+
 Before removing the existing volume, make a fresh rollback backup if you are not already holding one you trust.
 When you restore into a manually recreated named volume, Docker Compose may print a warning that the volume was not created by Compose. In this workflow that warning is expected and does not by itself mean the restore failed.
 After startup, verify the restored app using the health check appropriate for your deployment mode, then work through [Post-Restore Verification](#post-restore-verification) below. The health check tells you the app is up; it cannot tell you the data came back.
