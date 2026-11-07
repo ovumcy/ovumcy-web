@@ -122,14 +122,13 @@ func runServer(app *fiber.App, network string, address string) error {
 // only an IPv6 address takes "tcp", which makes "::" dual-stack.
 func listenTarget(listenAddress string, port string) (string, string) {
 	ip := net.ParseIP(listenAddress)
-	switch {
-	case ip == nil:
-		return fiber.NetworkTCP4, net.JoinHostPort(net.IPv4zero.String(), port)
-	case ip.To4() != nil:
-		return fiber.NetworkTCP4, net.JoinHostPort(ip.String(), port)
-	default:
-		return fiber.NetworkTCP, net.JoinHostPort(ip.String(), port)
+	if ip == nil {
+		ip = net.IPv4zero
 	}
+	if ip.To4() != nil {
+		return fiber.NetworkTCP4, net.JoinHostPort(ip.String(), port)
+	}
+	return fiber.NetworkTCP, net.JoinHostPort(ip.String(), port)
 }
 
 // startReminderScheduler builds and launches the optional built-in reminder
