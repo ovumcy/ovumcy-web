@@ -61,7 +61,10 @@ playwright-report/
 docs/screenshots/ovumcy-social-preview.png
 scripts/take-screenshots.mjs
 scripts/record-demo.mjs
+scripts/demo-runtime.mjs
 docs/demo.mp4
+docs/demo.webm
+docs/demo-poster.jpg
 
 # Files the deployment documentation tells the operator to create in the
 # working copy, and which carry a secret or personal data once they exist:
