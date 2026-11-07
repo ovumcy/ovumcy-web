@@ -205,7 +205,7 @@ func TestProbeHostReachesTheListener(t *testing.T) {
 	cases := map[string]string{
 		"":           "127.0.0.1",
 		"0.0.0.0":    "127.0.0.1",
-		"::":         "::1",
+		"::":         "127.0.0.1",
 		"::1":        "::1",
 		"192.0.2.10": "192.0.2.10",
 	}

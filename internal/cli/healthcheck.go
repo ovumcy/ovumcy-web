@@ -47,16 +47,15 @@ func localProbeURL(path string, listenAddress string, port string) string {
 	return "http://" + net.JoinHostPort(probeHost(listenAddress), port) + path
 }
 
+// probeHost probes a wildcard bind on IPv4 loopback: the server binds "::"
+// dual-stack, which accepts IPv4 too, while a container whose IPv6 is
+// disabled carries no ::1 on its loopback interface.
 func probeHost(listenAddress string) string {
 	ip := net.ParseIP(listenAddress)
-	switch {
-	case ip == nil, ip.Equal(net.IPv4zero):
+	if ip == nil || ip.IsUnspecified() {
 		return "127.0.0.1"
-	case ip.IsUnspecified():
-		return "::1"
-	default:
-		return ip.String()
 	}
+	return ip.String()
 }
 
 func probeTimeoutOrDefault(timeout time.Duration) time.Duration {
