@@ -64,9 +64,9 @@ pushing (a stale `coverage.out` gives a false pass, so don't run
 go run ./cmd/ovumcy
 ```
 
-It listens on `PORT` (default `8080`) on every interface; set
-`LISTEN_ADDRESS=127.0.0.1` to keep it on loopback. `HOST_BIND_ADDRESS` applies
-to compose only.
+It listens on `PORT` (default `8080`) on every IPv4 interface; set
+`LISTEN_ADDRESS=127.0.0.1` to keep it on loopback, or `LISTEN_ADDRESS=::` to
+add IPv6. `HOST_BIND_ADDRESS` applies to compose only.
 
 ## Reporting Bugs
 
