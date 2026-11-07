@@ -19,10 +19,10 @@ func TestOpenDatabaseReportingNamesWhatTheRunnerApplied(t *testing.T) {
 		t.Fatalf("first open: %v", err)
 	}
 	closeOpenedPool(database)
-	if report.Applied != len(embedded) || report.From != "" || report.To != newest {
-		t.Fatalf("fresh database report = %+v, want Applied=%d From=\"\" To=%s", report, len(embedded), newest)
+	if report.Applied != len(embedded) || report.To != newest {
+		t.Fatalf("fresh database report = %+v, want Applied=%d To=%s", report, len(embedded), newest)
 	}
-	if got, want := report.String(), "migrations: applied "+strconv.Itoa(len(embedded))+" (empty -> "+newest+")"; got != want {
+	if got, want := report.String(), "migrations: applied "+strconv.Itoa(len(embedded))+", schema version "+newest; got != want {
 		t.Fatalf("fresh database line = %q, want %q", got, want)
 	}
 
@@ -36,12 +36,5 @@ func TestOpenDatabaseReportingNamesWhatTheRunnerApplied(t *testing.T) {
 	}
 	if got, want := report.String(), "migrations: none pending, schema version "+newest; got != want {
 		t.Fatalf("up-to-date line = %q, want %q", got, want)
-	}
-}
-
-func TestMigrationReportNamesTheStartingVersionOfAnUpgrade(t *testing.T) {
-	report := MigrationReport{Applied: 12, From: "031", To: "043"}
-	if got, want := report.String(), "migrations: applied 12 (031 -> 043)"; got != want {
-		t.Fatalf("upgrade line = %q, want %q", got, want)
 	}
 }

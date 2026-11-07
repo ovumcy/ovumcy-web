@@ -1,7 +1,7 @@
 ### Changed
 
 - **Startup logs what the migration runner did.** The server prints one line at boot: either
-  `migrations: applied N (FROM -> TO)` or `migrations: none pending, schema version V`, so an upgrade
+  `migrations: applied N, schema version V` or `migrations: none pending, schema version V`, so an upgrade
   can be confirmed from the log. It carries no connection detail.
 
 ### Fixed

@@ -47,12 +47,11 @@ type embeddedMigration struct {
 	SQL     string
 }
 
-// MigrationReport says what one OpenDatabase call did to the schema. From and
-// To are migration versions in the runner's own (numeric) order; From is empty
-// on a fresh database.
+// MigrationReport says what one OpenDatabase call did to the schema: how many
+// migrations it applied and the newest version in the runner's own (numeric)
+// order. No starting version: a gap fill would read as a range upgrade.
 type MigrationReport struct {
 	Applied int
-	From    string
 	To      string
 }
 
@@ -61,11 +60,7 @@ func (report MigrationReport) String() string {
 	if report.Applied == 0 {
 		return fmt.Sprintf("migrations: none pending, schema version %s", report.To)
 	}
-	from := report.From
-	if from == "" {
-		from = "empty"
-	}
-	return fmt.Sprintf("migrations: applied %d (%s -> %s)", report.Applied, from, report.To)
+	return fmt.Sprintf("migrations: applied %d, schema version %s", report.Applied, report.To)
 }
 
 func applyEmbeddedMigrations(database *gorm.DB, driver Driver) (MigrationReport, error) {
@@ -91,9 +86,6 @@ func applyEmbeddedMigrations(database *gorm.DB, driver Driver) (MigrationReport,
 	for _, migration := range migrations {
 		report.To = migration.Version
 		if _, alreadyApplied := appliedVersions[migration.Version]; alreadyApplied {
-			if report.Applied == 0 {
-				report.From = migration.Version
-			}
 			continue
 		}
 
