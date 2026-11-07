@@ -29,5 +29,35 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "screenshots": [
+    {
+      "src": "/static/pwa/screenshots/dashboard-narrow-light.png",
+      "sizes": "412x915",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Today: your cycle ring, the cycle ribbon and the day journal"
+    },
+    {
+      "src": "/static/pwa/screenshots/dashboard-narrow-dark.png",
+      "sizes": "412x915",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "The same Today screen in the dark theme"
+    },
+    {
+      "src": "/static/pwa/screenshots/dashboard-wide-light.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Today on a wide screen: cycle ring, ribbon and journal"
+    },
+    {
+      "src": "/static/pwa/screenshots/dashboard-wide-dark.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Today on a wide screen in the dark theme"
+    }
   ]
 }
