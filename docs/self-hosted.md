@@ -457,7 +457,7 @@ docker run --rm \
 docker compose up -d
 ```
 
-The shipped `docker-compose.yml` hard-codes `container_name: ovumcy` and the volume names `ovumcy_data` and `ovumcy_fence`. A restore into a second (scratch) compose project on the same host would therefore reuse the live stack's container and volumes, and the volume removal above would delete the live data. For a scratch restore, give the project its own names with an override file and substitute the scratch volume name in the commands above:
+The shipped `docker-compose.yml` hard-codes `container_name: ovumcy` and the volume names `ovumcy_data` and `ovumcy_fence`. A restore into a second (scratch) compose project on the same host would therefore reuse the live stack's container and volumes, and the volume removal above would delete the live data. For a scratch restore, give the project its own names with an override file. Then run every command above against the scratch project: each `docker compose` call takes `-p ovumcy-scratch -f docker-compose.yml -f docker-compose.scratch.yml`, and each `ovumcy_data` becomes `ovumcy_scratch_data`. A bare `docker compose down` in the same directory stops the live stack.
 
 ```yaml
 # docker-compose.scratch.yml
@@ -471,7 +471,7 @@ volumes:
     name: ovumcy_scratch_fence
 ```
 
-Start the scratch stack with `docker compose -p ovumcy-scratch -f docker-compose.yml -f docker-compose.scratch.yml up -d`. Compose appends an override's `ports` list to the base one instead of replacing it, so the scratch stack still claims the live port: either stop the live stack first, or set `ports: !override` in the override (Compose v2.24.4 or newer) with a free host port.
+The scratch stack also needs its own host port. The compose file publishes `${PORT}`, so prefix the scratch `up` with a free one, for example `PORT=8081 docker compose -p ovumcy-scratch -f docker-compose.yml -f docker-compose.scratch.yml up -d`. A variable set in the shell takes precedence over the value in `.env`.
 
 Before removing the existing volume, make a fresh rollback backup if you are not already holding one you trust.
 When you restore into a manually recreated named volume, Docker Compose may print a warning that the volume was not created by Compose. In this workflow that warning is expected and does not by itself mean the restore failed.
