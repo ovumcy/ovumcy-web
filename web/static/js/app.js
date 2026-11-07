@@ -111,9 +111,8 @@
   }
 
   // The cycle map's two views are a browser-only preference like the theme:
-  // each key holds "on" or "off". Nothing stored means the per-device default
-  // (CSS owns it: ring and ribbon on a wide screen, the ring alone on a phone),
-  // so nothing is written to the page until the owner has chosen. At least one
+  // each key holds "on" or "off". Nothing stored means the default (both
+  // views), so nothing is written to the page until the owner has chosen. At least one
   // view always stays on; if both read "off", the ribbon counts as on.
   var CYCLE_VIEW_KEYS = { ring: "ovumcy_cycle_ring", ribbon: "ovumcy_cycle_ribbon" };
 
@@ -135,9 +134,10 @@
     }
   }
 
+  // Both views on every screen: without the ribbon a phone had no picture of
+  // the next-period window at all, only the status line's dates.
   function defaultCycleViews() {
-    var phone = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
-    return { ring: true, ribbon: !phone };
+    return { ring: true, ribbon: true };
   }
 
   // The views the page is showing now: what is stored, else the device default.
@@ -7561,8 +7561,8 @@
           }
 
           writeStoredTheme(selection.theme);
-          // Only a changed choice is stored: saving a language on a desktop
-          // must not pin the desktop's default views onto the owner's phone.
+          // Only a changed choice is stored: saving a language must not pin
+          // the default views as if the owner had picked them.
           var savedViews = this.__ovumcySettingsInterfaceState && this.__ovumcySettingsInterfaceState.initial;
           if (!savedViews || savedViews.ring !== selection.ring || savedViews.ribbon !== selection.ribbon) {
             writeStoredCycleViews(selection);

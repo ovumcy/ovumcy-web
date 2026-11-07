@@ -85,9 +85,6 @@ test.describe('Dashboard on small screens', () => {
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.goto('/settings');
       await saveSettingsLanguage(page, locale);
-      // A phone draws only the ring by default; this case is about the
-      // ribbon's own labels, so it turns the ribbon on the way Settings does.
-      await page.evaluate(() => window.localStorage.setItem('ovumcy_cycle_ribbon', 'on'));
       await page.setViewportSize({ width: 320, height: 700 });
       await page.goto('/dashboard');
 
@@ -120,7 +117,7 @@ test.describe('Dashboard on small screens', () => {
     }
   });
 
-  test('with no stored choice a phone shows the ring and the key, a desktop both views', async ({ page }) => {
+  test('with no stored choice a phone shows both views; a stored choice hides one', async ({ page }) => {
     const anchor = await registerAndOnboardWithStartDaysAgo(page, 'dash-cycle-views', 10);
     for (const offset of [-89, -58, -29]) {
       await markCycleStartViaAPI(page, shiftISODate(anchor, offset));
@@ -133,18 +130,22 @@ test.describe('Dashboard on small screens', () => {
     await page.goto('/dashboard');
     await expect(ring).toBeVisible();
     await expect(page.locator('[data-cycle-ring-today]')).toHaveCount(1);
+    await expect(ribbonView).toBeVisible();
+    await expect(legend.locator('[data-legend-scope="ribbon"]').first()).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+
+    await page.evaluate(() => window.localStorage.setItem('ovumcy_cycle_ribbon', 'off'));
+    await page.goto('/dashboard');
+    await expect(ring).toBeVisible();
     await expect(ribbonView).toBeHidden();
     await expect(legend).toBeVisible();
     await expect(legend.locator('[data-legend-scope="ribbon"]').first()).toBeHidden();
     await expect(page.locator('[data-cycle-ribbon-summary]')).toHaveCount(1);
-    await assertNoHorizontalOverflow(page);
 
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto('/dashboard');
-    await expect(ring).toBeVisible();
-    await expect(ribbonView).toBeVisible();
-
-    await page.evaluate(() => window.localStorage.setItem('ovumcy_cycle_ring', 'off'));
+    await page.evaluate(() => {
+      window.localStorage.setItem('ovumcy_cycle_ribbon', 'on');
+      window.localStorage.setItem('ovumcy_cycle_ring', 'off');
+    });
     await page.goto('/dashboard');
     await expect(ring).toBeHidden();
     await expect(ribbonView).toBeVisible();

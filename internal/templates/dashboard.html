@@ -35,7 +35,7 @@
               <g transform="rotate(-90 60 60)">
                 <circle class="dashboard-cycle-ring-track" cx="60" cy="60" r="48"></circle>
                 {{range .CycleHero.Ring.Arcs}}<circle class="dashboard-cycle-ring-arc" cx="60" cy="60" r="48" data-phase="{{.Phase}}" stroke-dasharray="{{.DashArray}}" stroke-dashoffset="{{.DashOffset}}"></circle>{{end}}
-                {{if .CycleHero.Ring.Fertile.Present}}<circle class="dashboard-cycle-ring-fertile" cx="60" cy="60" r="36" data-cycle-ring-fertile stroke-dasharray="{{.CycleHero.Ring.Fertile.DashArray}}" stroke-dashoffset="{{.CycleHero.Ring.Fertile.DashOffset}}"></circle>{{end}}
+                {{if .CycleHero.Ring.Fertile.Present}}<circle class="dashboard-cycle-ring-fertile" cx="60" cy="60" r="57.5" data-cycle-ring-fertile stroke-dasharray="{{.CycleHero.Ring.Fertile.DashArray}}" stroke-dashoffset="{{.CycleHero.Ring.Fertile.DashOffset}}"></circle>{{end}}
               </g>
               {{if .CycleHero.Ring.TodayOnRing}}<circle class="dashboard-cycle-ring-today" cx="{{.CycleHero.Ring.Marker.X}}" cy="{{.CycleHero.Ring.Marker.Y}}" r="8" data-cycle-ring-today></circle>{{end}}
             </svg>
@@ -276,7 +276,7 @@
           <li data-cycle-ribbon-legend-item="predicted-flow" data-legend-scope="ribbon"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="menstrual" data-predicted-flow="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period"}}</li>
           {{end}}
           {{if $legend.StartWindow.Present}}
-          <li data-cycle-ribbon-legend-item="start-window" data-legend-scope="ribbon"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="{{$legend.StartWindowPhase}}" data-start-window="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.start_window"}}</li>
+          <li data-cycle-ribbon-legend-item="start-window" data-legend-scope="ribbon">{{range $legend.StartWindowPhases}}<span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="{{.}}" data-start-window="true" aria-hidden="true"></span>{{end}}{{t .Messages "calendar.legend.start_window"}}</li>
           {{end}}
           {{if $legend.Logged}}
           <li data-cycle-ribbon-legend-item="logged" data-legend-scope="ribbon"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="beyond" data-logged="true" aria-hidden="true"></span>{{t .Messages "calendar.data_logged"}}</li>

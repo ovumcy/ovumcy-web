@@ -64,11 +64,12 @@ type DashboardCycleHeroLegend struct {
 	Fertile       DashboardCycleHeroDayRange
 	PredictedFlow DashboardCycleHeroDayRange
 	StartWindow   DashboardCycleHeroDayRange
-	// StartWindowPhase is the phase under the window's first cell. The window's
-	// shading darkens whatever phase it lands on, so the swatch is drawn over
-	// that phase or it would explain a colour the ribbon does not show.
-	StartWindowPhase string
-	Logged           bool
+	// StartWindowPhases are the distinct phases under the window's cells, in
+	// axis order. The window's shading darkens whatever it lands on (and lightens
+	// a 'beyond' cell in the dark theme), so the key draws one swatch per base
+	// or it would explain a colour the ribbon does not show.
+	StartWindowPhases []string
+	Logged            bool
 }
 
 // DashboardCycleHeroDayRange is a closed run of cycle days; zero is absent.
@@ -303,8 +304,8 @@ func dashboardCycleHeroLegendFor(days []DashboardCycleHeroDay) DashboardCycleHer
 			legend.PredictedFlow = legend.PredictedFlow.extend(day.Day)
 		}
 		if day.IsStartWindow {
-			if !legend.StartWindow.Present() {
-				legend.StartWindowPhase = day.Phase
+			if count := len(legend.StartWindowPhases); count == 0 || legend.StartWindowPhases[count-1] != day.Phase {
+				legend.StartWindowPhases = append(legend.StartWindowPhases, day.Phase)
 			}
 			legend.StartWindow = legend.StartWindow.extend(day.Day)
 		}

@@ -118,17 +118,14 @@ function submit(dom, form) {
   form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
 }
 
-test("with nothing stored the boxes start from the device default", async () => {
-  const wide = boxes(await loadSettings({}));
-  assert.equal(wide.ring.checked, true);
-  assert.equal(wide.ribbon.checked, true);
-
-  const dom = await loadSettings({}, true);
-  const phone = boxes(dom);
-  assert.equal(phone.ring.checked, true);
-  assert.equal(phone.ribbon.checked, false);
-  assert.equal(phone.form.dataset.settingsDraftDirty, "false");
-  assert.equal(phone.save.disabled, true);
+test("with nothing stored both boxes start checked, on a wide screen and a phone alike", async () => {
+  for (const phone of [false, true]) {
+    const view = boxes(await loadSettings({}, phone));
+    assert.equal(view.ring.checked, true);
+    assert.equal(view.ribbon.checked, true);
+    assert.equal(view.form.dataset.settingsDraftDirty, "false");
+    assert.equal(view.save.disabled, true);
+  }
 });
 
 test("stored choices pre-fill the boxes", async () => {
@@ -176,7 +173,7 @@ test("a save that leaves the views untouched stores no view, so each device keep
   assert.equal(dom.window.localStorage.getItem(RIBBON_KEY), null);
 });
 
-test("save on a phone default stores the ring-only choice it started from", async () => {
+test("turning the ribbon off on a phone stores ring-only", async () => {
   const dom = await loadSettings({}, true);
   const { form, ribbon } = boxes(dom);
 
@@ -184,7 +181,7 @@ test("save on a phone default stores the ring-only choice it started from", asyn
   submit(dom, form);
 
   assert.equal(dom.window.localStorage.getItem(RING_KEY), "on");
-  assert.equal(dom.window.localStorage.getItem(RIBBON_KEY), "on");
+  assert.equal(dom.window.localStorage.getItem(RIBBON_KEY), "off");
 });
 
 test("the last checked box is disabled, and re-checking the other frees it", async () => {
