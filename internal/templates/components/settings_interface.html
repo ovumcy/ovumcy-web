@@ -72,6 +72,27 @@
             </label>
           </div>
         </section>
+
+        {{/* Browser-only, like the theme: nothing here reaches the account. The
+             boxes carry no name so the form does not post them; Save stores them
+             in this browser (55-settings-interface.js). Which box is checked
+             when nothing is stored is the device default, set by script. */}}
+        <section class="card-quiet settings-interface-panel space-y-3">
+          <div class="space-y-1">
+            <p class="field-label">{{t .Messages "settings.interface.cycle_view"}}</p>
+            <p class="journal-muted text-sm">{{t .Messages "settings.interface.cycle_view_hint"}}</p>
+          </div>
+          <div class="settings-interface-options" role="group" aria-label="{{t .Messages "settings.interface.cycle_view"}}">
+            <label class="choice-option settings-interface-option" data-settings-cycle-view-option="ring" data-selected="true">
+              <input type="checkbox" value="ring" class="choice-input" data-settings-cycle-view-input="ring" checked>
+              <span class="chip chip-stack chip-inline"><span>{{t .Messages "settings.interface.cycle_view_ring"}}</span></span>
+            </label>
+            <label class="choice-option settings-interface-option" data-settings-cycle-view-option="ribbon" data-selected="true">
+              <input type="checkbox" value="ribbon" class="choice-input" data-settings-cycle-view-input="ribbon" checked>
+              <span class="chip chip-stack chip-inline"><span>{{t .Messages "settings.interface.cycle_view_ribbon"}}</span></span>
+            </label>
+          </div>
+        </section>
       </div>
 
       <div class="settings-form-actions">

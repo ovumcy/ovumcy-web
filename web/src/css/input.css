@@ -1104,9 +1104,97 @@
 @utility dashboard-cycle-lead {
   margin: 0;
   flex: 0 0 auto;
+  position: relative;
   display: grid;
   place-items: center;
+  align-content: center;
   min-width: 2rem;
+
+  &:has([data-cycle-ring-visible='true']) {
+    width: 6.5rem;
+    height: 6.5rem;
+
+    @media (max-width: 640px) {
+      width: 5.75rem;
+      height: 5.75rem;
+    }
+  }
+}
+
+/* The caption sits under the number visually but before it in the DOM, so a
+   screen reader still hears "Cycle day 16". */
+@utility dashboard-cycle-lead-caption {
+  order: 2;
+  font-size: 0.625rem;
+  line-height: 1.1;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+  /* Inside the ring the caption wraps to two short lines rather than run
+     under the fertile arc. */
+  max-width: 3rem;
+}
+
+/* The ring: the ribbon's own cells bent into a circle. Arcs read the same
+   --phase-* fills the cells do (one definition per colour), the inner arc the
+   fertile window's ink, and the dot marks today. */
+@utility dashboard-cycle-ring-slot {
+  position: absolute;
+  inset: 0;
+
+  &[data-cycle-ring-visible='false'] {
+    display: none;
+  }
+}
+
+@utility dashboard-cycle-ring {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+@utility dashboard-cycle-ring-track {
+  fill: none;
+  stroke-width: 12;
+  stroke: var(--surface-quiet);
+}
+
+@utility dashboard-cycle-ring-arc {
+  --ring-phase: var(--phase-follicular);
+
+  fill: none;
+  stroke-width: 12;
+  stroke: rgb(var(--ring-phase));
+
+  &[data-phase='menstrual'] {
+    --ring-phase: var(--phase-menstrual);
+  }
+
+  &[data-phase='ovulation'] {
+    --ring-phase: var(--phase-ovulation);
+  }
+
+  &[data-phase='luteal'] {
+    --ring-phase: var(--phase-luteal);
+  }
+
+  &:is([data-phase='withheld'], [data-phase='unknown']) {
+    --ring-phase: var(--phase-withheld);
+  }
+}
+
+@utility dashboard-cycle-ring-fertile {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke: rgb(var(--cal-fertile-ink) / 0.9);
+}
+
+@utility dashboard-cycle-ring-today {
+  fill: var(--surface-card);
+  stroke-width: 3.5;
+  stroke: rgb(var(--cal-today));
 }
 
 @utility dashboard-cycle-lead-day {
@@ -5663,6 +5751,32 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* Which cycle views the dashboard draws. A stored viewer preference
+   (theme-bootstrap.js sets data-cycle-ring / data-cycle-ribbon to "on" or
+   "off" before first paint) wins on every screen; with none stored, a desktop
+   shows both and a phone only the ring, whose arcs stay legible where a
+   ribbon cell is a few pixels wide. The summary and the key are outside the
+   ribbon view, so a hidden ribbon takes only its own entries with it; the
+   60-day cap notice stays, since the ring stops at the same cap. Unlayered so
+   no display utility on these elements can tie with it. */
+:root[data-cycle-ring='off'] [data-dashboard-cycle-ring],
+:root[data-cycle-ribbon='off'] :is([data-cycle-ribbon-view], [data-legend-scope='ribbon']) {
+  display: none;
+}
+
+:root[data-cycle-ring='off'] .dashboard-cycle-lead {
+  width: auto;
+  height: auto;
+}
+
+/* A phone whose viewer turned the ring off keeps the ribbon: no default may
+   leave the dashboard with neither view. */
+@media (max-width: 640px) {
+  :root:not([data-cycle-ribbon='on']):not([data-cycle-ring='off']) :is([data-cycle-ribbon-view], [data-legend-scope='ribbon']) {
+    display: none;
+  }
+}
+
 /* Forced colours (a Windows contrast theme). The browser repaints every
    foreground, background and border in the reader's two or three system
    colours and drops box-shadows and gradients, so any state carried by a fill,
@@ -5682,6 +5796,7 @@
    them leaves nothing to read. */
 @media (forced-colors: active) {
   .dashboard-cycle-ribbon,
+  .dashboard-cycle-ring,
   .stats-cycle-stack-band {
     forced-color-adjust: none;
   }

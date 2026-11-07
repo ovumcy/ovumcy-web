@@ -110,6 +110,57 @@
     }
   }
 
+  // The cycle map's two views are a browser-only preference like the theme:
+  // each key holds "on" or "off". Nothing stored means the per-device default
+  // (CSS owns it: ring and ribbon on a wide screen, the ring alone on a phone),
+  // so nothing is written to the page until the owner has chosen. At least one
+  // view always stays on; if both read "off", the ribbon counts as on.
+  var CYCLE_VIEW_KEYS = { ring: "ovumcy_cycle_ring", ribbon: "ovumcy_cycle_ribbon" };
+
+  function readStoredCycleView(view) {
+    try {
+      var stored = String(window.localStorage.getItem(CYCLE_VIEW_KEYS[view]) || "").trim().toLowerCase();
+      return stored === "on" || stored === "off" ? stored : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function writeStoredCycleViews(selection) {
+    try {
+      window.localStorage.setItem(CYCLE_VIEW_KEYS.ring, selection.ring ? "on" : "off");
+      window.localStorage.setItem(CYCLE_VIEW_KEYS.ribbon, selection.ribbon ? "on" : "off");
+    } catch {
+      // Ignore storage quota and privacy mode errors.
+    }
+  }
+
+  function defaultCycleViews() {
+    var phone = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
+    return { ring: true, ribbon: !phone };
+  }
+
+  // The views the page is showing now: what is stored, else the device default.
+  function currentCycleViews() {
+    var fallback = defaultCycleViews();
+    var ring = readStoredCycleView("ring");
+    var ribbon = readStoredCycleView("ribbon");
+    var selection = {
+      ring: ring ? ring === "on" : fallback.ring,
+      ribbon: ribbon ? ribbon === "on" : fallback.ribbon
+    };
+    if (!selection.ring && !selection.ribbon) {
+      selection.ribbon = true;
+    }
+    return selection;
+  }
+
+  function applyCycleViews(selection) {
+    var root = document.documentElement;
+    root.setAttribute("data-cycle-ring", selection.ring ? "on" : "off");
+    root.setAttribute("data-cycle-ribbon", selection.ribbon ? "on" : "off");
+  }
+
   function updateThemeColorMeta(theme) {
     var meta = document.getElementById("theme-color-meta");
     if (!meta) {

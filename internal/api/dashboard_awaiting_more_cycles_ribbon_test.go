@@ -106,6 +106,21 @@ func TestDashboardRibbonNamesNoOvulationBeforeThreeCompletedCycles(t *testing.T)
 			if published && !keyNamesOvulation {
 				t.Error("control: with three completed cycles the ribbon key must list the ovulation swatch")
 			}
+
+			// The ring bends the same cells into a circle, so it withholds the
+			// same: no ovulation arc and no fertile arc while the half is held back.
+			ring := htmlFindElement(document, htmlNodeHasAttr("data-dashboard-cycle-ring"))
+			if ring == nil || htmlFindElement(ring, htmlNodeHasAttr("data-cycle-ring-today")) == nil {
+				t.Fatal("expected the ring with a today dot")
+			}
+			ringNamesOvulation := htmlFindElement(ring, htmlNodeAttrEquals("data-phase", "ovulation")) != nil
+			ringShadesFertile := htmlFindElement(ring, htmlNodeHasAttr("data-cycle-ring-fertile")) != nil
+			if !published && (ringNamesOvulation || ringShadesFertile) {
+				t.Errorf("ring draws ovulation (%v) or the fertile arc (%v) before three completed cycles", ringNamesOvulation, ringShadesFertile)
+			}
+			if published && !(ringNamesOvulation && ringShadesFertile) {
+				t.Error("control: with three completed cycles the ring must draw the ovulation and fertile arcs")
+			}
 		})
 	}
 }

@@ -54,6 +54,30 @@
   // first paint (input.css); app.js removes them once it initializes.
   document.documentElement.setAttribute("data-scripted", "");
 
+  // The cycle map's views are chosen per browser. Only a stored choice is
+  // written to the page; with none, the stylesheet's per-device default
+  // applies. Both off is not a state: the ribbon stays on.
+  function readStoredCycleView(key) {
+    try {
+      var stored = String(window.localStorage.getItem(key) || "").trim().toLowerCase();
+      return stored === "on" || stored === "off" ? stored : "";
+    } catch {
+      return "";
+    }
+  }
+
+  var cycleRing = readStoredCycleView("ovumcy_cycle_ring");
+  var cycleRibbon = readStoredCycleView("ovumcy_cycle_ribbon");
+  if (cycleRing === "off" && cycleRibbon === "off") {
+    cycleRibbon = "on";
+  }
+  if (cycleRing) {
+    document.documentElement.setAttribute("data-cycle-ring", cycleRing);
+  }
+  if (cycleRibbon) {
+    document.documentElement.setAttribute("data-cycle-ribbon", cycleRibbon);
+  }
+
   var theme = resolveTheme();
   document.documentElement.setAttribute("data-theme", theme);
   window.__ovumcyTheme = theme;

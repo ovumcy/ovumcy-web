@@ -52,7 +52,8 @@ func TestForcedColorsBlockRestatesEveryBackgroundOnlyState(t *testing.T) {
 		{".calendar-cell-overlap-period-fertile,.legend-swatch-overlap-period-fertile{", "outline:1px dashed canvastext", "a predicted day in the window carries both marks"},
 		{".calendar-cell-today,.legend-swatch-today{", "outline:2px solid canvastext", "today keeps a ring once its shadow ring is dropped"},
 		{".calendar-cell.selected,.calendar-cell:focus-visible{", "outline:3px solid highlight", "the selected and focused day stay marked"},
-		{".dashboard-cycle-ribbon,.stats-cycle-stack-band{", "forced-color-adjust:none", "the phase pictures keep the colours that are their data"},
+		{".dashboard-cycle-ribbon,.dashboard-cycle-ring,.stats-cycle-stack-band{", "forced-color-adjust:none", "the phase pictures keep the colours that are their data"},
+		{".dashboard-cycle-ribbon-legend [data-swatch=true]{", "forced-color-adjust:none", "the key keeps the colours it explains"},
 	} {
 		rule, ok := cutRule(block, want.selector)
 		if !ok {

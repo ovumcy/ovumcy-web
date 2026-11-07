@@ -21,7 +21,27 @@
       {{if .CycleHero.Approximate}}data-cycle-hero-approximate="true"{{end}}>
       <div class="dashboard-status-top">
         <p class="dashboard-cycle-lead">
-          <span class="sr-only">{{t .Messages "dashboard.cycle_day"}}</span>
+          {{/* The ring: the ribbon's own cells bent into a circle, phase arcs
+               outside, the fertile window inside, a dot on today. It is the
+               picture of the summary under the ribbon, so it is aria-hidden;
+               the slot always renders so the pregnancy-result refresh can swap
+               it, and a viewer preference (theme-bootstrap.js) can hide it. */}}
+          <span
+            class="dashboard-cycle-ring-slot"
+            data-dashboard-cycle-ring
+            data-cycle-ring-visible="{{if .CycleHero.Ring.Visible}}true{{else}}false{{end}}">
+            {{- if .CycleHero.Ring.Visible -}}
+            <svg class="dashboard-cycle-ring" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+              <g transform="rotate(-90 60 60)">
+                <circle class="dashboard-cycle-ring-track" cx="60" cy="60" r="48"></circle>
+                {{range .CycleHero.Ring.Arcs}}<circle class="dashboard-cycle-ring-arc" cx="60" cy="60" r="48" data-phase="{{.Phase}}" stroke-dasharray="{{.DashArray}}" stroke-dashoffset="{{.DashOffset}}"></circle>{{end}}
+                {{if .CycleHero.Ring.Fertile.Present}}<circle class="dashboard-cycle-ring-fertile" cx="60" cy="60" r="36" data-cycle-ring-fertile stroke-dasharray="{{.CycleHero.Ring.Fertile.DashArray}}" stroke-dashoffset="{{.CycleHero.Ring.Fertile.DashOffset}}"></circle>{{end}}
+              </g>
+              {{if .CycleHero.Ring.TodayOnRing}}<circle class="dashboard-cycle-ring-today" cx="{{.CycleHero.Ring.Marker.X}}" cy="{{.CycleHero.Ring.Marker.Y}}" r="8" data-cycle-ring-today></circle>{{end}}
+            </svg>
+            {{- end -}}
+          </span>
+          <span class="dashboard-cycle-lead-caption">{{t .Messages "dashboard.cycle_day"}}</span>
           {{/* The cycle-day span is re-fetched and swapped after a pregnancy-result save. */}}
           <span class="dashboard-cycle-lead-day" data-dashboard-cycle-day>{{if gt .Stats.CurrentCycleDay 0}}{{if .CycleDataStale}}~{{end}}{{.Stats.CurrentCycleDay}}{{else}}{{.NoDataLabel}}{{end}}</span>
         </p>
@@ -213,7 +233,10 @@
         {{/* The marker and scale rows repeat the ribbon's columns so a label
              sits over or under its own day without a computed offset (strict
              CSP: no inline style). Both are visual restatements of the summary
-             above, hidden from assistive tech so nothing is read twice. */}}
+             above, hidden from assistive tech so nothing is read twice. The
+             view wrapper is what a viewer preference hides; the summary and
+             the key outside it serve the ring as well. */}}
+        <div class="dashboard-cycle-ribbon-view" data-cycle-ribbon-view>
         <div class="dashboard-cycle-ribbon-axis" aria-hidden="true" data-cycle-ribbon-marker-row>
           {{range .CycleHero.Days}}<span class="dashboard-cycle-ribbon-tick"{{if .IsToday}} data-today="true" data-align="{{$.CycleHero.TodayMarkerAlign}}"{{end}}>{{if .IsToday}}<span class="dashboard-cycle-ribbon-today-label" data-cycle-ribbon-today-marker>{{t $.Messages "nav.today"}}</span>{{end}}</span>{{end}}
         </div>
@@ -236,6 +259,7 @@
         <div class="dashboard-cycle-ribbon-axis" aria-hidden="true" data-cycle-ribbon-scale>
           {{range .CycleHero.Days}}<span class="dashboard-cycle-ribbon-tick"{{if .IsToday}} data-today="true"{{end}}>{{if .ScaleLabel}}{{.Day}}{{end}}</span>{{end}}
         </div>
+        </div>
         {{/* The key: each swatch is a ribbon cell itself, so a colour here is the
              colour above by construction, and only what the ribbon draws gets an
              entry — a withheld tier names no phase it hides. The predicted
@@ -249,13 +273,13 @@
           <li data-cycle-ribbon-legend-item="fertile"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="beyond" data-fertile="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.fertility"}}</li>
           {{end}}
           {{if $legend.PredictedFlow.Present}}
-          <li data-cycle-ribbon-legend-item="predicted-flow"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="menstrual" data-predicted-flow="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period"}}</li>
+          <li data-cycle-ribbon-legend-item="predicted-flow" data-legend-scope="ribbon"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="menstrual" data-predicted-flow="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period"}}</li>
           {{end}}
           {{if $legend.StartWindow.Present}}
-          <li data-cycle-ribbon-legend-item="start-window"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="{{$legend.StartWindowPhase}}" data-start-window="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.start_window"}}</li>
+          <li data-cycle-ribbon-legend-item="start-window" data-legend-scope="ribbon"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="{{$legend.StartWindowPhase}}" data-start-window="true" aria-hidden="true"></span>{{t .Messages "calendar.legend.start_window"}}</li>
           {{end}}
           {{if $legend.Logged}}
-          <li data-cycle-ribbon-legend-item="logged"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="beyond" data-logged="true" aria-hidden="true"></span>{{t .Messages "calendar.data_logged"}}</li>
+          <li data-cycle-ribbon-legend-item="logged" data-legend-scope="ribbon"><span class="dashboard-cycle-ribbon-day" data-swatch="true" data-phase="beyond" data-logged="true" aria-hidden="true"></span>{{t .Messages "calendar.data_logged"}}</li>
           {{end}}
         </ul>
         {{if .CycleHero.AxisTruncated}}<p class="journal-muted text-xs" data-dashboard-cycle-ribbon-truncated>{{printf (t .Messages "dashboard.cycle_ribbon_truncated") .CycleHero.AxisDays}}</p>{{end}}

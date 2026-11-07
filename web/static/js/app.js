@@ -110,6 +110,57 @@
     }
   }
 
+  // The cycle map's two views are a browser-only preference like the theme:
+  // each key holds "on" or "off". Nothing stored means the per-device default
+  // (CSS owns it: ring and ribbon on a wide screen, the ring alone on a phone),
+  // so nothing is written to the page until the owner has chosen. At least one
+  // view always stays on; if both read "off", the ribbon counts as on.
+  var CYCLE_VIEW_KEYS = { ring: "ovumcy_cycle_ring", ribbon: "ovumcy_cycle_ribbon" };
+
+  function readStoredCycleView(view) {
+    try {
+      var stored = String(window.localStorage.getItem(CYCLE_VIEW_KEYS[view]) || "").trim().toLowerCase();
+      return stored === "on" || stored === "off" ? stored : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function writeStoredCycleViews(selection) {
+    try {
+      window.localStorage.setItem(CYCLE_VIEW_KEYS.ring, selection.ring ? "on" : "off");
+      window.localStorage.setItem(CYCLE_VIEW_KEYS.ribbon, selection.ribbon ? "on" : "off");
+    } catch {
+      // Ignore storage quota and privacy mode errors.
+    }
+  }
+
+  function defaultCycleViews() {
+    var phone = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
+    return { ring: true, ribbon: !phone };
+  }
+
+  // The views the page is showing now: what is stored, else the device default.
+  function currentCycleViews() {
+    var fallback = defaultCycleViews();
+    var ring = readStoredCycleView("ring");
+    var ribbon = readStoredCycleView("ribbon");
+    var selection = {
+      ring: ring ? ring === "on" : fallback.ring,
+      ribbon: ribbon ? ribbon === "on" : fallback.ribbon
+    };
+    if (!selection.ring && !selection.ribbon) {
+      selection.ribbon = true;
+    }
+    return selection;
+  }
+
+  function applyCycleViews(selection) {
+    var root = document.documentElement;
+    root.setAttribute("data-cycle-ring", selection.ring ? "on" : "off");
+    root.setAttribute("data-cycle-ribbon", selection.ribbon ? "on" : "off");
+  }
+
   function updateThemeColorMeta(theme) {
     var meta = document.getElementById("theme-color-meta");
     if (!meta) {
@@ -4872,6 +4923,7 @@
   // block that appears or disappears is placed after the nearest block before it.
   // The disclaimer is static and listed only as that anchor.
   var DASHBOARD_PREGNANCY_ALWAYS_PRESENT = [
+    { selector: "[data-dashboard-cycle-ring]", inPlace: false },
     { selector: "[data-dashboard-cycle-day]", inPlace: false },
     { selector: "[data-dashboard-status-line]", inPlace: true }
   ];
@@ -7285,6 +7337,49 @@
     return matched;
   }
 
+  var CYCLE_VIEW_NAMES = ["ring", "ribbon"];
+
+  function cycleViewInput(root, view) {
+    return root.querySelector('input[data-settings-cycle-view-input="' + view + '"]');
+  }
+
+  function readCycleViewSelection(root) {
+    var selection = {};
+    for (var index = 0; index < CYCLE_VIEW_NAMES.length; index++) {
+      var input = cycleViewInput(root, CYCLE_VIEW_NAMES[index]);
+      selection[CYCLE_VIEW_NAMES[index]] = Boolean(input && input.checked);
+    }
+    return selection;
+  }
+
+  function setCycleViewSelection(root, selection) {
+    for (var index = 0; index < CYCLE_VIEW_NAMES.length; index++) {
+      var input = cycleViewInput(root, CYCLE_VIEW_NAMES[index]);
+      if (input) {
+        input.checked = Boolean(selection[CYCLE_VIEW_NAMES[index]]);
+      }
+    }
+  }
+
+  // The map always keeps one view: the last checked box is disabled (a checked,
+  // disabled chip already reads as inert), so the choice is not refused after
+  // the fact and focus never sits on a control that silently undoes itself.
+  function syncCycleViewOptions(root) {
+    var selection = readCycleViewSelection(root);
+    var checkedCount = (selection.ring ? 1 : 0) + (selection.ribbon ? 1 : 0);
+    for (var index = 0; index < CYCLE_VIEW_NAMES.length; index++) {
+      var view = CYCLE_VIEW_NAMES[index];
+      var input = cycleViewInput(root, view);
+      var option = root.querySelector('[data-settings-cycle-view-option="' + view + '"]');
+      if (input) {
+        input.disabled = selection[view] && checkedCount === 1;
+      }
+      if (option) {
+        option.dataset.selected = selection[view] ? "true" : "false";
+      }
+    }
+  }
+
   function syncSettingsInterfaceOptionSelections(root) {
     if (!root || !root.querySelectorAll) {
       return;
@@ -7302,6 +7397,8 @@
         : "false";
     }
 
+    syncCycleViewOptions(root);
+
     for (var themeIndex = 0; themeIndex < themeOptions.length; themeIndex++) {
       var themeOption = themeOptions[themeIndex];
       themeOption.dataset.selected = normalizeThemePreference(themeOption.getAttribute("data-settings-interface-theme-option")) === theme
@@ -7313,7 +7410,9 @@
   function currentSettingsInterfaceSelection(root) {
     return {
       language: readCheckedRadioValue(root, "language"),
-      theme: normalizeThemePreference(readCheckedRadioValue(root, "theme"))
+      theme: normalizeThemePreference(readCheckedRadioValue(root, "theme")),
+      ring: readCycleViewSelection(root).ring,
+      ribbon: readCycleViewSelection(root).ribbon
     };
   }
 
@@ -7321,7 +7420,8 @@
     if (!left || !right) {
       return false;
     }
-    return left.language === right.language && left.theme === right.theme;
+    return left.language === right.language && left.theme === right.theme &&
+      left.ring === right.ring && left.ribbon === right.ribbon;
   }
 
   function syncSettingsInterfaceForm(root) {
@@ -7345,6 +7445,14 @@
     if (selection.theme) {
       applyTheme(selection.theme);
     }
+    if (!selection.ring && !selection.ribbon) {
+      // Not reachable through the UI (the last box is disabled); a script that
+      // clears both gets the baseline back rather than an empty map.
+      selection.ring = state.initial.ring;
+      selection.ribbon = state.initial.ribbon;
+      setCycleViewSelection(root, selection);
+    }
+    applyCycleViews(selection);
 
     syncSettingsInterfaceOptionSelections(root);
     dirty = !sameSettingsInterfaceSelection(selection, state.initial);
@@ -7366,6 +7474,7 @@
 
     setRadioGroupValue(root, "language", state.initial.language);
     setRadioGroupValue(root, "theme", state.initial.theme);
+    setCycleViewSelection(root, state.initial);
     applyTheme(state.initial.theme);
     syncSettingsInterfaceForm(root);
   }
@@ -7401,12 +7510,16 @@
       // system happens to be resolving to right now. With nothing stored the
       // rendered theme stays the initial selection, as before.
       var initialTheme = currentThemePreference();
+      // Stored views, else the device default the stylesheet is applying.
+      var initialViews = currentCycleViews();
 
       if (!root.__ovumcySettingsInterfaceState) {
         root.__ovumcySettingsInterfaceState = {
           initial: {
             language: initialLanguage,
-            theme: initialTheme
+            theme: initialTheme,
+            ring: initialViews.ring,
+            ribbon: initialViews.ribbon
           },
           saveButton: root.querySelector("[data-settings-interface-save]"),
           discardButton: root.querySelector("[data-settings-interface-discard]"),
@@ -7415,11 +7528,14 @@
       } else {
         root.__ovumcySettingsInterfaceState.initial.language = initialLanguage;
         root.__ovumcySettingsInterfaceState.initial.theme = initialTheme;
+        root.__ovumcySettingsInterfaceState.initial.ring = initialViews.ring;
+        root.__ovumcySettingsInterfaceState.initial.ribbon = initialViews.ribbon;
         root.__ovumcySettingsInterfaceState.languageUnsaved = root.hasAttribute("data-settings-interface-language-unsaved");
       }
 
       setRadioGroupValue(root, "language", root.__ovumcySettingsInterfaceState.initial.language);
       setRadioGroupValue(root, "theme", root.__ovumcySettingsInterfaceState.initial.theme);
+      setCycleViewSelection(root, root.__ovumcySettingsInterfaceState.initial);
 
       if (root.dataset.settingsInterfaceBound !== "1") {
         root.dataset.settingsInterfaceBound = "1";
@@ -7431,7 +7547,7 @@
           if (!event.target || !event.target.matches) {
             return;
           }
-          if (event.target.matches('input[name="language"], input[name="theme"]')) {
+          if (event.target.matches('input[name="language"], input[name="theme"], input[data-settings-cycle-view-input]')) {
             syncSettingsInterfaceForm(this);
           }
         });
@@ -7445,6 +7561,12 @@
           }
 
           writeStoredTheme(selection.theme);
+          // Only a changed choice is stored: saving a language on a desktop
+          // must not pin the desktop's default views onto the owner's phone.
+          var savedViews = this.__ovumcySettingsInterfaceState && this.__ovumcySettingsInterfaceState.initial;
+          if (!savedViews || savedViews.ring !== selection.ring || savedViews.ribbon !== selection.ribbon) {
+            writeStoredCycleViews(selection);
+          }
           setSettingsDraftTransition(this, true);
         });
 
