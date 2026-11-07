@@ -75,9 +75,9 @@
 
         {{/* Browser-only, like the theme: nothing here reaches the account. The
              boxes carry no name so the form does not post them; Save stores them
-             in this browser (55-settings-interface.js). Which box is checked
-             when nothing is stored is the device default, set by script. */}}
-        <section class="card-quiet settings-interface-panel space-y-3">
+             in this browser (55-settings-interface.js), so without scripts the
+             panel would be inert and is not drawn (data-scripted-only). */}}
+        <section class="card-quiet settings-interface-panel space-y-3" data-scripted-only>
           <div class="space-y-1">
             <p class="field-label">{{t .Messages "settings.interface.cycle_view"}}</p>
             <p class="journal-muted text-sm">{{t .Messages "settings.interface.cycle_view_hint"}}</p>

@@ -112,8 +112,8 @@
 
   // The cycle map's two views are a browser-only preference like the theme:
   // each key holds "on" or "off". Nothing stored means the default (both
-  // views), so nothing is written to the page until the owner has chosen. At least one
-  // view always stays on; if both read "off", the ribbon counts as on.
+  // views), so nothing is written to the page until the owner has chosen. At
+  // least one view always stays on; if both read "off", the ribbon counts as on.
   var CYCLE_VIEW_KEYS = { ring: "ovumcy_cycle_ring", ribbon: "ovumcy_cycle_ribbon" };
 
   function readStoredCycleView(view) {
@@ -140,7 +140,7 @@
     return { ring: true, ribbon: true };
   }
 
-  // The views the page is showing now: what is stored, else the device default.
+  // The views the page is showing now: what is stored, else the default.
   function currentCycleViews() {
     var fallback = defaultCycleViews();
     var ring = readStoredCycleView("ring");

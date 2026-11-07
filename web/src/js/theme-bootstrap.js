@@ -55,8 +55,8 @@
   document.documentElement.setAttribute("data-scripted", "");
 
   // The cycle map's views are chosen per browser. Only a stored choice is
-  // written to the page; with none, the stylesheet's per-device default
-  // applies. Both off is not a state: the ribbon stays on.
+  // written to the page; with none, both views show. Both off is not a state:
+  // the ribbon stays on.
   function readStoredCycleView(key) {
     try {
       var stored = String(window.localStorage.getItem(key) || "").trim().toLowerCase();
