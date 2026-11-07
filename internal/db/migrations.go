@@ -63,45 +63,47 @@ func (report MigrationReport) String() string {
 	return fmt.Sprintf("migrations: applied %d, schema version %s", report.Applied, report.SchemaVersion)
 }
 
-func applyEmbeddedMigrations(database *gorm.DB, driver Driver) (MigrationReport, error) {
-	var report MigrationReport
+// applyEmbeddedMigrations fills report, when non-nil, once every pending
+// migration has applied.
+func applyEmbeddedMigrations(database *gorm.DB, driver Driver, report *MigrationReport) error {
 	if err := ensureSchemaMigrationsTable(database); err != nil {
-		return report, err
+		return err
 	}
 
 	migrations, err := loadEmbeddedMigrations(driver)
 	if err != nil {
-		return report, err
+		return err
 	}
 
 	appliedVersions, err := loadAppliedMigrationVersions(database)
 	if err != nil {
-		return report, err
+		return err
 	}
 
 	if err := refuseASchemaWrittenByANewerBinary(migrations, appliedVersions); err != nil {
-		return report, err
-	}
-	if len(migrations) > 0 {
-		report.SchemaVersion = migrations[len(migrations)-1].Version
+		return err
 	}
 
+	applied := 0
 	for _, migration := range migrations {
 		if _, alreadyApplied := appliedVersions[migration.Version]; alreadyApplied {
 			continue
 		}
 
 		if err := refuseTableDropReplayOnANewerSchema(migration, appliedVersions); err != nil {
-			return report, err
+			return err
 		}
 
 		if err := applyMigration(database, migration); err != nil {
-			return report, err
+			return err
 		}
-		report.Applied++
+		applied++
 	}
 
-	return report, nil
+	if report != nil && len(migrations) > 0 {
+		*report = MigrationReport{Applied: applied, SchemaVersion: migrations[len(migrations)-1].Version}
+	}
+	return nil
 }
 
 func ensureSchemaMigrationsTable(database *gorm.DB) error {
