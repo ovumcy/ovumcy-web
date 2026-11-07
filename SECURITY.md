@@ -453,6 +453,12 @@ The read-only `.ics` feed lets a calendar client subscribe to an owner's estimat
 | The Fiber request log's error field is sanitized (emails → `:email`, opaque tokens → `:token`) | `TestSafeLogError` in [internal/api/request_logging_test.go](internal/api/request_logging_test.go) |
 | The same sanitization also covers the short secrets that fall below the opaque-token length floor — a recovery code (`OVUM-XXXX-XXXX-XXXX`) and a submitted six-digit code both become `:code` — while an ISO date, an HTTP status, a route template and a longer numeric id stay readable | `TestSafeLogErrorMasksSecretShapesAndKeepsDiagnostics` in [internal/api/request_logging_test.go](internal/api/request_logging_test.go) |
 
+### Network Bind
+
+| Claim | Enforced by |
+| --- | --- |
+| With `LISTEN_ADDRESS` unset or `0.0.0.0` the server binds the IPv4 wildcard alone, as every earlier release did, so an upgrade opens no IPv6 port a host firewall filtering IPv4 alone would miss; only an IPv6 `LISTEN_ADDRESS` opens IPv6, `::` dual-stack | `TestRunServerBindsIPv6OnlyWhenAsked`, `TestListenTargetKeepsTheUnsetBindOnIPv4` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
+
 ### Medical Safety Disclaimer
 
 The backend HTML contract normally forbids asserting localized copy, but the persistent medical-safety disclaimer is a deliberate exception: its exact wording is the invariant, so these tests pin both the surface's stable `data-*` hook and the safety string. Withholding is the other half of that invariant — a disclaimer does not license a window the recorded data cannot support — so the check that keeps the decision to withhold in one place is listed here too.
