@@ -39,6 +39,16 @@ func TestDashboardCycleHeroScaleLabelsDayOneTodayAndTheEndWithoutCrowding(t *tes
 	}
 }
 
+func TestDashboardCycleHeroEmptyAxisDrawsNoScaleAndNoRing(t *testing.T) {
+	dashboardCycleHeroMarkScale(nil, 5)
+	if ring := dashboardCycleHeroRingFor(nil, 28, 5); ring.Visible || len(ring.Arcs) != 0 || ring.TodayOnRing {
+		t.Fatalf("ring over an empty axis = %+v, want the zero ring", ring)
+	}
+	if ring := dashboardCycleHeroRingFor([]DashboardCycleHeroDay{{Day: 1, Phase: "menstrual"}}, 0, 1); ring.Visible {
+		t.Fatalf("ring over a zero cycle length = %+v, want the zero ring", ring)
+	}
+}
+
 func TestDashboardCycleHeroTodayMarkerStaysInsideTheRibbon(t *testing.T) {
 	for currentDay, want := range map[int]string{1: "start", 3: "start", 4: "center", 27: "center", 28: "end", 30: "end"} {
 		if got := dashboardCycleHeroTodayMarkerAlign(currentDay, 30); got != want {
