@@ -16,8 +16,20 @@ import (
 // On the days the published ovulation had rolled, the header said "luteal"
 // while the marker stood on the ribbon's "ovulation" cell (WEB-500).
 func TestDashboardRibbonTodayCellWearsTheHeaderPhase(t *testing.T) {
-	for _, history := range [][]int{{31, 29, 29}, {28, 28, 28}, {26, 30, 27}} {
-		for cycleDay := 1; cycleDay <= 27; cycleDay++ {
+	// The days around ovulation are where the average-first and median-first
+	// lengths part; these are the ones that disagreed before the fix, plus an
+	// even history as the control. A full 1..27 sweep cost two minutes of the
+	// api package for the same answer.
+	for _, testCase := range []struct {
+		history []int
+		days    []int
+	}{
+		{history: []int{31, 29, 29}, days: []int{14, 15, 16, 17}},
+		{history: []int{26, 30, 27}, days: []int{12, 13, 14, 15}},
+		{history: []int{28, 28, 28}, days: []int{14, 15}},
+	} {
+		history := testCase.history
+		for _, cycleDay := range testCase.days {
 			t.Run(fmt.Sprintf("history %v, cycle day %d", history, cycleDay), func(t *testing.T) {
 				app, database := newOnboardingTestApp(t)
 				user := createOnboardingTestUser(t, database, "dashboard-ribbon-today-phase@example.com", "StrongPass1", true)

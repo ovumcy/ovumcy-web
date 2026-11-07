@@ -163,7 +163,7 @@ test("save stores both views explicitly and the page keeps what it applied", asy
   assert.deepEqual(attrs(dom), { ring: "off", ribbon: "on" });
 });
 
-test("a save that leaves the views untouched stores no view, so each device keeps its default", async () => {
+test("a save that leaves the views untouched stores no view, so the default stays the default", async () => {
   const dom = await loadSettings({});
   const { form } = boxes(dom);
 

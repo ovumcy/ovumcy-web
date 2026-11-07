@@ -169,7 +169,9 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	// saying "luteal" (WEB-500). The published day anchors the cards whenever it
 	// fits the same geometry the projected branch requires; otherwise the
 	// projection stays, so this never hides a ribbon that rendered before.
-	if !confirmedAnchor && undeterminedEnd == 0 && !fertilitySuppressed && !stats.OvulationImpossible && !stats.OvulationDate.IsZero() && !cycleStart.IsZero() {
+	// Range mode keeps the projection: its published day is a range's anchor,
+	// not the point estimate the header names.
+	if !confirmedAnchor && undeterminedEnd == 0 && !fertilitySuppressed && !cycleContext.DisplayOvulationUseRange && !stats.OvulationImpossible && !stats.OvulationDate.IsZero() && !cycleStart.IsZero() {
 		published := CalendarDaysBetween(cycleStart, CalendarDay(stats.OvulationDate, location)) + 1
 		if published > periodLength+1 && published <= cycleLength {
 			ovulationDay = published

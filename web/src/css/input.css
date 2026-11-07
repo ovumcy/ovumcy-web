@@ -59,6 +59,12 @@
     display: none;
   }
 
+  /* The reverse: a control only a script can act on (a browser-stored
+     preference) is not drawn where no script will run. */
+  :root:not([data-scripted]) [data-scripted-only] {
+    display: none;
+  }
+
   /* The settings stack's sticky-chrome geometry, read by the section index's
      sticky offset and by the cards' scroll-margin-top, so the offset the index
      sticks at and the clearance a jump leaves cannot drift apart.
