@@ -39,8 +39,8 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 | `github.com/google/uuid` | BSD-3-Clause | [license text](https://github.com/google/uuid/blob/v1.6.0/LICENSE) |
 | `github.com/jackc/pgpassfile` | MIT | [license text](https://github.com/jackc/pgpassfile/blob/v1.0.0/LICENSE) |
 | `github.com/jackc/pgservicefile` | MIT | [license text](https://github.com/jackc/pgservicefile/blob/5a60cdf6a761/LICENSE) |
-| `github.com/jackc/pgx/v5` | MIT | [license text](https://github.com/jackc/pgx/blob/v5.11.0/LICENSE) |
-| `github.com/jackc/puddle/v2` | MIT | [license text](https://github.com/jackc/puddle/blob/v2.2.2/LICENSE) |
+| `github.com/jackc/pgx/v5` | MIT | [license text](https://github.com/jackc/pgx/blob/v5.12.0/LICENSE) |
+| `github.com/jackc/puddle/v2` | MIT | [license text](https://github.com/jackc/puddle/blob/v2.2.3/LICENSE) |
 | `github.com/jinzhu/inflection` | MIT | [license text](https://github.com/jinzhu/inflection/blob/v1.0.0/LICENSE) |
 | `github.com/jinzhu/now` | MIT | [license text](https://github.com/jinzhu/now/blob/v1.1.5/License) |
 | `github.com/klauspost/compress/internal/snapref` | BSD-3-Clause | [license text](https://github.com/klauspost/compress/blob/v1.20.3/internal/snapref/LICENSE) |
