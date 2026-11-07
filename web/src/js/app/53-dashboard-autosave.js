@@ -402,6 +402,7 @@
   // block that appears or disappears is placed after the nearest block before it.
   // The disclaimer is static and listed only as that anchor.
   var DASHBOARD_PREGNANCY_ALWAYS_PRESENT = [
+    { selector: "[data-dashboard-cycle-ring]", inPlace: false },
     { selector: "[data-dashboard-cycle-day]", inPlace: false },
     { selector: "[data-dashboard-status-line]", inPlace: true }
   ];

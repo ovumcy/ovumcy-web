@@ -53,6 +53,8 @@ type DashboardCycleHero struct {
 	// TodayMarkerAlign anchors the "today" label to its cell's start or end
 	// near the ribbon's edges, where a centred label would overflow the card.
 	TodayMarkerAlign string
+	// Ring is the at-a-glance form of Days (dashboard_cycle_hero_ring.go).
+	Ring DashboardCycleHeroRing
 }
 
 // DashboardCycleHeroLegend lists what the ribbon draws, in axis order for the
@@ -159,6 +161,19 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	if undeterminedEnd > 0 && !confirmedAnchor {
 		ovulationDay = CalendarDaysBetween(cycleStart, CalendarDay(stats.OvulationDate, location)) + 1
 	}
+	// The header phase and the fertile peak both read the running cycle's
+	// published ovulation (median-first), while CalcOvulationDay above runs on
+	// the average-first reference length: on a skewed history the two sit a day
+	// apart, and the "today" marker stood on an ovulation cell beside a header
+	// saying "luteal" (WEB-500). The published day anchors the cards whenever it
+	// fits the same geometry the projected branch requires; otherwise the
+	// projection stays, so this never hides a ribbon that rendered before.
+	if !confirmedAnchor && undeterminedEnd == 0 && !fertilitySuppressed && !stats.OvulationImpossible && !stats.OvulationDate.IsZero() && !cycleStart.IsZero() {
+		published := CalendarDaysBetween(cycleStart, CalendarDay(stats.OvulationDate, location)) + 1
+		if published > periodLength+1 && published <= cycleLength {
+			ovulationDay = published
+		}
+	}
 	if confirmedAnchor {
 		// A confirmed day is an OBSERVATION; the projected periodLength above it
 		// is a projection of the average. When they disagree the observation
@@ -237,6 +252,7 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 		Days:             days,
 		Legend:           dashboardCycleHeroLegendFor(days),
 		TodayMarkerAlign: dashboardCycleHeroTodayMarkerAlign(currentDay, axisDays),
+		Ring:             dashboardCycleHeroRingFor(days, cycleLength, currentDay),
 	}
 }
 
