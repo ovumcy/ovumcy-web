@@ -471,11 +471,7 @@ volumes:
     name: ovumcy_scratch_fence
 ```
 
-```bash
-docker compose -p ovumcy-scratch -f docker-compose.yml -f docker-compose.scratch.yml up -d
-```
-
-You may also need a different published port so it does not collide with the live stack.
+Start the scratch stack with `docker compose -p ovumcy-scratch -f docker-compose.yml -f docker-compose.scratch.yml up -d`. Compose appends an override's `ports` list to the base one instead of replacing it, so the scratch stack still claims the live port: either stop the live stack first, or set `ports: !override` in the override (Compose v2.24.4 or newer) with a free host port.
 
 Before removing the existing volume, make a fresh rollback backup if you are not already holding one you trust.
 When you restore into a manually recreated named volume, Docker Compose may print a warning that the volume was not created by Compose. In this workflow that warning is expected and does not by itself mean the restore failed.
