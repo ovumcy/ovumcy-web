@@ -167,7 +167,7 @@ Up and running? A ⭐ on the repository helps others find Ovumcy.
 ## Demo and Screenshots
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Ovumcy demo — sign up, onboarding, dashboard, calendar, settings, and dark theme" width="720">
+  <img src="docs/demo.gif" alt="Ovumcy demo — sign up, cycle setup, logging today, the calendar, and the dark theme" width="720">
 </p>
 
 <table>
@@ -176,8 +176,8 @@ Up and running? A ⭐ on the repository helps others find Ovumcy.
     <th>Review the month</th>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/dashboard.jpg" alt="Ovumcy dashboard screen"></td>
-    <td><img src="docs/screenshots/calendar.jpg" alt="Ovumcy calendar screen"></td>
+    <td><img src="docs/screenshots/dashboard.jpg" alt="Ovumcy dashboard with the cycle ring and ribbon, estimate qualifiers, and today's journal"></td>
+    <td><img src="docs/screenshots/calendar.jpg" alt="Ovumcy calendar month with predicted days marked as estimates"></td>
   </tr>
   <tr>
     <th>Export what you need</th>
@@ -185,7 +185,7 @@ Up and running? A ⭐ on the repository helps others find Ovumcy.
   </tr>
   <tr>
     <td><img src="docs/screenshots/settings-export.jpg" alt="Ovumcy export settings screen"></td>
-    <td><img src="docs/screenshots/dark-theme.jpg" alt="Ovumcy dark theme screen"></td>
+    <td><img src="docs/screenshots/dark-theme.jpg" alt="Ovumcy dashboard in the dark theme"></td>
   </tr>
   <tr>
     <th>Get started quickly</th>
@@ -193,7 +193,7 @@ Up and running? A ⭐ on the repository helps others find Ovumcy.
   </tr>
   <tr>
     <td><img src="docs/screenshots/register.jpg" alt="Ovumcy registration screen"></td>
-    <td align="center"><img src="docs/screenshots/install-prompt.png" alt="Ovumcy mobile install prompt" width="300"></td>
+    <td align="center"><img src="docs/screenshots/install-prompt.png" alt="Ovumcy login screen on a phone with the install offer" width="300"></td>
   </tr>
 </table>
 
