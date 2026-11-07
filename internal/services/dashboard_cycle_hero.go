@@ -242,13 +242,13 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	dashboardCycleHeroMarkScale(days, currentDay)
 
 	return DashboardCycleHero{
-		Visible:       true,
-		Approximate:   dashboardCycleHeroApproximate(cycleContext, startWindow),
-		CurrentDay:    currentDay,
-		CycleLength:   cycleLength,
-		AxisDays:      axisDays,
-		AxisTruncated: dashboardCycleHeroUncappedAxisDays(cycleLength, startWindow) > dashboardCycleHeroMaxAxisDays,
-		CurrentPhase:  currentPhase,
+		Visible:          true,
+		Approximate:      dashboardCycleHeroApproximate(cycleContext, startWindow),
+		CurrentDay:       currentDay,
+		CycleLength:      cycleLength,
+		AxisDays:         axisDays,
+		AxisTruncated:    dashboardCycleHeroUncappedAxisDays(cycleLength, startWindow) > dashboardCycleHeroMaxAxisDays,
+		CurrentPhase:     currentPhase,
 		PhaseCards:       phaseCards,
 		Days:             days,
 		Legend:           dashboardCycleHeroLegendFor(days),
@@ -268,10 +268,10 @@ func dashboardCycleHeroMarkScale(days []DashboardCycleHeroDay, currentDay int) {
 	last := len(days)
 	for index := range days {
 		day := days[index].Day
-		switch {
-		case day == currentDay:
+		switch day {
+		case currentDay:
 			days[index].ScaleLabel = true
-		case day == 1 || day == last:
+		case 1, last:
 			todayOnAxis := currentDay >= 1 && currentDay <= last
 			days[index].ScaleLabel = !todayOnAxis || absInt(day-currentDay) >= dashboardCycleHeroScaleGap
 		}

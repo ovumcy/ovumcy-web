@@ -118,7 +118,7 @@ func TestDashboardRibbonNamesNoOvulationBeforeThreeCompletedCycles(t *testing.T)
 			if !published && (ringNamesOvulation || ringShadesFertile) {
 				t.Errorf("ring draws ovulation (%v) or the fertile arc (%v) before three completed cycles", ringNamesOvulation, ringShadesFertile)
 			}
-			if published && !(ringNamesOvulation && ringShadesFertile) {
+			if published && (!ringNamesOvulation || !ringShadesFertile) {
 				t.Error("control: with three completed cycles the ring must draw the ovulation and fertile arcs")
 			}
 		})

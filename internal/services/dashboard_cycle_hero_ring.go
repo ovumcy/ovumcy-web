@@ -7,12 +7,13 @@ import (
 
 // The ring is the at-a-glance form of the same cycle the ribbon draws: phase
 // arcs read off the ribbon's own cells, a thin band hugging their outer edge
-// for the fertile window (inside, it crowded the day number) and a dot on today. It never derives a day of its own, so the two cannot disagree,
-// and what it cannot draw — a start window running past the cycle's end, the
+// for the fertile window (inside, it crowded the day number) and a dot on
+// today. It never derives a day of its own, so the two cannot disagree, and
+// what it cannot draw — a start window running past the cycle's end, the
 // recorded days — stays on the ribbon and in the summary.
 const (
-	dashboardCycleRingCenter      = 60.0
-	dashboardCycleRingRadius      = 48.0
+	dashboardCycleRingCenter        = 60.0
+	dashboardCycleRingRadius        = 48.0
 	dashboardCycleRingFertileRadius = 57.5
 	// dashboardCycleRingGap separates two phase arcs, in viewBox units.
 	dashboardCycleRingGap = 1.5
