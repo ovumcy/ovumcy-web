@@ -19,8 +19,8 @@ func TestOpenDatabaseReportingNamesWhatTheRunnerApplied(t *testing.T) {
 		t.Fatalf("first open: %v", err)
 	}
 	closeOpenedPool(database)
-	if report.Applied != len(embedded) || report.To != newest {
-		t.Fatalf("fresh database report = %+v, want Applied=%d To=%s", report, len(embedded), newest)
+	if report.Applied != len(embedded) || report.SchemaVersion != newest {
+		t.Fatalf("fresh database report = %+v, want Applied=%d SchemaVersion=%s", report, len(embedded), newest)
 	}
 	if got, want := report.String(), "migrations: applied "+strconv.Itoa(len(embedded))+", schema version "+newest; got != want {
 		t.Fatalf("fresh database line = %q, want %q", got, want)
@@ -31,8 +31,8 @@ func TestOpenDatabaseReportingNamesWhatTheRunnerApplied(t *testing.T) {
 		t.Fatalf("second open: %v", err)
 	}
 	closeOpenedPool(database)
-	if report.Applied != 0 || report.To != newest {
-		t.Fatalf("up-to-date report = %+v, want Applied=0 To=%s", report, newest)
+	if report.Applied != 0 || report.SchemaVersion != newest {
+		t.Fatalf("up-to-date report = %+v, want Applied=0 SchemaVersion=%s", report, newest)
 	}
 	if got, want := report.String(), "migrations: none pending, schema version "+newest; got != want {
 		t.Fatalf("up-to-date line = %q, want %q", got, want)

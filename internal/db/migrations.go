@@ -51,16 +51,16 @@ type embeddedMigration struct {
 // migrations it applied and the newest version in the runner's own (numeric)
 // order. No starting version: a gap fill would read as a range upgrade.
 type MigrationReport struct {
-	Applied int
-	To      string
+	Applied       int
+	SchemaVersion string
 }
 
 // String is the boot log line. It names versions only, never connection detail.
 func (report MigrationReport) String() string {
 	if report.Applied == 0 {
-		return fmt.Sprintf("migrations: none pending, schema version %s", report.To)
+		return fmt.Sprintf("migrations: none pending, schema version %s", report.SchemaVersion)
 	}
-	return fmt.Sprintf("migrations: applied %d, schema version %s", report.Applied, report.To)
+	return fmt.Sprintf("migrations: applied %d, schema version %s", report.Applied, report.SchemaVersion)
 }
 
 func applyEmbeddedMigrations(database *gorm.DB, driver Driver) (MigrationReport, error) {
@@ -82,9 +82,11 @@ func applyEmbeddedMigrations(database *gorm.DB, driver Driver) (MigrationReport,
 	if err := refuseASchemaWrittenByANewerBinary(migrations, appliedVersions); err != nil {
 		return report, err
 	}
+	if len(migrations) > 0 {
+		report.SchemaVersion = migrations[len(migrations)-1].Version
+	}
 
 	for _, migration := range migrations {
-		report.To = migration.Version
 		if _, alreadyApplied := appliedVersions[migration.Version]; alreadyApplied {
 			continue
 		}
