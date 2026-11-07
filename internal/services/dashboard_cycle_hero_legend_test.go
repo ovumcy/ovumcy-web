@@ -61,10 +61,10 @@ func TestDashboardCycleHeroLegendNamesOnlyWhatTheCellsDraw(t *testing.T) {
 		{Day: 7, Phase: phaseBeyondProjectedCycle, IsStartWindow: true},
 	}
 	want := DashboardCycleHeroLegend{
-		Phases:           []string{"menstrual", "follicular", "ovulation", "luteal"},
-		Fertile:          DashboardCycleHeroDayRange{StartDay: 3, EndDay: 4},
-		PredictedFlow:    DashboardCycleHeroDayRange{StartDay: 2, EndDay: 2},
-		StartWindow:      DashboardCycleHeroDayRange{StartDay: 6, EndDay: 7},
+		Phases:            []string{"menstrual", "follicular", "ovulation", "luteal"},
+		Fertile:           DashboardCycleHeroDayRange{StartDay: 3, EndDay: 4},
+		PredictedFlow:     DashboardCycleHeroDayRange{StartDay: 2, EndDay: 2},
+		StartWindow:       DashboardCycleHeroDayRange{StartDay: 6, EndDay: 7},
 		StartWindowPhases: []string{"luteal", phaseBeyondProjectedCycle},
 		Logged:            true,
 	}
