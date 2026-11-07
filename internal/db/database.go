@@ -51,14 +51,15 @@ func (config Config) Validate() error {
 }
 
 func OpenDatabase(config Config) (*gorm.DB, error) {
-	database, _, err := openDatabase(config, true)
-	return database, err
+	return openDatabase(config, true, nil)
 }
 
 // OpenDatabaseReporting is OpenDatabase plus what the migration runner did, for
-// the server boot to log.
+// the server boot to log. The report is meaningful only when err is nil.
 func OpenDatabaseReporting(config Config) (*gorm.DB, MigrationReport, error) {
-	return openDatabase(config, true)
+	var report MigrationReport
+	database, err := openDatabase(config, true, &report)
+	return database, report, err
 }
 
 // OpenDatabaseWithoutMigrations opens the same pool and applies nothing.
@@ -77,15 +78,13 @@ func OpenDatabaseReporting(config Config) (*gorm.DB, MigrationReport, error) {
 // columns that predate the migration that is stuck, and must never assume a
 // column a pending migration adds. Everything else keeps using OpenDatabase.
 func OpenDatabaseWithoutMigrations(config Config) (*gorm.DB, error) {
-	database, _, err := openDatabase(config, false)
-	return database, err
+	return openDatabase(config, false, nil)
 }
 
-func openDatabase(config Config, applyMigrations bool) (*gorm.DB, MigrationReport, error) {
-	var report MigrationReport
+func openDatabase(config Config, applyMigrations bool, report *MigrationReport) (*gorm.DB, error) {
 	normalized := config.normalized()
 	if err := normalized.Validate(); err != nil {
-		return nil, report, err
+		return nil, err
 	}
 
 	var (
@@ -99,10 +98,10 @@ func openDatabase(config Config, applyMigrations bool) (*gorm.DB, MigrationRepor
 	case DriverPostgres:
 		database, err = openPostgresConnection(normalized.PostgresURL)
 	default:
-		return nil, report, fmt.Errorf("unsupported DB_DRIVER %q", normalized.Driver)
+		return nil, fmt.Errorf("unsupported DB_DRIVER %q", normalized.Driver)
 	}
 	if err != nil {
-		return nil, report, err
+		return nil, err
 	}
 
 	// The caller owns the handle only when this function returns one: every caller
@@ -121,14 +120,13 @@ func openDatabase(config Config, applyMigrations bool) (*gorm.DB, MigrationRepor
 	}()
 
 	if applyMigrations {
-		report, err = applyEmbeddedMigrations(database, normalized.Driver)
-		if err != nil {
-			return nil, MigrationReport{}, fmt.Errorf("apply embedded migrations: %w", err)
+		if err := applyEmbeddedMigrations(database, normalized.Driver, report); err != nil {
+			return nil, fmt.Errorf("apply embedded migrations: %w", err)
 		}
 	}
 
 	handedToCaller = true
-	return database, report, nil
+	return database, nil
 }
 
 // closeOpenedPool releases the connection pool behind a handle OpenDatabase
