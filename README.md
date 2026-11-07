@@ -27,6 +27,7 @@
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://github.com/ovumcy/ovumcy-web/pkgs/container/ovumcy-web"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fovumcy%2Fovumcy-web%2Fbadges%2Fpulls.json&logo=docker" alt="GHCR pulls"></a>
   <a href="https://hub.docker.com/r/ovumcy/ovumcy-web"><img src="https://img.shields.io/docker/pulls/ovumcy/ovumcy-web" alt="Docker Hub pulls"></a>
+  <a href="https://mastodon.social/@ovumcy"><img src="https://img.shields.io/badge/Mastodon-@ovumcy-6364FF?logo=mastodon&logoColor=white" alt="Mastodon: @ovumcy"></a>
 </p>
 
 <p align="center">
