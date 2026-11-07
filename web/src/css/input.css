@@ -1186,15 +1186,15 @@
 
 @utility dashboard-cycle-ring-fertile {
   fill: none;
-  stroke-width: 5;
-  stroke-linecap: round;
+  stroke-width: 3.5;
+  stroke-linecap: butt;
   stroke: rgb(var(--cal-fertile-ink) / 0.9);
 }
 
 @utility dashboard-cycle-ring-today {
   fill: var(--surface-card);
   stroke-width: 3.5;
-  stroke: rgb(var(--cal-today));
+  stroke: var(--ink-strong);
 }
 
 @utility dashboard-cycle-lead-day {
@@ -1366,7 +1366,7 @@
   }
 
   &[data-today='true'] {
-    box-shadow: inset 0 0 0 2px rgb(var(--cal-today));
+    box-shadow: inset 0 0 0 2px var(--ink-strong);
     z-index: 1;
   }
 
@@ -1384,6 +1384,21 @@
 
   &[data-swatch='true'][data-phase='beyond'] {
     background-color: var(--surface-quiet);
+  }
+
+  /* The fertile and logged marks are edge strips on the ribbon; as a swatch
+     on an empty cell they read as a blank box with a hairline. The swatch is
+     the strip itself instead. */
+  &[data-swatch='true'][data-phase='beyond']:is([data-fertile='true'], [data-logged='true']) {
+    height: 0.4rem;
+    background-color: transparent;
+    box-shadow: none;
+    border-radius: 2px;
+  }
+
+  &[data-swatch='true'][data-fertile='true']::after,
+  &[data-swatch='true'][data-logged='true']::before {
+    height: 100%;
   }
 }
 
@@ -1450,7 +1465,7 @@
     bottom: -0.3rem;
     transform: translateX(-50%);
     border-inline: 0.3rem solid transparent;
-    border-top: 0.3rem solid rgb(var(--cal-today));
+    border-top: 0.3rem solid var(--ink-strong);
   }
 }
 
@@ -5753,12 +5768,12 @@
 
 /* Which cycle views the dashboard draws. A stored viewer preference
    (theme-bootstrap.js sets data-cycle-ring / data-cycle-ribbon to "on" or
-   "off" before first paint) wins on every screen; with none stored, a desktop
-   shows both and a phone only the ring, whose arcs stay legible where a
-   ribbon cell is a few pixels wide. The summary and the key are outside the
-   ribbon view, so a hidden ribbon takes only its own entries with it; the
-   60-day cap notice stays, since the ring stops at the same cap. Unlayered so
-   no display utility on these elements can tie with it. */
+   "off" before first paint) hides a view; with none stored, every screen shows
+   both — a phone without the ribbon had no picture of the next-period window.
+   The summary and the key are outside the ribbon view, so a hidden ribbon
+   takes only its own entries with it; the 60-day cap notice stays, since the
+   ring stops at the same cap. Unlayered so no display utility on these
+   elements can tie with it. */
 :root[data-cycle-ring='off'] [data-dashboard-cycle-ring],
 :root[data-cycle-ribbon='off'] :is([data-cycle-ribbon-view], [data-legend-scope='ribbon']) {
   display: none;
@@ -5767,14 +5782,6 @@
 :root[data-cycle-ring='off'] .dashboard-cycle-lead {
   width: auto;
   height: auto;
-}
-
-/* A phone whose viewer turned the ring off keeps the ribbon: no default may
-   leave the dashboard with neither view. */
-@media (max-width: 640px) {
-  :root:not([data-cycle-ribbon='on']):not([data-cycle-ring='off']) :is([data-cycle-ribbon-view], [data-legend-scope='ribbon']) {
-    display: none;
-  }
 }
 
 /* Forced colours (a Windows contrast theme). The browser repaints every

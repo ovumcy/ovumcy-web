@@ -251,8 +251,8 @@
           }
 
           writeStoredTheme(selection.theme);
-          // Only a changed choice is stored: saving a language on a desktop
-          // must not pin the desktop's default views onto the owner's phone.
+          // Only a changed choice is stored: saving a language must not pin
+          // the default views as if the owner had picked them.
           var savedViews = this.__ovumcySettingsInterfaceState && this.__ovumcySettingsInterfaceState.initial;
           if (!savedViews || savedViews.ring !== selection.ring || savedViews.ribbon !== selection.ribbon) {
             writeStoredCycleViews(selection);

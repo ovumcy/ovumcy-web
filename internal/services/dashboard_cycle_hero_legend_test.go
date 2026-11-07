@@ -65,8 +65,8 @@ func TestDashboardCycleHeroLegendNamesOnlyWhatTheCellsDraw(t *testing.T) {
 		Fertile:          DashboardCycleHeroDayRange{StartDay: 3, EndDay: 4},
 		PredictedFlow:    DashboardCycleHeroDayRange{StartDay: 2, EndDay: 2},
 		StartWindow:      DashboardCycleHeroDayRange{StartDay: 6, EndDay: 7},
-		StartWindowPhase: "luteal",
-		Logged:           true,
+		StartWindowPhases: []string{"luteal", phaseBeyondProjectedCycle},
+		Logged:            true,
 	}
 	if got := dashboardCycleHeroLegendFor(days); !reflect.DeepEqual(got, want) {
 		t.Fatalf("legend = %+v, want %+v", got, want)
