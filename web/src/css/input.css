@@ -5049,8 +5049,8 @@
        card: 2.20:1, the same deliberately recessive band as follicular and
        luteal, and 1.54:1 against menstrual beside it. */
     --phase-menstrual: var(--cal-period);
-    --phase-follicular: 229 192 150;
-    --phase-ovulation: 172 127 36;
+    --phase-follicular: 160 196 232;
+    --phase-ovulation: 24 152 142;
     --phase-luteal: 183 161 212;
     --phase-withheld: 179 174 168;
     /* ---- end calendar phase/state colours ------------------------------ */
@@ -5347,8 +5347,8 @@
        darker than the light theme's neutral rather than a flip of it, for the
        ladder reason above: a mid-grey selected for the light card lands at
        1.27:1 from menstrual here, which is the one pair that has to separate. */
-    --phase-follicular: 143 105 68;
-    --phase-ovulation: 236 196 110;
+    --phase-follicular: 68 110 160;
+    --phase-ovulation: 92 210 192;
     --phase-luteal: 121 96 160;
     --phase-withheld: 112 108 118;
     /* ---- end calendar phase/state colours — dark ------------------------ */
