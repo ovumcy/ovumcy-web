@@ -176,37 +176,12 @@ func closeDatabase(database *gorm.DB) {
 }
 
 func mustOpenDatabase(databaseConfig db.Config) *gorm.DB {
-	database, err := db.OpenDatabase(databaseConfig)
+	database, report, err := db.OpenDatabaseReporting(databaseConfig)
 	if err != nil {
 		log.Fatalf("database init failed: %v", err)
 	}
-	logMigrationStatus(database)
+	log.Print(report.String())
 	return database
-}
-
-// migrationStatusMessage names how many migrations are recorded and the newest
-// version, read from the schema_migrations table. It carries no connection
-// detail.
-func migrationStatusMessage(database *gorm.DB) (string, error) {
-	var status struct {
-		Count   int
-		Version string
-	}
-	if err := database.Raw("SELECT COUNT(*) AS count, COALESCE(MAX(version), '') AS version FROM schema_migrations").Scan(&status).Error; err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("migrations applied: %d recorded, schema version %s", status.Count, status.Version), nil
-}
-
-// logMigrationStatus writes the post-migration line; a failed read is
-// reported but never stops the boot.
-func logMigrationStatus(database *gorm.DB) {
-	message, err := migrationStatusMessage(database)
-	if err != nil {
-		log.Printf("migration status unavailable: %v", err)
-		return
-	}
-	log.Print(message)
 }
 
 // bootPassStorageBudget is how long any one boot repair or sentinel pass may

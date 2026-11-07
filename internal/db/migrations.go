@@ -47,40 +47,67 @@ type embeddedMigration struct {
 	SQL     string
 }
 
-func applyEmbeddedMigrations(database *gorm.DB, driver Driver) error {
+// MigrationReport says what one OpenDatabase call did to the schema. From and
+// To are migration versions in the runner's own (numeric) order; From is empty
+// on a fresh database.
+type MigrationReport struct {
+	Applied int
+	From    string
+	To      string
+}
+
+// String is the boot log line. It names versions only, never connection detail.
+func (report MigrationReport) String() string {
+	if report.Applied == 0 {
+		return fmt.Sprintf("migrations: none pending, schema version %s", report.To)
+	}
+	from := report.From
+	if from == "" {
+		from = "empty"
+	}
+	return fmt.Sprintf("migrations: applied %d (%s -> %s)", report.Applied, from, report.To)
+}
+
+func applyEmbeddedMigrations(database *gorm.DB, driver Driver) (MigrationReport, error) {
+	var report MigrationReport
 	if err := ensureSchemaMigrationsTable(database); err != nil {
-		return err
+		return report, err
 	}
 
 	migrations, err := loadEmbeddedMigrations(driver)
 	if err != nil {
-		return err
+		return report, err
 	}
 
 	appliedVersions, err := loadAppliedMigrationVersions(database)
 	if err != nil {
-		return err
+		return report, err
 	}
 
 	if err := refuseASchemaWrittenByANewerBinary(migrations, appliedVersions); err != nil {
-		return err
+		return report, err
 	}
 
 	for _, migration := range migrations {
+		report.To = migration.Version
 		if _, alreadyApplied := appliedVersions[migration.Version]; alreadyApplied {
+			if report.Applied == 0 {
+				report.From = migration.Version
+			}
 			continue
 		}
 
 		if err := refuseTableDropReplayOnANewerSchema(migration, appliedVersions); err != nil {
-			return err
+			return report, err
 		}
 
 		if err := applyMigration(database, migration); err != nil {
-			return err
+			return report, err
 		}
+		report.Applied++
 	}
 
-	return nil
+	return report, nil
 }
 
 func ensureSchemaMigrationsTable(database *gorm.DB) error {

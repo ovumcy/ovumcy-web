@@ -51,6 +51,13 @@ func (config Config) Validate() error {
 }
 
 func OpenDatabase(config Config) (*gorm.DB, error) {
+	database, _, err := openDatabase(config, true)
+	return database, err
+}
+
+// OpenDatabaseReporting is OpenDatabase plus what the migration runner did, for
+// the server boot to log.
+func OpenDatabaseReporting(config Config) (*gorm.DB, MigrationReport, error) {
 	return openDatabase(config, true)
 }
 
@@ -70,13 +77,15 @@ func OpenDatabase(config Config) (*gorm.DB, error) {
 // columns that predate the migration that is stuck, and must never assume a
 // column a pending migration adds. Everything else keeps using OpenDatabase.
 func OpenDatabaseWithoutMigrations(config Config) (*gorm.DB, error) {
-	return openDatabase(config, false)
+	database, _, err := openDatabase(config, false)
+	return database, err
 }
 
-func openDatabase(config Config, applyMigrations bool) (*gorm.DB, error) {
+func openDatabase(config Config, applyMigrations bool) (*gorm.DB, MigrationReport, error) {
+	var report MigrationReport
 	normalized := config.normalized()
 	if err := normalized.Validate(); err != nil {
-		return nil, err
+		return nil, report, err
 	}
 
 	var (
@@ -90,10 +99,10 @@ func openDatabase(config Config, applyMigrations bool) (*gorm.DB, error) {
 	case DriverPostgres:
 		database, err = openPostgresConnection(normalized.PostgresURL)
 	default:
-		return nil, fmt.Errorf("unsupported DB_DRIVER %q", normalized.Driver)
+		return nil, report, fmt.Errorf("unsupported DB_DRIVER %q", normalized.Driver)
 	}
 	if err != nil {
-		return nil, err
+		return nil, report, err
 	}
 
 	// The caller owns the handle only when this function returns one: every caller
@@ -112,13 +121,14 @@ func openDatabase(config Config, applyMigrations bool) (*gorm.DB, error) {
 	}()
 
 	if applyMigrations {
-		if err := applyEmbeddedMigrations(database, normalized.Driver); err != nil {
-			return nil, fmt.Errorf("apply embedded migrations: %w", err)
+		report, err = applyEmbeddedMigrations(database, normalized.Driver)
+		if err != nil {
+			return nil, MigrationReport{}, fmt.Errorf("apply embedded migrations: %w", err)
 		}
 	}
 
 	handedToCaller = true
-	return database, nil
+	return database, report, nil
 }
 
 // closeOpenedPool releases the connection pool behind a handle OpenDatabase
