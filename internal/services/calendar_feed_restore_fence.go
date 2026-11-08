@@ -46,10 +46,10 @@ type calendarFeedRestoreFenceAnchor interface {
 const calendarFeedFenceFirstBootPrefix = "first-boot-pending:"
 
 // calendarFeedFenceSoloRecordTimeout bounds the marker record commitAfterFile
-// makes alone after a failed commit. That record deliberately drops the
-// caller's cancellation, so without a deadline of its own a storage call that
-// never answers would hold fence.writing — and every later session writer —
-// indefinitely.
+// makes alone after a failed commit. The caller holds fence.writing, so a
+// storage call that never answers would otherwise hold every later session
+// writer for as long as the caller's own context allows — the CLI's has no
+// deadline at all.
 const calendarFeedFenceSoloRecordTimeout = 10 * time.Second
 
 // CalendarFeedRestoreFenceOutcome reports what one Enforce pass did, for the
@@ -472,19 +472,17 @@ func (fence *CalendarFeedRestoreFence) advanceLocked(ctx context.Context, diverg
 // again over a row that did not change, which no restore can turn into a
 // revival, and commit's own error is returned unchanged so the caller still
 // sees why its write failed. Only if that record fails as well is the result
-// wrapped in ErrCalendarFeedFenceHalfAdvanced. The record runs without ctx's
-// cancellation: a cancelled request is the likeliest cause of the failed
-// commit, and must not turn a refused write into an instance-wide revocation.
-// It runs under its own deadline instead (calendarFeedFenceSoloRecordTimeout),
-// because the caller holds fence.writing and a record that never returns would
-// stall every later session writer; a record that times out fails like any
-// other, into ErrCalendarFeedFenceHalfAdvanced (fail closed).
+// wrapped in ErrCalendarFeedFenceHalfAdvanced. The record runs on ctx, bounded
+// by calendarFeedFenceSoloRecordTimeout because the caller holds fence.writing:
+// a services call never detaches from its caller's deadline, so a context
+// already cancelled or expired fails the record too, into
+// ErrCalendarFeedFenceHalfAdvanced — fail closed, the next boot revokes.
 func (fence *CalendarFeedRestoreFence) commitAfterFile(ctx context.Context, token string, commit CalendarFeedFenceCommit) error {
 	commitErr := commit(token)
 	if commitErr == nil {
 		return nil
 	}
-	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), calendarFeedFenceSoloRecordTimeout)
+	recordCtx, cancel := context.WithTimeout(ctx, calendarFeedFenceSoloRecordTimeout)
 	defer cancel()
 	if err := fence.appState.Set(recordCtx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
 		return errors.Join(commitErr, &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err})
