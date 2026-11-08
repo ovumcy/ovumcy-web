@@ -126,7 +126,11 @@ func (service *OperatorUserService) DeleteUserByID(ctx context.Context, userID u
 
 func (service *OperatorUserService) deleteUser(ctx context.Context, userSummary models.OperatorUserSummary) (models.OperatorUserSummary, error) {
 	if deleteErr := service.users.DeleteAccountAndRelatedData(ctx, userSummary.ID); deleteErr != nil {
-		return models.OperatorUserSummary{}, fmt.Errorf("%w: %v", ErrOperatorUserDeleteFailed, deleteErr)
+		// %w on both: the delete advances the calendar-feed restore fence
+		// inside its own transaction, so deleteErr may be the fence's refusal
+		// or its half-advanced outcome, which the operator CLI classifies with
+		// errors.Is/errors.As — a %v here would flatten it into text.
+		return models.OperatorUserSummary{}, fmt.Errorf("%w: %w", ErrOperatorUserDeleteFailed, deleteErr)
 	}
 
 	return userSummary, nil
@@ -188,7 +192,9 @@ func (service *OperatorUserService) SetEmailByID(ctx context.Context, userID uin
 		if isRegistrationUniqueConstraintError(err) {
 			return models.OperatorUserSummary{}, models.OperatorUserSummary{}, ErrOperatorUserEmailExists
 		}
-		return models.OperatorUserSummary{}, models.OperatorUserSummary{}, fmt.Errorf("%w: %v", ErrOperatorUserSetEmailFailed, err)
+		// %w on both, for the reason deleteUser gives: the re-home advances
+		// the restore fence inside its own transaction.
+		return models.OperatorUserSummary{}, models.OperatorUserSummary{}, fmt.Errorf("%w: %w", ErrOperatorUserSetEmailFailed, err)
 	}
 	if !changed {
 		return models.OperatorUserSummary{}, models.OperatorUserSummary{}, ErrOperatorUserChangedUnderRepair
