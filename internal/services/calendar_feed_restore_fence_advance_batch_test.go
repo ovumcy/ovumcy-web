@@ -128,7 +128,7 @@ func TestEveryConfirmedAdvanceAdvancesInsideItsOwnWrite(t *testing.T) {
 				t.Fatal("the gate must write neither half: the advance belongs inside the operator's write")
 			}
 
-			for round := 0; round < 2; round++ {
+			for round := range 2 {
 				before := anchor.value
 				if err := advance(fence, ctx, commitMarker(appState)); err != nil {
 					t.Fatalf("round %d: %v", round, err)
@@ -207,7 +207,7 @@ func TestConcurrentAdvanceOrRefuseCallsEachTakeTheirOwnToken(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 	close(anchor.release)
-	for i := 0; i < callers; i++ {
+	for range callers {
 		if err := <-errs; err != nil {
 			t.Fatalf("AdvanceOrRefuse: %v", err)
 		}

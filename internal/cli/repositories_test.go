@@ -82,6 +82,10 @@ type fakeConfirmFenceAnchor struct {
 	// test, with a marker the test inserts by hand) so a caller can prove WHEN
 	// each write happened relative to the others, not merely that it happened.
 	journal *[]string
+	// onWrite, when set, runs at the instant the file half is written, before
+	// it is recorded — so an ordering test can look at the database at that
+	// moment and prove the protected row has not committed yet.
+	onWrite func()
 }
 
 func (f *fakeConfirmFenceAnchor) Read() (string, bool, error) {
@@ -94,6 +98,9 @@ func (f *fakeConfirmFenceAnchor) Read() (string, bool, error) {
 func (f *fakeConfirmFenceAnchor) Write(value string) error {
 	if f.writeErr != nil {
 		return f.writeErr
+	}
+	if f.onWrite != nil {
+		f.onWrite()
 	}
 	if f.journal != nil {
 		*f.journal = append(*f.journal, "anchor")
@@ -161,6 +168,13 @@ const confirmFenceTestToken = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 // the positive anchor every refusal test below needs: without it, a
 // confirmOperatorFeedRevocation that always refused would pass every case
 // that only checks for an error.
+//
+// The gate itself writes nothing (WEB-505): it confirms continuity and arms
+// the fail-closed form, and the advance runs inside the operator's own write,
+// which records the marker in its transaction. So the gate leaves both halves
+// where they were, and the advance that follows hands its commit the fresh
+// token the file already holds — never through app_state's own Set, which
+// would commit the marker apart from the row.
 func TestConfirmOperatorFeedRevocationSucceedsAndAdvancesWhenTheHalvesAgree(t *testing.T) {
 	appState := &fakeConfirmFenceAppState{values: map[string]string{
 		models.AppStateKeyCalendarFeedRestoreFence: confirmFenceTestToken,
@@ -173,16 +187,26 @@ func TestConfirmOperatorFeedRevocationSucceedsAndAdvancesWhenTheHalvesAgree(t *t
 	if err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, &errOutput); err != nil {
 		t.Fatalf("confirmOperatorFeedRevocation: %v", err)
 	}
-
-	if advanced := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; advanced == confirmFenceTestToken || advanced == "" {
-		t.Fatalf("a confirmed revocation must advance the database half, got %q", advanced)
+	if anchor.written != "" || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != confirmFenceTestToken {
+		t.Fatalf("the gate must write neither half, file %q app_state %q", anchor.written, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
 	}
-	if anchor.written == "" || anchor.written != appState.values[models.AppStateKeyCalendarFeedRestoreFence] {
-		t.Fatalf("both halves must hold the same fresh token, file %q app_state %q", anchor.written, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
+
+	committed := ""
+	if err := fence.Advance(context.Background(), func(token string) error {
+		committed = token
+		return nil
+	}); err != nil {
+		t.Fatalf("Advance after the gate: %v", err)
+	}
+	if committed == "" || committed == confirmFenceTestToken || committed != anchor.written {
+		t.Fatalf("the write's commit must receive the fresh token the file already holds, commit %q file %q", committed, anchor.written)
+	}
+	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != confirmFenceTestToken {
+		t.Fatalf("the marker belongs to the write's transaction, not app_state.Set, got %q", got)
 	}
 
 	line := errOutput.String()
-	for _, want := range []string{fencePath, "fence advanced", "recorded outside the database"} {
+	for _, want := range []string{fencePath, "continuity confirmed", "recorded outside the database"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("the success line must contain %q, got %q", want, line)
 		}
@@ -330,6 +354,23 @@ func TestConfirmOperatorFeedRevocationRefusesAndWritesNothing(t *testing.T) {
 	}
 }
 
+// halfAdvanceConfirmedFence drives the one operator outcome after which
+// something did change: the gate confirms, the advance writes the file, the
+// write's transaction fails, and recording the token alone fails too (setErr
+// on appState). It returns what the subcommand would hand the operator.
+func halfAdvanceConfirmedFence(t *testing.T, fence *services.CalendarFeedRestoreFence, fencePath string) error {
+	t.Helper()
+
+	if err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, &bytes.Buffer{}); err != nil {
+		t.Fatalf("the gate must confirm an agreeing pair: %v", err)
+	}
+	writeErr := fence.Advance(context.Background(), func(string) error { return errors.New("account write rolled back") })
+	if !errors.Is(writeErr, services.ErrCalendarFeedFenceHalfAdvanced) {
+		t.Fatalf("a failed write whose token could not be recorded alone must be half-advanced, got %v", writeErr)
+	}
+	return operatorFeedRevocationCommitted(fencePath, writeErr, func(err error) error { return err })
+}
+
 // TestConfirmOperatorFeedRevocationNamesTheHalfAdvancedFenceInsteadOfClaimingNothingChanged
 // pins the one refusal after which something did change: the file half moved
 // and the database write then failed. Every other refusal ends "Nothing was
@@ -343,7 +384,7 @@ func TestConfirmOperatorFeedRevocationNamesTheHalfAdvancedFenceInsteadOfClaiming
 	anchor := &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true}
 	fence := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
 
-	err := confirmOperatorFeedRevocation(context.Background(), "/app/fence/calendar-feed.fence", fence, &bytes.Buffer{})
+	err := halfAdvanceConfirmedFence(t, fence, "/app/fence/calendar-feed.fence")
 	if err == nil {
 		t.Fatal("expected a refusal")
 	}
@@ -385,7 +426,7 @@ func TestConfirmOperatorFeedRevocationHalfAdvancedRemedyIsAServerBootNotABareRer
 	anchor := &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true}
 	fence := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
 
-	firstErr := confirmOperatorFeedRevocation(context.Background(), "/app/fence/calendar-feed.fence", fence, &bytes.Buffer{})
+	firstErr := halfAdvanceConfirmedFence(t, fence, "/app/fence/calendar-feed.fence")
 	if firstErr == nil {
 		t.Fatal("expected the first call to refuse with a half-advanced fence")
 	}
@@ -399,8 +440,11 @@ func TestConfirmOperatorFeedRevocationHalfAdvancedRemedyIsAServerBootNotABareRer
 	// The database answers again, exactly as the half-advanced message's OLD
 	// remedy told the operator to wait for — but the file half is still ahead
 	// of it, which only a server boot reconciles.
+	// A re-run is a new process, so it builds its own fence over the same two
+	// halves.
 	appState.setErr = nil
-	err := confirmOperatorFeedRevocation(context.Background(), "/app/fence/calendar-feed.fence", fence, &bytes.Buffer{})
+	rerun := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
+	err := confirmOperatorFeedRevocation(context.Background(), "/app/fence/calendar-feed.fence", rerun, &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("expected the second call to still refuse: a bare re-run is not the remedy")
 	}
@@ -481,7 +525,7 @@ func TestConfirmOperatorFeedRevocationNamesTheAnchorMissingWhenTheDatabaseIsArme
 }
 
 // TestConfirmOperatorFeedRevocationRejectsANilFenceInsteadOfPanicking covers
-// a wiring mistake, not an operator state: fence.AdvanceConfirmed's receiver
+// a wiring mistake, not an operator state: fence.ConfirmAdvances' receiver
 // touches fence.writing (a sync.Mutex field) before anything else, so calling
 // it on a nil *services.CalendarFeedRestoreFence panics with a nil-pointer
 // dereference. Every production caller gets its fence from buildRepositories,
