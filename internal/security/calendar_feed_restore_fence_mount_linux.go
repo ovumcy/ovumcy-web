@@ -53,7 +53,7 @@ func statDevice(path string) (uint64, error) {
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return 0, fmt.Errorf("stat %s: no device number", path)
+		return 0, fmt.Errorf("stat %s: no device number", path) // codecov:ignore -- os.Stat on linux always carries a *syscall.Stat_t
 	}
 	return uint64(stat.Dev), nil //nolint:unconvert // Dev is uint64 on amd64 but not on every linux GOARCH
 }
