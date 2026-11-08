@@ -115,52 +115,55 @@ func confirmOperatorFeedRevocation(ctx context.Context, fencePath string, fence 
 		// never hands back nil. Reaching this is a wiring mistake in the
 		// caller, not an operator state, so it gets its own plain error rather
 		// than the operator-facing refusal template — and, more importantly,
-		// never reaches fence.AdvanceConfirmed, whose receiver would panic on
+		// never reaches fence.ConfirmAdvances, whose receiver would panic on
 		// a nil fence the moment it touched the mutex it embeds.
 		return errors.New("calendar-feed restore fence: no fence was wired for this command (internal error)")
 	}
 
-	if err := fence.AdvanceConfirmed(ctx); err != nil {
+	if err := fence.ConfirmAdvances(ctx); err != nil {
 		if state, cause, ok := calendarFeedFenceStateForRefusal(err); ok {
 			return calendarFeedFenceConfirmRefusal(fencePath, state, cause)
 		}
-		switch {
-		case errors.Is(err, services.ErrCalendarFeedFenceHalfAdvanced):
-			// The one refusal after which something HAS changed: the fence file
-			// moved and app_state did not, so the server's next start disarms
-			// every armed feed (fail closed). The caller's own write never
-			// ran, and the message must say both rather than the "Nothing was
-			// changed" every other refusal ends with. The remedy is a server
-			// boot, never a bare retry: re-running this same command reads the
-			// file this run just wrote against the SAME stale database marker
-			// and only reports the disagreement a second time.
-			return fmt.Errorf("%w. The fence file at %s is now ahead of the database marker, so the server's next start disarms every armed calendar feed. "+
-				"Start the server once — its boot pass reconciles both halves — then re-run this command. The account was not changed", err, fencePath)
-		default:
-			// AdvanceConfirmed's contract: every error raised after the file
-			// write wraps ErrCalendarFeedFenceHalfAdvanced, so whatever reaches
-			// here — in practice only a token that could not be minted — left
-			// both halves untouched.
-			return fmt.Errorf("%w. Nothing was changed", err) // codecov:ignore -- reached only through the token-mint failure AdvanceConfirmed itself marks unreachable
-		}
+		// ConfirmAdvances writes nothing on any outcome, and every error it
+		// returns is one calendarFeedFenceStateForRefusal classifies.
+		return fmt.Errorf("%w. Nothing was changed", err) // codecov:ignore -- ConfirmAdvances returns only classified refusals
 	}
 
-	_, _ = fmt.Fprintf(errOutput, "calendar-feed restore fence: fence advanced at %s; the change that follows is recorded outside the database\n", fencePath)
+	_, _ = fmt.Fprintf(errOutput, "calendar-feed restore fence: continuity confirmed at %s; the change that follows has the fence advanced and recorded outside the database in the same step as its own write\n", fencePath)
 	return nil
 }
 
 // operatorFeedRevocationCommitted is what a subcommand wraps its own write
 // failure in once confirmOperatorFeedRevocation has already returned nil. The
-// fence advance is one-shot and it has already happened, so a bare write error
-// reads as "the command did nothing" — false about the fence, true about the
-// account, and the operator needs both stated.
+// fence advance runs inside that write (WEB-505): the file first, then the
+// marker in the write's own transaction. So the write's error may be the
+// fence's own refusal — the continuity confirmed at the gate no longer holds,
+// or the file could not be written — which never ran the write and is
+// rendered as the same refusal the gate gives; or a fence left half-advanced,
+// which says so; or the account write's own failure, wrapped by mapWrite.
 //
-// Both halves of the fence hold the same fresh token, so nothing is left
-// inconsistent and the server's next start disarms nothing on account of it.
-// Re-running the command is safe, and is the whole remedy.
-func operatorFeedRevocationCommitted(err error) error {
-	return fmt.Errorf("%w. The calendar-feed restore fence was already advanced for this command, in both halves, so no feed is disarmed by it "+
-		"and the server's next start has nothing to reconcile — but the account itself was not changed. Re-run the command", err)
+// After the account write's own failure the fence's two halves agree — either
+// the advance never ran, or its token was recorded alone once the
+// transaction rolled back — so the server's next start disarms nothing on
+// account of it. Re-running the command is safe, and is the whole remedy.
+func operatorFeedRevocationCommitted(fencePath string, err error, mapWrite func(error) error) error {
+	if state, cause, ok := calendarFeedFenceStateForRefusal(err); ok {
+		return calendarFeedFenceConfirmRefusal(fencePath, state, cause)
+	}
+	if errors.Is(err, services.ErrCalendarFeedFenceHalfAdvanced) {
+		// The one failure after which something HAS changed: the fence file
+		// moved and app_state did not, so the server's next start runs its
+		// full restore revocation (fail closed). The account write never
+		// committed, and the message must say both rather than "Nothing was
+		// changed". The remedy is a server boot, never a bare retry:
+		// re-running this same command reads the file this run just wrote
+		// against the SAME stale database marker and only reports the
+		// disagreement a second time.
+		return fmt.Errorf("%w. The fence file at %s is now ahead of the database marker, so the server's next start disarms every armed calendar feed. "+
+			"Start the server once — its boot pass reconciles both halves — then re-run this command. The account was not changed", err, fencePath)
+	}
+	return fmt.Errorf("%w. The calendar-feed restore fence was already advanced for this command, or never reached, and either way its two halves agree, so no feed is disarmed by it "+
+		"and the server's next start has nothing to reconcile — but the account itself was not changed. Re-run the command", mapWrite(err))
 }
 
 // calendarFeedFenceConfirmState names the shape confirmOperatorFeedRevocation

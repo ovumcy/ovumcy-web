@@ -160,7 +160,7 @@ func runUsersDelete(service *services.OperatorUserService, fencePath string, fen
 
 	deletedUser, err := opts.delete(service)
 	if err != nil {
-		return operatorFeedRevocationCommitted(mapUsersDeleteError(err, opts.userID, normalizedEmail))
+		return operatorFeedRevocationCommitted(fencePath, err, func(err error) error { return mapUsersDeleteError(err, opts.userID, normalizedEmail) })
 	}
 	_, _ = fmt.Fprintf(output, "Deleted account %q (id=%d).\n", deletedUser.Email, deletedUser.ID)
 	return nil
@@ -430,7 +430,7 @@ func runUsersSetEmail(service *services.OperatorUserService, fencePath string, f
 	case gateErr != nil:
 		return gateErr
 	case err != nil && gateRan:
-		return operatorFeedRevocationCommitted(mapUsersSetEmailError(err, opts.userID))
+		return operatorFeedRevocationCommitted(fencePath, err, func(err error) error { return mapUsersSetEmailError(err, opts.userID) })
 	case err != nil:
 		return mapUsersSetEmailError(err, opts.userID)
 	}

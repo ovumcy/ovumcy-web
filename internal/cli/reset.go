@@ -209,7 +209,7 @@ func runResetPassword(operatorUsers *services.OperatorUserService, authService *
 	}
 
 	if resetErr := authService.ForceResetPasswordByID(context.Background(), target.ID, newPassword, opts.full); resetErr != nil {
-		return operatorFeedRevocationCommitted(mapResetPasswordError(resetErr, opts, normalizedEmail))
+		return operatorFeedRevocationCommitted(fencePath, resetErr, func(err error) error { return mapResetPasswordError(err, opts, normalizedEmail) })
 	}
 
 	_, _ = fmt.Fprintln(output, "✅ Password reset successful")
