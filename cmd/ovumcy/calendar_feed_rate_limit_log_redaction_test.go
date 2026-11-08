@@ -103,9 +103,10 @@ func TestCalendarFeedRateLimitLogMasksTheTokenOnEveryCaseOfTheSuffix(t *testing.
 // stack with spellings the feed route does NOT dispatch — a doubled or trailing
 // suffix, another extension, an encoded dot, a mixed-case doubled suffix, a
 // trailing slash on the real one — and asserts the token reaches no log sink.
-// Those requests fall through to the not-found handler, whose route carries no
-// template of its own, so the request logger masks from the raw path; nothing
-// else stands between a near-miss and a verbatim bearer token in the log. The
+// Those requests fall through to the not-found handler, whose matched route
+// path is `/`, and the request logger writes that route path rather than the
+// raw request path; nothing else stands between a near-miss and a verbatim
+// bearer token in the log. The
 // real suffix is the positive control: the same logger must have written a line
 // for it, or an empty sink would pass every row.
 func TestCalendarFeedNearMissSuffixesNeverReachTheRequestLog(t *testing.T) {
