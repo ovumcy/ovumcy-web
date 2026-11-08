@@ -7,5 +7,6 @@
   been restored. The image now sets `CALENDAR_FEED_FENCE_REQUIRE_MOUNT=true`: the fence directory
   must be a mounted volume (named volume, bind mount or Kubernetes volume, checked by device and
   `/proc/self/mountinfo`), or the start is refused, naming `CALENDAR_FEED_FENCE_PATH` and writing
-  nothing. Mount a volume at `/app/fence`, or set `CALENDAR_FEED_FENCE_OPTOUT=true` to accept
+  nothing. A `tmpfs` or `ramfs` there (`--tmpfs /app/fence`) is refused as well, since it loses the
+  fence on every restart. Mount a volume at `/app/fence`, or set `CALENDAR_FEED_FENCE_OPTOUT=true` to accept
   running without a fence. A bare binary leaves the variable unset and is unchanged.

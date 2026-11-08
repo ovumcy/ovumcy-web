@@ -81,6 +81,8 @@ func TestCalendarFeedFenceMountJudgmentAcceptsEveryMountedShape(t *testing.T) {
 		{"Docker Desktop grpcfuse bind", "/app/fence", "1243 1234 0:120 /run/desktop/mnt/host/d/fence /app/fence rw,nosuid,nodev,relatime - fuse.grpcfuse grpcfuse rw", 0},
 		{"WSL 9p bind", "/app/fence", "1243 1234 0:121 / /app/fence rw,noatime - 9p drvfs rw,aname=drvfs;path=D:\\fence", 0},
 		{"mount point with an escaped space", "/app/my fence", `1243 1234 8:1 /x /app/my\040fence rw - ext4 /dev/sda1 rw`, 0},
+		{"on-disk volume nearer than a tmpfs ancestor", "/app/fence", "1243 1234 0:200 / /app rw,nosuid,nodev - tmpfs tmpfs rw\n1244 1243 8:1 /var/lib/docker/volumes/ovumcy_fence/_data /app/fence rw,relatime - ext4 /dev/sda1 rw", 0},
+		{"on-disk volume stacked over a tmpfs at the same point", "/app/fence", "1243 1234 0:200 / /app/fence rw - tmpfs tmpfs rw\n1244 1234 8:1 /var/lib/docker/volumes/ovumcy_fence/_data /app/fence rw - ext4 /dev/sda1 rw", 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -93,6 +95,59 @@ func TestCalendarFeedFenceMountJudgmentAcceptsEveryMountedShape(t *testing.T) {
 				t.Fatalf("a mounted fence directory must be accepted, got %v", err)
 			}
 		})
+	}
+}
+
+// TestCalendarFeedFenceInMemoryMountIsRefused pins the volatile-mount half of
+// WEB-506: a tmpfs or ramfs at the fence directory or at its nearest covering
+// ancestor has its own device and its own mountinfo entry — each signal alone
+// would accept it — yet loses the fence on every container restart, which the
+// next start reads as a restore. `--tmpfs /app/fence` is the shape an operator
+// on a read-only root filesystem adds after the unwritable-fence refusal. Every
+// case carries a device different from the root's, so the refusal can only
+// come from the covering mount's filesystem type.
+func TestCalendarFeedFenceInMemoryMountIsRefused(t *testing.T) {
+	cases := []struct {
+		name      string
+		mountLine string
+		fsType    string
+		covering  string
+	}{
+		{"tmpfs at the fence directory", "1243 1234 0:200 / /app/fence rw,nosuid,nodev,noexec,relatime - tmpfs tmpfs rw,size=65536k", "tmpfs", "/app/fence"},
+		{"tmpfs at an ancestor with no nearer mount", "1243 1234 0:200 / /app rw,nosuid,nodev shared:7 master:3 - tmpfs tmpfs rw", "tmpfs", "/app"},
+		{"ramfs at the fence directory", "1243 1234 0:201 / /app/fence rw,relatime - ramfs ramfs rw", "ramfs", "/app/fence"},
+		{"tmpfs stacked over an on-disk volume at the same point", "1243 1234 8:1 /var/lib/docker/volumes/ovumcy_fence/_data /app/fence rw - ext4 /dev/sda1 rw\n1244 1234 0:200 / /app/fence rw - tmpfs tmpfs rw", "tmpfs", "/app/fence"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			evidence := sameDevice()
+			evidence.fenceDevice = 200
+			evidence.mountInfo = []byte(mountInfoBase + tc.mountLine + "\n")
+			err := judgeCalendarFeedFenceMount("/app/fence", evidence)
+			if !errors.Is(err, ErrCalendarFeedFenceNotMounted) {
+				t.Fatalf("a fence directory on an in-memory %s mount must be refused, got %v", tc.fsType, err)
+			}
+			for _, want := range []string{"/app/fence is on a " + tc.fsType + " mount at " + tc.covering, "lost whenever the container restarts", "a named volume or a bind mount from disk", "-v ovumcy_fence:/app/fence"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("the refusal must say %q, got %q", want, err)
+				}
+			}
+		})
+	}
+}
+
+func TestMountInfoFSTypeFindsTheSeparatorPastAnyOptionalFields(t *testing.T) {
+	for line, want := range map[string]string{
+		"36 35 98:0 /mnt1 /mnt2 rw,noatime - ext3 /dev/root rw":                          "ext3",
+		"36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - tmpfs tmpfs rw":                    "tmpfs",
+		"36 35 98:0 /mnt1 /mnt2 rw,noatime shared:2 master:1 propagate_from:1 - ramfs r": "ramfs",
+		"36 35 98:0 /mnt1 /- rw - fuse.sshfs host:/x rw":                                 "fuse.sshfs",
+		"36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 -":                                   "",
+		"36 35 98:0 /mnt1 /mnt2 rw,noatime master:1":                                     "",
+	} {
+		if got := mountInfoFSType(strings.Fields(line)); got != want {
+			t.Fatalf("mountInfoFSType(%q) = %q, want %q", line, got, want)
+		}
 	}
 }
 

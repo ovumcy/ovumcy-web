@@ -2160,6 +2160,13 @@ jobs:
           fi
           grep -q 'refusing to start' <<<"$refused"
           grep -q 'writable layer' <<<"$refused"
+          # A tmpfs at the fence directory is a mount, but it lives in memory
+          # and loses the fence on every restart, so it is refused the same way.
+          if refused="$(docker run --rm -v "$data_volume:/app/data" --tmpfs /app/fence -e SECRET_KEY="$secret" "$image" 2>&1)"; then
+            echo "a start with a tmpfs fence must be refused"; echo "$refused"; exit 1
+          fi
+          grep -q 'refusing to start' <<<"$refused"
+          grep -q 'on a tmpfs mount at /app/fence' <<<"$refused"
 
           # A recreation on the same data and fence volumes must read as
           # continuity, not as a restored backup: the first container arms the
@@ -2217,7 +2224,7 @@ jobs:
           docker exec "$cid" /app/ovumcy healthcheck
           docker exec "$cid" /app/ovumcy readycheck
 
-          echo "image smoke OK: unmounted fence refused + recreation kept continuity + healthz + readyz + login + static ($asset) + in-container healthcheck/readycheck"
+          echo "image smoke OK: unmounted and tmpfs fences refused + recreation kept continuity + healthz + readyz + login + static ($asset) + in-container healthcheck/readycheck"
 
   publish-image:
     # Publishes `ghcr.io/<repo>:main` (plus `sha-<short>`) for the commit now

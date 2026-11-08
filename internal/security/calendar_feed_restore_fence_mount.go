@@ -81,33 +81,52 @@ type calendarFeedFenceMountEvidence struct {
 }
 
 // judgeCalendarFeedFenceMount decides whether dir (absolute, symlinks
-// resolved) is a mounted volume. Either signal alone is enough to accept:
+// resolved) is a mounted volume that outlives the container.
 //
-//   - a device different from the root filesystem's — a named volume, a bind
-//     mount from another filesystem, a PVC, a Docker Desktop grpcfuse/9p bind;
-//   - a mountinfo entry at dir or at one of its ancestors other than "/" — the
-//     same shapes, plus a bind mount from the root's own device and a volume
-//     mounted higher up (for example at /app).
+// When the mount table is readable, the mount covering dir — the mountinfo
+// entry at dir or at its nearest ancestor other than "/" — decides first:
 //
-// It refuses only when no signal says "mounted": the device is the root's (or
-// unknown) AND no mount covers dir below "/" (or mountinfo is unreadable).
+//   - a covering tmpfs or ramfs refuses. Its st_dev differs from the root's
+//     and it has a mountinfo entry, so either signal alone would accept it,
+//     yet it is RAM: every restart of the container (not only a recreation)
+//     loses the fence, and each next start would read as a restore and revoke
+//     every owner's password, sessions and webhook endpoints. `--tmpfs
+//     /app/fence` is what an operator on a read-only root reaches for after
+//     the unwritable-fence refusal, so the device signal must never get to
+//     accept past it;
+//   - any other covering mount accepts — a named volume, a bind mount (from
+//     the root's own device too), a PVC, a Docker Desktop grpcfuse/9p bind, a
+//     volume mounted higher up (for example at /app);
+//   - no covering mount: a device different from the root filesystem's still
+//     accepts, as before; the root's device (or an unknown one) refuses.
 //
-// Unreadable evidence refuses — fail closed — deliberately. The check runs only
-// where the image asked for it, inside a container, where /proc/self/mountinfo
-// is always present; a host that hides it is one this check cannot vouch for.
-// Accepting there would let through the exact defect it exists for — every
-// recreation silently revoking every owner's password — while refusing is loud,
-// writes nothing, and names its two escapes (mount a volume, or opt out).
+// When the mount table is unreadable, the device signal alone decides: a
+// device different from the root's accepts, the root's or an unknown device
+// refuses. That accept cannot see the filesystem type, so a tmpfs is not
+// refused there; it is kept because refusing it would newly turn away a
+// mounted volume on a host that hides mountinfo, and a host that hides it is
+// already outside the container this check is written for.
+//
+// Unreadable evidence otherwise refuses — fail closed — deliberately. The check
+// runs only where the image asked for it, inside a container, where
+// /proc/self/mountinfo is always present; a host that hides it is one this
+// check cannot vouch for. Accepting there would let through the exact defect it
+// exists for — every recreation silently revoking every owner's password —
+// while refusing is loud, writes nothing, and names its two escapes (mount a
+// volume, or opt out).
 func judgeCalendarFeedFenceMount(dir string, evidence calendarFeedFenceMountEvidence) error {
-	if evidence.deviceErr == nil && evidence.fenceDevice != evidence.rootDevice {
-		return nil
-	}
-	var covering string
 	if evidence.mountInfoErr == nil {
-		covering = coveringCalendarFeedFenceMount(dir, evidence.mountInfo)
+		covering, fsType := coveringCalendarFeedFenceMount(dir, evidence.mountInfo)
+		if isVolatileCalendarFeedFenceFSType(fsType) {
+			return fmt.Errorf("%w: %s is on a %s mount at %s, which lives in memory, so a fence kept there is lost whenever the container restarts and every next start would read the database as a restored backup and revoke every owner's password. Mount a named volume or a bind mount from disk at %s instead (for example -v ovumcy_fence:%s)",
+				ErrCalendarFeedFenceNotMounted, dir, fsType, covering, dir, dir)
+		}
 		if covering != "" {
 			return nil
 		}
+	}
+	if evidence.deviceErr == nil && evidence.fenceDevice != evidence.rootDevice {
+		return nil
 	}
 	if evidence.deviceErr != nil || evidence.mountInfoErr != nil {
 		return fmt.Errorf("%w: %s could not be confirmed to be a mounted volume (device: %v; mountinfo: %v), so a fence kept there may not survive a recreation of the container. Mount a volume at %s (for example -v ovumcy_fence:%s)",
@@ -124,11 +143,20 @@ func errOrOK(err error) string {
 	return err.Error()
 }
 
+// isVolatileCalendarFeedFenceFSType reports whether a mount of this filesystem
+// type keeps its files only in memory, so that they do not survive a restart.
+func isVolatileCalendarFeedFenceFSType(fsType string) bool {
+	return fsType == "tmpfs" || fsType == "ramfs"
+}
+
 // coveringCalendarFeedFenceMount returns the mountinfo mount point that is dir
-// or its nearest ancestor, "/" excluded, or "" when none is.
-func coveringCalendarFeedFenceMount(dir string, mountInfo []byte) string {
+// or its nearest ancestor, "/" excluded, and that mount's filesystem type, or
+// two empty strings when none is. Of several entries at the same mount point
+// the last one wins: a later mount stacks over an earlier one and is the one
+// dir resolves to.
+func coveringCalendarFeedFenceMount(dir string, mountInfo []byte) (string, string) {
 	dir = path.Clean(dir)
-	covering := ""
+	covering, coveringType := "", ""
 	for _, line := range strings.Split(string(mountInfo), "\n") {
 		// Field 5 (index 4) is the mount point, relative to this process's root.
 		fields := strings.Fields(line)
@@ -139,11 +167,25 @@ func coveringCalendarFeedFenceMount(dir string, mountInfo []byte) string {
 		if mountPoint == "/" || !strings.HasPrefix(mountPoint, "/") {
 			continue
 		}
-		if (dir == mountPoint || strings.HasPrefix(dir, mountPoint+"/")) && len(mountPoint) > len(covering) {
-			covering = mountPoint
+		if (dir == mountPoint || strings.HasPrefix(dir, mountPoint+"/")) && len(mountPoint) >= len(covering) {
+			covering, coveringType = mountPoint, mountInfoFSType(fields)
 		}
 	}
-	return covering
+	return covering, coveringType
+}
+
+// mountInfoFSType returns the filesystem type of one mountinfo line split into
+// fields: the field after the lone "-" that ends the optional fields. Those
+// start at field 7 (index 6) and vary in number, from none to several, so the
+// separator is searched for rather than counted to. A line without one yields
+// "".
+func mountInfoFSType(fields []string) string {
+	for i := 6; i < len(fields)-1; i++ {
+		if fields[i] == "-" {
+			return unescapeMountInfoField(fields[i+1])
+		}
+	}
+	return ""
 }
 
 // unescapeMountInfoField decodes the kernel's octal escapes (\040 for a space,
