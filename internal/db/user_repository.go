@@ -877,9 +877,10 @@ func canonicalWatermarkAnchor(cycleAnchor time.Time) time.Time {
 // TestClaimWebhookWatermarkIsRefusedForAKindTheOwnerOptedOutOf.
 //
 // What this does NOT cover, stated plainly because it cannot be fixed here: a
-// request already in flight. The claim precedes the POST, so a revocation that
-// lands after the claim won and before the response returns cannot recall a
-// request already on the wire. The guarantee is that no NEW request begins under
+// send whose claim was already won. The claim is the boundary: a revocation
+// committed after it does not stop that one send, because the caller re-reads
+// neither webhook_enabled, the epoch nor the row between this claim and the
+// POST. The guarantee is that no NEW claim, and so no new request, is won under
 // a configuration the owner has revoked. Stated for operators in
 // docs/notifications.md.
 //

@@ -228,7 +228,7 @@ Startup flow:
 
 1. Copy the example `docker-compose.yml` and `.env.example` into a dedicated deployment directory.
 2. Rename `.env.example` to `.env`.
-3. Set a strong application secret via `SECRET_KEY` or `SECRET_KEY_FILE`, and set `POSTGRES_PASSWORD`. The password is placed unescaped into the `DATABASE_URL` the example stacks build (`postgres://user:password@postgres:5432/db`), so use only URL-safe characters — letters, digits, `-`, `_`, `.`, `~`; for example `openssl rand -hex 24`. A `@`, `:`, `/`, `?`, `#` or `%` in it breaks the URL and the app fails to connect. If you must keep such a character, set `DATABASE_URL` yourself with the password percent-encoded.
+3. Set a strong application secret via `SECRET_KEY` or `SECRET_KEY_FILE`, and set `POSTGRES_PASSWORD`. The password is placed unescaped into the `DATABASE_URL` the example stacks build (`postgres://user:password@postgres:5432/db`), so use only URL-safe characters — letters, digits, `-`, `_`, `.`, `~`; for example `openssl rand -hex 24`. A `@`, `:`, `/`, `?`, `#` or `%` in it breaks the URL and the app fails to connect. If you must keep such a character, edit the `DATABASE_URL` line in the compose file itself, with the password percent-encoded: the postgres stacks build that value in their own `environment:` block and load no `env_file`, so a `DATABASE_URL` set in `.env` is never read.
 4. Start the stack with `docker compose up -d`.
 5. Confirm `docker compose ps` shows both `postgres` and `ovumcy` healthy.
 6. Confirm `curl -fsS http://127.0.0.1:8080/healthz` succeeds.
@@ -566,7 +566,7 @@ Read this before the first start of v2.0.0 on a database a v1.9.x release wrote.
 
 - **Every armed calendar feed stops working, once.** A subscription armed under v1.9.2 or earlier predates migration `032`, so it carries no keyed verifier, and nothing records which `SECRET_KEY` minted it. The first start disarms all of them before it accepts a request and names the count in the startup log ([Secret Handling and Rotation](#secret-handling-and-rotation)). Tell the owners on the instance to generate a new subscribe URL from `Settings → Calendar feed` and replace it in their calendar app. Later upgrades do not repeat this.
 - **Replace the compose file** (step 3). A v1.9.2 compose file has no `ovumcy_fence` volume, and a start without a usable fence is refused. `CALENDAR_FEED_FENCE_OPTOUT=true` starts it anyway, at a price: every start disarms every armed feed, and since nothing can then tell a restore from a restart, a restored backup brings back the sessions and webhook endpoints it held ([Calendar Feed Restore Fence](#calendar-feed-restore-fence)). Mount the fence; the opt-out is for an instance that cannot have one.
-- **A fence directory the container cannot write to stops the start too.** A bind-mounted directory the container user can read but not write — or a full disk — is refused on the first start, and that refused start writes nothing to the database. Fix the directory's owner or permissions (or free the space) and start again: that start is an ordinary first start, and every owner keeps their password and sessions.
+- **A fence directory the container cannot write to stops the start too.** A bind-mounted directory the container user can read but not write — or a full disk — is refused on the first start. That refused start writes no fence state and touches no account, but the release's pending schema migrations run before the fence is checked, so they are already applied. Fix the directory's owner or permissions (or free the space) and start again: that start is an ordinary first start, and every owner keeps their password and sessions.
 - **A `.env` that v1.9.2 accepted can stop the start.** The error names the key and the value:
   - `COOKIE_SECURE`, `HSTS_ENABLED`, `TRUST_PROXY_ENABLED`, `WEBHOOK_BLOCK_PRIVATE_ADDRESSES`, `AUDIT_LOG_ENABLED` and `OIDC_ENABLED` accept only `1`/`true`/`yes`/`on` or `0`/`false`/`no`/`off`. v1.9.2 replaced anything else with the default without stopping.
   - With `TRUST_PROXY_ENABLED=true`, every `TRUSTED_PROXIES` entry must be a CIDR range or an IP in canonical form (`2001:db8::1`, not `2001:DB8::1`), and no IP may appear twice. v1.9.2 dropped a bad range and kept an IP it could never match.
@@ -576,6 +576,8 @@ Read this before the first start of v2.0.0 on a database a v1.9.x release wrote.
 - **Webhook delivery to private addresses is blocked by default under open registration** (`WEBHOOK_BLOCK_PRIVATE_ADDRESSES`, see [Advanced knobs](#advanced-knobs)). An open instance whose owners deliver to a LAN ntfy, Gotify or Home Assistant sets it to `false` or closes registration.
 
 - **`GET /api/v1/stats/overview` can name a new suppression reason, `bleeding_outside_cycle_start`.** It is published on the day a period is recorded outside the episode that opened the running cycle, and the day after, while the fertile window and the ovulation date are withheld. A client that branches on `suppression.reasons` should treat an unknown value as "withheld" rather than as an error. In the same release a start marked with "Mark anyway" (an uncertain start) counts as no mark instead of withholding the bleeding episode it sits in, so cycle starts recomputed from an existing history can move ([docs/cycle-prediction.md](cycle-prediction.md)).
+
+- **`GET /api/v1/stats/overview` no longer reports `fertile` as a `current_phase`.** v1.9.2 returned it on fertile-window days; from 2.0.0 the phase is one of `menstrual`, `follicular`, `ovulation`, `luteal` or `unknown`, and whether today falls inside the estimated fertile window is the separate field `current_fertility` (`fertile`, `outside_estimated_window` or `unknown`). A client that switches on `current_phase == "fertile"` never matches again: read `current_fertility` instead.
 
 ### Downgrade Caveats
 
@@ -621,7 +623,7 @@ If you need to downgrade through a migration above, restore the database from a 
 
 ## Duplicate rows that refuse a migration
 
-A migration that adds a **unique** index checks first, and refuses if the database already holds rows the index cannot cover. It names every conflicting group, writes nothing, rolls its transaction back, and ends the start. That refusal is the safe outcome — the only ways to make room would be to delete or merge somebody's rows, and a schema change is not consent to do either — but it does mean the instance stays down until you resolve it.
+A migration that adds a **unique** index checks first, and refuses if the database already holds rows the index cannot cover. It names every conflicting group, rolls its own transaction back so that migration writes nothing, and ends the start. Migrations apply one at a time, each in its own transaction, so the ones ordered before it in the same start have already committed and stay applied — upgrading v1.9.2 straight to 2.0.0, a refused `037` leaves `032` through `036` in place. That refusal is the safe outcome — the only ways to make room would be to delete or merge somebody's rows, and a schema change is not consent to do either — but it does mean the instance stays down until you resolve it.
 
 The startup log line looks like this:
 
@@ -772,7 +774,7 @@ Registration and sign-in used to accept a full RFC 5322 form (`jane doe <jane@ex
 
 Two cases are left untouched, counted in the same log line, and cannot sign in until you repair them:
 
-- another account already answers to the same bare address (two accounts on one mailbox — previously possible because the duplicate check compared stored forms): the oldest account keeps the address, and the later one is the leftover;
+- another account already answers to the same bare address (two accounts on one mailbox — previously possible because the duplicate check compared stored forms): an account whose stored value already reads as that bare address (ignoring case and surrounding spaces) keeps it whatever its age; when only decorated forms share the address, the oldest of them is rewritten and keeps it, and each later one is a leftover;
 - the stored value cannot be reduced to a plain address at all (for example a quoted local part).
 
 **Repair by id, never by address.** `ovumcy users list` prints the id beside the stored value, and the id is the only handle that reaches such a row: the stored string is a form sign-in normalization refuses outright, so no address-taking command accepts it, and its bare address resolves the *other* account — the one that kept the address. A `users delete` typed with that address in front of you would erase the wrong account's entire health record, and a `reset-password` typed with it would reset a stranger's password instead of the locked-out account's. `reset-password --id <id>` reaches the leftover row the same way `users set-email --id` and `users delete --id` do, and refuses (naming the ids) if a bare address you try instead still matches more than one row.

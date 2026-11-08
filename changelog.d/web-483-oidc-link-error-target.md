@@ -1,4 +1,4 @@
-### Fixed
+### Changed
 
 A refused OIDC identity link confirm now lands back on Settings with the
 refusal shown there, like the link's other refusals already did. The refusals

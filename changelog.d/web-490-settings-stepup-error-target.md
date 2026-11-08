@@ -1,4 +1,4 @@
-### Fixed
+### Changed
 
 The SSO refusals of the Settings step-ups (set a local password, link an
 identity, clear data, delete account) and of the identity unlink now land back

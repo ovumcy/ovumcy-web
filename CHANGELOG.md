@@ -957,6 +957,15 @@ logged start keeps the ordinary replace confirmation.
   contract text changed: the release-tag, Go-version and Docker Hub sites the guards read, the
   unsigned-digest explanation the publish workflow points at, and the CLI reference stay.
 
+- **Breaking (API shape): `GET /api/v1/stats/overview` no longer reports `fertile` as a
+  `current_phase`.** v1.9.2 returned `current_phase: "fertile"` on fertile-window days. From
+  2.0.0 the phase is one of `menstrual`, `follicular`, `ovulation`, `luteal` or `unknown`, and
+  whether today falls inside the estimated fertile window is the separate field
+  `current_fertility` (`fertile`, `outside_estimated_window` or `unknown`). A client that
+  switches on `current_phase == "fertile"` never matches again; read `current_fertility`
+  instead. (Added to this release's notes after it was published: the change shipped in 2.0.0
+  but was listed without a **Breaking** marker.)
+
 - **Breaking (API shape): `GET /api/v1/stats/overview` now publishes an explicit payload, and it
   withholds every prediction the app itself withholds.** The endpoint used to serialize the internal
   statistics object as it stood, so the ovulation date, the fertile window and the next-period
@@ -1089,6 +1098,8 @@ in the future.
     `OIDC_ENABLED` refuse an unreadable value instead of using the default, `TRUSTED_PROXIES`
     entries must be valid and canonical, and `CALENDAR_FEED_FENCE_PATH` must be absolute.
   - `RATE_LIMIT_*` values outside the new ranges are logged and replaced by the defaults.
+  - JSON clients of `GET /api/v1/stats/overview` that switch on `current_phase == "fertile"`
+    read `current_fertility` instead: `fertile` is no longer a phase.
   - Downgrading to v1.9.x has new caveats (stale auto-fill marks, the feed's last-polled date):
     [Downgrade Caveats](docs/self-hosted.md#downgrade-caveats).
 
@@ -5068,9 +5079,13 @@ confirmation and the "stay signed in" option.
   the cookie synchronously on every page it loaded on, and every htmx request carried the
   `X-Ovumcy-Timezone` header the middleware re-issues the cookie from — so the login page the
   sign-out redirects to put the cookie straight back. The bootstrap script is now served only on
-  a page rendered for a session, and the header rides only on those requests. Nothing changes
-  for a signed-in owner: the cookie is written and sent exactly as before, and no anonymous
-  surface renders a date to need it.
+  a page rendered for a session, and the header rides only on those requests. On the pages a
+  session renders the cookie is written and sent as before, and no anonymous surface renders a
+  date to need it. (Corrected after release: this entry also said nothing changes for a
+  signed-in owner, which is not so. The server does not fall back to the time zone stored on the
+  account, so the first page after signing back in — the cookie retracted, the bootstrap not yet
+  run — or in a fresh browser computes "today" in the instance's time zone, and a day saved from
+  it can land on the neighbouring date for an owner whose zone differs.)
 
   Regressions: `TestLogoutRetractsTheTimezoneCookie` (with and without the request header),
   `TestSessionRejectionLeavesTheTimezoneCookieInPlace`, and
@@ -6363,6 +6378,12 @@ should match the new `cause` instead.
   and leave the TLS handshake and the response-header wait with nothing. The total is unchanged.
 
 ### Internal
+
+- **CI: a push to `main` now runs the unit and race lanes itself whenever the merge-queue run did
+  not execute them (proven-tree skip)**, so the release gate finds a successful
+  `test-go-shard (1)` and `race-db (1)` on the tagged commit. (Added to this release's notes
+  after it was published: the change shipped in the 2.0.0 tree, but its entry was written after
+  the notes were assembled.)
 
 - **Rendered copy in the browser suite is addressed through `data-*` hooks, and
   the per-language literal branches are gone.** Sixteen specs pinned localized
