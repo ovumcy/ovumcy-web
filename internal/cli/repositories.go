@@ -87,17 +87,19 @@ func openOperatorRepositories(databaseConfig db.Config, fencePath string) (*db.R
 }
 
 // confirmOperatorFeedRevocation is the gate every subcommand that revokes an
-// owner's calendar feed (`users delete`, a forced `reset-password`) must pass
-// immediately before the write that performs the revocation, and only once
-// that write is otherwise certain to happen (confirmed, or --yes).
+// owner's calendar feed, webhook endpoint or sessions (`users delete`, a forced
+// `reset-password`, `webhook set`, `users set-email`, `link-oidc-identity`)
+// must pass immediately before the write that performs the revocation, and
+// only once that write is otherwise certain to happen (confirmed, or --yes).
 //
 // It refuses outright rather than degrading, unlike the server's own
 // Advance: an operator-driven removal recorded only inside the database is
 // exactly what a restore of an older backup cannot contradict, which is the
 // defect the whole fence exists to close. A refusal changes nothing — the
-// caller must not proceed to its own write — and every refusal but one ends
-// "Nothing was changed": the exception is the half-advanced fence, whose own
-// message says plainly that the file side already moved.
+// caller must not proceed to its own write — and every refusal ends "Nothing
+// was changed": the gate only confirms continuity (ConfirmAdvances writes
+// nothing), and the advance itself runs inside the caller's write, where a
+// half-advanced fence is reported by operatorFeedRevocationCommitted.
 //
 // fencePath is used exactly as received, with no trim of its own: trimming
 // happens once, in calendarFeedFencePath, so the value this switch judges and
