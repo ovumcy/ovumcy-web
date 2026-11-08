@@ -2,6 +2,7 @@ package releasegate
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -33,6 +34,100 @@ type scannerWorld struct {
 	jobs           []checkRun
 	reruns         []checkRun
 	jobsUnreadable bool
+	// tree, when set, makes the step run inside a real two-commit repository
+	// — the ancestor, then the tagged commit changing one path — so the
+	// trivy-fs walk lists real history and runs security.yml's real detect
+	// step over a real diff. The ancestor carries one push run of
+	// security.yml whose trivy-fs job concluded ancestorTrivyFS.
+	tree *scannerTree
+}
+
+type scannerTree struct {
+	changed         string
+	ancestorTrivyFS string
+}
+
+// withTrivyFS sets trivy-fs's conclusion in the Security runs of one event
+// only, so a case can say what the queue run and the push run each did.
+func (w scannerWorld) withTrivyFS(event, conclusion string) scannerWorld {
+	ids := map[string]bool{}
+	for _, run := range w.runs {
+		if run.file == securityFile && run.event == event {
+			ids[run.id] = true
+		}
+	}
+	jobs := slices.Clone(w.jobs)
+	for index := range jobs {
+		if jobs[index].name == "trivy-fs" && ids[jobs[index].suite] {
+			jobs[index].conclusion = conclusion
+		}
+	}
+	w.jobs = jobs
+	return w
+}
+
+// buildScannerTree commits the ancestor and the tagged commit into dir and
+// returns their SHAs. security.yml is copied in, because the walk cuts its
+// detect step out of the checked-out file exactly as the job does.
+func buildScannerTree(t *testing.T, dir string, tree scannerTree) (ancestor, tagged string) {
+	t.Helper()
+
+	git := func(args ...string) string {
+		command := exec.Command("git", append([]string{"-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
+		command.Dir = dir
+		for _, entry := range os.Environ() {
+			if !strings.HasPrefix(entry, "GIT_") {
+				command.Env = append(command.Env, entry)
+			}
+		}
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+		return strings.TrimSpace(string(output))
+	}
+	write := func(rel, content string) {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+
+	security, err := os.ReadFile(filepath.Join(repoRootDir(t), filepath.FromSlash(securityFile)))
+	if err != nil {
+		t.Fatalf("read %s: %v", securityFile, err)
+	}
+	git("init", "-q")
+	write(securityFile, strings.ReplaceAll(string(security), "\r\n", "\n"))
+	write(tree.changed, "before\n")
+	git("add", "-A")
+	git("commit", "-q", "-m", "ancestor")
+	ancestor = git("rev-parse", "HEAD")
+	write(tree.changed, "after\n")
+	git("add", "-A")
+	git("commit", "-q", "-m", "tagged")
+	return ancestor, git("rev-parse", "HEAD")
+}
+
+func repoRootDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("no go.mod above the test directory")
+		}
+		dir = parent
+	}
 }
 
 // scannerJobNames reads the three job lists out of the step's own env.
@@ -142,6 +237,14 @@ func runScannerStep(t *testing.T, world scannerWorld) (string, error) {
 		return shellQuote(filepath.ToSlash(path))
 	}
 
+	taggedSHA, ancestorSHA := "5049126faa3152cced900c304c3640e4ec724ba5", "no-ancestor"
+	var ancestorRows strings.Builder
+	if world.tree != nil {
+		ancestorSHA, taggedSHA = buildScannerTree(t, dir, *world.tree)
+		ancestorRows.WriteString("push\tanc1\tmain\t" + securityFile + "\n")
+		world.jobs = append(slices.Clone(world.jobs), checkRun{"anc1", "trivy-fs", world.tree.ancestorTrivyFS})
+	}
+
 	var runRows, jobRows strings.Builder
 	for _, run := range world.runs {
 		runRows.WriteString(run.event + "\t" + run.id + "\t" + run.branch + "\t" + run.file + "\t" + run.conclusion + "\n")
@@ -163,6 +266,7 @@ func runScannerStep(t *testing.T, world scannerWorld) (string, error) {
 		`  for arg in "$@"; do case "$arg" in repos/*) url="$arg";; esac; done`,
 		`  case "$url" in`,
 		`    */actions/runs/*/jobs*) id="${url#*/actions/runs/}"; id="${id%%/*}"; ` + jobsReply + ` ;;`,
+		`    *"head_sha=` + ancestorSHA + `"*) cat ` + write("ancestor-runs.tsv", ancestorRows.String()) + ` ;;`,
 		`    */actions/runs*) cat ` + write("runs.tsv", runRows.String()) + ` ;;`,
 		`    */check-runs*) echo "` + stubChecksAPIRead + `: $url" >&2; return 1 ;;`,
 		`    *) echo "` + stubUnservedEndpoint + `: $*" >&2; return 1 ;;`,
@@ -171,6 +275,10 @@ func runScannerStep(t *testing.T, world scannerWorld) (string, error) {
 		`git() {`,
 		`  case "${1:-}" in`,
 		`    rev-parse) printf '%s\n' "$GITHUB_SHA" ;;`,
+		// The trivy-fs walk's history reads go to the real git, over the
+		// fixture repository when the case built one and over nothing
+		// otherwise, where they fail as an unreadable history does.
+		`    rev-list|diff) command git "$@" ;;`,
 		`    *) echo "` + stubUnexpectedGit + `: $*" >&2; return 1 ;;`,
 		`  esac`,
 		`}`,
@@ -180,7 +288,8 @@ func runScannerStep(t *testing.T, world scannerWorld) (string, error) {
 	bash := bashPath(t)
 	requireWorkingBash(t, bash)
 	environ := append(os.Environ(),
-		"GITHUB_SHA=5049126faa3152cced900c304c3640e4ec724ba5",
+		"GITHUB_SHA="+taggedSHA,
+		"ANCESTOR_WALK_BOUND=20",
 		"GITHUB_REPOSITORY=ovumcy/ovumcy-web",
 		"GITHUB_REF_NAME=v2.0.0",
 		"GH_TOKEN=stub",
@@ -214,6 +323,63 @@ func TestReleaseTagGateReadsTheScannerWorkflows(t *testing.T) {
 			name:       "a lane cleared for the diff by its path gate",
 			world:      func(w scannerWorld) scannerWorld { return w.withJob("gosec", "skipped") },
 			wantOutput: "`gosec` was skipped in every",
+		},
+		{
+			// The merge-queue run skipped trivy-fs (no manifest changed
+			// against the queue base); the push run to `main` scans every
+			// tree, and it is what answers for this one.
+			name:       "trivy-fs skipped in the queue and scanned by the push run",
+			world:      func(w scannerWorld) scannerWorld { return w.withTrivyFS("merge_group", "skipped") },
+			wantOutput: "`trivy-fs` concluded success in a run on",
+		},
+		{
+			// The v2.0.0 shape: every judged run skipped trivy-fs and nothing
+			// else scanned the tree. A skip is not a scan.
+			name:        "trivy-fs skipped in every run on the tag with no scan on record",
+			world:       func(w scannerWorld) scannerWorld { return w.withJob("trivy-fs", "skipped") },
+			wantRefusal: true,
+			wantOutput:  "`trivy-fs` was skipped in every judged",
+		},
+		{
+			name: "trivy-fs skipped in the queue and failed in the push run",
+			world: func(w scannerWorld) scannerWorld {
+				return w.withTrivyFS("merge_group", "skipped").withTrivyFS("push", "failure")
+			},
+			wantRefusal: true,
+			wantOutput:  "did not conclude success",
+		},
+		{
+			// The positive control for the walk: the ancestor's manifests
+			// are the tag's, and its scan of them passed.
+			name: "trivy-fs scanned on an ancestor with the same manifests",
+			world: func(w scannerWorld) scannerWorld {
+				w = w.withJob("trivy-fs", "skipped")
+				w.tree = &scannerTree{changed: "docs/notes.md", ancestorTrivyFS: "success"}
+				return w
+			},
+			wantOutput: "`trivy-fs` concluded success on",
+		},
+		{
+			name: "trivy-fs failed on an ancestor with the same manifests",
+			world: func(w scannerWorld) scannerWorld {
+				w = w.withJob("trivy-fs", "skipped")
+				w.tree = &scannerTree{changed: "docs/notes.md", ancestorTrivyFS: "failure"}
+				return w
+			},
+			wantRefusal: true,
+			wantOutput:  "whose manifests are",
+		},
+		{
+			// A lockfile changed between the ancestor and the tag, so the
+			// ancestor's scan read other manifests and says nothing here.
+			name: "a lockfile changed since the ancestor that scanned",
+			world: func(w scannerWorld) scannerWorld {
+				w = w.withJob("trivy-fs", "skipped")
+				w.tree = &scannerTree{changed: "package-lock.json", ancestorTrivyFS: "success"}
+				return w
+			},
+			wantRefusal: true,
+			wantOutput:  "runs trivy-fs for what changed",
 		},
 		{name: "trivy-image failed", world: func(w scannerWorld) scannerWorld { return w.withJob("trivy-image", "failure") }, wantRefusal: true},
 		{name: "trivy-image-arm64 failed", world: func(w scannerWorld) scannerWorld { return w.withJob("trivy-image-arm64", "failure") }, wantRefusal: true},
