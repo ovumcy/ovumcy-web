@@ -247,8 +247,10 @@ var calendarFeedFenceMountCheck security.CalendarFeedFenceMountCheck = security.
 // it as an unusable fence and the start is refused — writing nothing — exactly
 // as an unwritable fence is (WEB-506). The operator CLI does not take the
 // check: every command of it that would revoke needs both fence halves to
-// agree first, and a server that ran this check never wrote a token into a
-// writable-layer directory to agree with.
+// agree first, and a server that ran this check never armed a writable-layer
+// fence to agree with — without the opt-out it refused to start, and with
+// CALENDAR_FEED_FENCE_OPTOUT=true it runs unanchored, so whatever its later
+// advances write there is refused by the next start before it is ever read.
 func calendarFeedFenceOptions(config runtimeConfig) []security.CalendarFeedFenceOption {
 	if !config.CalendarFeedFenceRequireMount {
 		return nil

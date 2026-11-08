@@ -18,6 +18,11 @@ func TestCheckCalendarFeedFenceMountedReadsTheHost(t *testing.T) {
 	if err := CheckCalendarFeedFenceMounted("/proc"); err != nil {
 		t.Fatalf("/proc must read as mounted, got %v", err)
 	}
+	// The device signal itself, not only the mount table: procfs has its own
+	// st_dev on every Linux host.
+	if evidence := gatherCalendarFeedFenceMountEvidence("/proc"); evidence.deviceErr != nil || evidence.fenceDevice == evidence.rootDevice {
+		t.Fatalf("/proc must read as a device of its own, got fence=%d root=%d err=%v", evidence.fenceDevice, evidence.rootDevice, evidence.deviceErr)
+	}
 	if err := CheckCalendarFeedFenceMounted(filepath.Join(t.TempDir(), "absent")); err != nil {
 		t.Fatalf("a directory that does not exist is left to the anchor's own refusal, got %v", err)
 	}
