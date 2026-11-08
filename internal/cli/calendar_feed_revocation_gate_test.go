@@ -208,11 +208,12 @@ func (repo *journalingUserRepository) DeleteAccountAndRelatedData(ctx context.Co
 // internal ordering changes — only a wrapper actually sitting on the call
 // runUsersDelete makes can.
 //
-// DeleteAccountAndRelatedData calls the repository's own best-effort advance
-// on the SAME fence the gate just confirmed. The confirmed advance already
-// covers that write, so the second one writes nothing (WEB-429): a file error
-// there would move the database half alone and cost every owner the next
-// boot's full revocation. The journal therefore holds exactly one advance.
+// The gate only confirms (WEB-505); DeleteAccountAndRelatedData advances the
+// SAME fence from inside itself: the file first, then the marker in the
+// delete's own transaction. So the journal is the repository call, then the
+// file write, with no app_state.Set at all — and the row must still exist at
+// the instant the file is written, while the marker the database ends up
+// holding is the token that file write carried.
 func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 	journal := []string{}
 	appState := &fakeConfirmFenceAppState{
@@ -224,6 +225,11 @@ func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 
 	databasePath := createCLIUsersDatabase(t)
 	created := createCLIUsersUser(t, databasePath, "fence-order@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+	anchor.onWrite = func() {
+		if remaining := listCLIUserEmails(t, databasePath); len(remaining) != 1 {
+			t.Errorf("the file half must be written before the delete commits, found %#v at the file write", remaining)
+		}
+	}
 
 	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
@@ -243,14 +249,20 @@ func TestUsersDeleteAdvancesTheFenceBeforeTheRow(t *testing.T) {
 		t.Fatalf("runUsersDelete: %v", err)
 	}
 
-	want := []string{"anchor", "app_state", "row-deleted"}
+	want := []string{"row-deleted", "anchor"}
 	if len(journal) != len(want) {
-		t.Fatalf("expected the fence to advance before the row write, got %v, want %v", journal, want)
+		t.Fatalf("expected the delete to advance the fence from inside itself, got %v, want %v", journal, want)
 	}
 	for i := range want {
 		if journal[i] != want[i] {
-			t.Fatalf("expected the fence to advance before the row write, got %v, want %v", journal, want)
+			t.Fatalf("expected the delete to advance the fence from inside itself, got %v, want %v", journal, want)
 		}
+	}
+	if anchor.written == "" || anchor.written == confirmFenceTestToken {
+		t.Fatalf("expected a fresh token to have been minted, got %q", anchor.written)
+	}
+	if halves := readFenceHalves(t, databasePath, ""); !halves.markerFound || halves.marker != anchor.written {
+		t.Fatalf("the delete's transaction must record the token the file holds, file %q database %+v", anchor.written, halves)
 	}
 
 	if remaining := listCLIUserEmails(t, databasePath); len(remaining) != 0 {
@@ -280,10 +292,11 @@ func (repo *journalingPasswordResetRepository) ForceResetPasswordAndRevokeSessio
 // whose halves are fakes only so the test can journal WHEN each write
 // happened.
 //
-// ForceResetPasswordAndRevokeSessions calls the same best-effort advance
-// DeleteAccountAndRelatedData does, and the gate's confirmed advance covers it
-// the same way (WEB-429), so the journal has the same shape: the gate's
-// advance, then the credential write, and no second advance.
+// ForceResetPasswordAndRevokeSessions advances the fence from inside itself
+// exactly as DeleteAccountAndRelatedData does (WEB-505), so the journal has the
+// same shape: the repository call, then the file write, no app_state.Set; the
+// stored hash is still the old one at the file write, and the marker the
+// database ends up holding is the token that write carried.
 func TestResetPasswordAdvancesTheFenceBeforeTheRow(t *testing.T) {
 	journal := []string{}
 	appState := &fakeConfirmFenceAppState{
@@ -295,6 +308,12 @@ func TestResetPasswordAdvancesTheFenceBeforeTheRow(t *testing.T) {
 
 	databasePath := createCLIResetDatabase(t)
 	createCLIResetUser(t, databasePath, "reset-fence-order@example.com", "StrongPass1")
+	anchor.onWrite = func() {
+		current := loadCLIResetUser(t, databasePath, "reset-fence-order@example.com")
+		if bcrypt.CompareHashAndPassword([]byte(current.PasswordHash), []byte("StrongPass1")) != nil {
+			t.Error("the file half must be written before the reset commits, but the new hash was already stored")
+		}
+	}
 
 	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
@@ -316,21 +335,21 @@ func TestResetPasswordAdvancesTheFenceBeforeTheRow(t *testing.T) {
 		t.Fatalf("runResetPassword: %v", err)
 	}
 
-	want := []string{"anchor", "app_state", "row-write"}
+	want := []string{"row-write", "anchor"}
 	if len(journal) != len(want) {
-		t.Fatalf("expected the fence to advance before the row write, got %v, want %v", journal, want)
+		t.Fatalf("expected the reset to advance the fence from inside itself, got %v, want %v", journal, want)
 	}
 	for i := range want {
 		if journal[i] != want[i] {
-			t.Fatalf("expected the fence to advance before the row write, got %v, want %v", journal, want)
+			t.Fatalf("expected the reset to advance the fence from inside itself, got %v, want %v", journal, want)
 		}
 	}
 
 	if anchor.written == "" || anchor.written == confirmFenceTestToken {
 		t.Fatalf("expected a fresh token to have been minted, got %q", anchor.written)
 	}
-	if got := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; got != anchor.written {
-		t.Fatalf("expected both halves to hold the same fresh token, file %q app_state %q", anchor.written, got)
+	if halves := readFenceHalves(t, databasePath, ""); !halves.markerFound || halves.marker != anchor.written {
+		t.Fatalf("the reset's transaction must record the token the file holds, file %q database %+v", anchor.written, halves)
 	}
 
 	updated := loadCLIResetUser(t, databasePath, "reset-fence-order@example.com")
@@ -448,6 +467,7 @@ func TestResetPasswordReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *tes
 	createCLIResetUser(t, databasePath, "cli-reset-write-refused@example.com", "StrongPass1")
 	fencePath := armOperatorFence(t, databasePath)
 	refuseCLIPasswordHashWrites(t, databasePath)
+	halvesBefore := readFenceHalves(t, databasePath, fencePath)
 
 	var output bytes.Buffer
 	err := runResetPasswordCommand(
@@ -485,8 +505,20 @@ func TestResetPasswordReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *tes
 		t.Fatal("expected must_change_password to survive a refused write")
 	}
 
-	if !strings.Contains(output.String(), "fence advanced at "+fencePath) {
-		t.Fatalf("the burned fence generation must still be reported, got %q", output.String())
+	if !strings.Contains(output.String(), "continuity confirmed at "+fencePath) {
+		t.Fatalf("the gate's confirmation must still be reported, got %q", output.String())
+	}
+
+	// The advance ran inside the refused write (WEB-505): the file moved, the
+	// transaction rolled back with its marker, and the token was then recorded
+	// alone — so both halves moved, to the same fresh value, and the server's
+	// next start has nothing to reconcile.
+	halvesAfter := readFenceHalves(t, databasePath, fencePath)
+	if halvesAfter.file == halvesBefore.file || halvesAfter.marker == halvesBefore.marker {
+		t.Fatalf("the refused write must still have advanced both halves, before %+v after %+v", halvesBefore, halvesAfter)
+	}
+	if !halvesAfter.markerFound || strings.TrimSpace(halvesAfter.file) != halvesAfter.marker {
+		t.Fatalf("after a rolled-back write the halves must agree, got %+v", halvesAfter)
 	}
 }
 
@@ -522,12 +554,13 @@ func refuseCLIPasswordHashWrites(t *testing.T, databasePath string) {
 // `users delete` half of the post-gate outcome the reset path already pins.
 // The row vanishes at the one seam where a real operator's can: while the
 // command is blocked reading the typed DELETE confirmation, which sits between
-// the resolve and the fence gate. The gate then spends its one-shot advance,
-// and the delete finds nothing.
+// the resolve and the fence gate. The gate then confirms, and the delete finds
+// nothing.
 //
-// The operator must be told both facts. The account is untouched — there is
-// nothing left to touch — but the fence DID move, so a bare "no account
-// carries id N" would read as a command that changed nothing at all.
+// The operator must be told both facts: the account is untouched — there is
+// nothing left to touch — and the fence's two halves agree, so the server's
+// next start disarms nothing on account of it. The advance runs inside the
+// delete (WEB-505), so whether it was reached or not, the halves agree.
 func TestUsersDeleteReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testing.T) {
 	t.Parallel()
 
@@ -561,15 +594,12 @@ func TestUsersDeleteReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testi
 		t.Fatalf("the fence advance already happened, so this is not a refusal: %v", err)
 	}
 
-	// The wording above is rendered unconditionally, so it cannot tell a gate
-	// that advanced from one that did not: the token itself must have moved, in
-	// both halves and to the same value.
+	// The wording above claims the halves agree, so the halves themselves must
+	// prove it: a disagreement here is what the next boot would answer with a
+	// full revocation over a delete that never happened.
 	halvesAfter := readFenceHalves(t, databasePath, fencePath)
-	if halvesAfter.file == halvesBefore.file || halvesAfter.marker == halvesBefore.marker {
-		t.Fatalf("the gate must have advanced both halves before the failed delete, before %+v after %+v", halvesBefore, halvesAfter)
-	}
-	if !halvesAfter.markerFound || strings.TrimSpace(halvesAfter.file) != halvesAfter.marker {
-		t.Fatalf("the advanced halves must agree, got %+v", halvesAfter)
+	if !halvesBefore.markerFound || !halvesAfter.markerFound || strings.TrimSpace(halvesAfter.file) != halvesAfter.marker {
+		t.Fatalf("after a delete that found nothing the halves must agree, before %+v after %+v", halvesBefore, halvesAfter)
 	}
 }
 
@@ -664,7 +694,7 @@ func TestUsersDeleteRefusesAHalfAdvancedFenceOnARealAppState(t *testing.T) {
 
 // refuseCLIAppStateWrites makes the database half of the fence unwritable
 // while leaving it readable, which is what a full disk or a refused write
-// looks like from AdvanceConfirmed. AppStateRepository.Set upserts, so both
+// looks like from inside a fenced write. AppStateRepository.Set upserts, so both
 // verbs have to be refused.
 func refuseCLIAppStateWrites(t *testing.T, databasePath string) {
 	t.Helper()

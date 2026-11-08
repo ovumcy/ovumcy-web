@@ -175,7 +175,7 @@ func (repo failingWebhookSaveRepository) SaveWebhookSettings(context.Context, ui
 }
 
 // TestWebhookSetReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced pins the
-// message after the gate: the fence moved in both halves and the row did not,
+// message after the gate: the row did not change and the fence's halves agree,
 // so the operator must hear both, not a bare "configure webhook" error that
 // reads as "nothing happened".
 func TestWebhookSetReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testing.T) {
@@ -208,8 +208,12 @@ func TestWebhookSetReportsAWriteFailureAfterTheFenceHasAlreadyAdvanced(t *testin
 	if !errors.Is(err, refused) || !strings.Contains(err.Error(), "already advanced") {
 		t.Fatalf("a save failing after the gate must name both the cause and the advanced fence, got %v", err)
 	}
-	if anchor.written == "" || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != anchor.written {
-		t.Fatal("the gate must have advanced both halves before the failed save")
+	// The advance runs inside the repository's save (WEB-505), and this double
+	// refuses the save before it, so the fence was never reached: both halves
+	// must still agree on the armed token, exactly as the message claims.
+	if anchor.written != "" || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != confirmFenceTestToken {
+		t.Fatalf("a save refused before the fence must leave both halves agreeing, file %q app_state %q",
+			anchor.written, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
 	}
 }
 
