@@ -98,3 +98,67 @@ func TestCalendarFeedRateLimitLogMasksTheTokenOnEveryCaseOfTheSuffix(t *testing.
 		})
 	}
 }
+
+// TestCalendarFeedNearMissSuffixesNeverReachTheRequestLog drives the production
+// stack with spellings the feed route does NOT dispatch — a doubled or trailing
+// suffix, another extension, an encoded dot, a mixed-case doubled suffix, a
+// trailing slash on the real one — and asserts the token reaches no log sink.
+// Those requests fall through to the not-found handler, whose route carries no
+// template of its own, so the request logger masks from the raw path; nothing
+// else stands between a near-miss and a verbatim bearer token in the log. The
+// real suffix is the positive control: the same logger must have written a line
+// for it, or an empty sink would pass every row.
+func TestCalendarFeedNearMissSuffixesNeverReachTheRequestLog(t *testing.T) {
+	handler, database := newRateLimitTestHandlerAndDB(t)
+	user := seedOwner(t, db.NewRepositories(database), "calendar-feed-near-miss-log@example.com", 14)
+	token := armCalendarFeedToken(t, database, user.ID)
+
+	settings := uniformRateLimits(t, 100000, time.Hour)
+	settings.CalendarFeedMax = 100000
+	config := runtimeConfig{Location: time.UTC, DefaultLanguage: "en", RateLimits: settings}
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, variant := range []struct{ name, suffix string }{
+			{"control_ics", ".ics"},
+			{"ics_ics", ".ics.ics"},
+			{"ics_dot", ".ics."},
+			{"ical", ".ical"},
+			{"pct2E_ics", "%2Eics"},
+			{"ICS_ics", ".ICS.ics"},
+			{"ics_trailing_slash", ".ics/"},
+		} {
+			t.Run(method+"_"+variant.name, func(t *testing.T) {
+				originalWriter := log.Writer()
+				defer log.SetOutput(originalWriter)
+				var stdLog bytes.Buffer
+				log.SetOutput(&stdLog)
+
+				var requestLog bytes.Buffer
+				app := fiber.New(fiberConfig(config.Proxy, handler))
+				app.Use(newRequestLogger(&requestLog))
+				configureFiberMiddleware(app, config, handler)
+				registerStaticContentTypes()
+				app.Use("/static", newStaticAssetHandler())
+				api.RegisterRoutes(app, handler)
+				app.Use(handler.NotFound)
+
+				target := api.CalendarFeedRateLimitPrefix + "/" + token + variant.suffix
+				spelling := api.CalendarFeedRateLimitPrefix + "/<token>" + variant.suffix
+				response, err := app.Test(httptest.NewRequest(method, target, nil), testConfigNoTimeout)
+				if err != nil {
+					t.Fatalf("%s %s: %v", method, spelling, err)
+				}
+				_ = response.Body.Close()
+
+				if !strings.Contains(requestLog.String(), "| "+method+" |") {
+					t.Fatalf("the request logger wrote no line for %s %s, so the absence check below proves nothing; log: %q", method, spelling, requestLog.String())
+				}
+				for name, sink := range map[string]string{"request logger": requestLog.String(), "std log": stdLog.String()} {
+					if strings.Contains(sink, token) {
+						t.Fatalf("%s for %s %s carried the feed token verbatim: %q", name, method, spelling, sink)
+					}
+				}
+			})
+		}
+	}
+}

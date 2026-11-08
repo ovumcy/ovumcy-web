@@ -103,6 +103,7 @@ func TestRegisterPickupRefusesAForeignRequestWithoutSpendingTheNonce(t *testing.
 		headers secFetchHeaders
 	}{
 		{name: "cross-site navigation", headers: crossSiteNavigation},
+		{name: "same-site navigation", headers: sameSiteNavigation},
 		{name: "same-origin embed", headers: sameOriginImage},
 		{name: "same-origin prefetch", headers: sameOriginPrefetch},
 		{name: "embed with the site header stripped", headers: strippedSiteEmbed},
@@ -149,6 +150,7 @@ func TestCalendarFeedRevealRefusesAForeignRequestWithoutSpendingTheMark(t *testi
 		wantReason string
 	}{
 		{name: "cross-site navigation", headers: crossSiteNavigation, wantReason: firstPartyRefusedOffOriginInitiator},
+		{name: "same-site navigation", headers: sameSiteNavigation, wantReason: firstPartyRefusedOffOriginInitiator},
 		{name: "same-origin embed", headers: sameOriginImage, wantReason: firstPartyRefusedUnsupportedDest},
 		{name: "same-origin prefetch", headers: sameOriginPrefetch, wantReason: firstPartyRefusedSpeculativeLoad},
 		{name: "embed with the site header stripped", headers: strippedSiteEmbed, wantReason: firstPartyRefusedUnsupportedDest},
@@ -230,6 +232,7 @@ func TestRecoveryCodeRevealRefusesAForeignRequestWithoutSpendingTheMark(t *testi
 		headers secFetchHeaders
 	}{
 		{name: "cross-site navigation", headers: crossSiteNavigation},
+		{name: "same-site navigation", headers: sameSiteNavigation},
 		{name: "same-origin embed", headers: sameOriginImage},
 		{name: "same-origin prefetch", headers: sameOriginPrefetch},
 	} {
