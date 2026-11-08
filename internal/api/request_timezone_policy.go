@@ -91,7 +91,13 @@ func insertBounded[V any](entries map[string]V, key string, value V) {
 	entries[key] = value
 }
 
-func resolveRequestLocation(headerValue string, cookieValue string, fallback *time.Location) (*time.Location, string) {
+// resolveRequestLocation picks the request-local zone: the header, then the
+// cookie, then the owner's stored users.timezone (the same preference order the
+// request-free passes use), then the instance fallback. A request that carries
+// neither header nor cookie — a fresh browser, or the page after sign-out
+// retracted the cookie — would otherwise render the owner's "today" in the
+// instance zone. An empty or unparsable stored value falls through.
+func resolveRequestLocation(headerValue string, cookieValue string, storedValue string, fallback *time.Location) (*time.Location, string) {
 	if fallback == nil {
 		fallback = time.UTC
 	}
@@ -100,6 +106,9 @@ func resolveRequestLocation(headerValue string, cookieValue string, fallback *ti
 		return location, canonical
 	}
 	if location, _, ok := parseRequestTimezone(cookieValue); ok {
+		return location, ""
+	}
+	if location, _, ok := parseRequestTimezone(storedValue); ok {
 		return location, ""
 	}
 	return fallback, ""

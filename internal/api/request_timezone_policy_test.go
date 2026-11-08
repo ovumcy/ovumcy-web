@@ -11,7 +11,7 @@ import (
 )
 
 func TestResolveRequestLocationPrefersValidHeader(t *testing.T) {
-	location, cookieValue := resolveRequestLocation("Europe/Moscow", "UTC", time.UTC)
+	location, cookieValue := resolveRequestLocation("Europe/Moscow", "UTC", "", time.UTC)
 	if location == nil {
 		t.Fatal("expected non-nil location")
 	}
@@ -24,7 +24,7 @@ func TestResolveRequestLocationPrefersValidHeader(t *testing.T) {
 }
 
 func TestResolveRequestLocationFallsBackToCookieWhenHeaderInvalid(t *testing.T) {
-	location, cookieValue := resolveRequestLocation("Europe/Moscow\nInjected", "UTC", time.FixedZone("UTC+3", 3*60*60))
+	location, cookieValue := resolveRequestLocation("Europe/Moscow\nInjected", "UTC", "", time.FixedZone("UTC+3", 3*60*60))
 	if location == nil {
 		t.Fatal("expected non-nil location")
 	}
@@ -37,7 +37,7 @@ func TestResolveRequestLocationFallsBackToCookieWhenHeaderInvalid(t *testing.T) 
 }
 
 func TestResolveRequestLocationAcceptsEncodedCookieTimezone(t *testing.T) {
-	location, cookieValue := resolveRequestLocation("", "Europe%2FMoscow", time.UTC)
+	location, cookieValue := resolveRequestLocation("", "Europe%2FMoscow", "", time.UTC)
 	if location == nil {
 		t.Fatal("expected non-nil location")
 	}
@@ -51,7 +51,7 @@ func TestResolveRequestLocationAcceptsEncodedCookieTimezone(t *testing.T) {
 
 func TestResolveRequestLocationFallsBackToDefaultWhenNoValidInput(t *testing.T) {
 	fallback := time.FixedZone("UTC+4", 4*60*60)
-	location, cookieValue := resolveRequestLocation("bad timezone", "also bad", fallback)
+	location, cookieValue := resolveRequestLocation("bad timezone", "also bad", "", fallback)
 	if location == nil {
 		t.Fatal("expected non-nil location")
 	}
@@ -64,7 +64,7 @@ func TestResolveRequestLocationFallsBackToDefaultWhenNoValidInput(t *testing.T) 
 }
 
 func TestResolveRequestLocationUsesUTCFallbackWhenNil(t *testing.T) {
-	location, cookieValue := resolveRequestLocation("", "", nil)
+	location, cookieValue := resolveRequestLocation("", "", "", nil)
 	if location == nil {
 		t.Fatal("expected non-nil location")
 	}

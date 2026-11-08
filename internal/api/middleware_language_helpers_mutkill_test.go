@@ -49,7 +49,7 @@ func newTimezoneResolutionTestApp(t *testing.T) *fiber.App {
 	// driven against the real chain in cmd/ovumcy.
 	app := fiber.New()
 	app.Get("/tzprobe", func(c fiber.Ctx) error {
-		handler.resolveOwnerRequestTimezone(c)
+		handler.resolveOwnerRequestTimezone(c, nil)
 		return c.SendStatus(fiber.StatusOK)
 	})
 	return app
