@@ -22,19 +22,29 @@ type refusingCalendarFeedFence struct {
 	diverged int
 }
 
-func (fence *refusingCalendarFeedFence) Advance(context.Context) error {
+// A refusing form never runs commit, so the writer's transaction never opens;
+// with no error it runs commit with no marker, as an unconfigured fence does.
+func (fence *refusingCalendarFeedFence) Advance(_ context.Context, commit func(string) error) error {
 	fence.calls++
-	return fence.err
+	if fence.err != nil {
+		return fence.err
+	}
+	return commit("")
 }
 
-func (fence *refusingCalendarFeedFence) AdvanceOrRefuse(context.Context) error {
+func (fence *refusingCalendarFeedFence) AdvanceOrRefuse(_ context.Context, commit func(string) error) error {
 	fence.sessions++
-	return fence.err
+	if fence.err != nil {
+		return fence.err
+	}
+	return commit("")
 }
 
-func (fence *refusingCalendarFeedFence) AdvanceOrDiverge(context.Context) error {
+// AdvanceOrDiverge never refuses: the erasure's transaction runs whatever the
+// fence did, and its error is the erasure's own.
+func (fence *refusingCalendarFeedFence) AdvanceOrDiverge(_ context.Context, commit func(string) error) error {
 	fence.diverged++
-	return fence.err
+	return commit("")
 }
 
 // TestARevocationIsRefusedWhenTheFenceCannotRecordIt pins the half of the

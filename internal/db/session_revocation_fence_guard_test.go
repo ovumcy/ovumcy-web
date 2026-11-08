@@ -150,6 +150,7 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 			}
 			name := declarationName(function)
 			writeAt, advanceAt := token.NoPos, token.NoPos
+			var advanceCommit *ast.FuncLit
 			earliest := func(current *token.Pos, at token.Pos) {
 				if *current == token.NoPos || at < *current {
 					*current = at
@@ -165,6 +166,9 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 					}
 					switch {
 					case advances[callee]:
+						if advanceAt == token.NoPos || typed.Pos() < advanceAt {
+							advanceCommit = fenceWriteClosure(typed)
+						}
 						earliest(&advanceAt, typed.Pos())
 						if callee.Name() == "advanceCalendarFeedFenceBestEffort" {
 							diverging[name] = true
@@ -235,7 +239,11 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 			if transactionAt != token.NoPos && transactionAt < firstWrite {
 				firstWrite = transactionAt
 			}
-			advancesFirst[name] = advanceAt < firstWrite
+			// WEB-505: the first write must sit inside the closure handed to the
+			// advance (the transaction that records the marker), and no
+			// transaction of the writer's own may open inside it.
+			advancesFirst[name] = advanceCommit != nil && insideNode(advanceCommit, int(firstWrite)) &&
+				(transactionAt == token.NoPos || !insideNode(advanceCommit, int(transactionAt)))
 		}
 	}
 

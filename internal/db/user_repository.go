@@ -326,6 +326,11 @@ func (repo *UserRepository) RenormalizeUserEmail(ctx context.Context, userID uin
 // belongs to the account, not to the address, and the owner keeps the manual
 // rotate control.
 func (repo *UserRepository) SetUserEmailByIDAndRevokeSessions(ctx context.Context, userID uint, fromEmail string, toEmail string) (bool, error) {
+	// A zero id re-homes nothing, and the fence advanced for it would record a
+	// revocation that never happened.
+	if err := requireUserOwnerID(userID); err != nil {
+		return false, err
+	}
 	var rehomed bool
 	err := repo.advanceCalendarFeedFenceOrRefuse(ctx, func(tx *gorm.DB) error {
 		result := tx.Model(&models.User{}).
