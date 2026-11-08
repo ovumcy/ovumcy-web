@@ -22,3 +22,22 @@ func TestCheckCalendarFeedFenceMountedReadsTheHost(t *testing.T) {
 		t.Fatalf("a directory that does not exist is left to the anchor's own refusal, got %v", err)
 	}
 }
+
+// TestCheckCalendarFeedFenceMountedDecidesOnMountInfoWhenTheDeviceIsUnreadable
+// takes a path whose stat fails for a reason other than absence — a component
+// below a regular file is "not a directory", not "does not exist" — so neither
+// symlink resolution nor the device comparison yields evidence, and the mount
+// table alone decides: /proc is its own mount on every Linux host.
+func TestCheckCalendarFeedFenceMountedDecidesOnMountInfoWhenTheDeviceIsUnreadable(t *testing.T) {
+	const belowAFile = "/proc/version/fence"
+	evidence := gatherCalendarFeedFenceMountEvidence(belowAFile)
+	if evidence.deviceErr == nil {
+		t.Fatalf("stat of %s must fail, so the device comparison has no evidence", belowAFile)
+	}
+	if evidence.mountInfoErr != nil {
+		t.Fatalf("the mount table must still read: %v", evidence.mountInfoErr)
+	}
+	if err := CheckCalendarFeedFenceMounted(belowAFile); err != nil {
+		t.Fatalf("a directory under the /proc mount must be accepted on the mount table alone, got %v", err)
+	}
+}
