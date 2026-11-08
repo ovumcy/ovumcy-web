@@ -107,7 +107,7 @@ func TestOperatorRevocationWithoutAConfirmedFenceIsRefusedRatherThanLost(t *test
 	// The operator CLI: same app_state, no anchor of its own.
 	cliFence := NewCalendarFeedRestoreFence(serverRepositories.AppState, serverRepositories.Users, security.NewCalendarFeedFenceFile(""))
 
-	err = cliFence.AdvanceConfirmed(ctx)
+	err = advanceConfirmedForTest(cliFence,ctx)
 	if !errors.Is(err, ErrCalendarFeedFenceUnreachable) {
 		t.Fatalf("AdvanceConfirmed over an unconfigured anchor must return ErrCalendarFeedFenceUnreachable, got %v", err)
 	}
@@ -156,7 +156,7 @@ func TestOperatorRevocationAfterAnUnbootedRestoreDoesNotMaskTheDiscontinuity(t *
 	// path — the case the whole mechanism is supposed to make safe.
 	cliFence := NewCalendarFeedRestoreFence(serverRepositories.AppState, serverRepositories.Users, security.NewCalendarFeedFenceFile(fencePath))
 
-	err := cliFence.AdvanceConfirmed(ctx)
+	err := advanceConfirmedForTest(cliFence,ctx)
 	var continuity *CalendarFeedFenceContinuityError
 	if !errors.As(err, &continuity) {
 		t.Fatalf("AdvanceConfirmed over disagreeing halves must return *CalendarFeedFenceContinuityError, got %v", err)
