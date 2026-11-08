@@ -89,6 +89,13 @@ For production-style setups:
 
 > **Upgrading an existing install to v2.0.0 or later? Take the new compose file first.** The new image expects the `ovumcy_fence` volume at `/app/fence`, and the new compose files forward `.env` keys an older copy silently ignored (`REGISTRATION_MODE` among them), so values already sitting in `.env` take effect at the first start. Follow the [Safe Upgrade Procedure](docs/self-hosted.md#safe-upgrade-procedure).
 
+> **Known issues in v2.0.0, until 2.1.0 ships.** Three steps keep a v2.0.0 instance safe:
+> - **Never run the container without the fence volume.** Started with plain `docker run` on a writable container filesystem and no volume at `/app/fence`, v2.0.0 keeps the fence inside the container, and every recreation of the container revokes every local password, recovery code, session and webhook endpoint. The compose file above already runs the container read-only with both volumes; a `docker run` needs `--read-only --tmpfs /tmp -v ovumcy_fence:/app/fence -v ovumcy_data:/app/data`.
+> - **Back up only with the server stopped**, and with no `users delete`, `reset-password` or `webhook set` command running. A backup taken while the server ran is restored with the fence file removed, which signs every owner out and revokes every local password on the next start.
+> - **Check the date before you record a day** after signing out or in a new browser: the first page of the session can show the server's date rather than yours.
+>
+> Full commands and recovery steps: [Known Issues in 2.0.0](docs/self-hosted.md#known-issues-in-200).
+
 <a id="verify-the-image" name="verify-the-image"></a>
 <details>
 <summary><strong>Verify the image before running it (recommended)</strong></summary>
