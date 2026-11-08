@@ -275,8 +275,8 @@ func TestWebhookClaimIsTheBoundaryOfARevocation(t *testing.T) {
 		if len(delivered) != 1 || delivered[0].url != ownerEndpoint {
 			t.Fatalf("the declared boundary is one send to the snapshot's endpoint, got %+v", delivered)
 		}
-		if report.Due != 1 {
-			t.Fatalf("expected the one due reminder, got due=%d", report.Due)
+		if report.Due != 1 || report.Sent != 1 || report.Failed != 0 {
+			t.Fatalf("expected the one due reminder recorded as sent, got due=%d sent=%d failed=%d", report.Due, report.Sent, report.Failed)
 		}
 		if after.WebhookPeriodLastSentCycleStart == nil {
 			t.Fatal("the claim that was won must stand as the watermark of the send that left")
