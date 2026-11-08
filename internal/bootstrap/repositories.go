@@ -25,12 +25,15 @@ import (
 // feed writes are invisible to the fence — a revocation recorded only inside
 // the database is exactly the defect the fence exists for — so a guard refuses
 // that call outside this package.
-func BuildRepositories(database *gorm.DB, fencePath string) (*db.Repositories, *services.CalendarFeedRestoreFence) {
+//
+// fenceOptions configure the fence file; the server passes the mount check
+// there when CALENDAR_FEED_FENCE_REQUIRE_MOUNT is set.
+func BuildRepositories(database *gorm.DB, fencePath string, fenceOptions ...security.CalendarFeedFenceOption) (*db.Repositories, *services.CalendarFeedRestoreFence) {
 	repositories := db.NewRepositories(database)
 	fence := services.NewCalendarFeedRestoreFence(
 		repositories.AppState,
 		repositories.Users,
-		security.NewCalendarFeedFenceFile(fencePath),
+		security.NewCalendarFeedFenceFile(fencePath, fenceOptions...),
 	)
 	return repositories.WithCalendarFeedFence(fence), fence
 }

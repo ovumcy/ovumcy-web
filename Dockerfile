@@ -58,9 +58,15 @@ COPY --from=runtime-assets --chown=10001:10001 /app/data /app/data
 # /app/fence is the mountpoint for the calendar-feed restore fence. It is a
 # SECOND persistent location on purpose: the fence proves the database in
 # front of the app is the one this instance last wrote, so it only works
-# while it stays out of every database backup. Left unmounted the directory
-# is on the read-only layer, the fence cannot be written, and the app
-# disarms every armed calendar feed on each start and says so.
+# while it stays out of every database backup. The directory exists in the
+# image, owned by the app user, so a named volume mounted on it inherits that
+# owner (a volume on a path the image lacks is created root-owned and cannot
+# be written). Left unmounted it sits on the container's writable layer —
+# or, under --read-only, on a layer that cannot be written — and
+# CALENDAR_FEED_FENCE_REQUIRE_MOUNT below makes the app refuse to start
+# either way, writing nothing, unless CALENDAR_FEED_FENCE_OPTOUT=true: a
+# fence on the writable layer is lost on every recreation of the container,
+# and the next start would read the database as a restored backup.
 COPY --from=runtime-assets --chown=10001:10001 /app/fence /app/fence
 COPY --from=builder --chown=10001:10001 /out/ovumcy /app/ovumcy
 
@@ -69,6 +75,7 @@ USER 10001:10001
 EXPOSE 8080
 ENV DB_PATH=/app/data/ovumcy.db
 ENV CALENDAR_FEED_FENCE_PATH=/app/fence/calendar-feed.fence
+ENV CALENDAR_FEED_FENCE_REQUIRE_MOUNT=true
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["/app/ovumcy", "healthcheck"]
 CMD ["/app/ovumcy"]

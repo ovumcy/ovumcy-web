@@ -90,11 +90,22 @@ For production-style setups:
 > **Upgrading an existing install to v2.0.0 or later? Take the new compose file first.** The new image expects the `ovumcy_fence` volume at `/app/fence`, and the new compose files forward `.env` keys an older copy silently ignored (`REGISTRATION_MODE` among them), so values already sitting in `.env` take effect at the first start. Follow the [Safe Upgrade Procedure](docs/self-hosted.md#safe-upgrade-procedure).
 
 > **Known issues in v2.0.0, until 2.1.0 ships.** Three steps keep a v2.0.0 instance safe:
-> - **Never run the container without the fence volume.** Started with plain `docker run` on a writable container filesystem and no volume at `/app/fence`, v2.0.0 keeps the fence inside the container, and every recreation of the container revokes every local password, recovery code, session and webhook endpoint. The compose file above already runs the container read-only with both volumes; a `docker run` needs `--read-only --tmpfs /tmp -v ovumcy_fence:/app/fence -v ovumcy_data:/app/data`.
+> - **Never run the container without the fence volume.** Started with plain `docker run` on a writable container filesystem and no volume at `/app/fence`, v2.0.0 keeps the fence inside the container, and every recreation of the container revokes every local password, recovery code, session and webhook endpoint. The compose file above already runs the container read-only with both volumes; a `docker run` needs `--read-only --tmpfs /tmp -v ovumcy_fence:/app/fence -v ovumcy_data:/app/data`. Fixed in 2.1.0: the image refuses that start instead, naming `CALENDAR_FEED_FENCE_PATH`, and writes nothing.
 > - **Back up only with the server stopped**, and with no `users delete`, `reset-password` or `webhook set` command running. A backup taken while the server ran is restored with the fence file removed, which signs every owner out and revokes every local password on the next start.
 > - **Check the date before you record a day** after signing out or in a new browser: the first page of the session can show the server's date rather than yours.
 >
 > Full commands and recovery steps: [Known Issues in 2.0.0](docs/self-hosted.md#known-issues-in-200).
+
+Running the image with plain `docker run` (Portainer, Watchtower and Kubernetes take the same two mounts) instead of compose? Give it the fence volume as well as the data volume, and **never recreate the container without the fence volume**:
+
+```bash
+docker run -d --name ovumcy --read-only --tmpfs /tmp \
+  -p 127.0.0.1:8080:8080 -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -v ovumcy_fence:/app/fence -v ovumcy_data:/app/data \
+  ghcr.io/ovumcy/ovumcy-web:v2.0.0
+```
+
+Keep the `SECRET_KEY` you generate: a recreated container needs the same one. Without a volume at `/app/fence` the fence would sit on the container's writable layer, which every recreation throws away, and the next start would read the database as a restored backup and revoke every local password. From 2.1.0 the image refuses that start instead, naming `CALENDAR_FEED_FENCE_PATH` — see [Calendar Feed Restore Fence](docs/self-hosted.md#calendar-feed-restore-fence).
 
 <a id="verify-the-image" name="verify-the-image"></a>
 <details>

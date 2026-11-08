@@ -99,14 +99,21 @@ func NewCalendarFeedFenceToken() (string, error) {
 // refusing to start.
 type CalendarFeedFenceFile struct {
 	path string
+	// mountCheck, when set, refuses a fence directory that is not a mounted
+	// volume; see WithCalendarFeedFenceMountCheck.
+	mountCheck *calendarFeedFenceMountGate
 }
 
 // NewCalendarFeedFenceFile wires the anchor at path. An empty path is accepted
 // and makes both operations return ErrCalendarFeedFenceNotConfigured, so "not
 // configured" reaches the caller through the same channel as "not writable"
 // and cannot be mistaken for a proof of continuity.
-func NewCalendarFeedFenceFile(path string) *CalendarFeedFenceFile {
-	return &CalendarFeedFenceFile{path: strings.TrimSpace(path)}
+func NewCalendarFeedFenceFile(path string, options ...CalendarFeedFenceOption) *CalendarFeedFenceFile {
+	fence := &CalendarFeedFenceFile{path: strings.TrimSpace(path)}
+	for _, option := range options {
+		option(fence)
+	}
+	return fence
 }
 
 // Read returns the stored token. A file that does not exist yet — including one
@@ -118,6 +125,11 @@ func NewCalendarFeedFenceFile(path string) *CalendarFeedFenceFile {
 func (fence *CalendarFeedFenceFile) Read() (string, bool, error) {
 	if fence.path == "" {
 		return "", false, ErrCalendarFeedFenceNotConfigured
+	}
+	if fence.mountCheck != nil {
+		if err := fence.mountCheck.verdict(filepath.Dir(filepath.Clean(fence.path))); err != nil {
+			return "", false, err
+		}
 	}
 	content, err := ReadBoundedRegularFile(fence.path, calendarFeedFenceLabel, calendarFeedFenceMaxBytes)
 	if errors.Is(err, fs.ErrNotExist) {

@@ -2145,8 +2145,35 @@ jobs:
         run: |
           set -euo pipefail
           secret="$(openssl rand -hex 32)"
-          cid="$(docker run -d --rm -p 18080:8080 -e SECRET_KEY="$secret" ovumcy-image-smoke:${{ github.sha }})"
-          trap 'docker stop "$cid" >/dev/null 2>&1 || true' EXIT
+          image="ovumcy-image-smoke:${{ github.sha }}"
+          data_volume="ovumcy-smoke-data-${{ github.run_id }}"
+          fence_volume="ovumcy-smoke-fence-${{ github.run_id }}"
+          cid=""
+          trap 'if [ -n "$cid" ]; then docker stop "$cid" >/dev/null 2>&1 || true; fi; docker volume rm -f "$data_volume" "$fence_volume" >/dev/null 2>&1 || true' EXIT
+
+          # The image requires the restore fence on a mounted volume: a start
+          # with a data volume and no fence volume must be refused, writing
+          # nothing, because a fence on the container's writable layer is lost
+          # on every recreation (WEB-506).
+          if refused="$(docker run --rm -v "$data_volume:/app/data" -e SECRET_KEY="$secret" "$image" 2>&1)"; then
+            echo "a start without a fence volume must be refused"; echo "$refused"; exit 1
+          fi
+          grep -q 'refusing to start' <<<"$refused"
+          grep -q 'writable layer' <<<"$refused"
+
+          # A recreation on the same data and fence volumes must read as
+          # continuity, not as a restored backup: the first container arms the
+          # fence, the second starts over the same pair and revokes nothing.
+          first="$(docker run -d --rm -v "$data_volume:/app/data" -v "$fence_volume:/app/fence" -e SECRET_KEY="$secret" "$image")"
+          armed=0
+          for _ in $(seq 1 30); do
+            if docker logs "$first" 2>&1 | grep -q 'restore fence armed'; then armed=1; break; fi
+            sleep 1
+          done
+          if [ "$armed" -ne 1 ]; then echo "the first start did not arm the fence"; docker logs "$first" || true; exit 1; fi
+          docker stop "$first" >/dev/null
+
+          cid="$(docker run -d --rm -p 18080:8080 -v "$data_volume:/app/data" -v "$fence_volume:/app/fence" -e SECRET_KEY="$secret" "$image")"
 
           # The scratch image has no shell/curl, so probe readiness from the host.
           ready=0
@@ -2155,6 +2182,10 @@ jobs:
             sleep 1
           done
           if [ "$ready" -ne 1 ]; then echo "app did not become healthy"; docker logs "$cid" || true; exit 1; fi
+          recreated="$(docker logs "$cid" 2>&1)"
+          if grep -q 'not the one this instance last wrote' <<<"$recreated"; then
+            echo "a recreation on the same volumes was read as a restore"; echo "$recreated"; exit 1
+          fi
 
           healthz="$(curl -fsS http://localhost:18080/healthz)"
           grep -q '"status":"ok"' <<<"$healthz"
@@ -2186,7 +2217,7 @@ jobs:
           docker exec "$cid" /app/ovumcy healthcheck
           docker exec "$cid" /app/ovumcy readycheck
 
-          echo "image smoke OK: healthz + readyz + login + static ($asset) + in-container healthcheck/readycheck"
+          echo "image smoke OK: unmounted fence refused + recreation kept continuity + healthz + readyz + login + static ($asset) + in-container healthcheck/readycheck"
 
   publish-image:
     # Publishes `ghcr.io/<repo>:main` (plus `sha-<short>`) for the commit now
