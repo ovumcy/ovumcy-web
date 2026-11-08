@@ -2170,7 +2170,8 @@ jobs:
           first="$(docker run -d --rm -v "$data_volume:/app/data" -v "$fence_volume:/app/fence" -e SECRET_KEY="$secret" "$image")"
           armed=0
           for _ in $(seq 1 30); do
-            if docker logs "$first" 2>&1 | grep -q 'restore fence armed'; then armed=1; break; fi
+            first_log="$(docker logs "$first" 2>&1 || true)"
+            if grep -q 'restore fence armed' <<<"$first_log"; then armed=1; break; fi
             sleep 1
           done
           if [ "$armed" -ne 1 ]; then echo "the first start did not arm the fence"; docker logs "$first" || true; exit 1; fi
