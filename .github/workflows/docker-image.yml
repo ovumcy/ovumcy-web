@@ -1825,7 +1825,7 @@ jobs:
 
           # The last read before the first write. A higher stable tag that
           # appeared during the build takes `latest` with its own run; this one
-          # still publishes its version tag and `sha-…`.
+          # still publishes its version tag.
           latest_dropped=false
           if grep -qx 'latest' <<<"${tags}"; then
             if ! still_highest_stable_tag; then
@@ -1874,7 +1874,7 @@ jobs:
                 | tail -1
             )"
             if [ "$existing" != "$DIGEST" ]; then
-              echo "::error::${IMAGE_NAME}:${tag} already names ${existing:-a digest the registry did not report}, not this run's signed digest ${DIGEST}. A release or commit tag is written once and never re-pointed; publish the commit under a new release tag instead. Nothing was promoted."
+              echo "::error::${IMAGE_NAME}:${tag} already names ${existing:-a digest the registry did not report}, not this run's signed digest ${DIGEST}. A release or commit tag is written once and never re-pointed, so a re-run, which rebuilds, cannot finish a release this way. When GHCR already holds this release, it is the highest stable one, and only the Docker Hub mirror failed, dispatch promote-latest.yml with this tag: it mirrors the signed GHCR digest, verifies it there and writes the Hub tag. Otherwise publish the commit under a new release tag. Nothing was promoted."
               exit 1
             fi
           done <<< "${tags}"

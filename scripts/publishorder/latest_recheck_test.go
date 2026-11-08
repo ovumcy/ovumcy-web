@@ -103,8 +103,8 @@ func TestTheGhcrPromotionAsksAgainBeforeItWritesLatest(t *testing.T) {
 	}
 }
 
-// runMirrorStep runs the Docker Hub mirror step with cosign accepting every
-// call and the tag listing supplied, and returns what it printed, what it
+// runMirrorStep runs the Docker Hub mirror step with oras and cosign accepting
+// every call and the tag listing supplied, and returns what it printed, what it
 // exported and its exit error.
 func runMirrorStep(t *testing.T, env map[string]string, ghRefs string, ghFails bool) (string, string, error) {
 	t.Helper()
@@ -114,6 +114,7 @@ func runMirrorStep(t *testing.T, env map[string]string, ghRefs string, ghFails b
 	preamble := `gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf '%s\n' "$GH_REFS"; }` + "\n" +
 		`sleep() { :; }` + "\n" +
 		highestTagExports + "\n" +
+		`oras() { printf 'ORAS %s\n' "$*" >&2; }` + "\n" +
 		`cosign() { printf 'COSIGN %s\n' "$*" >&2; }`
 
 	outputs := filepath.ToSlash(filepath.Join(t.TempDir(), "github_output"))

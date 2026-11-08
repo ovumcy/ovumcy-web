@@ -103,6 +103,7 @@ const (
 
 	mirrorLoginStep  = "Log in to Docker Hub for the mirror"
 	mirrorProbeStep  = "Report Docker Hub's rate-limit view of the mirror login"
+	installOrasStep  = "Install oras"
 	mirrorStep       = "Mirror the signed digest to Docker Hub"
 	mirrorVerifyStep = "Verify every mirrored tag anonymously and against the signed digest"
 )
@@ -332,7 +333,9 @@ func TestTheDockerHubMirrorRunsAfterTheWholeGhcrReleaseIsVerified(t *testing.T) 
 		t.Fatalf("%s, job %q: no step named %q, so this guard cannot find the window it is meant to hold", publishWorkflow, publishJob, publicStep)
 	}
 
-	want := []string{publicStep, mirrorLoginStep, mirrorProbeStep, mirrorStep, mirrorVerifyStep}
+	// installOrasStep only places the pinned binary the mirror's first,
+	// tagless copy runs; it is read here for that and writes to no registry.
+	want := []string{publicStep, mirrorLoginStep, mirrorProbeStep, installOrasStep, mirrorStep, mirrorVerifyStep}
 	if got := steps[public:]; !slices.Equal(got, want) {
 		t.Errorf("%s, job %q ends on these steps:\n  %v\nand this guard has reviewed:\n  %v\nNothing may reach Docker Hub before %q has resolved every GHCR alias to the signed digest, and the mirror is not published until %q has resolved every Docker Hub alias to the same one",
 			publishWorkflow, publishJob, got, want, publicStep, mirrorVerifyStep)
@@ -369,6 +372,7 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			`gh() { printf 'GH %s\n' "$*" >&2; if [ -n "${GH_FAIL:-}" ]; then return 1; fi; printf '%s\n' "${GH_REFS-refs/tags/v2.0.0}"; }` + "\n" +
 			`sleep() { :; }` + "\n" +
 			highestTagExports + "\n" +
+			`oras() { printf 'ORAS %s\n' "$*" >&2; }` + "\n" +
 			`cosign() { printf 'COSIGN %s\n' "$*" >&2; if [ "$1" = verify ]; then n=$(( n + 1 )); ` +
 			`if [ "$n" -gt ` + strconv.Itoa(verifyFailures) + ` ]; then return 0; fi; ` +
 			`printf '%s\n' ` + shellQuote(failureMessage) + ` >&2; return 1; fi; }`
@@ -404,14 +408,16 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 		{
 			name:    "the tags this run derived",
 			tagRefs: imageName + ":v2.0.0\n" + imageName + ":latest",
-			// The bytes cross once, to a DIGEST destination, so Docker Hub
-			// holds the manifest under no alias at all; the mirror is signed
-			// and read back there; only then is an alias written, and each
-			// from GHCR's digest — the same manifest, whose blobs already
-			// crossed, so it costs Docker Hub a manifest write and no pulls.
-			// Every source is a digest, which is the part that matters.
+			// The bytes cross once, by `oras copy` to the bare repository, so
+			// Docker Hub holds the manifest under no tag at all — not even the
+			// `sha256-<hex>` one a `cosign copy` writes for each entity; the
+			// mirror is signed and read back there; only then is an alias
+			// written, and each from GHCR's digest — the same manifest, whose
+			// blobs already crossed, so it costs Docker Hub a manifest write
+			// and no pulls. Every source is a digest, which is the part that
+			// matters.
 			wantCosign: []string{
-				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + "@" + digest,
+				"ORAS copy " + imageName + "@" + digest + " " + mirrorName,
 				"COSIGN sign --yes " + mirrorName + "@" + digest,
 				"COSIGN verify --certificate-identity-regexp " + identityRegexp + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + digest,
 				"COSIGN copy --force " + imageName + "@" + digest + " " + mirrorName + ":v2.0.0",
@@ -438,6 +444,7 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			tagRefs:        imageName + ":v2.0.0",
 			verifyFailures: verifyAttempts - 1,
 			wantCosign: []string{
+				"ORAS copy " + imageName + "@" + digest + " " + mirrorName,
 				"COSIGN sign --yes " + mirrorName + "@" + digest,
 				"COSIGN verify --certificate-identity-regexp " + identityRegexp + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + digest,
 				"COSIGN verify --certificate-identity-regexp " + identityRegexp + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + digest,
@@ -549,7 +556,7 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				// weaker "no alias was written" would pass a step that moved
 				// the cross-registry copy above the list it has not judged yet.
 				if testCase.verifyFailures == 0 {
-					if strings.Contains(string(output), "COSIGN") {
+					if strings.Contains(string(output), "COSIGN") || strings.Contains(string(output), "ORAS") {
 						t.Errorf("the step reached a registry before it had judged its own inputs:\n%s", output)
 					}
 					return
@@ -562,17 +569,51 @@ func TestTheMirrorCopiesTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 				// the source would go vacuous the day the source moves.
 				if slices.ContainsFunc(strings.Split(string(output), "\n"), func(line string) bool {
 					fields := strings.Fields(line)
-					return len(fields) > 2 && fields[0] == "COSIGN" && fields[1] == "copy" && strings.HasPrefix(fields[len(fields)-1], mirrorName+":")
+					return len(fields) > 2 && (fields[0] == "COSIGN" || fields[0] == "ORAS") && fields[1] == "copy" && strings.HasPrefix(fields[len(fields)-1], mirrorName+":")
 				}) {
 					t.Errorf("the step wrote a mirrored alias on a run it refused, and a red run retracts no tag:\n%s", output)
 				}
+				requireNoMirrorTagBeforeTheSignature(t, string(output))
 				return
 			}
 			if err != nil {
 				t.Fatalf("the step failed on %q: %v\n%s", testCase.tagRefs, err, output)
 			}
 			requireOrderedLines(t, string(output), testCase.wantCosign)
+			requireNoMirrorTagBeforeTheSignature(t, string(output))
 		})
+	}
+}
+
+// requireNoMirrorTagBeforeTheSignature holds the mirror to writing NO tag of
+// any name on Docker Hub until its signature has been read back. The ordered
+// lines above are a subsequence check, so an extra copy slipped in ahead of
+// them would still match; this reads every invocation before the first
+// `cosign verify` and allows exactly one copy there — `oras copy` to the bare
+// repository, which pushes by digest and tags nothing. A `cosign copy`, even
+// to a digest destination, also writes `sha256-<hex>` for each entity it
+// copies: a public alias of the image on a registry where nothing is signed
+// yet, which is the very defect the order exists to refuse.
+func requireNoMirrorTagBeforeTheSignature(t *testing.T, output string) {
+	t.Helper()
+
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if fields[0] == "COSIGN" && fields[1] == "verify" {
+			return
+		}
+		if fields[1] != "copy" || (fields[0] != "COSIGN" && fields[0] != "ORAS") {
+			continue
+		}
+		if fields[0] == "ORAS" && len(fields) == 4 && fields[len(fields)-1] == mirrorName {
+			continue
+		}
+		t.Errorf("the step ran %q before the mirror's signature was read back; only a tagless `oras copy` to %s may reach Docker Hub before it, because every other copy leaves a tag there that nothing verifies yet:\n%s",
+			line, mirrorName, output)
+		return
 	}
 }
 

@@ -73,13 +73,21 @@ func buildScannerTree(t *testing.T, dir string, tree scannerTree) (ancestor, tag
 	t.Helper()
 
 	git := func(args ...string) string {
-		command := exec.Command("git", append([]string{"-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
+		command := exec.Command("git", args...)
 		command.Dir = dir
 		for _, entry := range os.Environ() {
 			if !strings.HasPrefix(entry, "GIT_") {
 				command.Env = append(command.Env, entry)
 			}
 		}
+		// The fixture's identity and an unsigned commit, handed to git as
+		// environment config rather than as command-line options.
+		command.Env = append(command.Env,
+			"GIT_CONFIG_COUNT=3",
+			"GIT_CONFIG_KEY_0=user.name", "GIT_CONFIG_VALUE_0=fixture",
+			"GIT_CONFIG_KEY_1=user.email", "GIT_CONFIG_VALUE_1=fixture@example.invalid",
+			"GIT_CONFIG_KEY_2=commit.gpgsign", "GIT_CONFIG_VALUE_2=false",
+		)
 		output, err := command.CombinedOutput()
 		if err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, output)

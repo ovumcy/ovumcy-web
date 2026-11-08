@@ -11,12 +11,14 @@ import (
 )
 
 // The Docker Hub mirror is the last leg of the release this package gates: a
-// tag that passed the gate and was signed on GHCR is copied there by `cosign
-// copy`. Twice on 2026-09-29 (runs 36512010639, 36512597460) that copy was
-// refused with Docker Hub's 429 during a merge burst, once on the
-// cross-registry copy and once on an alias. Every cosign call in the step now
-// asks again on that one verdict — the copies, the signing call and the
-// read-back alike; these cases hold it to asking on nothing else, to failing
+// tag that passed the gate and was signed on GHCR crosses there by digest
+// under no tag (`oras copy` to the bare repository), is signed and read back,
+// and only then is aliased by `cosign copy`. Twice on 2026-09-29 (runs
+// 36512010639, 36512597460) the copy was refused with Docker Hub's 429 during
+// a merge burst, once on the cross-registry copy and once on an alias. Every
+// registry call in the step now asks again on that one verdict — the copies,
+// the signing call and the read-back alike, in cosign's words or oras's
+// lower-case ones; these cases hold it to asking on nothing else, to failing
 // the run when the throttle outlasts the budget, and to naming the throttle
 // rather than a signer when the read-back is the call it refuses.
 const (
@@ -39,6 +41,9 @@ const (
 	// An answer that is not the throttle, over a digest that happens to hold
 	// `429`: matched on the digits alone, it would be retried.
 	unknownManifest = "Error: GET https://index.docker.io/v2/example/app/manifests/sha256:4290aa: MANIFEST_UNKNOWN: manifest unknown"
+	// oras words the same throttle in lower case, with the status code in
+	// its own phrasing rather than cosign's `429 Too Many Requests`.
+	orasThrottled = "Error response from registry: PUT \"https://registry-1.docker.io/v2/example/app/manifests/sha256:7c4f\": response status code 429: toomanyrequests: You have reached your rate limit"
 )
 
 func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
@@ -47,16 +52,18 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 	block := mirrorStepBlock(t)
 	script := runScript(t, mirrorStepName, block)
 
-	crossRegistry := "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + mirrorName + "@" + mirrorDigest
+	crossRegistry := "ORAS copy " + mirrorImage + "@" + mirrorDigest + " " + mirrorName
 	latestAlias := "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + mirrorName + ":latest"
 	signed := "COSIGN sign --yes " + mirrorName + "@" + mirrorDigest
 	readBack := "COSIGN verify --certificate-identity-regexp " + mirrorIdentity + " --certificate-oidc-issuer https://token.actions.githubusercontent.com " + mirrorName + "@" + mirrorDigest
 
 	for _, testCase := range []struct {
 		name string
-		// verb and failDest pick the call the registry refuses — the cosign
-		// subcommand and its last argument — failures how many times, and
-		// message what cosign prints when it does.
+		// tool, verb and failDest pick the call the registry refuses — the
+		// shim's own prefix (`COSIGN` unless set), the subcommand and its last
+		// argument — failures how many times, and message what the tool
+		// prints when it does.
+		tool     string
 		verb     string
 		failDest string
 		failures int
@@ -74,13 +81,29 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 	}{
 		{
 			name:        "the cross-registry copy is throttled, then accepted",
+			tool:        "ORAS",
 			verb:        "copy",
-			failDest:    mirrorName + "@" + mirrorDigest,
+			failDest:    mirrorName,
 			failures:    mirrorCopyAttempts - 1,
 			message:     throttledGet,
 			wantCalls:   mirrorCopyAttempts,
 			wantSleeps:  []string{"SLEEP 1", "SLEEP 2"},
 			wantOrdered: []string{crossRegistry, "SLEEP 1", crossRegistry, "SLEEP 2", crossRegistry, signed, latestAlias},
+		},
+		{
+			// oras's own wording of the throttle: lower case, and no
+			// `429 Too Many Requests` phrase for a case-sensitive match to
+			// find. Read as anything but the throttle it would fail the run
+			// on the first refusal.
+			name:        "the cross-registry copy is throttled in oras's words, then accepted",
+			tool:        "ORAS",
+			verb:        "copy",
+			failDest:    mirrorName,
+			failures:    1,
+			message:     orasThrottled,
+			wantCalls:   2,
+			wantSleeps:  []string{"SLEEP 1"},
+			wantOrdered: []string{crossRegistry, "SLEEP 1", crossRegistry, signed, readBack, latestAlias},
 		},
 		{
 			name:        "an alias copy is throttled on a HEAD, then accepted",
@@ -94,8 +117,9 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 		},
 		{
 			name:        "the throttle outlasts the budget before anything is signed",
+			tool:        "ORAS",
 			verb:        "copy",
-			failDest:    mirrorName + "@" + mirrorDigest,
+			failDest:    mirrorName,
 			failures:    mirrorCopyAttempts * 10,
 			message:     throttledGet,
 			wantCalls:   mirrorCopyAttempts,
@@ -114,8 +138,9 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 		},
 		{
 			name:        "a refusal that is not the throttle is asked once",
+			tool:        "ORAS",
 			verb:        "copy",
-			failDest:    mirrorName + "@" + mirrorDigest,
+			failDest:    mirrorName,
 			failures:    mirrorCopyAttempts * 10,
 			message:     unknownManifest,
 			wantCalls:   1,
@@ -167,6 +192,11 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			tool := testCase.tool
+			if tool == "" {
+				tool = "COSIGN"
+			}
+
 			// The sleep shim records each pause instead of taking it, so the
 			// fixture runs the shipped arithmetic at a one-second unit without
 			// waiting on it.
@@ -178,10 +208,14 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 				// The question runs the checked-in script in a child bash, which
 				// sees the shims only when they are exported.
 				`export -f gh sleep` + "\n" +
-				`cosign() { printf 'COSIGN %s\n' "$*" >&2; ` +
-				`if [ "$1" = ` + shellQuote(testCase.verb) + ` ] && [ "${@: -1}" = ` + shellQuote(testCase.failDest) + ` ]; then calls=$(( calls + 1 )); ` +
+				// One shim behind both tools, so the refused call is picked by
+				// the tool as well as by its subcommand and destination.
+				`registry_call() { local tool="$1"; shift; printf '%s %s\n' "$tool" "$*" >&2; ` +
+				`if [ "$tool" = ` + shellQuote(tool) + ` ] && [ "$1" = ` + shellQuote(testCase.verb) + ` ] && [ "${@: -1}" = ` + shellQuote(testCase.failDest) + ` ]; then calls=$(( calls + 1 )); ` +
 				`if [ "$calls" -le ` + strconv.Itoa(testCase.failures) + ` ]; then printf '%s\n' ` + shellQuote(testCase.message) + ` >&2; return 1; fi; fi; ` +
-				`return 0; }`
+				`return 0; }` + "\n" +
+				`cosign() { registry_call COSIGN "$@"; }` + "\n" +
+				`oras() { registry_call ORAS "$@"; }`
 
 			output, err := runStepScript(t, bash, mirrorStepName, block, preamble+"\n"+script, "", append(os.Environ(),
 				"DIGEST="+mirrorDigest,
@@ -212,10 +246,11 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 
 			// Every copy, the cross-registry one and each alias, reads GHCR.
 			refused := map[string]string{
-				"copy":   "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + testCase.failDest,
-				"sign":   signed,
-				"verify": readBack,
-			}[testCase.verb]
+				"COSIGN copy":   "COSIGN copy --force " + mirrorImage + "@" + mirrorDigest + " " + testCase.failDest,
+				"ORAS copy":     crossRegistry,
+				"COSIGN sign":   signed,
+				"COSIGN verify": readBack,
+			}[tool+" "+testCase.verb]
 			if got := strings.Count(output, refused+"\n"); got != testCase.wantCalls {
 				t.Errorf("the step ran %q %d time(s), want %d:\n%s", refused, got, testCase.wantCalls, output)
 			}
@@ -233,7 +268,7 @@ func TestTheMirrorCopyRetriesOnlyDockerHubsRateLimit(t *testing.T) {
 				if !strings.Contains(output, "::error::") || !strings.Contains(output, testCase.wantRefusal) {
 					t.Errorf("the step failed without saying %q:\n%s", testCase.wantRefusal, output)
 				}
-				if testCase.verb == "copy" && testCase.failDest == mirrorName+"@"+mirrorDigest && strings.Contains(output, signed) {
+				if tool == "ORAS" && strings.Contains(output, signed) {
 					t.Errorf("the step signed a mirror whose bytes never crossed:\n%s", output)
 				}
 				return
