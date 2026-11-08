@@ -612,6 +612,16 @@ func (err *CalendarFeedFenceStepError) Unwrap() []error {
 	return []error{err.Sentinel, err.Cause}
 }
 
+// isCalendarFeedFenceOutcome reports whether err carries anything the fence
+// itself returned — a refusal, a half-advanced result, or a continuity
+// disagreement — so a caller mapping storage errors to its own sentinels keeps
+// it reachable instead of flattening it into an unrelated verdict.
+func isCalendarFeedFenceOutcome(err error) bool {
+	var step *CalendarFeedFenceStepError
+	var continuity *CalendarFeedFenceContinuityError
+	return errors.As(err, &step) || errors.As(err, &continuity)
+}
+
 // CalendarFeedFenceContinuityError is returned by ConfirmAdvances, a confirmed
 // advance and CheckContinuity when the anchor was reachable but the two halves
 // are not the one pair the confirmed form is willing to move forward from: both already holding the SAME token.

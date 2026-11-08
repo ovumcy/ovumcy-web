@@ -266,6 +266,29 @@ func TestOIDCConfirmAndLinkIdentityMapsAFenceRefusalToResolveFailed(t *testing.T
 	}
 }
 
+// A half-advanced fence joined to a session-version conflict, and a confirmed
+// fence whose continuity broke after the operator gate, both stay reachable:
+// the operator CLI tells the first apart (the file moved) and renders the
+// second as the fence refusal, never as a pair another account holds.
+func TestOIDCConfirmAndLinkIdentityKeepsEveryFenceOutcomeReachable(t *testing.T) {
+	t.Parallel()
+
+	halfAdvanced := errors.Join(ErrAuthSessionVersionChanged, &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: errors.New("context deadline exceeded")})
+	continuity := &CalendarFeedFenceContinuityError{AnchorFound: true, StoredFound: true}
+	for name, storeErr := range map[string]error{"half-advanced": halfAdvanced, "continuity": continuity} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			identities := &stubOIDCIdentityStore{revokeErr: storeErr}
+			service := newUnlinkTestService(security.OIDCLoginModeHybrid, identities)
+			claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "fresh-sub"}
+			_, err := service.ConfirmAndLinkIdentity(context.Background(), 7, 1, claims, time.Now())
+			if !errors.Is(err, storeErr) || errors.Is(err, ErrOIDCLinkFailed) {
+				t.Fatalf("expected the fence outcome to stay reachable, got %v", err)
+			}
+		})
+	}
+}
+
 // linkIdentity is the auto-provision sign-in path's persistence step. Its own
 // zero-owner and missing-claim-key guards mirror checks Authenticate and
 // resolveUserForClaims already make before calling it, but stay here as the

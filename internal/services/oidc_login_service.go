@@ -503,15 +503,17 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 	// very sign-in and has no earlier session to revoke.
 	identity := newOIDCIdentityRecord(targetUserID, claims, linkTime)
 	if err := service.identities.CreateAndRevokeSessions(ctx, &identity, expectedSessionVersion); err != nil {
+		// A fence outcome is kept whole and checked first. A refusal (WEB-464),
+		// or a confirmed fence whose continuity broke after the operator gate,
+		// wrote nothing, so the link is retryable — not a pair some other
+		// account already holds. A half-advanced fence arrives joined to the
+		// write's own failure, a session-version conflict included, and
+		// returning that conflict bare would hide that the file moved.
+		if isCalendarFeedFenceOutcome(err) {
+			return 0, fmt.Errorf("%w: %w", ErrOIDCIdentityResolveFailed, err)
+		}
 		if errors.Is(err, ErrAuthSessionVersionChanged) {
 			return 0, ErrAuthSessionVersionChanged
-		}
-		// A fence that cannot record the link (WEB-464) refused it before the
-		// row write, so the link is retryable — not a pair some other account
-		// already holds.
-		var fenceRefusal *CalendarFeedFenceStepError
-		if errors.As(err, &fenceRefusal) {
-			return 0, fmt.Errorf("%w: %w", ErrOIDCIdentityResolveFailed, err)
 		}
 		return 0, ErrOIDCLinkFailed
 	}
