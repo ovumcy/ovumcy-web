@@ -187,7 +187,7 @@ func TestCalendarFeedRestoreFencePendingFileRefusesOperatorAdvance(t *testing.T)
 	appState := &stubFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}}
 	anchor := &stubFenceAnchor{value: calendarFeedFenceFirstBootPrefix + fenceTestToken, found: true}
 
-	err := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor).AdvanceConfirmed(context.Background())
+	err := advanceConfirmedForTest(NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor), context.Background())
 	var continuity *CalendarFeedFenceContinuityError
 	if !errors.As(err, &continuity) || continuity.AnchorFound || continuity.StoredFound {
 		t.Fatalf("expected the not-armed-yet refusal (both halves reported absent), got %v", err)

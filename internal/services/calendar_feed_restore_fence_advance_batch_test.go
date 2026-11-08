@@ -8,51 +8,141 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
-// TestAConfirmedAdvanceCoversTheOperatorWriteThatFollowsIt is WEB-429: the
-// operator CLI confirms and advances the fence, and the repository write that
-// follows advances the SAME fence again. A file error on that second advance
-// used to move the database half alone, so the next boot revoked every
-// session, webhook and local password, while the CLI reported both halves in
-// agreement. The confirmed advance now covers exactly one following advance,
-// of either form, and the one after it writes again.
-func TestAConfirmedAdvanceCoversTheOperatorWriteThatFollowsIt(t *testing.T) {
-	forms := map[string]func(*CalendarFeedRestoreFence, context.Context) error{
-		"AdvanceOrRefuse":  (*CalendarFeedRestoreFence).AdvanceOrRefuse,
-		"AdvanceOrDiverge": (*CalendarFeedRestoreFence).AdvanceOrDiverge,
-		"Advance":          (*CalendarFeedRestoreFence).Advance,
+// commitMarker is the commit a services test hands an advance when it has no
+// row of its own to write: it records the marker exactly as the writer's
+// transaction would, through the fence's own app_state double.
+func commitMarker(appState calendarFeedRestoreFenceAppState) CalendarFeedFenceCommit {
+	return func(marker string) error {
+		if marker == "" {
+			return nil
+		}
+		return appState.Set(context.Background(), models.AppStateKeyCalendarFeedRestoreFence, marker)
 	}
-	for name, advance := range forms {
+}
+
+// advanceConfirmedForTest is the operator CLI's sequence with no row of its
+// own: ConfirmAdvances at the gate, then one advance whose commit records the
+// marker. Its errors are the ones the CLI classifies.
+func advanceConfirmedForTest(fence *CalendarFeedRestoreFence, ctx context.Context) error {
+	if err := fence.ConfirmAdvances(ctx); err != nil {
+		return err
+	}
+	return fence.Advance(ctx, commitMarker(fence.appState))
+}
+
+// advanceForms are the three server-side advances, by name.
+var advanceForms = map[string]func(*CalendarFeedRestoreFence, context.Context, CalendarFeedFenceCommit) error{
+	"AdvanceOrRefuse":  (*CalendarFeedRestoreFence).AdvanceOrRefuse,
+	"AdvanceOrDiverge": (*CalendarFeedRestoreFence).AdvanceOrDiverge,
+	"Advance":          (*CalendarFeedRestoreFence).Advance,
+}
+
+// TestEveryAdvanceHandsItsWriterTheTokenTheFileAlreadyHolds is WEB-505's
+// contract at the fence: the file half is written BEFORE commit runs, commit
+// receives that same token to record beside its row, and the fence records no
+// database half of its own. A fence that wrote the marker itself — in a commit
+// apart from the writer's — is the window a live backup restores as
+// continuity.
+func TestEveryAdvanceHandsItsWriterTheTokenTheFileAlreadyHolds(t *testing.T) {
+	for name, advance := range advanceForms {
+		t.Run(name, func(t *testing.T) {
+			appState := &stubFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}}
+			anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
+			fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+			commits := 0
+			err := advance(fence, context.Background(), func(marker string) error {
+				commits++
+				if marker == "" || marker == fenceTestToken {
+					t.Fatalf("commit must receive a fresh token, got %q", marker)
+				}
+				if anchor.value != marker {
+					t.Fatalf("the file must hold the token before the writer's transaction runs: file %q, marker %q", anchor.value, marker)
+				}
+				if stored := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; stored != fenceTestToken {
+					t.Fatalf("the fence must not record the database half itself, ahead of the writer's transaction: stored %q", stored)
+				}
+				return nil
+			})
+			if err != nil || commits != 1 {
+				t.Fatalf("advance: err %v, commits %d", err, commits)
+			}
+			if appState.values[models.AppStateKeyCalendarFeedRestoreFence] != fenceTestToken {
+				t.Fatal("a commit that recorded nothing must leave the database half where it was: only the writer's transaction records it")
+			}
+		})
+	}
+}
+
+// TestAFailedCommitRecordsTheTokenAloneSoTheHalvesAgree: a writer whose
+// transaction rolls back after the file moved must not leave the file ahead —
+// the next boot would answer that with the full restore revocation, every
+// session and local password, over a write that never happened. The token is
+// recorded alone, the writer's own error comes back unwrapped, and only a
+// failure of that record as well is reported as a half advance.
+func TestAFailedCommitRecordsTheTokenAloneSoTheHalvesAgree(t *testing.T) {
+	rolledBack := errors.New("compare-and-set lost")
+	for name, advance := range advanceForms {
+		t.Run(name, func(t *testing.T) {
+			appState := &stubFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}}
+			anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
+			fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
+
+			err := advance(fence, context.Background(), func(string) error { return rolledBack })
+			if !errors.Is(err, rolledBack) || errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
+				t.Fatalf("the writer's own error must come back as itself, got %v", err)
+			}
+			if stored := appState.values[models.AppStateKeyCalendarFeedRestoreFence]; stored != anchor.value || stored == fenceTestToken {
+				t.Fatalf("after a rolled-back commit the halves must agree on the new token: file %q, database %q", anchor.value, stored)
+			}
+
+			appState.setErr = errors.New("database is locked")
+			err = advance(fence, context.Background(), func(string) error { return rolledBack })
+			if !errors.Is(err, rolledBack) || !errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
+				t.Fatalf("a rolled-back commit whose record also failed leaves the file ahead and must say so, got %v", err)
+			}
+		})
+	}
+}
+
+// TestEveryConfirmedAdvanceAdvancesInsideItsOwnWrite replaces WEB-429's
+// "covered" advance: the operator CLI confirms the fence once, and every write
+// that follows advances it itself — file first, marker in the write's
+// transaction — with nothing written at the gate. A file that cannot be
+// written refuses with nothing written in either half and commit never run.
+func TestEveryConfirmedAdvanceAdvancesInsideItsOwnWrite(t *testing.T) {
+	for name, advance := range advanceForms {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			appState := &stubFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}}
 			anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
 			fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-			if err := fence.AdvanceConfirmed(ctx); err != nil {
-				t.Fatalf("AdvanceConfirmed: %v", err)
+			if err := fence.ConfirmAdvances(ctx); err != nil {
+				t.Fatalf("ConfirmAdvances: %v", err)
 			}
-			confirmed := anchor.value
-			if confirmed == fenceTestToken || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != confirmed {
-				t.Fatalf("fixture: the confirmed advance should leave both halves on a fresh token")
-			}
-
-			anchor.writeErr = errors.New("no space left on device")
-			if err := advance(fence, ctx); err != nil {
-				t.Fatalf("the write the confirmed advance covers must not fail on the fence: %v", err)
-			}
-			if anchor.value != confirmed || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != confirmed {
-				t.Fatalf("a covered advance must write neither half: file %q, database %q, confirmed %q",
-					anchor.value, appState.values[models.AppStateKeyCalendarFeedRestoreFence], confirmed)
+			if anchor.value != fenceTestToken || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != fenceTestToken {
+				t.Fatal("the gate must write neither half: the advance belongs inside the operator's write")
 			}
 
-			anchor.writeErr = nil
-			if err := advance(fence, ctx); err != nil {
-				t.Fatalf("the next advance: %v", err)
+			for round := 0; round < 2; round++ {
+				before := anchor.value
+				if err := advance(fence, ctx, commitMarker(appState)); err != nil {
+					t.Fatalf("round %d: %v", round, err)
+				}
+				if anchor.value == before || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != anchor.value {
+					t.Fatalf("round %d: each confirmed write must advance both halves to one fresh token", round)
+				}
 			}
-			if anchor.value == confirmed {
-				t.Fatal("the confirmed advance must cover one write only; the next advance wrote nothing")
+
+			anchor.writeErr = security.ErrCalendarFeedFenceNotConfigured
+			ran := false
+			err := advance(fence, ctx, func(string) error { ran = true; return nil })
+			if !errors.Is(err, ErrCalendarFeedFenceUnreachable) || ran {
+				t.Fatalf("a confirmed fence must refuse an unwritable file without running the write: err %v, ran %v", err, ran)
 			}
 		})
 	}
@@ -84,69 +174,51 @@ func (anchor *gatedFenceAnchor) Write(value string) error {
 		<-anchor.release
 	}
 	anchor.mu.Lock()
+	defer anchor.mu.Unlock()
 	anchor.value = value
-	anchor.mu.Unlock()
 	return nil
 }
 
-// TestConcurrentAdvanceOrRefuseCallsShareOneAdvance is WEB-454's sign-out
-// cost: every sign-out advances the fence under one instance-wide lock, each
-// with a synced file write. Callers that arrive while an advance is in flight
-// now share the next one, so N of them cost two writes rather than N+1, and
-// the halves still agree on the last token.
-func TestConcurrentAdvanceOrRefuseCallsShareOneAdvance(t *testing.T) {
-	const waiting = 8
+// TestConcurrentAdvanceOrRefuseCallsEachTakeTheirOwnToken: WEB-454 coalesced
+// concurrent sign-outs into one advance, whose members then wrote their rows
+// after the shared token was already in the database — the backup window
+// WEB-505 closes. Every caller now writes its own token and runs its own
+// commit while the file still holds exactly that token.
+func TestConcurrentAdvanceOrRefuseCallsEachTakeTheirOwnToken(t *testing.T) {
 	ctx := context.Background()
 	appState := &lockedFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}}
 	anchor := &gatedFenceAnchor{value: fenceTestToken, entered: make(chan struct{}), release: make(chan struct{})}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	var calls sync.WaitGroup
-	errs := make(chan error, waiting+1)
-	calls.Add(1)
-	go func() {
-		defer calls.Done()
-		errs <- fence.AdvanceOrRefuse(ctx)
-	}()
+	const callers = 5
+	var markers sync.Map
+	commit := func(marker string) error {
+		if file, _, _ := anchor.Read(); file != marker {
+			t.Errorf("a commit ran while the file held another caller's token: file %q, marker %q", file, marker)
+		}
+		markers.Store(marker, true)
+		return commitMarker(appState)(marker)
+	}
+	errs := make(chan error, callers)
+	go func() { errs <- fence.AdvanceOrRefuse(ctx, commit) }()
 	<-anchor.entered
-
-	for range waiting {
-		calls.Add(1)
-		go func() {
-			defer calls.Done()
-			errs <- fence.AdvanceOrRefuse(ctx)
-		}()
+	for i := 1; i < callers; i++ {
+		go func() { errs <- fence.AdvanceOrRefuse(ctx, commit) }()
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		fence.batching.Lock()
-		joined := 0
-		if fence.pending != nil {
-			joined = fence.pending.members
-		}
-		fence.batching.Unlock()
-		if joined == waiting {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("only %d of %d callers joined the waiting batch", joined, waiting)
-		}
-		time.Sleep(time.Millisecond)
-	}
+	time.Sleep(50 * time.Millisecond)
 	close(anchor.release)
-	calls.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
+	for i := 0; i < callers; i++ {
+		if err := <-errs; err != nil {
 			t.Fatalf("AdvanceOrRefuse: %v", err)
 		}
 	}
-
-	if anchor.writes != 2 {
-		t.Fatalf("expected the in-flight advance and one shared advance, got %d file writes for %d callers", anchor.writes, waiting+1)
+	distinct := 0
+	markers.Range(func(any, any) bool { distinct++; return true })
+	if distinct != callers || anchor.writes != callers {
+		t.Fatalf("each caller must take its own token: %d distinct markers, %d file writes, %d callers", distinct, anchor.writes, callers)
 	}
-	if stored := appState.get(models.AppStateKeyCalendarFeedRestoreFence); stored != anchor.value || stored == fenceTestToken {
-		t.Fatalf("the halves must agree on a fresh token: file %q, database %q", anchor.value, stored)
+	if file, _, _ := anchor.Read(); appState.get(models.AppStateKeyCalendarFeedRestoreFence) != file {
+		t.Fatal("the halves must agree on the last token")
 	}
 }
 
@@ -164,10 +236,10 @@ func (anchor *panickingFenceAnchor) Write(value string) error {
 	return anchor.stubFenceAnchor.Write(value)
 }
 
-// TestAPanickingAdvanceReleasesTheFence pins the batch leader's cleanup: a
-// panic mid-advance, recovered by the request's own handler, must leave the
-// fence usable. Holding writing across it would block every later sign-out,
-// password change and feed write on the instance for good.
+// TestAPanickingAdvanceReleasesTheFence: a panic mid-advance, recovered by the
+// request's own handler, must leave the fence usable. Holding writing across
+// it would block every later sign-out, password change and feed write on the
+// instance for good.
 func TestAPanickingAdvanceReleasesTheFence(t *testing.T) {
 	appState := &stubFenceAppState{values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken}}
 	anchor := &panickingFenceAnchor{stubFenceAnchor: stubFenceAnchor{value: fenceTestToken, found: true}}
@@ -175,11 +247,11 @@ func TestAPanickingAdvanceReleasesTheFence(t *testing.T) {
 
 	func() {
 		defer func() { _ = recover() }()
-		_ = fence.AdvanceOrRefuse(context.Background())
+		_ = fence.AdvanceOrRefuse(context.Background(), commitMarker(appState))
 	}()
 
 	done := make(chan error, 1)
-	go func() { done <- fence.AdvanceOrRefuse(context.Background()) }()
+	go func() { done <- fence.AdvanceOrRefuse(context.Background(), commitMarker(appState)) }()
 	select {
 	case err := <-done:
 		if err != nil {

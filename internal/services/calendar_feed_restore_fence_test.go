@@ -431,7 +431,7 @@ func TestCalendarFeedRestoreFenceAdvanceMovesBothHalvesTogether(t *testing.T) {
 	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	if err := fence.Advance(context.Background()); err != nil {
+	if err := fence.Advance(context.Background(), commitMarker(fence.appState)); err != nil {
 		t.Fatalf("Advance: %v", err)
 	}
 
@@ -466,13 +466,13 @@ func TestCalendarFeedRestoreFenceAdvanceRecordsNothingWithoutAFence(t *testing.T
 	anchor := &stubFenceAnchor{writeErr: security.ErrCalendarFeedFenceNotConfigured}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	if err := fence.Advance(context.Background()); err != nil {
+	if err := fence.Advance(context.Background(), commitMarker(fence.appState)); err != nil {
 		t.Fatalf("an unconfigured fence must not fail a revocation: %v", err)
 	}
-	if err := fence.AdvanceOrDiverge(context.Background()); err != nil {
+	if err := fence.AdvanceOrDiverge(context.Background(), commitMarker(fence.appState)); err != nil {
 		t.Fatalf("an unconfigured fence must not fail a side-effect revocation: %v", err)
 	}
-	if err := fence.AdvanceOrRefuse(context.Background()); err != nil {
+	if err := fence.AdvanceOrRefuse(context.Background(), commitMarker(fence.appState)); err != nil {
 		t.Fatalf("an unconfigured fence must not fail a sign-out: %v", err)
 	}
 	if len(appState.values) != 0 {
@@ -498,7 +498,7 @@ func TestCalendarFeedRestoreFenceAdvanceRefusesAPersistentFileFailure(t *testing
 	users := &stubFenceUserStore{}
 	fence := NewCalendarFeedRestoreFence(appState, users, anchor)
 
-	err := fence.Advance(context.Background())
+	err := fence.Advance(context.Background(), commitMarker(fence.appState))
 	if !errors.Is(err, ErrCalendarFeedFenceWriteFailed) || !errors.Is(err, cause) {
 		t.Fatalf("Advance must refuse an unwritable fence file with its cause, got %v", err)
 	}
@@ -532,7 +532,7 @@ func TestCalendarFeedRestoreFenceAdvanceProceedsOverHalvesThatAlreadyDisagree(t 
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
 	for attempt := 1; attempt <= 2; attempt++ {
-		if err := fence.Advance(context.Background()); err != nil {
+		if err := fence.Advance(context.Background(), commitMarker(fence.appState)); err != nil {
 			t.Fatalf("attempt %d: an owner revocation over an unanchored fence must proceed, got %v", attempt, err)
 		}
 	}
@@ -597,7 +597,7 @@ func TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing(t *tes
 			before := testCase.stored[models.AppStateKeyCalendarFeedRestoreFence]
 			fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, testCase.anchor)
 
-			err := fence.Advance(context.Background())
+			err := fence.Advance(context.Background(), commitMarker(fence.appState))
 			after := appState.values[models.AppStateKeyCalendarFeedRestoreFence]
 			if testCase.wantRefused {
 				if !errors.Is(err, ErrCalendarFeedFenceWriteFailed) {
@@ -624,7 +624,7 @@ func TestCalendarFeedRestoreFenceAdvanceRefusalDependsOnTheHalvesAgreeing(t *tes
 func TestCalendarFeedRestoreFenceAdvanceRetriesATransientFileFailure(t *testing.T) {
 	fence, appState, anchor := agreeingFenceForRetryTest(len(calendarFeedFenceWriteRetryDelays))
 
-	if err := fence.Advance(context.Background()); err != nil {
+	if err := fence.Advance(context.Background(), commitMarker(fence.appState)); err != nil {
 		t.Fatalf("a transient fence-file failure must be retried away, got %v", err)
 	}
 	if anchor.attempts != len(calendarFeedFenceWriteRetryDelays)+1 {
@@ -645,7 +645,7 @@ func TestCalendarFeedRestoreFenceAdvanceOverAnUnreadableFileProceedsOnlyOnceTheT
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, &stubFenceAnchor{readErr: broken, writeErr: broken})
 
 	for attempt := 1; attempt <= 2; attempt++ {
-		if err := fence.Advance(context.Background()); err != nil {
+		if err := fence.Advance(context.Background(), commitMarker(fence.appState)); err != nil {
 			t.Fatalf("attempt %d over a dropped token must proceed, got %v", attempt, err)
 		}
 	}
@@ -661,7 +661,7 @@ func TestCalendarFeedRestoreFenceAdvanceTypesADatabaseFailureAfterTheFile(t *tes
 	fence, appState, _ := agreeingFenceForRetryTest(0)
 	appState.setErr = errors.New("database is locked")
 
-	err := fence.Advance(context.Background())
+	err := fence.Advance(context.Background(), commitMarker(fence.appState))
 	if !errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) || errors.Is(err, ErrCalendarFeedFenceWriteFailed) {
 		t.Fatalf("a database failure after the file moved must wrap ErrCalendarFeedFenceHalfAdvanced only, got %v", err)
 	}
@@ -682,7 +682,7 @@ func TestCalendarFeedRestoreFenceAdvanceOrDivergeBreaksTheFenceWhenTheFileRefuse
 	users := &countingFenceUserStore{counts: []int64{2, 0}}
 	fence := NewCalendarFeedRestoreFence(appState, users, anchor)
 
-	if err := fence.AdvanceOrDiverge(context.Background()); err != nil {
+	if err := fence.AdvanceOrDiverge(context.Background(), commitMarker(fence.appState)); err != nil {
 		t.Fatalf("a side-effect revocation must not fail because the fence file refused: %v", err)
 	}
 	if anchor.value != fenceTestToken {
@@ -718,7 +718,7 @@ func TestCalendarFeedRestoreFenceConcurrentAdvancesLeaveTheHalvesAgreeing(t *tes
 		waiting.Add(1)
 		go func() {
 			defer waiting.Done()
-			if err := fence.Advance(context.Background()); err != nil {
+			if err := fence.Advance(context.Background(), commitMarker(fence.appState)); err != nil {
 				t.Errorf("Advance: %v", err)
 			}
 		}()
@@ -752,7 +752,7 @@ func TestCalendarFeedRestoreFenceAdvanceIsMutuallyExclusive(t *testing.T) {
 		waiting.Add(1)
 		go func() {
 			defer waiting.Done()
-			if err := fence.Advance(context.Background()); err != nil {
+			if err := fence.Advance(context.Background(), commitMarker(fence.appState)); err != nil {
 				t.Errorf("Advance: %v", err)
 			}
 		}()
@@ -958,7 +958,7 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedAdvancesBothHalvesWhenTheyAgree
 	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	if err := fence.AdvanceConfirmed(context.Background()); err != nil {
+	if err := advanceConfirmedForTest(fence,context.Background()); err != nil {
 		t.Fatalf("AdvanceConfirmed: %v", err)
 	}
 
@@ -1021,7 +1021,7 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWithoutAnAnchorAndWrites
 	anchor := &stubFenceAnchor{readErr: security.ErrCalendarFeedFenceNotConfigured}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	err := fence.AdvanceConfirmed(context.Background())
+	err := advanceConfirmedForTest(fence,context.Background())
 	if !errors.Is(err, ErrCalendarFeedFenceUnreachable) || !errors.Is(err, security.ErrCalendarFeedFenceNotConfigured) {
 		t.Fatalf("expected ErrCalendarFeedFenceUnreachable wrapping the not-configured cause, got %v", err)
 	}
@@ -1046,7 +1046,7 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWhenTheAnchorWriteFailsA
 	anchor := &stubFenceAnchor{value: fenceTestToken, found: true, writeErr: errors.New("read-only file system")}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	err := fence.AdvanceConfirmed(context.Background())
+	err := advanceConfirmedForTest(fence,context.Background())
 	if !errors.Is(err, ErrCalendarFeedFenceUnreachable) {
 		t.Fatalf("expected ErrCalendarFeedFenceUnreachable, got %v", err)
 	}
@@ -1111,7 +1111,7 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWhenTheHalvesAreNotAKnow
 				before[key] = value
 			}
 
-			err := fence.AdvanceConfirmed(context.Background())
+			err := advanceConfirmedForTest(fence,context.Background())
 			var continuity *CalendarFeedFenceContinuityError
 			if !errors.As(err, &continuity) {
 				t.Fatalf("expected *CalendarFeedFenceContinuityError, got %v", err)
@@ -1150,7 +1150,7 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedPropagatesADatabaseFailureAfter
 	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	err := fence.AdvanceConfirmed(context.Background())
+	err := advanceConfirmedForTest(fence,context.Background())
 	if !errors.Is(err, refused) {
 		t.Fatalf("expected the raw app_state failure, got %v", err)
 	}
@@ -1179,7 +1179,7 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedRefusesWhenTheMarkerCannotBeRea
 	anchor := &stubFenceAnchor{value: fenceTestToken, found: true}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	err := fence.AdvanceConfirmed(context.Background())
+	err := advanceConfirmedForTest(fence,context.Background())
 	if !errors.Is(err, ErrCalendarFeedFenceMarkerUnavailable) || !errors.Is(err, unreadable) {
 		t.Fatalf("expected ErrCalendarFeedFenceMarkerUnavailable wrapping the read failure, got %v", err)
 	}
@@ -1209,7 +1209,7 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedSharesTheMutexWithAdvance(t *te
 	anchor := &serializedFenceAnchor{}
 	fence := NewCalendarFeedRestoreFence(appState, &stubFenceUserStore{}, anchor)
 
-	if err := fence.Advance(context.Background()); err != nil {
+	if err := fence.Advance(context.Background(), commitMarker(fence.appState)); err != nil {
 		t.Fatalf("seed Advance: %v", err)
 	}
 
@@ -1221,9 +1221,9 @@ func TestCalendarFeedRestoreFenceAdvanceConfirmedSharesTheMutexWithAdvance(t *te
 			defer waiting.Done()
 			var err error
 			if i%2 == 0 {
-				err = fence.Advance(context.Background())
+				err = fence.Advance(context.Background(), commitMarker(fence.appState))
 			} else {
-				err = fence.AdvanceConfirmed(context.Background())
+				err = advanceConfirmedForTest(fence,context.Background())
 			}
 			if err != nil {
 				errs <- err
