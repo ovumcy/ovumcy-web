@@ -44,7 +44,7 @@ func TestOperatorCommandsRefuseADatabaseWithoutTheNormalizedEmailIndex(t *testin
 			return runResetPasswordCommand(config, []string{owner.Email}, "/fence/ovumcy.fence", prompt, output)
 		}},
 		{"link-oidc-identity", func(config db.Config, owner models.User, output *bytes.Buffer) error {
-			return runLinkOIDCIdentityCommand(config, validLinkOIDCIdentityConfig(), []string{owner.Email, "--issuer", "https://idp.example.com", "--subject", "schema-check-subject"}, output)
+			return runLinkOIDCIdentityCommand(config, validLinkOIDCIdentityConfig(), "/fence/ovumcy.fence", []string{owner.Email, "--issuer", "https://idp.example.com", "--subject", "schema-check-subject"}, output)
 		}},
 		{"webhook show", func(config db.Config, owner models.User, output *bytes.Buffer) error {
 			return runWebhookCommand(config, testWebhookSecretKey, []string{"show", owner.Email}, strings.NewReader(""), output)

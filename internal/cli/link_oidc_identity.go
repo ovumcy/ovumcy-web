@@ -124,10 +124,10 @@ func parseLinkOIDCIdentityStringFlag(args []string, index int, name string, usag
 }
 
 func RunLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OIDCConfig, args []string) error {
-	return runLinkOIDCIdentityCommand(databaseConfig, oidcConfig, args, os.Stdout)
+	return runLinkOIDCIdentityCommand(databaseConfig, oidcConfig, calendarFeedFencePath(), args, os.Stdout)
 }
 
-func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OIDCConfig, args []string, output io.Writer) error {
+func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OIDCConfig, fencePath string, args []string, output io.Writer) error {
 	opts, err := parseLinkOIDCIdentityArgs(args)
 	if err != nil {
 		return err
@@ -155,14 +155,14 @@ func runLinkOIDCIdentityCommand(databaseConfig db.Config, oidcConfig security.OI
 		return fmt.Errorf("issuer %q does not match the configured OIDC_ISSUER_URL %q", issuer, configuredIssuer)
 	}
 
-	repositories, _, closeDatabase, err := openOperatorRepositories(databaseConfig, calendarFeedFencePath())
+	repositories, fence, closeDatabase, err := openOperatorRepositories(databaseConfig, fencePath)
 	if err != nil {
 		return err
 	}
 	defer closeDatabase()
 	return linkOIDCIdentity(
 		linkOIDCRepositories{Users: repositories.Users, OIDCIdentities: repositories.OIDCIdentities},
-		oidcClient, opts, normalizedEmail, issuer, output,
+		oidcClient, fencePath, fence, opts, normalizedEmail, issuer, output,
 	)
 }
 
@@ -182,7 +182,12 @@ type linkOIDCRepositories struct {
 	OIDCIdentities services.OIDCIdentityStore
 }
 
-func linkOIDCIdentity(repositories linkOIDCRepositories, oidcClient *security.OIDCClient, opts linkOIDCIdentityOptions, normalizedEmail string, issuer string, output io.Writer) error {
+// The link revokes every session of the account, so it passes the same
+// operator fence gate as `users delete` and `users set-email`, immediately
+// before the write: a session revocation recorded only in the database is one
+// a restored backup undoes, and with no fence the command refuses and writes
+// nothing rather than linking from a shell that cannot see the server's fence.
+func linkOIDCIdentity(repositories linkOIDCRepositories, oidcClient *security.OIDCClient, fencePath string, fence *services.CalendarFeedRestoreFence, opts linkOIDCIdentityOptions, normalizedEmail string, issuer string, output io.Writer) error {
 	authService := services.NewAuthService(repositories.Users)
 	userService := services.NewOperatorUserService(repositories.Users, authService)
 
@@ -207,13 +212,16 @@ func linkOIDCIdentity(repositories linkOIDCRepositories, oidcClient *security.OI
 		Issuer:  issuer,
 		Subject: strings.TrimSpace(opts.subject),
 	}
-	if _, err := oidcLoginService.ConfirmAndLinkIdentity(context.Background(), target.ID, account.AuthSessionVersion, claims, time.Now()); err != nil {
-		return mapLinkOIDCIdentityLinkError(err)
-	}
-
 	if output == nil {
 		output = os.Stdout
 	}
+	if err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, output); err != nil {
+		return err
+	}
+	if _, err := oidcLoginService.ConfirmAndLinkIdentity(context.Background(), target.ID, account.AuthSessionVersion, claims, time.Now()); err != nil {
+		return operatorFeedRevocationCommitted(fencePath, err, mapLinkOIDCIdentityLinkError)
+	}
+
 	_, _ = fmt.Fprintf(output, "✅ Linked OIDC identity (issuer=%s, subject=%s) to account %q (id=%d)\n", claims.Issuer, claims.Subject, target.Email, target.ID)
 	_, _ = fmt.Fprintln(output, "   A new link signs out every session the account had open; its owner signs in again.")
 	return nil
