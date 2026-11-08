@@ -90,6 +90,6 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 	// through. Hanging it off AuthRequired instead would leave the four
 	// handlers that call this directly rendering the owner's day in the
 	// instance zone, and no test would say so.
-	handler.resolveOwnerRequestTimezone(c)
+	handler.resolveOwnerRequestTimezone(c, user)
 	return user, nil
 }

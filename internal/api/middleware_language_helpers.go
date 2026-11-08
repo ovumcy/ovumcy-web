@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
 func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
@@ -66,15 +67,22 @@ func (handler *Handler) refreshPageInAnotherLanguage(c fiber.Ctx, language strin
 }
 
 // resolveOwnerRequestTimezone resolves the request-local timezone (header,
-// then the ovumcy_tz cookie) and refreshes the cookie when the header names a
-// new zone. Its sole caller is authenticateRequest, on that function's success
-// path — see the WEB-35 note on LanguageMiddleware for why the header is not
-// parsed any earlier, and keep it there rather than on any one middleware: a
-// session verified outside AuthRequired is still a verified session.
-func (handler *Handler) resolveOwnerRequestTimezone(c fiber.Ctx) {
+// then the ovumcy_tz cookie, then the verified owner's stored users.timezone)
+// and refreshes the cookie when the header names a new zone. Its sole caller is
+// authenticateRequest, on that function's success path — see the WEB-35 note on
+// LanguageMiddleware for why the header is not parsed any earlier, and keep it
+// there rather than on any one middleware: a session verified outside
+// AuthRequired is still a verified session. The owner is the one authenticateRequest
+// already loaded; this reads no storage.
+func (handler *Handler) resolveOwnerRequestTimezone(c fiber.Ctx, user *models.User) {
+	storedTimezone := ""
+	if user != nil {
+		storedTimezone = user.Timezone
+	}
 	requestLocation, timezoneCookieValue := resolveRequestLocation(
 		c.Get(timezoneHeaderName),
 		c.Cookies(timezoneCookieName),
+		storedTimezone,
 		handler.location,
 	)
 	if timezoneCookieValue != "" && strings.TrimSpace(c.Cookies(timezoneCookieName)) != timezoneCookieValue {
