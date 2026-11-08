@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -75,6 +76,39 @@ func TestDashboardTodayFallsBackToStoredOwnerTimezone(t *testing.T) {
 				t.Fatalf("dashboard rendered %s, want %s (the day in %s at the injected clock)", got, want, tc.wantZone)
 			}
 		})
+	}
+}
+
+func TestStatsOverviewJSONFallsBackToStoredOwnerTimezone(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "stored-tz-stats-json@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	nowUTC := time.Now().UTC()
+	timezoneName, location := timezoneWithDifferentCalendarDay(t, nowUTC)
+	localToday := services.DateAtLocation(nowUTC.In(location), location)
+	localDay, _ := staleBoundaryCycleDay(localToday, services.DateAtLocation(nowUTC, time.UTC))
+
+	zoneDate := services.CalendarDay(localToday, time.UTC)
+	updateStatsOverviewUser(t, database, user, map[string]any{
+		"cycle_length":      28,
+		"period_length":     5,
+		"last_period_start": services.AddCalendarDays(zoneDate, -(localDay - 1), time.UTC),
+		"timezone":          timezoneName,
+	})
+	seedStatsOverviewCycleHistory(t, database, user, zoneDate, localDay-1, localDay-1+28, localDay-1+56, localDay-1+84)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/stats/overview", nil)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", authCookie)
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	payload := StatsOverviewResponse{}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode stats overview payload: %v", err)
+	}
+	if payload.CurrentCycleDay != localDay {
+		t.Fatalf("current_cycle_day = %d with no header or cookie, want %d (today in the stored %s, not UTC)", payload.CurrentCycleDay, localDay, timezoneName)
 	}
 }
 
