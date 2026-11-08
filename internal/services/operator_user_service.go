@@ -189,7 +189,10 @@ func (service *OperatorUserService) SetEmailByID(ctx context.Context, userID uin
 	}
 	changed, err := service.users.SetUserEmailByIDAndRevokeSessions(ctx, userID, before.Email, normalizedEmail)
 	if err != nil {
-		if isRegistrationUniqueConstraintError(err) {
+		// A half-advanced fence arrives joined to the write's own failure, a
+		// lost unique-index race included; mapping that race to a bare
+		// ErrOperatorUserEmailExists would hide that the fence file moved.
+		if isRegistrationUniqueConstraintError(err) && !errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
 			return models.OperatorUserSummary{}, models.OperatorUserSummary{}, ErrOperatorUserEmailExists
 		}
 		// %w on both, for the reason deleteUser gives: the re-home advances

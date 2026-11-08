@@ -461,6 +461,15 @@ func TestOperatorUserServiceSetEmailByIDErrors(t *testing.T) {
 			want: ErrOperatorUserEmailExists,
 		},
 		{
+			// The lost race left the fence file ahead; that outranks the race.
+			name: "unique index refuses the write over a half-advanced fence", userID: 9, email: "taken@example.com",
+			repo: &stubOperatorUserRepo{user: models.User{ID: 9, Email: "stored@example.com"}, found: true, setEmailErr: errors.Join(
+				fakeUniqueConstraintError{},
+				&CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: errors.New("db down")},
+			)},
+			want: ErrCalendarFeedFenceHalfAdvanced,
+		},
+		{
 			name: "row moved under the repair", userID: 9, email: "owner@example.com",
 			repo: &stubOperatorUserRepo{user: models.User{ID: 9, Email: "stored@example.com"}, found: true},
 			want: ErrOperatorUserChangedUnderRepair,
