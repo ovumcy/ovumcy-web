@@ -45,6 +45,13 @@ type calendarFeedRestoreFenceAnchor interface {
 // the token alphabet, so no completed token carries it. See record.
 const calendarFeedFenceFirstBootPrefix = "first-boot-pending:"
 
+// calendarFeedFenceSoloRecordTimeout bounds the marker record commitAfterFile
+// makes alone after a failed commit. That record deliberately drops the
+// caller's cancellation, so without a deadline of its own a storage call that
+// never answers would hold fence.writing — and every later session writer —
+// indefinitely.
+const calendarFeedFenceSoloRecordTimeout = 10 * time.Second
+
 // CalendarFeedRestoreFenceOutcome reports what one Enforce pass did, for the
 // operator-facing startup log line. At most one of the three outcome flags —
 // Unanchored, FirstBoot, ContinuityBroken — is set. UnanchoredHistory is not a
@@ -468,12 +475,18 @@ func (fence *CalendarFeedRestoreFence) advanceLocked(ctx context.Context, diverg
 // wrapped in ErrCalendarFeedFenceHalfAdvanced. The record runs without ctx's
 // cancellation: a cancelled request is the likeliest cause of the failed
 // commit, and must not turn a refused write into an instance-wide revocation.
+// It runs under its own deadline instead (calendarFeedFenceSoloRecordTimeout),
+// because the caller holds fence.writing and a record that never returns would
+// stall every later session writer; a record that times out fails like any
+// other, into ErrCalendarFeedFenceHalfAdvanced (fail closed).
 func (fence *CalendarFeedRestoreFence) commitAfterFile(ctx context.Context, token string, commit CalendarFeedFenceCommit) error {
 	commitErr := commit(token)
 	if commitErr == nil {
 		return nil
 	}
-	if err := fence.appState.Set(context.WithoutCancel(ctx), models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
+	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), calendarFeedFenceSoloRecordTimeout)
+	defer cancel()
+	if err := fence.appState.Set(recordCtx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
 		return errors.Join(commitErr, &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err})
 	}
 	return commitErr
