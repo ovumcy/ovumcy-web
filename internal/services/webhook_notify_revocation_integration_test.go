@@ -182,6 +182,108 @@ func TestAFullResetWhileAClaimedPOSTIsOnTheWireCreditsNoDelivery(t *testing.T) {
 	}
 }
 
+// revokeBeforeSendDeliverer runs the revocation at the point the pass has WON
+// its claim and is calling Deliver, before the request is recorded as sent: the
+// last instant at which a withdrawal could still be seen by this pass at all.
+type revokeBeforeSendDeliverer struct {
+	stubDeliverer
+	revoke func()
+	done   bool
+}
+
+func (deliverer *revokeBeforeSendDeliverer) Deliver(ctx context.Context, decryptedURL string, payload WebhookPayload) error {
+	if !deliverer.done {
+		deliverer.done = true
+		deliverer.revoke()
+	}
+	return deliverer.stubDeliverer.Deliver(ctx, decryptedURL, payload)
+}
+
+// TestWebhookClaimIsTheBoundaryOfARevocation pins both sides of the declared
+// boundary. A disable or clear-data committed BEFORE the claim leaves no dial at
+// all — the claim itself refuses it. One committed after the claim is won and
+// before Deliver is the documented "claim won" window: the pass has already
+// decided to send, no re-check sits between the claim and the request, so
+// exactly the one POST to the snapshot's endpoint leaves, and no second one
+// follows. A later re-check before Deliver flips the second half to zero.
+func TestWebhookClaimIsTheBoundaryOfARevocation(t *testing.T) {
+	disable := func(t *testing.T, fixture webhookRevocationFixture) {
+		if err := fixture.repo.SaveWebhookSettings(context.Background(), fixture.ownerID, models.WebhookSettingsColumns{
+			Enabled:               false,
+			EncryptedURL:          ownerEndpoint,
+			NotifyPeriod:          true,
+			NotifyOvulation:       false,
+			ReminderLeadDays:      3,
+			ExpectedConfigVersion: 1,
+		}); err != nil {
+			t.Fatalf("disable delivery: %v", err)
+		}
+	}
+	clearData := func(t *testing.T, fixture webhookRevocationFixture) {
+		current, err := fixture.repo.FindByID(context.Background(), fixture.ownerID)
+		if err != nil {
+			t.Fatalf("load the owner before clearing data: %v", err)
+		}
+		if err := fixture.repo.ClearAllDataAndResetSettings(context.Background(), fixture.ownerID, current.AuthSessionVersion); err != nil {
+			t.Fatalf("clear all data: %v", err)
+		}
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		revoke func(t *testing.T, fixture webhookRevocationFixture)
+	}{
+		{name: "disable", revoke: disable},
+		{name: "clear data", revoke: clearData},
+	} {
+		t.Run("before the claim/"+testCase.name, func(t *testing.T) {
+			fixture := newWebhookRevocationFixture(t, "wh-boundary-before")
+
+			report, deliverer := fixture.runPass(t, func() { testCase.revoke(t, fixture) })
+
+			if delivered := deliverer.deliveries(); len(delivered) != 0 {
+				t.Fatalf("a revocation committed before the claim must leave no dial, got %+v", delivered)
+			}
+			// The zero is the claim's refusal, not a reminder that was never due.
+			if report.Due != 1 || report.SkippedIdempotent < 1 || report.Sent != 0 || report.Failed != 0 {
+				t.Fatalf("expected a due reminder refused at the claim, got due=%d skipped=%d sent=%d failed=%d",
+					report.Due, report.SkippedIdempotent, report.Sent, report.Failed)
+			}
+		})
+	}
+
+	t.Run("after the claim is won", func(t *testing.T) {
+		fixture := newWebhookRevocationFixture(t, "wh-boundary-after")
+		deliverer := &revokeBeforeSendDeliverer{revoke: func() { disable(t, fixture) }}
+		service := NewWebhookNotifyService(fixture.repo, &revokingLogReader{logs: fixture.logs}, stubDecryptor{}, deliverer,
+			stubDisclaimer{text: "Predictions are estimates, not medical advice or a method of contraception."})
+
+		report, err := service.RunOnce(context.Background(), fixture.now, time.UTC, false)
+		if err != nil {
+			t.Fatalf("RunOnce: %v", err)
+		}
+
+		var after models.User
+		if err := fixture.database.First(&after, fixture.ownerID).Error; err != nil {
+			t.Fatalf("reload owner: %v", err)
+		}
+		// Anchor: the disable really committed before the send was recorded.
+		if after.WebhookEnabled {
+			t.Fatal("fixture: the disable committed between the claim and Deliver should have switched delivery off")
+		}
+		delivered := deliverer.deliveries()
+		if len(delivered) != 1 || delivered[0].url != ownerEndpoint {
+			t.Fatalf("the declared boundary is one send to the snapshot's endpoint, got %+v", delivered)
+		}
+		if report.Due != 1 {
+			t.Fatalf("expected the one due reminder, got due=%d", report.Due)
+		}
+		if after.WebhookPeriodLastSentCycleStart == nil {
+			t.Fatal("the claim that was won must stand as the watermark of the send that left")
+		}
+	})
+}
+
 // TestNotifyPassDeliversWhenTheConfigurationStands is the positive control for
 // the revocation cases below. Without it each of them would pass just as
 // well against a fixture that was never due, a decryptor that never resolved, or
