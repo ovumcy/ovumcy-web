@@ -97,6 +97,7 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		// there — would move a text offset and silently flip the ordering verdict
 		// below, which is the load-bearing half of this guard.
 		advanceAt := -1
+		var advanceCommit *ast.FuncLit
 		columnAt := -1
 		transactionAt := -1
 		// A function that issues no write statement cannot be a writer, however
@@ -124,6 +125,7 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 				if callee, ok := typeutil.Callee(info, typed).(*types.Func); ok {
 					if callee.Pkg() == pkg.Types && calendarFeedFenceAdvanceCalls[callee.Name()] && (advanceAt < 0 || at < advanceAt) {
 						advanceAt = at
+						advanceCommit = fenceWriteClosure(typed)
 					}
 					if callee.Name() == "Transaction" && (transactionAt < 0 || at < transactionAt) {
 						transactionAt = at
@@ -156,15 +158,22 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		if columnAt >= 0 {
 			writers[name] = true
 		}
-		// The write a writer must not run ahead of is its first feed column or,
-		// for one that opens a transaction, the transaction itself: an advance
-		// inside it would run after the statements that precede it there and
-		// could not commit apart from the write.
+		// The write is the writer's first feed column or, for one that opens a
+		// transaction of its own, that transaction. Since WEB-505 the write must
+		// sit INSIDE the closure handed to the advance — the transaction
+		// runFencedWrite opens after the fence file moved, which records the
+		// marker beside it — so it runs after the file write in time and commits
+		// together with the marker. A write before the call, after it, or in a
+		// transaction of its own (inside the closure or not) commits apart from
+		// the marker, which is the backup window.
 		writeAt := columnAt
 		if transactionAt >= 0 && (writeAt < 0 || transactionAt < writeAt) {
 			writeAt = transactionAt
 		}
-		if advanceAt >= 0 && writeAt >= 0 && advanceAt < writeAt {
+		// A writer naming no feed column — the erasures, whose row delete takes
+		// the feed with it — has no column to place, so only the closure and
+		// the absence of a transaction of its own are asked of it.
+		if advanceCommit != nil && (writeAt < 0 || insideNode(advanceCommit, writeAt)) && (transactionAt < 0 || !insideNode(advanceCommit, transactionAt)) {
 			advancesFirst[name] = true
 		}
 	}
@@ -215,7 +224,7 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 			continue
 		}
 		if !advancesFirst[name] {
-			t.Fatalf("%s must advance the fence BEFORE its write, or a crash between the two leaves the feed revoked and the fence not, which a restore then undoes", name)
+			t.Fatalf("%s must advance the fence BEFORE its write and run that write inside the closure it hands the advance, through its tx: a write ahead of the file leaves the feed revoked and the fence not, and one committed apart from the marker leaves a snapshot holding the new marker beside the old row, which a restore then reads as continuity", name)
 		}
 	}
 
@@ -231,6 +240,76 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		if advances[name] {
 			t.Fatalf("%s advances the restore fence although it is exempt (%s): remove the advance or the exemption, not neither", name, reason)
 		}
+	}
+}
+
+// fenceWriteClosure is the write closure an advance call hands its helper —
+// its last argument, when that is a function literal — or nil.
+func fenceWriteClosure(call *ast.CallExpr) *ast.FuncLit {
+	if len(call.Args) == 0 {
+		return nil
+	}
+	closure, _ := call.Args[len(call.Args)-1].(*ast.FuncLit)
+	return closure
+}
+
+// insideNode reports whether at lies within node's source span.
+func insideNode(node ast.Node, at int) bool {
+	return at > int(node.Pos()) && at < int(node.End())
+}
+
+// TestTheFencedWriteRecordsTheMarkerInsideTheWritersTransaction is the
+// load-bearing half of WEB-505 the two writer guards rely on: they prove each
+// writer's statements run inside the closure handed to the advance, and this
+// proves that closure runs in ONE transaction with the marker. runFencedWrite
+// must call setAppStateTx and the write closure inside the closure it hands
+// gorm's Transaction, resolved by declaration.
+func TestTheFencedWriteRecordsTheMarkerInsideTheWritersTransaction(t *testing.T) {
+	pkg := loadTypedDBPackage(t)
+	setMarker := pkg.Types.Scope().Lookup("setAppStateTx")
+	builder := pkg.Types.Scope().Lookup("runFencedWrite")
+	if setMarker == nil || builder == nil {
+		t.Fatal("setAppStateTx or runFencedWrite is not declared in package db: the guard resolves nothing")
+	}
+	found := false
+	for _, file := range pkg.Syntax {
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Body == nil || pkg.TypesInfo.Defs[function.Name] != builder {
+				continue
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				callee, ok := typeutil.Callee(pkg.TypesInfo, call).(*types.Func)
+				if !ok || callee.Name() != "Transaction" || callee.Pkg() == nil || callee.Pkg().Path() != "gorm.io/gorm" {
+					return true
+				}
+				transaction := fenceWriteClosure(call)
+				if transaction == nil {
+					return true
+				}
+				marker, write := false, false
+				ast.Inspect(transaction.Body, func(inner ast.Node) bool {
+					if innerCall, ok := inner.(*ast.CallExpr); ok {
+						if typeutil.Callee(pkg.TypesInfo, innerCall) == setMarker {
+							marker = true
+						}
+						if ident, ok := innerCall.Fun.(*ast.Ident); ok && ident.Name == "write" {
+							write = true
+						}
+					}
+					return true
+				})
+				found = found || (marker && write)
+				return true
+			})
+		}
+	}
+	if !found {
+		t.Fatal("runFencedWrite must record the marker (setAppStateTx) and run the writer's write inside ONE gorm Transaction closure: a marker committed apart from the row is the backup window a live restore reads as continuity")
 	}
 }
 
