@@ -51,7 +51,7 @@ func main() {
 	config := mustLoadRuntimeConfig(location)
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
-	repositories, calendarFeedFence := bootstrap.BuildRepositories(database, config.CalendarFeedFencePath)
+	repositories, calendarFeedFence := buildServerRepositories(database, config)
 	// The schema check comes first: every pass below assumes the schema the
 	// migrations built, and it only reads.
 	mustVerifySchemaInvariants(repositories)
@@ -234,6 +234,27 @@ func mustEnforceCalendarFeedRestoreFence(fence *services.CalendarFeedRestoreFenc
 }
 
 const calendarFeedFenceOptOutEnv = security.CalendarFeedFenceOptOutEnv
+
+// calendarFeedFenceMountCheck is the host's mount check; a variable only so the
+// boot test can stand in the writable-layer verdict on a platform without
+// st_dev or mountinfo.
+var calendarFeedFenceMountCheck security.CalendarFeedFenceMountCheck = security.CheckCalendarFeedFenceMounted
+
+// buildServerRepositories is the server's bootstrap.BuildRepositories call.
+// With CALENDAR_FEED_FENCE_REQUIRE_MOUNT (the image sets it) the fence file
+// refuses a directory on the container's writable layer at its first read, so
+// the restore fence's boot pass reports it as an unusable fence and the start
+// is refused — writing nothing — exactly as an unwritable fence is (WEB-506).
+// The operator CLI does not take the check: every command of it that would
+// revoke needs both fence halves to agree first, and a server that ran this
+// check never wrote a token into a writable-layer directory to agree with.
+func buildServerRepositories(database *gorm.DB, config runtimeConfig) (*db.Repositories, *services.CalendarFeedRestoreFence) {
+	var fenceOptions []security.CalendarFeedFenceOption
+	if config.CalendarFeedFenceRequireMount {
+		fenceOptions = append(fenceOptions, security.WithCalendarFeedFenceMountCheck(calendarFeedFenceMountCheck))
+	}
+	return bootstrap.BuildRepositories(database, config.CalendarFeedFencePath, fenceOptions...)
+}
 
 // errCalendarFeedFenceRequired is the refused boot's error, naming the
 // variable, the docs section and the opt-out.

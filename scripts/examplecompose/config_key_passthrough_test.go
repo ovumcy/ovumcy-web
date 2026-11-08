@@ -597,6 +597,9 @@ var forwardingExemptions = map[string]exemption{
 	"LISTEN_ADDRESS": {
 		reason: "the proxy configs and the local postgres stack's port publish reach the app on the container's own network interface, so a LISTEN_ADDRESS naming one address would leave the app unreachable instead of narrowing it",
 	},
+	"CALENDAR_FEED_FENCE_REQUIRE_MOUNT": {
+		reason: "the image sets it to true with ENV, and every stack mounts ovumcy_fence at /app/fence, which the check accepts; a ${KEY:-} passthrough would replace the image's true with an empty value and switch the check off in exactly the deployments it guards",
+	},
 	"OVUMCY_WEBHOOK_URL": {
 		reason: "the operator CLI reads it for the single invocation that sets an owner's webhook endpoint, and refuses a run that also pipes a URL on stdin; carried in the container's own environment it would be ambient on every later run and make that second source impossible",
 	},

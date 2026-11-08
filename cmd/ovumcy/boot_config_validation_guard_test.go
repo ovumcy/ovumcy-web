@@ -218,6 +218,9 @@ func TestBootRefusesAnUnparseableSecurityBoolean(t *testing.T) {
 		// A lenient read would turn a refused fence-less boot into an
 		// accepted residual on a typo (WEB-399).
 		{"CALENDAR_FEED_FENCE_OPTOUT", "yes please"},
+		// A lenient read would drop the image's fence mount check on a typo
+		// (WEB-506).
+		{"CALENDAR_FEED_FENCE_REQUIRE_MOUNT", "ture"},
 	}
 
 	for _, tc := range cases {
