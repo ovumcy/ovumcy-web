@@ -33,8 +33,8 @@ import (
 // is the half they cannot cover — the N+1 sealed cookie added later, which
 // would ship unbounded without reddening anything.
 //
-// THE RULE IS NOT "every sealed payload carries expires_at". Three cookies are
-// correct without one, for two distinct reasons, and a sweep asserting the
+// THE RULE IS NOT "every sealed payload carries expires_at". A cookie can be
+// correct without one for two distinct reasons, and a sweep asserting the
 // naive rule would be red on landing and then silenced with an allowlist — the
 // exact shape this repository keeps removing. Both exemptions are therefore
 // stated as PROPERTIES of the payload the mint actually produces, so a cookie
@@ -46,8 +46,11 @@ import (
 //     `ovumcy_reset_password`);
 //  2. the payload carries nothing usable on replay — it names no account, and
 //     two mints from identical caller input seal identical bytes, so the server
-//     contributed no secret, no handle and no bound of its own to replay
-//     (`ovumcy_flash`).
+//     contributed no secret, no handle and no bound of its own to replay. No
+//     cookie takes this exemption today: both flash slots (`ovumcy_flash`,
+//     `ovumcy_flash_exempt`) carry a five-minute `expires_at` that the shared
+//     flash reader refuses once zero or past, so the sweep checks them as
+//     bounded payloads like any other.
 //
 // Everything else must carry a live bound its own reader refuses once past. A
 // cookie the sweep cannot place in one of the three categories FAILS: an

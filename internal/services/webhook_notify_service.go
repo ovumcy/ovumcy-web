@@ -52,9 +52,11 @@ import (
 // advances the owner's webhook_config_version in the same statement, and the
 // claim pins the epoch its own snapshot carried, so a revoked configuration can
 // no longer win a claim. The line this holds is "no NEW request begins under a
-// revoked configuration"; a request already on the wire when the revocation
-// lands cannot be recalled, which is documented for operators rather than
-// papered over here.
+// revoked configuration", and its boundary is the claim: a revocation committed
+// after the claim is won does not stop that one send, because nothing between
+// the claim and Deliver re-reads webhook_enabled, the epoch or the owner's row.
+// That is declared for operators rather than papered over here; re-reading
+// before Deliver would only move the window to the gap before the dial.
 //
 // The cost, stated plainly: claiming first turns a returned delivery error into a
 // retry but a HARD KILL between claim and release into a permanent skip. A pass
