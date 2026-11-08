@@ -4,16 +4,79 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/ast"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/bootstrap"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
+	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/types/typeutil"
 )
+
+// TestMainBuildsTheServerRepositoriesWithTheFenceMountOptions holds main()'s
+// own call to the options the boot tests below exercise: main() is not run by
+// any test, so a call that dropped calendarFeedFenceOptions(config)... would
+// leave every behavioural test green while the image armed a fence on the
+// container's writable layer. Both ends are resolved by declaration through
+// the type checker — the callee as bootstrap.BuildRepositories, the variadic
+// argument as this package's calendarFeedFenceOptions — never by name.
+func TestMainBuildsTheServerRepositoriesWithTheFenceMountOptions(t *testing.T) {
+	const bootstrapPath = "github.com/ovumcy/ovumcy-web/internal/bootstrap"
+	loaded, err := packages.Load(&packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
+			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
+	}, ".")
+	if err != nil {
+		t.Fatalf("type-checking cmd/ovumcy: %v", err)
+	}
+	if len(loaded) != 1 || len(loaded[0].Errors) > 0 {
+		t.Fatalf("cmd/ovumcy must type-check as one package to resolve main()'s calls, got %d package(s): %v", len(loaded), loaded)
+	}
+	pkg := loaded[0]
+	options := pkg.Types.Scope().Lookup("calendarFeedFenceOptions")
+	if options == nil {
+		t.Fatal("calendarFeedFenceOptions is not declared in cmd/ovumcy")
+	}
+
+	var mainFunc *ast.FuncDecl
+	for _, file := range pkg.Syntax {
+		for _, declaration := range file.Decls {
+			if function, ok := declaration.(*ast.FuncDecl); ok && function.Recv == nil && function.Name.Name == "main" && function.Body != nil {
+				mainFunc = function
+			}
+		}
+	}
+	if mainFunc == nil {
+		t.Fatal("main() not found in cmd/ovumcy")
+	}
+
+	var builds []*ast.CallExpr
+	ast.Inspect(mainFunc.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		callee := typeutil.Callee(pkg.TypesInfo, call)
+		if callee != nil && callee.Pkg() != nil && callee.Pkg().Path() == bootstrapPath && callee.Name() == "BuildRepositories" {
+			builds = append(builds, call)
+		}
+		return true
+	})
+	if len(builds) != 1 {
+		t.Fatalf("main() must build the server's repositories through bootstrap.BuildRepositories exactly once, found %d call(s)", len(builds))
+	}
+	build := builds[0]
+	last, ok := build.Args[len(build.Args)-1].(*ast.CallExpr)
+	if !build.Ellipsis.IsValid() || !ok || typeutil.Callee(pkg.TypesInfo, last) != options {
+		t.Fatalf("main() builds the server's repositories without calendarFeedFenceOptions(config)...; with %s set the start would arm a fence on the container's writable layer", security.CalendarFeedFenceRequireMountEnv)
+	}
+}
 
 // fenceMountBoot loads the runtime config the way main does, with the fence at
 // a fresh, writable directory, and builds the server's repositories over a
@@ -43,7 +106,7 @@ func fenceMountBoot(t *testing.T, requireMount string, verdict error) (runtimeCo
 		t.Fatalf("OpenDatabase: %v", err)
 	}
 	t.Cleanup(func() { closeDatabase(database) })
-	repositories, fence := buildServerRepositories(database, config)
+	repositories, fence := bootstrap.BuildRepositories(database, config.CalendarFeedFencePath, calendarFeedFenceOptions(config)...)
 	enforce := func() (string, error) {
 		return enforceCalendarFeedRestoreFence(context.Background(), fence, config.CalendarFeedFenceOptOut)
 	}
