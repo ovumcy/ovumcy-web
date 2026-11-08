@@ -51,6 +51,13 @@ func (repo *AppStateRepository) Get(ctx context.Context, key string) (string, bo
 // a single evolving row rather than an append. Every key has exactly one
 // writer (scheduler goroutine or boot sentinel), never two concurrently.
 func (repo *AppStateRepository) Set(ctx context.Context, key string, value string) error {
+	return setAppStateTx(repo.database.WithContext(ctx), key, value)
+}
+
+// setAppStateTx is Set on a caller's handle — in practice a transaction: the
+// restore fence's database half commits inside the transaction of the write it
+// protects (runFencedWrite), never in a commit of its own.
+func setAppStateTx(tx *gorm.DB, key string, value string) error {
 	trimmed := strings.TrimSpace(key)
 	if trimmed == "" {
 		return errors.New("app_state: key is required")
@@ -61,7 +68,7 @@ func (repo *AppStateRepository) Set(ctx context.Context, key string, value strin
 		Value:     value,
 		UpdatedAt: time.Now().UTC(),
 	}
-	return repo.database.WithContext(ctx).Clauses(clause.OnConflict{
+	return tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "key"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
 	}).Create(row).Error

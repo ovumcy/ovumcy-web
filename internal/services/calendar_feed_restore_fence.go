@@ -126,10 +126,14 @@ type CalendarFeedRestoreFence struct {
 	users    calendarFeedRestoreFenceUserStore
 	anchor   calendarFeedRestoreFenceAnchor
 	// writing makes one update of the pair atomic against every other update
-	// through THIS fence. Both halves are written one after the other, so two
-	// concurrent revocations could otherwise interleave — file from one, marker
-	// from the other — and leave the halves holding different tokens, which the
-	// next boot reads as a restore and answers by disarming every armed feed.
+	// through THIS fence. An advance writes the file half, then hands the token
+	// to its writer's transaction, which records it as the database half beside
+	// the protected row; two concurrent revocations could otherwise interleave —
+	// file from one, marker from the other — and leave the halves holding
+	// different tokens, which the next boot reads as a restore and answers with
+	// the full revocation. Every advance holds it from the file write until its
+	// writer's transaction has returned, so each writer gets its own token and
+	// its own transaction, one at a time.
 	//
 	// The lock covers one instance, not one path, so a binary must build ONE
 	// fence and share it: bootstrap.BuildRepositories returns the fence it
@@ -139,30 +143,27 @@ type CalendarFeedRestoreFence struct {
 	// this lock too — rare and operator-driven, where the request paths run
 	// concurrently by construction.
 	writing sync.Mutex
-	// confirmedAhead is set by a successful AdvanceConfirmed and consumed by
-	// the next Advance, AdvanceOrRefuse or AdvanceOrDiverge, which then writes
-	// nothing (WEB-429).
-	// The operator write that follows the gate advances the fence again from
-	// inside its repository; the confirmed advance already precedes that write,
-	// and a second one could only add a failure — a file error there moves the
-	// database half alone, and the next boot revokes every session, webhook and
-	// local password, including the one the operator just set. Guarded by
-	// writing.
-	confirmedAhead bool
-	// batching and pending coalesce concurrent AdvanceOrRefuse calls — every
-	// sign-out runs one — into one advance per turn of writing, so a caller
-	// waits for at most two file syncs however many arrive with it (WEB-454).
-	batching sync.Mutex
-	pending  *calendarFeedFenceAdvanceBatch
+	// confirmed is set by a successful ConfirmAdvances and makes every later
+	// advance through this fence take the operator CLI's fail-closed form
+	// (advanceConfirmedLocked). It is a mode of the process, never a pending
+	// advance: the advance itself still runs inside the operator's write, so the
+	// marker commits in that write's transaction. Guarded by writing.
+	confirmed bool
 }
 
-// calendarFeedFenceAdvanceBatch is one coalesced AdvanceOrRefuse: every caller
-// that joined it before its leader started writing returns its result.
-type calendarFeedFenceAdvanceBatch struct {
-	done    chan struct{}
-	err     error
-	members int
-}
+// CalendarFeedFenceCommit is a writer's own transaction, run by an advance
+// after the fence file already holds the new token and while the fence's lock
+// is still held. marker is the token the transaction must record as the
+// database half (models.AppStateKeyCalendarFeedRestoreFence) BESIDE its
+// protected row write, or "" when it records none: no fence is configured, or
+// a disagreement already in place waives the record (refusalWaiver).
+//
+// One transaction carrying both is what closes the backup window (WEB-505): a
+// consistent snapshot either predates it — the old marker beside the old row,
+// while the file already holds the new token, which the next boot reads as a
+// restore — or follows it, where marker and row moved together. A snapshot
+// holding the new marker beside the old row cannot exist.
+type CalendarFeedFenceCommit = func(marker string) error
 
 // NewCalendarFeedRestoreFence wires the fence.
 func NewCalendarFeedRestoreFence(appState calendarFeedRestoreFenceAppState, users calendarFeedRestoreFenceUserStore, anchor calendarFeedRestoreFenceAnchor) *CalendarFeedRestoreFence {
@@ -336,24 +337,29 @@ func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outco
 //     local password on the instance — for a write the owner could simply
 //     retry; and against a restore made before that boot it fails open.
 //
-// A database failure after the file half was written is returned wrapped in
-// ErrCalendarFeedFenceHalfAdvanced, and is the one outcome that changes
-// something: the halves disagree, so the next
-// boot runs the ContinuityBroken pass. It is priced in rather than avoided: the
-// halves are written one after the other with no transaction spanning both,
-// and file-then-database is the order whose failure revokes too much instead
-// of too little. The reverse would leave the halves agreeing on a token minted
-// before a revocation that did happen, which is the defect this whole
-// mechanism exists to close.
+// The database half is never written here: commit is the caller's own
+// transaction, and it records the token beside the protected row (see
+// CalendarFeedFenceCommit). The file is written first and the transaction
+// second, so the halves can only ever disagree with the file AHEAD. A commit
+// that fails after the file moved is answered by recording the token alone, so
+// the halves agree again over a row that did not change, and commit's own error
+// is returned; only when that record fails too is the error wrapped in
+// ErrCalendarFeedFenceHalfAdvanced, the one outcome that changes something: the
+// halves disagree, so the next boot runs the ContinuityBroken pass. A crash
+// between the file write and the transaction leaves the same disagreement. It
+// is priced in rather than avoided: file-then-transaction is the order whose
+// failure revokes too much instead of too little. The reverse would leave the
+// halves agreeing on a token minted before a revocation that did happen, which
+// is the defect this whole mechanism exists to close.
 //
 // A write whose feed clear is a side effect it must not be refused over — a
 // password change, a sign-out — calls AdvanceOrRefuse instead, an erasure
-// AdvanceOrDiverge, and an
-// operator process acting on someone ELSE's account calls AdvanceConfirmed.
-func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
+// AdvanceOrDiverge, and an operator process acting on someone ELSE's account
+// first calls ConfirmAdvances.
+func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context, commit CalendarFeedFenceCommit) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
-	return fence.advanceRetryingLocked(ctx, false)
+	return fence.advanceLocked(ctx, false, commit)
 }
 
 // AdvanceOrRefuse is Advance for a write that revokes sessions or changes a
@@ -377,48 +383,21 @@ func (fence *CalendarFeedRestoreFence) Advance(ctx context.Context) error {
 // (refusalWaiver). A file that reads as absent, or a read that fails, is
 // refused like a failed write: an unmounted fence volume reads as absent, and
 // once mounted again its old token agrees with a restored pre-write backup. A
-// database failure after the file moved is returned wrapped in
-// ErrCalendarFeedFenceHalfAdvanced, so a caller can tell either refusal from
-// an error of its own write.
+// refusal never runs commit, so the caller's row write cannot run either; a
+// failure after the file moved is answered as Advance's is, wrapped in
+// ErrCalendarFeedFenceHalfAdvanced only when the halves are left disagreeing.
 //
-// Concurrent calls are coalesced. A caller joins the batch that is still
-// waiting for writing, or opens one; the batch's leader detaches it only once
-// it holds writing, so every member called before the advance began, which is
-// all the ordering its row write needs. A member waits for the result whatever
-// its ctx does, so its row write never runs ahead of an advance it joined. The
-// write runs under the leader's ctx, as every fence write runs under its
-// caller's: a cancelled leader refuses the whole batch, or — once the file has
-// moved — fails the database half for it, which leaves the file ahead the way
-// Advance's database failure does. Every member refuses its row write either
-// way. The lock and the batch are released on every exit, a panic included, or
-// each later session writer would wait forever.
-func (fence *CalendarFeedRestoreFence) AdvanceOrRefuse(ctx context.Context) error {
-	fence.batching.Lock()
-	if batch := fence.pending; batch != nil {
-		batch.members++
-		fence.batching.Unlock()
-		<-batch.done
-		return batch.err
-	}
-	batch := &calendarFeedFenceAdvanceBatch{done: make(chan struct{}), members: 1, err: errCalendarFeedFenceAdvanceAbandoned}
-	fence.pending = batch
-	fence.batching.Unlock()
-
+// Concurrent calls are NOT coalesced (WEB-505): a batch that shared one token
+// would let its members commit their rows after the token reached the
+// database, which is the backup window this method closes. Each caller writes
+// its own token and runs its own transaction under writing, one at a time. The
+// lock is released on every exit, a panic in commit included, or each later
+// session writer would wait forever.
+func (fence *CalendarFeedRestoreFence) AdvanceOrRefuse(ctx context.Context, commit CalendarFeedFenceCommit) error {
 	fence.writing.Lock()
-	defer func() {
-		fence.writing.Unlock()
-		close(batch.done)
-	}()
-	fence.batching.Lock()
-	fence.pending = nil
-	fence.batching.Unlock()
-	batch.err = fence.advanceRetryingLocked(ctx, false)
-	return batch.err
+	defer fence.writing.Unlock()
+	return fence.advanceLocked(ctx, false, commit)
 }
-
-// errCalendarFeedFenceAdvanceAbandoned is what the members of a batch whose
-// leader panicked mid-write receive.
-var errCalendarFeedFenceAdvanceAbandoned = errors.New("calendar feed restore fence: the shared advance was abandoned")
 
 // AdvanceOrDiverge is AdvanceOrRefuse for a write that proceeds whatever the
 // fence does: clear-data and account erasure. Refusing those over a fence
@@ -429,51 +408,75 @@ var errCalendarFeedFenceAdvanceAbandoned = errors.New("calendar feed restore fen
 // It retries the file write as AdvanceOrRefuse does. When every attempt fails
 // it moves the database half on ALONE: the halves disagree, and the next boot
 // answers with the full ContinuityBroken pass, passwords included. Only these
-// writes pay that, and only while the file stays unwritable. It is not
-// coalesced: erasures are rare, and a batch shared with refusing callers would
-// have to answer one persistent failure two opposite ways.
-func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context) error {
+// writes pay that, and only while the file stays unwritable. commit runs on
+// every outcome — with no marker when the token could not even be minted — so
+// the erasure is never refused here; its error is commit's.
+func (fence *CalendarFeedRestoreFence) AdvanceOrDiverge(ctx context.Context, commit CalendarFeedFenceCommit) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
-	return fence.advanceRetryingLocked(ctx, true)
+	return fence.advanceLocked(ctx, true, commit)
 }
 
 // calendarFeedFenceWriteRetryDelays are the waits between the file-write
-// attempts of every advance but AdvanceConfirmed: four attempts within about
-// half a second, held under writing, which the batch spreads over every
-// sign-out that arrives meanwhile.
+// attempts of every server-side advance: four attempts within about half a
+// second, held under writing. The operator CLI's confirmed form does not retry.
 var calendarFeedFenceWriteRetryDelays = []time.Duration{25 * time.Millisecond, 100 * time.Millisecond, 400 * time.Millisecond}
 
-// advanceRetryingLocked is one Advance, AdvanceOrRefuse or AdvanceOrDiverge
-// write. The caller holds fence.writing.
-func (fence *CalendarFeedRestoreFence) advanceRetryingLocked(ctx context.Context, diverge bool) error {
-	if fence.consumeConfirmedAdvance() {
-		return nil
+// advanceLocked is one Advance, AdvanceOrRefuse or AdvanceOrDiverge: the file
+// half first, then commit with the marker its transaction records. The caller
+// holds fence.writing.
+func (fence *CalendarFeedRestoreFence) advanceLocked(ctx context.Context, diverge bool, commit CalendarFeedFenceCommit) error {
+	if fence.confirmed {
+		return fence.advanceConfirmedLocked(ctx, commit)
 	}
 	token, err := security.NewCalendarFeedFenceToken()
 	if err != nil {
+		if diverge {
+			return commit("") // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
+		}
 		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
 	writeErr := fence.writeAnchorRetrying(ctx, token)
 	if errors.Is(writeErr, security.ErrCalendarFeedFenceNotConfigured) {
+		return commit("")
+	}
+	if writeErr != nil {
+		if !diverge {
+			waived, record := fence.refusalWaiver(ctx, fence.confirmContinuity(ctx))
+			if !waived {
+				return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: writeErr}
+			}
+			if !record {
+				return commit("")
+			}
+		}
+		// The file does not hold token, so a failed commit leaves nothing for
+		// commitAfterFile to bring back into agreement.
+		return commit(token)
+	}
+	return fence.commitAfterFile(ctx, token, commit)
+}
+
+// commitAfterFile runs commit once the file half holds token. A commit that
+// fails — its transaction rolled back, the row and the marker with it — would
+// leave the file ahead of the database, which the next boot answers with the
+// full ContinuityBroken revocation over a write that never happened. So the
+// token is then recorded alone, outside any transaction: the halves agree
+// again over a row that did not change, which no restore can turn into a
+// revival, and commit's own error is returned unchanged so the caller still
+// sees why its write failed. Only if that record fails as well is the result
+// wrapped in ErrCalendarFeedFenceHalfAdvanced. The record runs without ctx's
+// cancellation: a cancelled request is the likeliest cause of the failed
+// commit, and must not turn a refused write into an instance-wide revocation.
+func (fence *CalendarFeedRestoreFence) commitAfterFile(ctx context.Context, token string, commit CalendarFeedFenceCommit) error {
+	commitErr := commit(token)
+	if commitErr == nil {
 		return nil
 	}
-	if writeErr != nil && !diverge {
-		waived, record := fence.refusalWaiver(ctx, fence.confirmContinuity(ctx))
-		if !waived {
-			return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: writeErr}
-		}
-		if !record {
-			return nil
-		}
+	if err := fence.appState.Set(context.WithoutCancel(ctx), models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
+		return errors.Join(commitErr, &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err})
 	}
-	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
-		if writeErr == nil {
-			return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err}
-		}
-		return err
-	}
-	return nil
+	return commitErr
 }
 
 // refusalWaiver reports whether confirmContinuity's answer waives the refusal
@@ -540,41 +543,41 @@ func (fence *CalendarFeedRestoreFence) writeAnchorRetrying(ctx context.Context, 
 // wraps the anchor error.
 var ErrCalendarFeedFenceWriteFailed = errors.New("calendar feed restore fence: could not write the fence file")
 
-// ErrCalendarFeedFenceUnreachable is returned by AdvanceConfirmed when this
-// process cannot prove it is reading and writing the SAME anchor the server
-// does: CALENDAR_FEED_FENCE_PATH unset, no mount behind it, or any other
-// anchor failure, including one surfaced by the read half. It always wraps
-// the underlying cause.
+// ErrCalendarFeedFenceUnreachable is returned by ConfirmAdvances and by a
+// confirmed advance when this process cannot prove it is reading and writing
+// the SAME anchor the server does: CALENDAR_FEED_FENCE_PATH unset, no mount
+// behind it, or any other anchor failure, including one surfaced by the read
+// half. It always wraps the underlying cause.
 //
-// Advance, AdvanceOrRefuse and AdvanceOrDiverge treat an UNSET path as "no fence" and proceed,
-// because an instance with no fence disarms every feed on every boot anyway.
-// AdvanceConfirmed exists for the opposite caller — an operator process whose
-// shell may simply not be looking at the server's fence — where proceeding
-// would record the removal nowhere a restore of an older backup could
-// contradict. So on this path AdvanceConfirmed writes NOTHING, in either half,
-// and the caller refuses the operation entirely instead.
+// Advance, AdvanceOrRefuse and AdvanceOrDiverge treat an UNSET path as "no
+// fence" and proceed, because an instance with no fence disarms every feed on
+// every boot anyway. The confirmed form exists for the opposite caller — an
+// operator process whose shell may simply not be looking at the server's fence
+// — where proceeding would record the removal nowhere a restore of an older
+// backup could contradict. So on this path it writes NOTHING, in either half,
+// never runs the caller's commit, and the caller refuses the operation.
 var ErrCalendarFeedFenceUnreachable = errors.New("calendar feed restore fence: could not confirm continuity")
 
-// ErrCalendarFeedFenceMarkerUnavailable is returned by AdvanceConfirmed when
-// the DATABASE half could not be read. It is kept apart from
-// ErrCalendarFeedFenceUnreachable because the operator remedy differs — this
-// is the database not answering, not a path that is unset or unmounted — and
-// because, like that error, it guarantees nothing was written in either half.
-// It always wraps the storage error.
+// ErrCalendarFeedFenceMarkerUnavailable is returned by ConfirmAdvances and by a
+// confirmed advance when the DATABASE half could not be read. It is kept apart
+// from ErrCalendarFeedFenceUnreachable because the operator remedy differs —
+// this is the database not answering, not a path that is unset or unmounted —
+// and because, like that error, it guarantees nothing was written in either
+// half. It always wraps the storage error.
 var ErrCalendarFeedFenceMarkerUnavailable = errors.New("calendar feed restore fence: could not read the database marker")
 
-// ErrCalendarFeedFenceHalfAdvanced is returned by AdvanceConfirmed — and by
-// Advance, AdvanceOrRefuse and AdvanceOrDiverge — when the
-// file half was written and the database half then could not be. It is the
-// one error out of that method after which something HAS changed: the file is
-// ahead of app_state, so the server's next boot reads that as a restore and
-// disarms every armed feed — fail closed, the same answer AdvanceOrDiverge's
-// unwritable-anchor path gives, reached through a different door. A caller
-// must not tell the operator that nothing changed on this error. It always
-// wraps the storage error.
+// ErrCalendarFeedFenceHalfAdvanced is wrapped into the result of Advance,
+// AdvanceOrRefuse, AdvanceOrDiverge and a confirmed advance when the file half
+// was written, the writer's transaction failed, and the token could not be
+// recorded alone either (commitAfterFile). It is the one error after which
+// something HAS changed: the file is ahead of app_state, so the server's next
+// boot reads that as a restore and runs the full revocation — fail closed, the
+// same answer AdvanceOrDiverge's unwritable-anchor path gives, reached through
+// a different door. A caller must not tell the operator that nothing changed
+// on this error. It always wraps the storage error.
 var ErrCalendarFeedFenceHalfAdvanced = errors.New("calendar feed restore fence: the file advanced but the database marker did not")
 
-// CalendarFeedFenceStepError is every AdvanceConfirmed failure that has an
+// CalendarFeedFenceStepError is every fence refusal that has an
 // underlying cause: the Sentinel names WHICH step refused and what it left
 // behind, the Cause is the failure that step hit. Both are reachable through
 // errors.Is/errors.As, so a caller switching on the sentinels above keeps
@@ -596,16 +599,16 @@ func (err *CalendarFeedFenceStepError) Unwrap() []error {
 	return []error{err.Sentinel, err.Cause}
 }
 
-// CalendarFeedFenceContinuityError is returned by AdvanceConfirmed when the
-// anchor was reachable but the two halves are not the one pair AdvanceConfirmed
-// is willing to move forward from: both already holding the SAME token.
+// CalendarFeedFenceContinuityError is returned by ConfirmAdvances, a confirmed
+// advance and CheckContinuity when the anchor was reachable but the two halves
+// are not the one pair the confirmed form is willing to move forward from: both already holding the SAME token.
 // AnchorFound and StoredFound report which half(s) held one, because the
 // operator remedy differs by shape: both false means the server has not booted
 // with this fence since it last held a token — never at all, an unfenced start
 // dropped the database half and the file went with the volume, or a first boot
 // left its pending pair unfinished (WEB-456) — and
 // arming it is Enforce's job on that next boot, never this method's — while any
-// other combination is the same disagreement a restored backup produces. Either way AdvanceConfirmed writes
+// other combination is the same disagreement a restored backup produces. Either way the confirmed form writes
 // nothing: a caller that cannot prove continuity must refuse, not guess which
 // half is right.
 type CalendarFeedFenceContinuityError struct {
@@ -619,36 +622,48 @@ func (err *CalendarFeedFenceContinuityError) Error() string {
 	)
 }
 
-// AdvanceConfirmed is Advance's fail-closed sibling for a caller that is not
-// the fence's own owner-facing server process — today, the operator CLI
-// revoking a feed on someone else's behalf (`users delete`, a forced password
-// reset) or saving their webhook (`webhook set`). Both methods answer the same question — "record that the set of
-// armed feeds just changed" — but must answer an unreachable or disagreeing
-// fence oppositely, for the reason ErrCalendarFeedFenceUnreachable's doc
-// comment gives.
+// ConfirmAdvances switches this fence into the fail-closed form every advance
+// takes for a caller that is not the fence's own owner-facing server process —
+// today, the operator CLI revoking a feed on someone else's behalf (`users
+// delete`, a forced password reset) or saving their webhook (`webhook set`).
+// Both forms answer the same question — "record that the set of armed feeds
+// just changed" — but must answer an unreachable or disagreeing fence
+// oppositely, for the reason ErrCalendarFeedFenceUnreachable's doc comment
+// gives.
 //
-// It refuses unless the anchor can be read AND the two halves already hold
-// the SAME token — the one condition Enforce calls a no-op — and only then
-// mints, writes the file, then the database marker, in that order, same as
-// Advance. A failure writing the database half after the file has already
-// moved is returned wrapped in ErrCalendarFeedFenceHalfAdvanced: the
-// file is now ahead of app_state, so the very next boot reads that as a
-// restore and disarms every armed feed.
-//
-// The errors are typed by what they leave behind, and a caller may rely on
-// it: every error returned after anchor.Write wraps
-// ErrCalendarFeedFenceHalfAdvanced, so an error that does not — an anchor
-// failure, an unreadable marker, a pair that does not agree, or the bare
-// error of a token that could not be minted — means nothing was written in
-// either half.
-func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) error {
+// It refuses, writing nothing, unless the anchor can be read AND the two
+// halves already hold the SAME token — the one condition Enforce calls a
+// no-op — and only then marks the fence confirmed. It advances nothing itself:
+// the operator's write advances the fence from inside its repository, as the
+// server's writes do, so the marker commits in that write's own transaction
+// (advanceConfirmedLocked). An advance that ran here, ahead of the write and
+// in its own commit, is the backup window WEB-505 closes.
+func (fence *CalendarFeedRestoreFence) ConfirmAdvances(ctx context.Context) error {
 	fence.writing.Lock()
 	defer fence.writing.Unlock()
 
 	if err := fence.confirmContinuity(ctx); err != nil {
 		return err
 	}
+	fence.confirmed = true
+	return nil
+}
 
+// advanceConfirmedLocked is every advance of a fence ConfirmAdvances
+// confirmed. It re-confirms continuity under the lock — the server may have
+// booted, or advanced, since the gate — then mints, writes the file without
+// retrying and with no "not configured" pass, and runs commit with the token,
+// as Advance does. The errors are typed by what they leave behind, and a
+// caller may rely on it: a refusal before the file write (an anchor failure,
+// an unreadable marker, a pair that does not agree, the bare error of a token
+// that could not be minted) or a failed file write never runs commit and
+// leaves both halves untouched; after the file write, only a result that
+// wraps ErrCalendarFeedFenceHalfAdvanced leaves them disagreeing
+// (commitAfterFile). The caller holds fence.writing.
+func (fence *CalendarFeedRestoreFence) advanceConfirmedLocked(ctx context.Context, commit CalendarFeedFenceCommit) error {
+	if err := fence.confirmContinuity(ctx); err != nil {
+		return err
+	}
 	token, err := security.NewCalendarFeedFenceToken()
 	if err != nil {
 		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
@@ -656,23 +671,10 @@ func (fence *CalendarFeedRestoreFence) AdvanceConfirmed(ctx context.Context) err
 	if err := fence.anchor.Write(token); err != nil {
 		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceUnreachable, Cause: err}
 	}
-	if err := fence.appState.Set(ctx, models.AppStateKeyCalendarFeedRestoreFence, token); err != nil {
-		return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceHalfAdvanced, Cause: err}
-	}
-	fence.confirmedAhead = true
-	return nil
+	return fence.commitAfterFile(ctx, token, commit)
 }
 
-// consumeConfirmedAdvance reports whether a confirmed advance already covers
-// the write about to happen, and clears the mark. The caller holds
-// fence.writing.
-func (fence *CalendarFeedRestoreFence) consumeConfirmedAdvance() bool {
-	covered := fence.confirmedAhead
-	fence.confirmedAhead = false
-	return covered
-}
-
-// CheckContinuity is AdvanceConfirmed's refusal half alone: the same errors,
+// CheckContinuity is ConfirmAdvances' refusal half alone: the same errors,
 // for the same states, and nothing written in either half on any outcome. It
 // is for a process that must not act on a database the server has not yet
 // booted over since a restore — `ovumcy notify`, whose delivery would reach a
@@ -684,7 +686,7 @@ func (fence *CalendarFeedRestoreFence) CheckContinuity(ctx context.Context) erro
 	return fence.confirmContinuity(ctx)
 }
 
-// confirmContinuity is the read both CheckContinuity and AdvanceConfirmed
+// confirmContinuity is the read CheckContinuity and the confirmed form
 // refuse on. The caller holds fence.writing.
 func (fence *CalendarFeedRestoreFence) confirmContinuity(ctx context.Context) error {
 	anchored, anchorFound, pending, err := fence.readAnchor()
@@ -710,7 +712,7 @@ func (fence *CalendarFeedRestoreFence) confirmContinuity(ctx context.Context) er
 
 // continuityHolds reports whether the two fence halves already prove
 // continuity: both hold a token, and it is the SAME one. Enforce treats this
-// as its no-op case; AdvanceConfirmed treats anything else — either half
+// as its no-op case; the confirmed form treats anything else — either half
 // missing, or both present but different — as a refusal. The two calls are a
 // De Morgan pair over the same three facts, spelled out here once so they
 // cannot drift apart.

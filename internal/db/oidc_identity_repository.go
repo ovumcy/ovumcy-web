@@ -68,10 +68,7 @@ func (repo *OIDCIdentityRepository) CreateAndRevokeSessions(ctx context.Context,
 	if identity == nil || identity.UserID == 0 {
 		return errOIDCIdentityOwnerRequired
 	}
-	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
-		return err
-	}
-	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return repo.advanceCalendarFeedFenceOrRefuse(ctx, func(tx *gorm.DB) error {
 		if err := bumpAuthSessionVersionFromTx(tx, identity.UserID, expectedSessionVersion); err != nil {
 			return err
 		}
@@ -124,10 +121,7 @@ func (repo *OIDCIdentityRepository) DeleteForUserAndRevokeSessions(ctx context.C
 	if userID == 0 || identityID == 0 {
 		return false, nil
 	}
-	if err := repo.advanceCalendarFeedFenceOrRefuse(ctx); err != nil {
-		return false, err
-	}
-	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := repo.advanceCalendarFeedFenceOrRefuse(ctx, func(tx *gorm.DB) error {
 		if err := bumpAuthSessionVersionFromTx(tx, userID, expectedSessionVersion); err != nil {
 			if errors.Is(err, errOIDCIdentityOwnerRequired) {
 				return errOIDCIdentityNotDeleted
@@ -198,8 +192,8 @@ func (repo *OIDCIdentityRepository) TouchLastUsed(ctx context.Context, identityI
 // advanceCalendarFeedFenceOrRefuse is UserRepository's, for the same reason: a
 // link or unlink changes how the account can be entered, and a restore across
 // one the fence never recorded would revive the sign-in method it replaced.
-func (repo *OIDCIdentityRepository) advanceCalendarFeedFenceOrRefuse(ctx context.Context) error {
-	return advanceFenceOrRefuse(ctx, repo.calendarFeedFence)
+func (repo *OIDCIdentityRepository) advanceCalendarFeedFenceOrRefuse(ctx context.Context, write func(tx *gorm.DB) error) error {
+	return advanceFenceOrRefuse(ctx, repo.database, repo.calendarFeedFence, write)
 }
 
 var errOIDCIdentityOwnerRequired = errors.New("oidc identity owner is required")

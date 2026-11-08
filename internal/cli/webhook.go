@@ -194,7 +194,7 @@ func runWebhookSet(service *services.WebhookSettingsCLIService, fencePath string
 	}
 	view, err = service.ApplyWebhookSettings(ctx, opts.email, patch, false)
 	if err != nil {
-		return operatorFeedRevocationCommitted(mapWebhookError(err, opts.email))
+		return operatorFeedRevocationCommitted(fencePath, err, func(err error) error { return mapWebhookError(err, opts.email) })
 	}
 	_, _ = fmt.Fprintf(output, "webhook configured for %s:\n", opts.email)
 	printWebhookStatus(output, "", view)
