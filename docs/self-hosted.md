@@ -446,7 +446,7 @@ Bind mounts are still valid, but they are an advanced operator path. For bind mo
 
 A bind-mounted directory must be writable by the container user: the image runs as `10001:10001` and never as root, so a directory the Docker daemon creates for you (owned by `root`) or one owned by your own login makes the app fail at boot with a permission error on the database path. Create it first and hand it over — for example `mkdir -p ./data && sudo chown -R 10001:10001 ./data` for a mount at `/app/data`, and the same for any bind-mounted fence directory (`/app/fence`). Named volumes are initialised from the image with that ownership, which is why they need no such step.
 
-### Restoring a backup taken online
+## Restoring a Backup Taken Online
 
 Use this procedure for every copy of the database taken while the server ran — an archive or atomic snapshot of the live data volume, a `pg_dump` or platform snapshot of a running Postgres — whatever version it ran, and for every copy taken while `ovumcy users delete`, `ovumcy reset-password`, `ovumcy webhook set`, `ovumcy users set-email` or `ovumcy link-oidc-identity` ran. The fence marker inside such a copy can agree with the fence file while the revocation it was recorded for is missing ([Calendar Feed Restore Fence](#calendar-feed-restore-fence) says how), so agreement proves nothing about it. The procedure removes the file, so the next start reads a restore whatever the copy holds and revokes everything a backup could bring back.
 

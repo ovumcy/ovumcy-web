@@ -12,7 +12,7 @@ import (
 
 // soloRecordObservingAppState answers the one Set a failed commit leaves —
 // the marker recorded alone — with what its context looked like, and then
-// fails it the way a record whose deadline fired fails.
+// fails it the way a record whose context ended fails.
 type soloRecordObservingAppState struct {
 	*stubFenceAppState
 	sets        int
@@ -33,10 +33,10 @@ func (s *soloRecordObservingAppState) Set(ctx context.Context, _ string, _ strin
 }
 
 // TestTheSoloRecordAfterAFailedCommitIsBoundedAndFailsClosed: the record a
-// rolled-back commit leaves drops the request's cancellation — a cancelled
-// request must not turn a refused write into an instance-wide revocation — but
-// keeps a deadline of its own, since the caller holds fence.writing. A record
-// that runs out of time leaves the file ahead, and the result must say so.
+// rolled-back commit leaves runs on the caller's context — a service never
+// detaches from its caller — under a deadline of its own, since the caller
+// holds fence.writing. A record that fails, a cancelled caller included,
+// leaves the file ahead, and the result must say so.
 func TestTheSoloRecordAfterAFailedCommitIsBoundedAndFailsClosed(t *testing.T) {
 	rolledBack := errors.New("request cancelled mid-transaction")
 	for name, advance := range advanceForms {
@@ -52,14 +52,14 @@ func TestTheSoloRecordAfterAFailedCommitIsBoundedAndFailsClosed(t *testing.T) {
 			if appState.sets != 1 {
 				t.Fatalf("a failed commit must record the marker alone exactly once, saw %d records", appState.sets)
 			}
-			if appState.ctxErr != nil {
-				t.Fatalf("the solo record must not inherit the request's cancellation, got %v", appState.ctxErr)
+			if !errors.Is(appState.ctxErr, context.Canceled) {
+				t.Fatalf("the solo record must inherit the caller's cancellation, got %v", appState.ctxErr)
 			}
-			if !appState.hadDeadline || appState.remaining <= 0 || appState.remaining > calendarFeedFenceSoloRecordTimeout {
+			if !appState.hadDeadline || appState.remaining > calendarFeedFenceSoloRecordTimeout {
 				t.Fatalf("the solo record must run under a deadline of at most %v, had deadline %v with %v left", calendarFeedFenceSoloRecordTimeout, appState.hadDeadline, appState.remaining)
 			}
 			if !errors.Is(err, rolledBack) || !errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
-				t.Fatalf("a solo record that timed out leaves the file ahead and must be reported as a half advance, got %v", err)
+				t.Fatalf("a solo record that failed leaves the file ahead and must be reported as a half advance, got %v", err)
 			}
 		})
 	}
