@@ -89,7 +89,7 @@ func TestRunLinkOIDCIdentityCommandLinksByID(t *testing.T) {
 	var output bytes.Buffer
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		validLinkOIDCIdentityConfig(),
+		validLinkOIDCIdentityConfig(), armOperatorFence(t, databasePath),
 		[]string{"--id", strconv.FormatUint(uint64(user.ID), 10), "--issuer", "https://idp.example.com", "--subject", "cli-linked-subject"},
 		&output,
 	)
@@ -150,7 +150,7 @@ func TestRunLinkOIDCIdentityCommandRefusesUnknownID(t *testing.T) {
 
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		validLinkOIDCIdentityConfig(),
+		validLinkOIDCIdentityConfig(), "",
 		[]string{"--id", "999999", "--issuer", "https://idp.example.com", "--subject", "cli-linked-subject"},
 		nil,
 	)
@@ -186,7 +186,7 @@ func TestRunLinkOIDCIdentityCommandRefusesWhenOIDCDisabled(t *testing.T) {
 
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		security.OIDCConfig{Enabled: false},
+		security.OIDCConfig{Enabled: false}, "",
 		[]string{"--id", strconv.FormatUint(uint64(user.ID), 10), "--issuer", "https://idp.example.com", "--subject", "cli-linked-subject"},
 		nil,
 	)
@@ -210,7 +210,7 @@ func TestRunLinkOIDCIdentityCommandRefusesAnIssuerMismatch(t *testing.T) {
 
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		validLinkOIDCIdentityConfig(),
+		validLinkOIDCIdentityConfig(), "",
 		[]string{"--id", strconv.FormatUint(uint64(user.ID), 10), "--issuer", "https://not-the-configured-issuer.example", "--subject", "cli-linked-subject"},
 		nil,
 	)
@@ -317,7 +317,7 @@ func TestRunLinkOIDCIdentityCommandLinksByEmail(t *testing.T) {
 	var output bytes.Buffer
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		validLinkOIDCIdentityConfig(),
+		validLinkOIDCIdentityConfig(), armOperatorFence(t, databasePath),
 		[]string{"cli-link-by-email@example.com", "--issuer", "https://idp.example.com", "--subject", "cli-linked-by-email"},
 		&output,
 	)
@@ -337,7 +337,7 @@ func TestRunLinkOIDCIdentityCommandRefusesAMalformedEmail(t *testing.T) {
 
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "unused.db")},
-		validLinkOIDCIdentityConfig(),
+		validLinkOIDCIdentityConfig(), "",
 		[]string{"not-an-email-address", "--issuer", "https://idp.example.com", "--subject", "sub"},
 		nil,
 	)
@@ -353,7 +353,7 @@ func TestRunLinkOIDCIdentityCommandRefusesInvalidDatabaseConfig(t *testing.T) {
 
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: "bogus"},
-		validLinkOIDCIdentityConfig(),
+		validLinkOIDCIdentityConfig(), "",
 		[]string{"--id", "1", "--issuer", "https://idp.example.com", "--subject", "sub"},
 		nil,
 	)
@@ -392,7 +392,7 @@ func TestLinkOIDCIdentityReportsAGenericLookupFailure(t *testing.T) {
 	err = linkOIDCIdentity(
 		linkOIDCRepositories{Users: failingLinkOIDCUserRepository{err: storageErr}},
 		security.NewOIDCClient(validLinkOIDCIdentityConfig()),
-		opts, "", "https://idp.example.com", nil,
+		"", nil, opts, "", "https://idp.example.com", nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "look up account") {
 		t.Fatalf("expected the generic lookup-failure wording, got %v", err)
@@ -418,7 +418,7 @@ func TestRunLinkOIDCIdentityCommandSucceedsWithNoCapturedOutput(t *testing.T) {
 
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		validLinkOIDCIdentityConfig(),
+		validLinkOIDCIdentityConfig(), armOperatorFence(t, databasePath),
 		[]string{"--id", strconv.FormatUint(uint64(user.ID), 10), "--issuer", "https://idp.example.com", "--subject", "cli-linked-nil-output"},
 		nil,
 	)
@@ -440,10 +440,11 @@ func TestRunLinkOIDCIdentityCommandRefusesACrossUserClaim(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "cli-link-oidc-cross-user.db")
 	firstUser := createCLILinkOIDCUser(t, databasePath, "cli-link-cross-user-first@example.com")
 	secondUser := createCLILinkOIDCUser(t, databasePath, "cli-link-cross-user-second@example.com")
+	fencePath := armOperatorFence(t, databasePath)
 
 	if err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		validLinkOIDCIdentityConfig(),
+		validLinkOIDCIdentityConfig(), fencePath,
 		[]string{"--id", strconv.FormatUint(uint64(firstUser.ID), 10), "--issuer", "https://idp.example.com", "--subject", "shared-subject"},
 		nil,
 	); err != nil {
@@ -452,7 +453,7 @@ func TestRunLinkOIDCIdentityCommandRefusesACrossUserClaim(t *testing.T) {
 
 	err := runLinkOIDCIdentityCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
-		validLinkOIDCIdentityConfig(),
+		validLinkOIDCIdentityConfig(), fencePath,
 		[]string{"--id", strconv.FormatUint(uint64(secondUser.ID), 10), "--issuer", "https://idp.example.com", "--subject", "shared-subject"},
 		nil,
 	)
