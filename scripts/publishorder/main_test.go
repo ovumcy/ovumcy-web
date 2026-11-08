@@ -898,6 +898,20 @@ type registry struct {
 	// silently stops finding the header at all — which reads as the header
 	// being absent rather than as the reader being wrong.
 	terseHeaders bool
+	// priorHeads makes a HEAD on a tag answer what the registry held BEFORE
+	// this run: 200 and the digest of prior[tag] when the tag is there, 404
+	// when it is not. It is what the promotion's write-once read sees; the
+	// public check's fixtures leave it off and answer from resolves.
+	priorHeads bool
+	prior      map[string]string
+}
+
+// promotionRegistry is the stub as the promotion meets it on a first publish:
+// no tag exists yet unless a case says so.
+func promotionRegistry() registry {
+	r := defaultRegistry()
+	r.priorHeads = true
+	return r
 }
 
 func defaultRegistry() registry {
@@ -942,6 +956,57 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			tags:       "ghcr.io/ovumcy/ovumcy-web:v2.0.0\nghcr.io/ovumcy/ovumcy-web:latest\nghcr.io/ovumcy/ovumcy-web:sha-5049126",
 			registry:   defaultRegistry(),
 			wantWrites: []string{"v2.0.0", "latest", "sha-5049126"},
+		},
+		{
+			// A re-run of a release run: the same commit rebuilt into a new
+			// digest, signed under the same identity. Written, it re-points
+			// the tag operators verified, and the old digest is gone.
+			name: "a re-run finds the release tag at another digest",
+			tags: "ghcr.io/ovumcy/ovumcy-web:v2.0.0\nghcr.io/ovumcy/ovumcy-web:latest",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.prior = map[string]string{"v2.0.0": "an earlier run's manifest"}
+				return r
+			}(),
+			wantRefusal: true,
+			wantError:   "already names sha256:",
+		},
+		{
+			// The whole list is judged before the first write: the commit tag
+			// in last place must stop the moving alias in first place too.
+			name: "the commit tag names another digest",
+			tags: "ghcr.io/ovumcy/ovumcy-web:main\nghcr.io/ovumcy/ovumcy-web:sha-5049126",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.prior = map[string]string{"sha-5049126": "an earlier run's manifest"}
+				return r
+			}(),
+			wantRefusal: true,
+			wantError:   "ovumcy-web:sha-5049126 already names",
+		},
+		{
+			// The moving aliases are not write-once: `main` and `latest` at
+			// another digest are what every later publish overwrites.
+			name: "the moving aliases already name another digest",
+			tags: "ghcr.io/ovumcy/ovumcy-web:main\nghcr.io/ovumcy/ovumcy-web:latest",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.prior = map[string]string{"main": "an older manifest", "latest": "an older manifest"}
+				return r
+			}(),
+			wantWrites: []string{"main", "latest"},
+		},
+		{
+			// The positive control for the write-once read: the tag already
+			// names this run's signed digest, so writing it changes nothing.
+			name: "the release tag already names the signed digest",
+			tags: "ghcr.io/ovumcy/ovumcy-web:v2.0.0",
+			registry: func() registry {
+				r := defaultRegistry()
+				r.prior = map[string]string{"v2.0.0": canonicalManifest}
+				return r
+			}(),
+			wantWrites: []string{"v2.0.0"},
 		},
 		{
 			// A digest pushed and signed with nothing pointing at it is not a
@@ -1052,6 +1117,9 @@ func TestPromotionWritesOnlyTheSignedDigestUnderOnlyItsOwnTags(t *testing.T) {
 			wantWrites: []string{"v2.0.0"},
 		},
 	} {
+		// Every promotion case meets the write-once read; a tag the case does
+		// not list in prior is absent, as on a first publish.
+		testCase.registry.priorHeads = true
 		t.Run(testCase.name, func(t *testing.T) {
 			output, writes, err := runStep(t, bash, job, promoteStep, map[string]string{
 				"DIGEST":            digest,
@@ -1689,6 +1757,11 @@ func runStep(t *testing.T, bash, job, step string, env map[string]string, reg re
 			t.Fatalf("write the resolve fixture for tag %q: %v", tag, err)
 		}
 	}
+	for tag, body := range reg.prior {
+		if err := os.WriteFile(filepath.Join(dir, "prior-"+tag+".body"), []byte(body), 0o600); err != nil {
+			t.Fatalf("write the prior fixture for tag %q: %v", tag, err)
+		}
+	}
 	preamble := stubRegistry(dir, reg)
 
 	command := runBashScript(t, bash, job, step, preamble+"\n"+script)
@@ -1805,6 +1878,7 @@ func stubRegistry(dir string, reg registry) string {
 		`        printf 'PUT-CT %s\n' "$content_type" >&2`,
 		`        printf '%s' ` + shellQuote(reg.putStatus) + `; return 0`,
 		`      fi`,
+		priorHeadBranch(reg, space),
 		// The digest is computed here, over the tag's fixture body, rather
 		// than read back from a value the fixture handed the stub directly —
 		// a case controls what got STORED under the tag, and this line is
@@ -1822,6 +1896,25 @@ func stubRegistry(dir string, reg registry) string {
 		`  printf 'the step called an endpoint this fixture does not serve: %s\n' "$url" >&2`,
 		`  return 1`,
 		`}`,
+	}, "\n")
+}
+
+// priorHeadBranch answers a HEAD on a tag from the prior fixture when the case
+// asks for it: the digest is the real sha256 of the stored body, as for
+// resolves, so a case controls what was stored, never the verdict.
+func priorHeadBranch(reg registry, space string) string {
+	if !reg.priorHeads {
+		return `      :`
+	}
+	return strings.Join([]string{
+		`      if [ "$method" = HEAD ]; then`,
+		`        if [ -f "$STUB_DIR/prior-$tag.body" ]; then`,
+		`          [ -n "$dump" ] && printf 'HTTP/2 200\r\nDocker-Content-Digest:` + space + `sha256:%s\r\n' "$(sha256sum "$STUB_DIR/prior-$tag.body" | awk '{print $1}')" > "$dump"`,
+		`          printf 'HEAD-TAG %s 200\n' "$tag" >&2; printf '200'; return 0`,
+		`        fi`,
+		`        [ -n "$dump" ] && printf 'HTTP/2 404\r\n' > "$dump"`,
+		`        printf 'HEAD-TAG %s 404\n' "$tag" >&2; printf '404'; return 0`,
+		`      fi`,
 	}, "\n")
 }
 

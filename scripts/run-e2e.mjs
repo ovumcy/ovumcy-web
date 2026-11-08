@@ -530,13 +530,19 @@ async function startPostgresRuntime(runID) {
   const user = process.env.E2E_POSTGRES_USER ?? "ovumcy";
   const password = process.env.E2E_POSTGRES_PASSWORD ?? "ovumcy";
   const image = process.env.E2E_POSTGRES_IMAGE ?? "postgres:17-alpine";
+  // postgres:18 moved its VOLUME to /var/lib/postgresql, and its entrypoint
+  // refuses to start while anything is mounted at the old
+  // /var/lib/postgresql/data ("unused mount/volume"), so the tmpfs follows
+  // the image's major.
+  const imageMajor = Number(/^(?:[^/]+\/)*postgres:(\d+)/.exec(image)?.[1] ?? 0);
+  const dataTmpfs = imageMajor >= 18 ? "/var/lib/postgresql" : "/var/lib/postgresql/data";
 
   await pullDockerImage(image);
   await removeStalePostgresContainers();
 
   // A tmpfs on the image's VOLUME path keeps the daemon from creating an
   // anonymous data volume per start; the `rm -f -v` below covers an
-  // E2E_POSTGRES_IMAGE whose VOLUME path differs (postgres:18 moved it).
+  // E2E_POSTGRES_IMAGE whose major this parse does not read.
   const result = await runDockerCapture([
     "run",
     "-d",
@@ -545,7 +551,7 @@ async function startPostgresRuntime(runID) {
     "--label",
     `${POSTGRES_CONTAINER_LABEL}=${BigInt(Date.now()) * 1_000_000n}`,
     "--tmpfs",
-    "/var/lib/postgresql/data",
+    dataTmpfs,
     "-e",
     `POSTGRES_USER=${user}`,
     "-e",

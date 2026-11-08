@@ -53,6 +53,10 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-latest
+    # The Docker Hub publishing credential is read here; the `release`
+    # environment's deployment policy decides which refs may read it, in
+    # addition to the in-file refusal of anything but `main` below.
+    environment: release
     permissions:
       # `attestations: read` is what `gh attestation verify` asks the API with;
       # `packages: write` is the single GHCR write, the tag.
@@ -309,9 +313,13 @@ jobs:
         # A release the mirror never received has to cross before `latest` can
         # name it there. It crosses as the SAME BYTES: the index, every platform
         # manifest, every blob and the release's own sigstore bundle, each under
-        # the digest it already has and with no tag at all, so nothing public
-        # exists on Docker Hub until the next step has verified the copy under
-        # the release's own signer. Nothing is re-signed — this workflow's
+        # the digest it already has, so no tag naming the image exists on
+        # Docker Hub until the next step has verified the copy under the
+        # release's own signer. The one tag the copy may write is the bundle's
+        # referrers fallback `sha256-<hex>`, which names the signature index,
+        # never the image. docker-image.yml's mirror keeps the same order: its
+        # copy crosses by digest, untagged, and is signed and read back before
+        # any tag is written there. Nothing is re-signed — this workflow's
         # identity signs nothing, and a Docker Hub copy that only verified under
         # it would not be the release.
         #

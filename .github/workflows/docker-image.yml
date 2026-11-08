@@ -67,7 +67,10 @@ jobs:
   # publishes anyway while the operator remembers to look at a warning is the
   # defect being closed, not a fix for it. If a tag is legitimately blocked,
   # the remedy is to make the commit green — re-run the failed or stuck CI run
-  # on it, or merge it to `main` first — then delete and re-push the tag.
+  # on it, or merge it to `main` first — and to release it under a NEW tag. A
+  # pushed release tag is never deleted or moved, and the image tags a release
+  # writes are written once: the promotion below refuses a `v*` or `sha-*` tag
+  # that already names another digest.
   verify-release-tag:
     # Tag path only. The `workflow_call` path from ci.yml already carries
     # `needs: [test, race, e2e, e2e-postgres-smoke, image-smoke]`, so re-gating
@@ -674,7 +677,10 @@ jobs:
       # `main`, never as check runs (any token holding `checks: write` can post
       # one under any name). Each scanner job carries the `changes` job's path
       # gate, so `skipped` is a lane cleared for the diff and is accepted and
-      # printed; a failed, cancelled or still-running job refuses, and so does a
+      # printed — except trivy-fs, whose skip is answered by the run that did
+      # scan the tree, on this commit or on an ancestor with the same manifests
+      # (`trivyfs_scanned`); trivy-image is the publish job's own scan of the
+      # pushed digest. A failed, cancelled or still-running job refuses, and so does a
       # job that is absent (a renamed lane reads as no verdict), a run that did
       # not conclude `success`, or no qualifying run at all.
       #
@@ -696,6 +702,9 @@ jobs:
           SECURITY_JOBS: gosec|govulncheck|trivy-fs|trivy-image|trivy-image-arm64
           CODEQL_JOBS: Analyze (actions)|Analyze (go)|Analyze (javascript-typescript)
           GITLEAKS_JOBS: gitleaks
+          # How far the trivy-fs walk below looks back, as the work-job walk
+          # in the step above does.
+          ANCESTOR_WALK_BOUND: 20
         run: |
           set -euo pipefail
 
@@ -732,6 +741,96 @@ jobs:
               }
               END { for (i = 1; i <= n; i++) if (attempt[i] == newest[key[i]]) print row[i] }
             '
+          }
+
+          # Where trivy-fs really scanned this tree. Prints one line, the proof
+          # or why there is none, and returns non-zero when there is none;
+          # every failure is handled here, not by errexit (a conditional call
+          # switches it off). First the tagged commit's own queue and push runs
+          # of security.yml — a push to `main` runs every scanner — then its
+          # first-parent ancestors, nearest first, for as long as security.yml's
+          # own detect step, cut out of the checked-out file and run as a
+          # pull_request over the paths that differ between the ancestor and
+          # the tagged commit, answers `run_trivyfs=false`: the ancestor's scan
+          # read the same manifests. A failed scan on the way refuses; so does
+          # a read that fails, and the walk stops at `ANCESTOR_WALK_BOUND`.
+          trivyfs_verdict() {
+            fs_runs="$(printf '%s\n' "$1" | awk -F'\t' '$4 == ".github/workflows/security.yml" && ($1 == "merge_group" || ($1 == "push" && $3 == "main")) { print $2 }' | sort -u)"
+            fs_state="none"
+            [ -n "$fs_runs" ] || return 0
+            if ! fs_jobs="$(jobs_of_runs "$fs_runs")"; then
+              fs_state="unreadable"
+              return 0
+            fi
+            fs_conclusions="$(printf '%s\n' "$fs_jobs" | awk -F'\t' '$2 == "trivy-fs" { print $3 }')"
+            if grep -qvxE 'success|skipped|' <<<"$fs_conclusions"; then
+              fs_state="bad"
+            elif grep -qx 'success' <<<"$fs_conclusions"; then
+              fs_state="success"
+            fi
+          }
+
+          trivyfs_scanned() {
+            trivyfs_verdict "$all_runs"
+            case "$fs_state" in
+              success) echo "\`trivy-fs\` concluded success in a run on ${sha} that scanned it."; return 0 ;;
+              bad) echo "a \`trivy-fs\` job on ${sha} did not conclude success"; return 1 ;;
+              unreadable) echo "the jobs of the runs on ${sha} could not be read"; return 1 ;;
+            esac
+
+            fs_dir="$(mktemp -d)"
+            trap 'rm -rf "$fs_dir"' EXIT
+            if ! awk '
+              /^      - name: Detect which scanners this diff can affect$/ { found++; instep = 1; next }
+              instep && !inrun && /^        run: \|$/ { inrun = 1; next }
+              instep && !inrun && /^      - / { instep = 0 }
+              inrun && /^          / { print substr($0, 11); next }
+              inrun && /^[[:space:]]*$/ { print ""; next }
+              inrun { inrun = 0; instep = 0 }
+              END { if (found != 1) exit 3 }
+            ' .github/workflows/security.yml > "$fs_dir/detect.sh" || [ ! -s "$fs_dir/detect.sh" ]; then
+              echo "the detect step of .github/workflows/security.yml could not be cut out, so which ancestor read the same manifests cannot be derived"
+              return 1
+            fi
+            if ! fs_listed="$(git rev-list --first-parent --max-count=$((ANCESTOR_WALK_BOUND + 1)) "$sha")"; then
+              echo "the first-parent history of ${sha} could not be listed"
+              return 1
+            fi
+
+            fs_walked=0
+            for fs_ancestor in $(printf '%s\n' "$fs_listed" | tail -n +2); do
+              fs_walked=$((fs_walked + 1))
+              if ! git diff -z --no-renames --name-only "$fs_ancestor" "$sha" > "$fs_dir/paths.z" \
+                || [ "$(tr -cd '\n' < "$fs_dir/paths.z" | wc -c)" -ne 0 ] \
+                || ! tr '\0' '\n' < "$fs_dir/paths.z" > "$fs_dir/paths"; then
+                echo "the paths changed between ${fs_ancestor} and ${sha} could not be listed"
+                return 1
+              fi
+              if [ -s "$fs_dir/paths" ]; then
+                : > "$fs_dir/outputs"
+                if ! env -i PATH="$PATH" HOME="$HOME" EVENT_NAME=pull_request CHANGED_FILES_PATH="$fs_dir/paths" DIFF_BASE="$fs_ancestor" DIFF_VERDICT="" GITHUB_OUTPUT="$fs_dir/outputs" bash -e "$fs_dir/detect.sh" > "$fs_dir/detect.log" 2>&1; then
+                  echo "security.yml's detect step failed on the paths changed between ${fs_ancestor} and ${sha}"
+                  return 1
+                fi
+                if [ "$(sed -n 's/^run_trivyfs=//p' "$fs_dir/outputs" | tail -n1)" != "false" ]; then
+                  echo "security.yml's detect step runs trivy-fs for what changed between ${fs_ancestor} and ${sha}, so a scan of ${fs_ancestor} says nothing about it"
+                  return 1
+                fi
+              fi
+
+              if ! fs_ancestor_runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${fs_ancestor}&per_page=100" --jq '.workflow_runs[] | [.event, (.id | tostring), (.head_branch // ""), (.path // "")] | @tsv')"; then
+                echo "the runs of ${fs_ancestor} could not be read"
+                return 1
+              fi
+              trivyfs_verdict "$fs_ancestor_runs"
+              case "$fs_state" in
+                success) echo "\`trivy-fs\` concluded success on ${fs_ancestor}, whose manifests are ${sha}'s (${fs_walked} first-parent commit(s) back)."; return 0 ;;
+                bad) echo "a \`trivy-fs\` job on ${fs_ancestor}, whose manifests are ${sha}'s, did not conclude success"; return 1 ;;
+                unreadable) echo "the jobs of the runs on ${fs_ancestor} could not be read"; return 1 ;;
+              esac
+            done
+            echo "none of the ${fs_walked} nearest first-parent ancestors that share its manifests has a run that scanned them (the walk stops at ${ANCESTOR_WALK_BOUND})"
+            return 1
           }
 
           judge_workflow() {
@@ -788,7 +887,18 @@ jobs:
                     ;;
                 esac
               done <<< "$wf_conclusions"
-              if [ -z "$wf_ran" ]; then
+              if [ -z "$wf_ran" ] && [ "$wf_name" = "trivy-fs" ]; then
+                # A skipped trivy-fs is not a scan. Its path gate skips the
+                # lane when no manifest or lockfile changed against the QUEUE
+                # base, which says nothing about whether that tree was ever
+                # scanned; so the scan that did run is looked for instead.
+                if fs_proof="$(trivyfs_scanned)"; then
+                  echo "$fs_proof"
+                else
+                  echo "::error::\`trivy-fs\` was skipped in every judged ${wf_file} run on ${sha}, and no run that scanned this tree is on record: ${fs_proof}."
+                  failed=1
+                fi
+              elif [ -z "$wf_ran" ]; then
                 echo "::notice::\`${wf_name}\` was skipped in every ${wf_file} run on ${sha}: its path gate cleared the lane for that diff, so no scan of it ran there."
               else
                 echo "\`${wf_name}\` concluded success on ${sha}."
@@ -899,6 +1009,13 @@ jobs:
           echo "is_tip=true" >> "$GITHUB_OUTPUT"
 
   publish:
+    # The Docker Hub publishing credential is read here, so the job runs in
+    # the `release` environment: once that credential lives in the
+    # environment rather than in the repository, only a ref its deployment
+    # policy admits — `main` and release tags — can read it, not a workflow
+    # pushed to any branch. On the `workflow_call` path an environment secret
+    # is read here directly; the caller cannot pass one.
+    environment: release
     needs:
       - verify-release-tag
       - confirm-main-tip
@@ -1123,11 +1240,17 @@ jobs:
           # step above just refused it. Off here, `latest` is in the list only
           # when that step answered `true`.
           flavor: latest=false
+          # `sha-<short>` is the commit's name, written by the first publish of
+          # that commit — the push to `main` — and never rewritten (the
+          # promotion refuses a `sha-*` tag that names another digest). A
+          # release builds the same commit again into a different digest, so
+          # a tag run does not ask for it: asked, it would collide with the
+          # `main` publish of its own commit on every release.
           tags: |
             type=raw,value=latest,enable=${{ steps.latest.outputs.publish_latest == 'true' }}
             type=ref,event=branch
             type=ref,event=tag
-            type=sha
+            type=sha,enable=${{ github.ref_type != 'tag' }}
 
       # NOTHING PUBLIC EXISTS UNTIL THE SIGNATURE DOES. The push used to carry
       # `steps.meta.outputs.tags` — `vX.Y.Z`, `latest`, `main`, `sha-…` — so the
@@ -1713,6 +1836,49 @@ jobs:
           fi
           echo "latest_dropped=${latest_dropped}" >> "$GITHUB_OUTPUT"
 
+          # WRITTEN ONCE. A release tag (`v*`) and a commit tag (`sha-*`) name
+          # one artifact for good: a re-run of this workflow rebuilds the same
+          # commit into a NEW digest, validly signed under the same identity,
+          # and a PUT over the existing tag would re-point what operators
+          # verified and pinned, with no way back to the old digest. So each is
+          # read before anything is written: absent (404) is written; present
+          # at this run's signed digest is written again, which changes
+          # nothing; present at any other digest refuses the whole list before
+          # the first write. A read that does not answer either way refuses
+          # too. `main` and `latest` are moving aliases and are not asked.
+          while IFS= read -r tag; do
+            case "$tag" in
+              v*|sha-*) ;;
+              *) continue ;;
+            esac
+
+            existing_status="$(
+              curl -sS --connect-timeout 10 --max-time 60 --retry 3 --retry-delay 2 --retry-all-errors \
+                -o /dev/null -D "$headers" -w '%{http_code}' -I \
+                -H "Authorization: Bearer ${token}" \
+                -H "Accept: ${MANIFEST_ACCEPT}" \
+                "https://ghcr.io/v2/${IMAGE_PATH}/manifests/${tag}"
+            )"
+            case "$existing_status" in
+              404) continue ;;
+              200) ;;
+              *)
+                echo "::error::reading whether ${IMAGE_NAME}:${tag} already exists returned HTTP ${existing_status}, so writing it could overwrite a published digest. Nothing was promoted."
+                exit 1
+                ;;
+            esac
+
+            existing="$(
+              tr -d '\r' < "$headers" \
+                | awk 'tolower($0) ~ /^docker-content-digest:/ { sub(/^[^:]*:[ \t]*/, ""); sub(/[ \t]+$/, ""); print }' \
+                | tail -1
+            )"
+            if [ "$existing" != "$DIGEST" ]; then
+              echo "::error::${IMAGE_NAME}:${tag} already names ${existing:-a digest the registry did not report}, not this run's signed digest ${DIGEST}. A release or commit tag is written once and never re-pointed; publish the commit under a new release tag instead. Nothing was promoted."
+              exit 1
+            fi
+          done <<< "${tags}"
+
           while IFS= read -r tag; do
             [ -n "$tag" ] || continue
 
@@ -1959,6 +2125,19 @@ jobs:
           fi
           exit 0
 
+      - name: Install oras
+        # The mirror's first copy must land the bytes under NO tag, and every
+        # `cosign copy` also tags each entity it copies as `sha256-<hex>` on
+        # the destination — an alias of the image, written before the mirror
+        # is signed. `oras copy` to the bare repository pushes each manifest
+        # and blob by its own digest and tags nothing. Pinned to the commit
+        # and oras release promote-latest.yml installs, so the binary that
+        # holds the Docker Hub credential is the one named here.
+        if: ${{ env.DOCKERHUB_PUBLISH_USERNAME != '' }}
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+        with:
+          version: 1.3.1
+
       - name: Mirror the signed digest to Docker Hub
         # `VERIFY_ATTEMPTS`/`VERIFY_DELAY_SECONDS` bound how long the read-back
         # waits for Docker Hub's referrers listing to catch up with the
@@ -2104,7 +2283,7 @@ jobs:
               fi
               cat "$call_log"
 
-              if ! grep -qE 'TOOMANYREQUESTS|429 Too Many Requests' "$call_log"; then
+              if ! grep -qiE 'TOOMANYREQUESTS|429 Too Many Requests' "$call_log"; then
                 return 1
               fi
 
@@ -2126,7 +2305,16 @@ jobs:
             fi
           }
 
-          mirror_copy "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}@${DIGEST}"
+          # The bytes cross by digest and under no tag: `oras copy` to the bare
+          # repository, never `cosign copy`, which would also write the
+          # `sha256-<hex>` alias of the image before the signature below
+          # exists. oras words a rate limit in lower case
+          # (`response status code 429: toomanyrequests`), which is why the
+          # match in rate_limited ignores case.
+          if ! rate_limited "copying ${IMAGE_NAME}@${DIGEST} to ${MIRROR_NAME}" oras copy "${IMAGE_NAME}@${DIGEST}" "${MIRROR_NAME}"; then
+            echo "::error::copying ${IMAGE_NAME}@${DIGEST} to ${MIRROR_NAME} failed, and not on a registry's rate limit — the oras output above says what it is. No Docker Hub tag is written, so nothing is published there this run."
+            exit 1
+          fi
 
           # The signature does not travel with those bytes — the section
           # comment above says why — so it is issued here, against the mirror's
@@ -2209,6 +2397,11 @@ jobs:
           # 36512010639 and 36512597460 were refused on that quota. Read from
           # GHCR, the aliases cost Docker Hub only writes
           # and the HEADs that precede them, which the quota does not count.
+          #
+          # Each alias copy also writes `sha256-<hex>` for the index and every
+          # platform manifest (cosign tags each entity it copies that way), so
+          # those tags, too, appear only here, after the signature was read
+          # back — never before it.
           #
           # These copies run AFTER the signature and do not disturb it, but
           # only because Docker Hub serves the referrers API: `cosign copy`

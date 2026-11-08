@@ -1975,6 +1975,10 @@ jobs:
         run: npm run e2e:ci:postgres -- e2e/auth-login-register.spec.ts e2e/dashboard.spec.ts e2e/theme-dark-mode.spec.ts
         env:
           E2E_APP_PORT: 18081
+          # The Postgres the example stacks under docs/examples ship, so the
+          # migrations and the runtime are proven on the major an operator
+          # runs. scripts/examplecompose fails when the two majors differ.
+          E2E_POSTGRES_IMAGE: postgres:18.4-alpine3.22
 
       - name: Upload Playwright Postgres artifacts
         if: failure()

@@ -71,7 +71,7 @@ func TestTheGhcrPromotionAsksAgainBeforeItWritesLatest(t *testing.T) {
 			if testCase.ghFails {
 				env["GH_FAIL"] = "1"
 			}
-			output, writes, err := runStep(t, bash, job, promoteStep, env, defaultRegistry())
+			output, writes, err := runStep(t, bash, job, promoteStep, env, promotionRegistry())
 
 			if asked := strings.Contains(output, "GH api --paginate repos/ovumcy/ovumcy-web/git/matching-refs/tags/v "); asked != testCase.wantAsked {
 				t.Errorf("the step asked for the tag listing = %v, want %v:\n%s", asked, testCase.wantAsked, output)
