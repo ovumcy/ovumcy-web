@@ -423,6 +423,9 @@ go run ./cmd/ovumcy reset-password owner@example.com
 go run ./cmd/ovumcy reset-password --id 7
 go run ./cmd/ovumcy reset-password --full owner@example.com
 go run ./cmd/ovumcy repair symptom-names
+go run ./cmd/ovumcy link-oidc-identity owner@example.com --issuer https://idp.example.com --subject abc123
+go run ./cmd/ovumcy healthcheck
+go run ./cmd/ovumcy readycheck
 ```
 
 - `users create <email>` provisions an owner account, so an install script can set an instance up without opening registration, signing up, then closing it again. Run it once per person for household self-hosting: each owner's data stays isolated by `user_id`. `--skip-if-exists` makes re-runs idempotent (an existing email is skipped, never overwritten). The password never touches argv or the environment: an interactive terminal prompts twice with echo disabled, piped stdin supplies it as the first line. No recovery code is printed unless you pass `--show-recovery-code`, so none leaks into install logs; under `OIDC_LOGIN_MODE=oidc_only` none is issued at all, so run the command with the server's environment. No health data passes through provisioning; each owner completes onboarding on first sign-in.
@@ -432,6 +435,8 @@ go run ./cmd/ovumcy repair symptom-names
 - `reset-password <email>|--id <id>` prompts for a new password, validates it against the password policy, writes its bcrypt hash, and atomically bumps `auth_session_version` so every existing session is invalidated. Use it when an owner has lost both their password and their recovery code. `--id` exists for the same legacy-row reason as `set-email`, and an ambiguous address is refused rather than resolved to whichever row the database returns first. `--full` is the compromise-recovery form: the same write also clears two-factor sign-in and the recovery code and unlinks every OIDC identity, so nothing an intruder enrolled or linked survives the reset.
 - `notify` runs one webhook reminder pass and is meant to be scheduled (cron, systemd timer, Docker one-shot, Task Scheduler), not run continuously; `REMINDER_SCHEDULER_ENABLED` runs the same pass in-process instead. `webhook show|set <email>` inspects or configures an owner's webhook settings from the shell, the same settings the Settings page writes; it has no `--id` form and refuses an ambiguous address. Both: [docs/notifications.md](docs/notifications.md).
 - `repair` lists the offline data repairs the binary carries; each inspects and reports by default and changes nothing until `--apply`. Unlike every other subcommand it opens the database *without* applying migrations, because it exists for the case where a migration is refusing to run — which also stops the server, so there is no application to fix the data in. Today it carries `symptom-names`, for an account holding two symptoms under the same name. Runbook: [docs/self-hosted.md](docs/self-hosted.md#duplicate-rows-that-refuse-a-migration).
+- `link-oidc-identity <email>|--id <id> --issuer <issuer> --subject <subject>` links an OIDC identity to an account that has no working sign-in left (an OIDC-only account whose provider changed); an account that can still sign in links from Settings instead. A new link signs out every session the account had open. Details: [docs/oidc.md](docs/oidc.md).
+- `healthcheck` and `readycheck` are the container probes: each makes an in-process request against `127.0.0.1:$PORT` (`/healthz`, `/readyz`) and exits non-zero on failure. They are what the image's health check runs, not account tools. Details: [docs/self-hosted.md](docs/self-hosted.md).
 
 Running the CLI against the shell-free container, and which subcommands need the server's restore fence: [docs/self-hosted.md](docs/self-hosted.md#running-the-operator-cli-against-the-container).
 
