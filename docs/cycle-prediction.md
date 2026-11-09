@@ -116,7 +116,7 @@ expected period.
 |----------|-------|------|
 | `defaultLutealPhaseDays` | 14 | Default luteal phase, used when it is not refined from logged signals |
 | `minLutealPhaseDays` | 10 | Lower clamp for the luteal phase (engineering heuristic, not a clinical boundary) |
-| `minOvulationCycleDay` | 5 | Ovulation may not fall before cycle day 5 |
+| `minOvulationCycleDay` | 5 | Ovulation may not fall before cycle day 5 (engineering heuristic, no clinical source) |
 | (min cycle for a prediction) | 15 | `minLutealPhaseDays + minOvulationCycleDay` |
 
 ### Step 1 — resolve the luteal phase
@@ -317,9 +317,10 @@ ovulation line, the JSON overview's `ovulation_date` / `ovulation_confirmed`,
 and the coverline + probable-ovulation marker on the stats BBT chart. For the
 current cycle the calendar, the dashboard and the JSON overview read one
 resolver and the chart shares its detection window, so a shift names one day
-wherever it is shown; the chart is the one surface that keeps its marker while
-the others withhold every date (an overdue cycle, unpredictable mode, a
-pregnancy pause, the first cycle). That window runs through the owner's today
+wherever it is shown; the chart withholds its marker in the modes that withhold
+every projected date (an overdue cycle, unpredictable mode, a pregnancy pause,
+the first cycle), while the other surfaces keep a temperature-confirmed day
+through an overdue cycle (see the overdue gate below). That window runs through the owner's today
 rather than to the projected next-period start — a shift that arrives after the
 projected date has passed is still this cycle's. The rule applied is the
 classical symptothermal ("3-over-6") one:
@@ -548,11 +549,13 @@ whether they reach a surface, never what they are.
   below). The onboarding hint's "about 24-38 days" quotes the same range. The
   following are engineering heuristics, chosen for display safety and not
   clinical boundaries: the 10–20 day window the luteal inference filters its
-  samples through, the seven days past the reference length after which a
-  cycle counts as overdue and projections pause, the seven-day spread between
+  samples through, the seven days past the shorter of the projection and reference
+  lengths after which a cycle counts as overdue and projections pause, the seven-day spread between
   cycle lengths past which predictions are treated as irregular, and the
   minimum of three cycles before a pattern note (short, long or irregular)
-  appears.
+  appears, and the 45-day threshold behind the stats page's long-cycle note: it
+  sits well above the FIGO 38-day boundary on purpose, so that a single missed
+  log merging two cycles does not surface medical wording.
 
 ## Physiological basis
 

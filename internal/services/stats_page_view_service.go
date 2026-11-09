@@ -348,8 +348,9 @@ func shouldShowStatsShortCycleNotice(user *models.User, completedCycleLengths []
 	return short >= shortCycleNoticeMinimumOccurrences
 }
 
-// longCycleNoticeThresholdDays is set deliberately high (above the clinical
-// oligomenorrhea boundary of ~35 days) so the pattern-gated note is
+// longCycleNoticeThresholdDays is an engineering heuristic, not a clinical
+// boundary, set deliberately high (well above the FIGO AUB System 1 38-day
+// infrequent-cycle boundary) so the pattern-gated note is
 // conservative: a single missed log that merges two cycles into a 60-90 day
 // span is common, so only a repeated genuinely-long pattern should surface
 // medical wording. Mirrors the >45 value the cycle-length setting once used.

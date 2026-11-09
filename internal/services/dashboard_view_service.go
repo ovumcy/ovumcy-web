@@ -426,6 +426,7 @@ func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.
 // withholds what the onboarding slider would project, and a recorded egg-white
 // observation is not a projection, so it shows there. Every other withholding
 // (stale, past the projection length, thin history) keeps the badge back.
+// Bleeding outside the cycle start is not one of them: the badge stays, neutral.
 func dashboardHighFertilityBadge(user *models.User, stats CycleStats, todayLog models.DailyLog) bool {
 	return IsOwnerUser(user) &&
 		!FertilityObservationSuppressed(user, stats) &&
