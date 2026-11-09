@@ -3,11 +3,11 @@ package testdb
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,14 +26,13 @@ const (
 	// suite on a second Postgres major. Unset or empty keeps postgresTestImage.
 	postgresImageEnv = "OVUMCY_TEST_POSTGRES_IMAGE"
 
-	// postgresDataDir is the path a pre-18 image declares as VOLUME. Mounting a
-	// tmpfs there keeps the daemon from creating an anonymous volume per start
-	// (the data is disposable and the start is faster); the `rm -f -v` in the
-	// cleanup covers an image whose major postgresDataDirFor cannot read.
-	// postgres:18 declares postgresDataDir18 instead, and its entrypoint exits
-	// while anything is mounted at the old path ("unused mount/volume").
-	postgresDataDir   = "/var/lib/postgresql/data"
-	postgresDataDir18 = "/var/lib/postgresql"
+	// postgresDataDir is the VOLUME a pre-18 image declares, and the fallback
+	// when postgresDataDirOf cannot read one. A tmpfs on the image's VOLUME
+	// keeps the daemon from creating an anonymous volume per start (the data
+	// is disposable and the start is faster). postgres:18 declares
+	// /var/lib/postgresql instead, and its entrypoint exits while anything is
+	// mounted at the old path ("unused mount/volume").
+	postgresDataDir = "/var/lib/postgresql/data"
 
 	// postgresContainerLabel marks every throwaway Postgres container the test
 	// harnesses start (this package and scripts/run-e2e.mjs); its value is the
@@ -87,7 +86,7 @@ func StartPostgres(t *testing.T, databaseName string) (dsn string, containerID s
 
 	containerID = runDockerCommand(t, "run", "-d", "--rm", "-P",
 		"--label", fmt.Sprintf("%s=%d", postgresContainerLabel, time.Now().UnixNano()),
-		"--tmpfs", postgresDataDirFor(image),
+		"--tmpfs", postgresDataDirOf(t, image),
 		"-e", "POSTGRES_USER="+postgresTestUser,
 		"-e", "POSTGRES_PASSWORD="+postgresTestPassword,
 		"-e", "POSTGRES_DB="+databaseName,
@@ -161,6 +160,9 @@ func waitForPostgresReadiness(t *testing.T, containerID string, databaseName str
 		if _, err := runDockerCommandWithError("exec", containerID, "pg_isready", "-U", postgresTestUser, "-d", databaseName); err == nil {
 			return
 		}
+		if state, err := runDockerCommandWithError("inspect", "--format", "{{.State.Running}}", containerID); err != nil || state != "true" {
+			t.Fatalf("postgres test container %s exited before it became ready (running=%q, inspect: %v); --rm removed it and its logs, so rerun the image by hand to read them", containerID, state, err)
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
 
@@ -232,19 +234,24 @@ func postgresImage() string {
 	return postgresTestImage
 }
 
-// postgresImageMajor matches the tag shape scripts/run-e2e.mjs reads: any
-// registry/namespace prefix, then `postgres:<major>`.
-var postgresImageMajor = regexp.MustCompile(`^(?:[^/]+/)*postgres:(\d+)`)
+// postgresDataDirOf is the tmpfs mount for image, read from the image itself:
+// a tag says nothing reliable about it (`postgres:latest` moved to 18).
+func postgresDataDirOf(t *testing.T, image string) string {
+	t.Helper()
 
-// postgresDataDirFor is the tmpfs mount for image: postgresDataDir18 from major
-// 18 on, postgresDataDir otherwise, including a tag whose major is unreadable.
-func postgresDataDirFor(image string) string {
-	match := postgresImageMajor.FindStringSubmatch(image)
-	if match == nil {
+	return dataDirFromVolumes(runDockerCommand(t, "image", "inspect", "--format", "{{json .Config.Volumes}}", image))
+}
+
+// dataDirFromVolumes picks the one VOLUME an image declares; none, several or
+// an unparsable answer keeps postgresDataDir, and the cleanup's `rm -f -v`
+// still removes whatever anonymous volume that leaves.
+func dataDirFromVolumes(raw string) string {
+	var volumes map[string]struct{}
+	if err := json.Unmarshal([]byte(raw), &volumes); err != nil || len(volumes) != 1 {
 		return postgresDataDir
 	}
-	if major, err := strconv.Atoi(match[1]); err == nil && major >= 18 {
-		return postgresDataDir18
+	for path := range volumes {
+		return path
 	}
 	return postgresDataDir
 }

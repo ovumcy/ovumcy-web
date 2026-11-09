@@ -288,8 +288,9 @@ jobs:
         # is a step of this job, not a matrix cell: the job's name, its
         # coverage artifact and the profile count coverage-merge expects all
         # stay as they are, and this pass adds no profile. The package list is
-        # derived from the import graph, never written out, and an empty list
-        # fails the step rather than testing nothing.
+        # derived from the import graph, never written out, and a list without
+        # internal/db (the migrations and repositories) fails the step rather
+        # than passing on whatever is left.
         shell: bash
         env:
           OVUMCY_TEST_POSTGRES_IMAGE: ${{ env.OVUMCY_EXAMPLE_POSTGRES_IMAGE }}
@@ -297,11 +298,11 @@ jobs:
           set -euo pipefail
           listing="$(go list -f '{{.ImportPath}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...)"
           pg_lines="$(grep -E ' [^ ]*/internal/testdb( |$)' <<< "$listing" || true)"
-          if [ -z "$pg_lines" ]; then
-            echo "::error::no package imports internal/testdb in its tests; the Postgres pass would test nothing"
+          mapfile -t pg_packages < <(cut -d' ' -f1 <<< "$pg_lines")
+          if ! printf '%s\n' "${pg_packages[@]}" | grep -qx 'github.com/ovumcy/ovumcy-web/internal/db'; then
+            echo "::error::internal/db is not among the packages whose tests import internal/testdb; the Postgres pass would not test the migrations"
             exit 1
           fi
-          mapfile -t pg_packages < <(cut -d' ' -f1 <<< "$pg_lines")
           echo "testing ${#pg_packages[@]} package(s) on $OVUMCY_TEST_POSTGRES_IMAGE: ${pg_packages[*]}"
           go test "${pg_packages[@]}" -timeout 20m
 

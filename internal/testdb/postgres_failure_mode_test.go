@@ -186,21 +186,22 @@ func TestPostgresImageFollowsTheOverrideAndFallsBackToTheDefault(t *testing.T) {
 	}
 }
 
-// TestPostgresDataDirFollowsTheImageMajor holds the tmpfs path a container is
-// started with: postgres:18 exits at once with a tmpfs on the pre-18 path, and
-// the container's --rm leaves no logs behind to say why.
-func TestPostgresDataDirFollowsTheImageMajor(t *testing.T) {
-	for image, want := range map[string]string{
-		"postgres:17-alpine":                postgresDataDir,
-		"postgres:16":                       postgresDataDir,
-		"postgres:18.4-alpine3.22":          postgresDataDir18,
-		"docker.io/library/postgres:18":     postgresDataDir18,
-		"postgres:19-alpine":                postgresDataDir18,
-		"postgres:latest":                   postgresDataDir,
-		"registry.example/pg/postgres:18.4": postgresDataDir18,
+// TestPostgresDataDirIsTheImagesOneVolume holds the tmpfs path a container is
+// started with: postgres:18 exits at once with a tmpfs on the pre-18 path.
+// The inputs are what `docker image inspect --format '{{json .Config.Volumes}}'`
+// prints for postgres:17-alpine and postgres:18.4-alpine3.22, then the shapes
+// that fall back.
+func TestPostgresDataDirIsTheImagesOneVolume(t *testing.T) {
+	for raw, want := range map[string]string{
+		`{"/var/lib/postgresql/data":{}}`: postgresDataDir,
+		`{"/var/lib/postgresql":{}}`:      "/var/lib/postgresql",
+		`null`:                            postgresDataDir,
+		`{}`:                              postgresDataDir,
+		`{"/var/lib/postgresql":{},"/backups":{}}`: postgresDataDir,
+		`not json`: postgresDataDir,
 	} {
-		if got := postgresDataDirFor(image); got != want {
-			t.Errorf("postgresDataDirFor(%q) = %q, want %q", image, got, want)
+		if got := dataDirFromVolumes(raw); got != want {
+			t.Errorf("dataDirFromVolumes(%s) = %q, want %q", raw, got, want)
 		}
 	}
 }
