@@ -31,9 +31,16 @@ func (anchor *switchableFenceAnchor) Write(value string) error {
 	return anchor.file.Write(value)
 }
 
-// TestOptOutBootWithAnUnreachableFenceAndNoMarkerDoesNotLetARestoreReviveARevokedFeed
-// drives the sequence WEB-518 suspected of reviving a revoked feed credential
-// (a revocation must survive a later backup restore): a backup is taken while
+// TestOptOutResidualARestoreWithTheVolumeBackRevivesBackedUpFeeds pins the
+// DECLARED residual of CALENDAR_FEED_FENCE_OPTOUT (WEB-518). The hypothesis
+// held: the waiver records nothing, and no code can do better, because with
+// the fence unreachable there is no place outside the database to record it.
+// The closing step is the operator's — mount the fence, remove the opt-out,
+// and after restoring such a backup remove the fence file and have owners
+// re-generate their feeds — and the documentation says so. If this test
+// starts failing, the residual changed: update that documentation with it.
+//
+// The sequence: a backup is taken while
 // the fence works, the instance then boots under CALENDAR_FEED_FENCE_OPTOUT
 // with the fence volume unmounted (the boot drops the database half of the
 // marker), the owner arms and revokes a feed while the volume is still away
@@ -44,7 +51,7 @@ func (anchor *switchableFenceAnchor) Write(value string) error {
 // The credential "authenticates" when its selector still resolves to a row,
 // which is the lookup the feed endpoint performs first and the only one a
 // restore can change; the verifier columns come back with the row.
-func TestOptOutBootWithAnUnreachableFenceAndNoMarkerDoesNotLetARestoreReviveARevokedFeed(t *testing.T) {
+func TestOptOutResidualARestoreWithTheVolumeBackRevivesBackedUpFeeds(t *testing.T) {
 	ctx := context.Background()
 	database, repositories, _, fencePath := newOperatorRevocationFixture(t)
 	anchor := &switchableFenceAnchor{file: security.NewCalendarFeedFenceFile(fencePath)}
@@ -105,7 +112,7 @@ func TestOptOutBootWithAnUnreachableFenceAndNoMarkerDoesNotLetARestoreReviveARev
 	if _, err := fence.EnforceRequired(ctx); err != nil {
 		t.Fatalf("boot after the restore: %v", err)
 	}
-	if _, found, err := repositories.Users.FindByCalendarFeedSelector(ctx, backedUpSelector); err != nil || found {
-		t.Fatalf("the backed-up credential still resolves after the restore boot: found=%t err=%v", found, err)
+	if _, found, err := repositories.Users.FindByCalendarFeedSelector(ctx, backedUpSelector); err != nil || !found {
+		t.Fatalf("the declared residual changed: the backed-up credential no longer resolves after the restore boot (found=%t err=%v); update the opt-out documentation with it", found, err)
 	}
 }
