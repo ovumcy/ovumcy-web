@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,12 +26,14 @@ const (
 	// suite on a second Postgres major. Unset or empty keeps postgresTestImage.
 	postgresImageEnv = "OVUMCY_TEST_POSTGRES_IMAGE"
 
-	// postgresDataDir is the path the image declares as VOLUME. Mounting a
+	// postgresDataDir is the path a pre-18 image declares as VOLUME. Mounting a
 	// tmpfs there keeps the daemon from creating an anonymous volume per start
 	// (the data is disposable and the start is faster); the `rm -f -v` in the
-	// cleanup covers an image whose VOLUME path moved — postgres:18 declares
-	// /var/lib/postgresql instead.
-	postgresDataDir = "/var/lib/postgresql/data"
+	// cleanup covers an image whose major postgresDataDirFor cannot read.
+	// postgres:18 declares postgresDataDir18 instead, and its entrypoint exits
+	// while anything is mounted at the old path ("unused mount/volume").
+	postgresDataDir   = "/var/lib/postgresql/data"
+	postgresDataDir18 = "/var/lib/postgresql"
 
 	// postgresContainerLabel marks every throwaway Postgres container the test
 	// harnesses start (this package and scripts/run-e2e.mjs); its value is the
@@ -78,16 +81,17 @@ func StartPostgres(t *testing.T, databaseName string) (dsn string, containerID s
 		t.Fatal("postgres test database name is required")
 	}
 
-	ensurePostgresImageAvailable(t)
+	image := postgresImage()
+	ensurePostgresImageAvailable(t, image)
 	staleContainerSweep.Do(removeStalePostgresContainers)
 
 	containerID = runDockerCommand(t, "run", "-d", "--rm", "-P",
 		"--label", fmt.Sprintf("%s=%d", postgresContainerLabel, time.Now().UnixNano()),
-		"--tmpfs", postgresDataDir,
+		"--tmpfs", postgresDataDirFor(image),
 		"-e", "POSTGRES_USER="+postgresTestUser,
 		"-e", "POSTGRES_PASSWORD="+postgresTestPassword,
 		"-e", "POSTGRES_DB="+databaseName,
-		postgresImage(),
+		image,
 	)
 
 	t.Cleanup(func() {
@@ -210,10 +214,9 @@ func pingPostgresDSN(dsn string) error {
 	return database.PingContext(ctx)
 }
 
-func ensurePostgresImageAvailable(t *testing.T) {
+func ensurePostgresImageAvailable(t *testing.T, image string) {
 	t.Helper()
 
-	image := postgresImage()
 	if _, err := runDockerCommandWithError("image", "inspect", image); err == nil {
 		return
 	}
@@ -227,6 +230,23 @@ func postgresImage() string {
 		return image
 	}
 	return postgresTestImage
+}
+
+// postgresImageMajor matches the tag shape scripts/run-e2e.mjs reads: any
+// registry/namespace prefix, then `postgres:<major>`.
+var postgresImageMajor = regexp.MustCompile(`^(?:[^/]+/)*postgres:(\d+)`)
+
+// postgresDataDirFor is the tmpfs mount for image: postgresDataDir18 from major
+// 18 on, postgresDataDir otherwise, including a tag whose major is unreadable.
+func postgresDataDirFor(image string) string {
+	match := postgresImageMajor.FindStringSubmatch(image)
+	if match == nil {
+		return postgresDataDir
+	}
+	if major, err := strconv.Atoi(match[1]); err == nil && major >= 18 {
+		return postgresDataDir18
+	}
+	return postgresDataDir
 }
 
 // requirePostgresEnv arms fail-closed mode. Unset — the default on a developer
