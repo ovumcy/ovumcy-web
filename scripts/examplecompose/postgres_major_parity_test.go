@@ -21,7 +21,7 @@ const (
 
 var (
 	composePostgresImage = regexp.MustCompile(`(?m)^\s*image:\s*["']?((?:[^\s"'/]+/)*postgres:[^\s"']+)["']?\s*$`)
-	smokePostgresImage   = regexp.MustCompile(`(?m)^\s*E2E_POSTGRES_IMAGE:\s*["']?([^\s"'#]+)["']?\s*(?:#.*)?$`)
+	smokePostgresImage   = regexp.MustCompile(`(?m)^\s*E2E_POSTGRES_IMAGE:\s*["']?(\$\{\{[^}]*\}\}|[^\s"'#]+)["']?\s*(?:#.*)?$`)
 	postgresMajor        = regexp.MustCompile(`postgres:(\d+)(?:[.\-]|$)`)
 )
 
@@ -84,7 +84,62 @@ func smokeImage(t *testing.T, workflow string) string {
 	if len(matches) != 1 {
 		t.Fatalf("%s, job %q: want exactly one E2E_POSTGRES_IMAGE, found %d — without it the job runs the runner script's default image, which nothing ties to the example stacks", ciWorkflow, postgresSmokeJob, len(matches))
 	}
-	return matches[0][1]
+	return resolveWorkflowEnv(t, workflow, matches[0][1])
+}
+
+// workflowEnvReference matches a value that is only a reference to a
+// workflow-level env var.
+var workflowEnvReference = regexp.MustCompile(`^\$\{\{\s*env\.([A-Za-z0-9_]+)\s*\}\}$`)
+
+// resolveWorkflowEnv returns value unchanged unless it is a reference to a
+// workflow-level env var, in which case it returns that var's value. The tag
+// lives once at workflow level so the smoke and the Go pass cannot drift.
+func resolveWorkflowEnv(t *testing.T, workflow, value string) string {
+	t.Helper()
+
+	ref := workflowEnvReference.FindStringSubmatch(value)
+	if ref == nil {
+		return value
+	}
+	entry := regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(ref[1]) + `:\s*["']?([^\s"'#]+)["']?\s*(?:#.*)?$`)
+	top := workflow
+	if idx := regexp.MustCompile(`(?m)^jobs:\s*$`).FindStringIndex(workflow); idx != nil {
+		top = workflow[:idx[0]]
+	}
+	found := entry.FindAllStringSubmatch(top, -1)
+	if len(found) != 1 {
+		t.Fatalf("%s: %s names workflow-level env %s, which must be set exactly once above jobs:, found %d", ciWorkflow, value, ref[1], len(found))
+	}
+	return found[0][1]
+}
+
+// TestThePostgresGoPassRunsTheSameImageAsThePostgresSmoke holds the Go pass in
+// test-go-rest to the one tag the smoke runs: both must reference the same
+// workflow-level variable, so the Go pass cannot keep a copy of the tag.
+func TestThePostgresGoPassRunsTheSameImageAsThePostgresSmoke(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(ciWorkflow)))
+	if err != nil {
+		t.Fatalf("read %s: %v", ciWorkflow, err)
+	}
+	workflow := strings.ReplaceAll(string(raw), "\r\n", "\n")
+
+	pass := regexp.MustCompile(`(?m)^\s*OVUMCY_TEST_POSTGRES_IMAGE:\s*(\S.*?)\s*$`)
+	smoke, err := jobBlock(workflow, postgresSmokeJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rest, err := jobBlock(workflow, "test-go-rest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	smokeRef := smokePostgresImage.FindStringSubmatch(smoke)
+	passRef := pass.FindAllStringSubmatch(rest, -1)
+	if smokeRef == nil || len(passRef) != 1 {
+		t.Fatalf("want one E2E_POSTGRES_IMAGE in %s and one OVUMCY_TEST_POSTGRES_IMAGE in test-go-rest, found %v and %d", postgresSmokeJob, smokeRef != nil, len(passRef))
+	}
+	if !workflowEnvReference.MatchString(smokeRef[1]) || smokeRef[1] != passRef[0][1] {
+		t.Errorf("e2e-postgres-smoke sets %q and test-go-rest sets %q: both must be the same ${{ env.<NAME> }} reference to one workflow-level tag, never a copied literal", smokeRef[1], passRef[0][1])
+	}
 }
 
 // jobBlock cuts one job out of a workflow: from its two-space header to the

@@ -33,6 +33,12 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # The Postgres the example stacks under docs/examples ship: the one image the
+  # browser smoke and the second pass of the Postgres-backed Go tests run, so
+  # the migrations and the runtime are proven on the major an operator runs.
+  # The tests' default stays postgres:17-alpine. scripts/examplecompose fails
+  # when this tag's major differs from the example stacks'.
+  OVUMCY_EXAMPLE_POSTGRES_IMAGE: postgres:18.4-alpine3.22
 
 jobs:
   # Split from a single `test` job into a Go half and a frontend half: the two
@@ -274,6 +280,30 @@ jobs:
           fi
           echo "testing ${#rest_packages[@]} package(s); $sharded runs in test-go-shard"
           go test "${rest_packages[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/...
+
+      - name: Go test — the Postgres-backed packages again on the example stacks' Postgres
+        # The pass above runs internal/testdb's default image (17). This one
+        # runs every package whose tests import internal/testdb against the
+        # tag the example stacks pin, through OVUMCY_TEST_POSTGRES_IMAGE. It
+        # is a step of this job, not a matrix cell: the job's name, its
+        # coverage artifact and the profile count coverage-merge expects all
+        # stay as they are, and this pass adds no profile. The package list is
+        # derived from the import graph, never written out, and an empty list
+        # fails the step rather than testing nothing.
+        shell: bash
+        env:
+          OVUMCY_TEST_POSTGRES_IMAGE: ${{ env.OVUMCY_EXAMPLE_POSTGRES_IMAGE }}
+        run: |
+          set -euo pipefail
+          listing="$(go list -f '{{.ImportPath}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...)"
+          pg_lines="$(grep -E ' [^ ]*/internal/testdb( |$)' <<< "$listing" || true)"
+          if [ -z "$pg_lines" ]; then
+            echo "::error::no package imports internal/testdb in its tests; the Postgres pass would test nothing"
+            exit 1
+          fi
+          mapfile -t pg_packages < <(cut -d' ' -f1 <<< "$pg_lines")
+          echo "testing ${#pg_packages[@]} package(s) on $OVUMCY_TEST_POSTGRES_IMAGE: ${pg_packages[*]}"
+          go test "${pg_packages[@]}" -timeout 20m
 
       - name: Upload the whole-package coverage profile
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1975,10 +2005,11 @@ jobs:
         run: npm run e2e:ci:postgres -- e2e/auth-login-register.spec.ts e2e/dashboard.spec.ts e2e/theme-dark-mode.spec.ts
         env:
           E2E_APP_PORT: 18081
-          # The Postgres the example stacks under docs/examples ship, so the
-          # migrations and the runtime are proven on the major an operator
-          # runs. scripts/examplecompose fails when the two majors differ.
-          E2E_POSTGRES_IMAGE: postgres:18.4-alpine3.22
+          # The Postgres the example stacks under docs/examples ship (the
+          # workflow-level tag), so the migrations and the runtime are proven
+          # on the major an operator runs. scripts/examplecompose fails when
+          # the two majors differ.
+          E2E_POSTGRES_IMAGE: ${{ env.OVUMCY_EXAMPLE_POSTGRES_IMAGE }}
 
       - name: Upload Playwright Postgres artifacts
         if: failure()
