@@ -9,6 +9,165 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 *New entries accumulate as per-pull-request fragments in [changelog.d/](changelog.d/) and are assembled here at release.*
 
+## [2.1.0] - 2026-11-09
+
+### Added
+
+- **`LISTEN_ADDRESS` sets the IP address the server listens on.** Unset, the server listens on every
+  IPv4 interface exactly as before, so an upgrade opens nothing new. Set to `127.0.0.1` or `::1`, it
+  listens there alone, so a binary run directly stays on loopback without a host firewall. Set to
+  `::`, it listens on every IPv4 and IPv6 interface, which is how to accept IPv6 clients; make sure the
+  host firewall filters IPv6 before setting it. `0.0.0.0` stays IPv4-only. A value that is not an IP
+  address, such as a hostname or an address with a port, stops the start and names the variable.
+  `ovumcy healthcheck` and `ovumcy readycheck` probe the configured address (a wildcard bind on IPv4
+  loopback), and the startup line names it, as `Ovumcy listening on http://[::]:8080` for `::`. The
+  example compose stacks do not pass it, since their proxy and port publish reach the app on the
+  container's own interface.
+
+- **The install dialog shows the app.** The web manifest now carries screenshots of the Today screen with the cycle ring and ribbon: two for phones and two for wide screens, each in the light and dark theme. A browser with the richer install UI shows them instead of a bare Install prompt. The screenshots use demo data.
+
+- **The dashboard cycle ring is back, beside a labelled ribbon.** The ring is drawn from the same days as the ribbon. It has phase arcs, the fertile window as a thin outer band, a dot on today and a "Cycle day" caption under the number. Every screen shows the ring and the ribbon by default.
+- **The ribbon explains itself.** It has a "Today" marker, a day scale (day 1, today, last day) and a key that lists only what the ribbon draws. Screen readers get a summary of today's day and phase, the fertile window and the predicted start window.
+- **Settings → Interface → Cycle map.** Pick Ring, Ribbon or both. The choice is stored in this browser, like the theme.
+
+### Changed
+
+- **`.env.example` documents `LISTEN_ADDRESS`.** The variable appears there commented out, with the
+  values it takes, so a non-docker install can copy it from the example. It stays commented out
+  because compose passes `.env` into the container, where a loopback value breaks the port publish.
+
+- **The cycle-phase colours are clearer in both themes.** Ovulation is teal instead of mustard brown
+  in the light theme, and the follicular phase is blue instead of brown in the dark theme, so no
+  phase reads as a muddy brown next to the period. Luteal keeps its lavender and the period its red.
+  The dashboard cycle map and the Insights cycle stack both use the new colours, and the
+  period and ovulation colours still meet the 3:1 contrast floor for graphics on the light card.
+
+- `ovumcy notify` now reports how many due reminders it withheld because the
+  owner's "not medical advice" disclaimer resolved blank, on a new
+  `withheld (disclaimer blank)` line. The log names that cause once per locale
+  per pass, with the number of owners affected, where it used to print one line
+  per owner. What a webhook receiver gets is unchanged.
+
+- A refused OIDC identity link confirm now lands back on Settings with the
+  refusal shown there, like the link's other refusals already did. The refusals
+  the link shares with SSO sign-in (`sso sign-in unavailable`, `sso temporarily
+  unavailable`, `sso authentication failed`) were aimed at the sign-in form,
+  which a Settings route does not have. A browser submit got the generic refusal
+  page instead of the Settings banner, and an HTMX submit a non-2xx fragment.
+  JSON callers keep the same status and key; `error_detail.target` on this route
+  now reads `settings_form`.
+
+- The SSO refusals of the Settings step-ups (set a local password, link an
+  identity, clear data, delete account) and of the identity unlink now land back
+  on Settings with the refusal shown there. They reused the sign-in form's `sso
+  temporarily unavailable` and `sso authentication failed` specs, aimed at a form
+  a Settings route does not have: a browser submit got the generic refusal page
+  instead of the Settings banner, and an HTMX submit a non-2xx fragment. JSON
+  callers keep the same status and key; `error_detail.target` on these routes now
+  reads `settings_form`.
+
+- **The security invariants doc gives the current `'partner'` fixture count.** The note on the
+  wider `users.role` check now says nineteen test files, measured on 2026-11-07 with the recipe it
+  prints beside the number, instead of the twelve measured on 2026-09-04.
+
+- **Startup logs what the migration runner did.** The server prints one line at boot: either
+  `migrations: applied N, schema version V` or `migrations: none pending, schema version V`, so an upgrade
+  can be confirmed from the log. It carries no connection detail.
+
+- **Published image tags are written once.** The publish workflow reads a `v*` or `sha-*` tag on
+  GHCR before writing it and refuses when it already names another digest, so re-running a release
+  run fails instead of re-pointing a verified tag. A release no longer writes `sha-<short>`: that
+  tag belongs to the `main` publish of the same commit.
+- **The Docker Hub mirror is signed before any tag names it.** The first copy goes to Docker Hub by
+  digest with `oras`, which writes no tag. The mirror is signed and its signature read back, and
+  only then are the release tags (and the `sha256-<hex>` tags `cosign copy` adds) written.
+
+### Fixed
+
+- **The restore walkthrough warns about the shipped compose names.** The named-volume restore section
+  now says the compose file fixes the container name `ovumcy` and the volumes `ovumcy_data` and
+  `ovumcy_fence`, so a restore into a scratch project must override them, and gives an example.
+
+- **The ribbon and the header agree on today's phase.** On an uneven cycle history, the ribbon placed the ovulation day one day away from the header and from the fertile-window peak. The "today" marker could stand on an ovulation cell beside a header that said "Luteal". The ribbon now reads the same published ovulation day.
+
+- The request day now follows the timezone saved in your settings when the request carries no timezone header or cookie (a fresh browser, the first page after signing out and back in, or a JSON client that sends neither), instead of the server's timezone. On the dashboard a day saved from that page could land on the neighbouring date; `/api/v1/*` callers that send neither header nor cookie now get "today", the cycle day and the stats computed for the owner's saved zone. A header or cookie still wins.
+
+- **Security and self-hosting documents now say what the code does.** Corrected texts:
+  flash cookies carry a five-minute server-side bound; a stated `Sec-Fetch-Site: same-site`
+  is refused on the one-time reveal routes; the published image is scanned after its by-digest
+  push and before signing or tagging; `SECRET_KEY` startup checks cover length and known
+  placeholders, not randomness; a webhook revocation committed after the delivery claim is won
+  does not stop that one send; the audit stream outlives account erasure; the Docker Hub mirror
+  carries no public tag before its own signature verifies; a migration refused for duplicate
+  rows leaves the migrations before it applied; a Postgres stack's `DATABASE_URL` is edited in
+  the compose file, not `.env`; and the legacy-email repair keeps the address for a bare stored
+  value whatever its age.
+
+### Security
+
+- **The stored OIDC sign-out hint is sealed.** To sign you out at your identity provider as well,
+  the server keeps the ID token the provider issued for each OIDC session for up to seven days.
+  It used to sit in the database in cleartext, so a database dump or backup carried a usable token
+  for every recent OIDC session. It is now encrypted under the instance secret and bound to your
+  account, and a value that does not open is treated as absent (WEB-489). Upgrading applies
+  migration 044, which deletes the cleartext rows: an OIDC session that was open during the
+  upgrade signs out locally once, without the provider hop. Downgrading past 044 needs a manual
+  `DELETE FROM oidc_logout_states`, described in `docs/self-hosted.md → Downgrade Caveats`.
+
+- **A backup taken while a revocation was committing can no longer bring it back.** Every
+  revoke-or-erase write (sign-out, password change or reset, recovery-code rotation, TOTP on/off,
+  OIDC link/unlink, email re-home, feed rotate/revoke, webhook save/remove, clear-data, account
+  deletion, and the operator CLI's `users delete`, `reset-password`, `webhook set`,
+  `users set-email` and `link-oidc-identity`) now writes the restore-fence file first and then
+  records the fence's database marker in the SAME transaction as the protected row. A consistent
+  snapshot can no longer hold the new marker beside the old row, so restoring one taken mid-write
+  is read as a restore on the next start and answered with the full revocation. Concurrent
+  sign-outs are no longer coalesced into one fence advance; each takes its own. Backups taken
+  while the server was running are still restored with the fence file removed — see "Restoring a
+  backup taken online" in the self-hosted guide. `ovumcy link-oidc-identity` now refuses, writing
+  nothing, when it cannot confirm the restore fence, as the other operator commands already did.
+
+- **The image refuses to start with the restore fence on the container's writable layer.** A
+  `docker run` with a data volume and no volume at `/app/fence` used to arm the calendar-feed
+  restore fence inside the container, so every recreation of the container lost it and the next
+  start revoked every owner's sessions, local password and webhook endpoints as if a backup had
+  been restored. The image now sets `CALENDAR_FEED_FENCE_REQUIRE_MOUNT=true`: the fence directory
+  must be a mounted volume (named volume, bind mount or Kubernetes volume, checked by device and
+  `/proc/self/mountinfo`), or the start is refused, naming `CALENDAR_FEED_FENCE_PATH` and writing
+  nothing. A `tmpfs` or `ramfs` there (`--tmpfs /app/fence`) is refused as well, since it loses the
+  fence on every restart. The check cannot tell a volume that does not outlive the container
+  (an anonymous volume, a Kubernetes `emptyDir`) from a persistent one: use a named volume, a bind
+  mount or a persistent volume claim. Mount a volume at `/app/fence`, or set
+  `CALENDAR_FEED_FENCE_OPTOUT=true` to accept running without a fence. A bare binary leaves the
+  variable unset and is unchanged.
+
+- **The calendar-feed opt-out residual now names restored feeds.** With `CALENDAR_FEED_FENCE_OPTOUT=true`, a backup taken before the opt-out period, restored with the old fence volume mounted again, brings back a feed that was revoked meanwhile. This is a declared residual of the opt-out: the docs now state it with the closing steps (mount the fence, remove the opt-out, remove the fence file after such a restore, re-generate feeds), and a test pins it.
+
+### Internal
+
+- **The README links the project's Mastodon account.** A badge in the second badge row points to `@ovumcy` on mastodon.social.
+
+- **README screenshots and the demo clip show the 2.0.0 interface.** The six stills and
+  `docs/demo.gif` dated from 0.9.4: no cycle ribbon, the old phase palette, and a dashboard
+  whose next-period date had no estimate qualifier or "not medical advice" disclaimer in
+  frame. They are regenerated from a local instance with synthetic data, every prediction
+  frame now shows its estimate qualifier and the disclaimer, and the README alt text names
+  what each screen shows. `docs/hero-demo.md` describes the capture as it is actually done.
+
+- The release gate no longer accepts a skipped `trivy-fs` from the merge-queue run. It looks for
+  the run that scanned the tree: the commit's push run, or a first-parent ancestor whose manifests
+  are unchanged. If none succeeded, it refuses.
+- The jobs that read the Docker Hub publishing credential run in the `release` environment.
+- `e2e-postgres-smoke` runs on `postgres:18.4-alpine3.22`, the image the example stacks pin. A guard
+  fails when their Postgres majors differ, and the e2e runner mounts its tmpfs at the data path the
+  image's major uses.
+
+### Dependencies
+
+- **Runtime image `tzdata` 2026f.** Alpine 3.24 replaced the pinned `tzdata=2026e-r0` with `2026f-r0`, so the image no longer built; the pin follows the archive.
+
+- **PostgreSQL driver `pgx` v5.12.0** (from v5.11.0).
+
 ## [2.0.0] - 2026-11-06
 
 ### Added
@@ -8439,7 +8598,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/ovumcy/ovumcy-web/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.2...v2.0.0
 [1.9.2]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.0...v1.9.1
