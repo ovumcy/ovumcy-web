@@ -169,3 +169,19 @@ func TestPostgresIsRequiredReadsTheGateFailClosed(t *testing.T) {
 		})
 	}
 }
+
+// TestPostgresImageFollowsTheOverrideAndFallsBackToTheDefault holds both
+// halves of the override CI uses to run the suite on a second Postgres major.
+func TestPostgresImageFollowsTheOverrideAndFallsBackToTheDefault(t *testing.T) {
+	for value, want := range map[string]string{
+		"":                  postgresTestImage,
+		"   ":               postgresTestImage,
+		"postgres:18.4-foo": "postgres:18.4-foo",
+		" postgres:19 ":     "postgres:19",
+	} {
+		t.Setenv(postgresImageEnv, value)
+		if got := postgresImage(); got != want {
+			t.Errorf("%s=%q: image %q, want %q", postgresImageEnv, value, got, want)
+		}
+	}
+}

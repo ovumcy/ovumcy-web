@@ -21,6 +21,10 @@ const (
 	postgresTestPassword = "ovumcy"
 	postgresTestImage    = "postgres:17-alpine"
 
+	// postgresImageEnv overrides the image for one run, so CI can run the same
+	// suite on a second Postgres major. Unset or empty keeps postgresTestImage.
+	postgresImageEnv = "OVUMCY_TEST_POSTGRES_IMAGE"
+
 	// postgresDataDir is the path the image declares as VOLUME. Mounting a
 	// tmpfs there keeps the daemon from creating an anonymous volume per start
 	// (the data is disposable and the start is faster); the `rm -f -v` in the
@@ -83,7 +87,7 @@ func StartPostgres(t *testing.T, databaseName string) (dsn string, containerID s
 		"-e", "POSTGRES_USER="+postgresTestUser,
 		"-e", "POSTGRES_PASSWORD="+postgresTestPassword,
 		"-e", "POSTGRES_DB="+databaseName,
-		postgresTestImage,
+		postgresImage(),
 	)
 
 	t.Cleanup(func() {
@@ -209,11 +213,20 @@ func pingPostgresDSN(dsn string) error {
 func ensurePostgresImageAvailable(t *testing.T) {
 	t.Helper()
 
-	if _, err := runDockerCommandWithError("image", "inspect", postgresTestImage); err == nil {
+	image := postgresImage()
+	if _, err := runDockerCommandWithError("image", "inspect", image); err == nil {
 		return
 	}
 
-	runDockerCommand(t, "pull", postgresTestImage)
+	runDockerCommand(t, "pull", image)
+}
+
+// postgresImage is the image every container this package starts runs.
+func postgresImage() string {
+	if image := strings.TrimSpace(os.Getenv(postgresImageEnv)); image != "" {
+		return image
+	}
+	return postgresTestImage
 }
 
 // requirePostgresEnv arms fail-closed mode. Unset — the default on a developer
