@@ -385,7 +385,8 @@ func DashboardBleedingOutsideCycleStart(stats CycleStats) bool {
 // DashboardBleedingOutsideCycleStart on purpose: that signal withholds the
 // projection because it contradicts a logged period, while today's egg-white
 // badge is itself a recorded observation and stays (WEB-458). Do not add it
-// here. Every other signal still holds the observation back.
+// here: under bleeding outside the cycle start the badge stays, neutral. Every
+// other signal still holds the observation back.
 func FertilityObservationSuppressed(user *models.User, stats CycleStats) bool {
 	return PredictionsSuppressed(user, stats) || DashboardAwaitingMoreCycles(user, stats) || DashboardCyclePastReferenceLength(user, stats) || DashboardCyclePastProjectionLength(user, stats)
 }
