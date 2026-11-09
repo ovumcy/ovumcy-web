@@ -142,6 +142,8 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 	advancing := map[string]bool{}
 	advancesFirst := map[string]bool{}
 	diverging := map[string]bool{}
+	txViolations := map[string][]string{}
+	txChecked := map[string]int{}
 	for _, file := range pkg.Syntax {
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
@@ -234,6 +236,12 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 			if advanceAt == token.NoPos {
 				continue
 			}
+			count, found := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
+				callee, ok := typeutil.Callee(info, call).(*types.Func)
+				return ok && advances[callee]
+			})
+			txChecked[name] += count
+			txViolations[name] = append(txViolations[name], found...)
 			advancing[name] = true
 			firstWrite := writeAt
 			if transactionAt != token.NoPos && transactionAt < firstWrite {
@@ -258,12 +266,21 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 		}
 	}
 
+	// The handle check must have read a write of a load-bearing writer, by name:
+	// a resolver that rooted nothing would report no violation anywhere.
+	if txChecked["UserRepository.BumpAuthSessionVersion"] == 0 {
+		t.Fatal("the tx-root check resolved no write of UserRepository.BumpAuthSessionVersion to its closure's tx parameter: it is not measuring what it claims")
+	}
+
 	var violations []string
 	for _, name := range sortedPositionNames(writers) {
 		if _, exempt := exemptRevocationWriters[name]; exempt {
 			continue
 		}
 		at := pkg.Fset.Position(writers[name])
+		if found := txViolations[name]; len(found) > 0 {
+			violations = append(violations, fmt.Sprintf("%s (%s) must run every write through the tx its advance closure is handed: %v", name, at, found))
+		}
 		switch {
 		case !advancing[name]:
 			violations = append(violations, fmt.Sprintf("%s (%s) revokes a session or changes a credential but never advances the restore fence, so a backup restore would undo it unseen", name, at))
