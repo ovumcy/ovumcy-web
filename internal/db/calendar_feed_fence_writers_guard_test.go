@@ -81,6 +81,8 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 	writers := map[string]bool{}
 	advances := map[string]bool{}
 	advancesFirst := map[string]bool{}
+	txViolations := map[string][]string{}
+	txChecked := map[string]int{}
 	var functions []*ast.FuncDecl
 	for _, file := range pkg.Syntax {
 		for _, declaration := range file.Decls {
@@ -176,6 +178,14 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		if advanceCommit != nil && (writeAt < 0 || insideNode(advanceCommit, writeAt)) && (transactionAt < 0 || !insideNode(advanceCommit, transactionAt)) {
 			advancesFirst[name] = true
 		}
+		if advanceAt >= 0 {
+			count, found := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
+				callee, ok := typeutil.Callee(info, call).(*types.Func)
+				return ok && callee.Pkg() == pkg.Types && calendarFeedFenceAdvanceCalls[callee.Name()]
+			})
+			txChecked[name] += count
+			txViolations[name] = append(txViolations[name], found...)
+		}
 	}
 
 	// Anti-vacuity, on two names this test owns: arming and revoking must both
@@ -185,6 +195,17 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		if !writers[required] {
 			t.Fatalf("the scan did not find %s among the feed writers (%v): it is not measuring what it claims", required, sortedNamesOf(writers))
 		}
+	}
+	// And the handle check must have read a write of a load-bearing writer, by
+	// name: a resolver that rooted nothing would report no violation anywhere.
+	if txChecked["ClearCalendarFeedToken"] == 0 {
+		t.Fatal("the tx-root check resolved no write of ClearCalendarFeedToken to its closure's tx parameter: it is not measuring what it claims")
+	}
+	for name, found := range txViolations {
+		if _, exempt := exemptCalendarFeedWriters[name]; exempt || len(found) == 0 {
+			continue
+		}
+		t.Errorf("%s must run every write through the tx its advance closure is handed: %s", name, strings.Join(found, "; "))
 	}
 
 	var missing []string
@@ -258,6 +279,169 @@ func insideNode(node ast.Node, at int) bool {
 	return at > int(node.Pos()) && at < int(node.End())
 }
 
+// isGormDBHandle reports whether expr is a *gorm.DB: the handle a write goes
+// through.
+func isGormDBHandle(info *types.Info, expr ast.Expr) bool {
+	kind := info.TypeOf(expr)
+	return kind != nil && types.TypeString(kind, nil) == "*gorm.io/gorm.DB"
+}
+
+// handleRoots resolves the objects a *gorm.DB expression is built from: the
+// receiver chain of a method call, the handle argument of a helper that returns
+// a query (scopedUserUpdateTx), and every assignment a local variable took.
+// The roots are objects, never names, so a shadowing `tx` or a copy of the
+// repository's own handle does not read as the closure's transaction.
+func handleRoots(info *types.Info, assigned map[types.Object][]ast.Expr, expr ast.Expr, seen map[types.Object]bool) []types.Object {
+	switch typed := expr.(type) {
+	case *ast.ParenExpr:
+		return handleRoots(info, assigned, typed.X, seen)
+	case *ast.UnaryExpr:
+		return handleRoots(info, assigned, typed.X, seen)
+	case *ast.StarExpr:
+		return handleRoots(info, assigned, typed.X, seen)
+	case *ast.SelectorExpr:
+		return handleRoots(info, assigned, typed.X, seen)
+	case *ast.Ident:
+		object := info.Uses[typed]
+		if object == nil {
+			object = info.Defs[typed]
+		}
+		if object == nil {
+			return nil
+		}
+		sources := assigned[object]
+		if len(sources) == 0 || seen[object] {
+			return []types.Object{object}
+		}
+		seen[object] = true
+		var roots []types.Object
+		for _, source := range sources {
+			roots = append(roots, handleRoots(info, assigned, source, seen)...)
+		}
+		delete(seen, object)
+		return roots
+	case *ast.CallExpr:
+		if selector, ok := typed.Fun.(*ast.SelectorExpr); ok && info.Selections[selector] != nil {
+			return handleRoots(info, assigned, selector.X, seen)
+		}
+		for _, argument := range typed.Args {
+			if isGormDBHandle(info, argument) {
+				return handleRoots(info, assigned, argument, seen)
+			}
+		}
+	}
+	return nil
+}
+
+// fencedWriteTxViolations checks EVERY write site of a fenced writer, not the
+// first: each gorm write call, and each call of a db helper handed a *gorm.DB,
+// must sit inside the closure given to an advance and be rooted at that
+// closure's own tx parameter object. A second write after the closure returns,
+// a write through the repository's own handle inside it, and a helper handed
+// that handle all name a root other than tx. It returns the sites it found
+// rooted at tx, so a caller can assert a load-bearing writer was really read.
+func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAdvance func(*ast.CallExpr) bool) (checked int, violations []string) {
+	info := pkg.TypesInfo
+	var closures []*ast.FuncLit
+	assigned := map[types.Object][]ast.Expr{}
+	record := func(target ast.Expr, source ast.Expr) {
+		if ident, ok := target.(*ast.Ident); ok {
+			object := info.Defs[ident]
+			if object == nil {
+				object = info.Uses[ident]
+			}
+			if object != nil {
+				assigned[object] = append(assigned[object], source)
+			}
+		}
+	}
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.CallExpr:
+			if isAdvance(typed) {
+				if closure := fenceWriteClosure(typed); closure != nil {
+					closures = append(closures, closure)
+				}
+			}
+		case *ast.AssignStmt:
+			for index, target := range typed.Lhs {
+				switch {
+				case len(typed.Lhs) == len(typed.Rhs):
+					record(target, typed.Rhs[index])
+				case len(typed.Rhs) == 1:
+					record(target, typed.Rhs[0])
+				}
+			}
+		case *ast.ValueSpec:
+			for index, name := range typed.Names {
+				switch {
+				case len(typed.Names) == len(typed.Values):
+					record(name, typed.Values[index])
+				case len(typed.Values) == 1:
+					record(name, typed.Values[0])
+				}
+			}
+		}
+		return true
+	})
+
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || isAdvance(call) {
+			return true
+		}
+		callee, ok := typeutil.Callee(info, call).(*types.Func)
+		if !ok || callee.Pkg() == nil {
+			return true
+		}
+		var handles []ast.Expr
+		switch {
+		case callee.Pkg().Path() == "gorm.io/gorm" && persistenceWriteMethods["gorm.io/gorm"][callee.Name()]:
+			if selector, ok := call.Fun.(*ast.SelectorExpr); ok {
+				handles = append(handles, selector.X)
+			}
+		case callee.Pkg() == pkg.Types:
+			for _, argument := range call.Args {
+				if isGormDBHandle(info, argument) {
+					handles = append(handles, argument)
+				}
+			}
+		}
+		if len(handles) == 0 {
+			return true
+		}
+		var enclosing *ast.FuncLit
+		for _, closure := range closures {
+			if insideNode(closure, int(call.Pos())) && (enclosing == nil || closure.Pos() > enclosing.Pos()) {
+				enclosing = closure
+			}
+		}
+		where := pkg.Fset.Position(call.Pos())
+		if enclosing == nil {
+			violations = append(violations, fmt.Sprintf("%s: %s writes outside the closure handed to the advance, so it commits apart from the marker", where, callee.Name()))
+			return true
+		}
+		var txObject types.Object
+		if params := enclosing.Type.Params.List; len(params) > 0 && len(params[0].Names) > 0 {
+			txObject = info.Defs[params[0].Names[0]]
+		}
+		for _, handle := range handles {
+			roots := handleRoots(info, assigned, handle, map[types.Object]bool{})
+			rooted := txObject != nil && len(roots) > 0
+			for _, root := range roots {
+				rooted = rooted && root == txObject
+			}
+			if !rooted {
+				violations = append(violations, fmt.Sprintf("%s: %s goes through a handle that is not the closure's tx parameter, so it commits apart from the marker", where, callee.Name()))
+				continue
+			}
+			checked++
+		}
+		return true
+	})
+	return checked, violations
+}
+
 // TestTheFencedWriteRecordsTheMarkerInsideTheWritersTransaction is the
 // load-bearing half of WEB-505 the two writer guards rely on: they prove each
 // writer's statements run inside the closure handed to the advance, and this
@@ -288,16 +472,38 @@ func TestTheFencedWriteRecordsTheMarkerInsideTheWritersTransaction(t *testing.T)
 					return true
 				}
 				transaction := fenceWriteClosure(call)
-				if transaction == nil {
+				if transaction == nil || len(transaction.Type.Params.List) == 0 || len(transaction.Type.Params.List[0].Names) == 0 {
 					return true
+				}
+				// write is the builder's parameter and tx the closure's, both
+				// resolved by declaration: a local called write, or a handle
+				// other than the transaction's own, is neither.
+				txObject := pkg.TypesInfo.Defs[transaction.Type.Params.List[0].Names[0]]
+				var writeParam types.Object
+				for _, field := range function.Type.Params.List {
+					for _, name := range field.Names {
+						if name.Name == "write" {
+							writeParam = pkg.TypesInfo.Defs[name]
+						}
+					}
+				}
+				if writeParam == nil || txObject == nil {
+					t.Fatal("runFencedWrite declares no write parameter or its transaction closure no tx: the guard resolves nothing")
+				}
+				handedTx := func(call *ast.CallExpr) bool {
+					if len(call.Args) == 0 {
+						return false
+					}
+					ident, ok := call.Args[0].(*ast.Ident)
+					return ok && pkg.TypesInfo.Uses[ident] == txObject
 				}
 				marker, write := false, false
 				ast.Inspect(transaction.Body, func(inner ast.Node) bool {
 					if innerCall, ok := inner.(*ast.CallExpr); ok {
-						if typeutil.Callee(pkg.TypesInfo, innerCall) == setMarker {
+						if typeutil.Callee(pkg.TypesInfo, innerCall) == setMarker && handedTx(innerCall) {
 							marker = true
 						}
-						if ident, ok := innerCall.Fun.(*ast.Ident); ok && ident.Name == "write" {
+						if ident, ok := innerCall.Fun.(*ast.Ident); ok && pkg.TypesInfo.Uses[ident] == writeParam && handedTx(innerCall) {
 							write = true
 						}
 					}
