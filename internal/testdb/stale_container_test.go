@@ -45,11 +45,12 @@ func TestIsStalePostgresContainerTouchesOnlyOldLabelledContainers(t *testing.T) 
 // may be gone.
 func TestStaleSweepAgainstARealDaemon(t *testing.T) {
 	requireDockerBinary(t)
-	ensurePostgresImageAvailable(t)
+	image := postgresImage()
+	ensurePostgresImageAvailable(t, image)
 
 	start := func(args ...string) string {
 		full := append([]string{"run", "-d", "--rm", "--entrypoint", "sleep"}, args...)
-		full = append(full, postgresTestImage, "600")
+		full = append(full, image, "600")
 		id := runDockerCommand(t, full...)
 		t.Cleanup(func() { _ = runDockerCommandAllowFailure("rm", "-f", "-v", id) })
 		return id
