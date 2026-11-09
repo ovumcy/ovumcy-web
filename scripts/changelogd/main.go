@@ -595,27 +595,26 @@ func validateFragment(name, content string) error {
 	if len(sections) == 0 {
 		return fmt.Errorf("%s: no changelog entry found (expected a %q header followed by entry text, or the single line %q)", name, sectionOrder[0], noneMarker)
 	}
-	return checkEntryListItems(name, content)
+	return checkEntryListItems(name, sections)
 }
 
-// checkEntryListItems requires the first non-blank line under every section
-// header to start with "- ", so a bare paragraph cannot land as prose between
-// list items in the assembled changelog.
-func checkEntryListItems(name, content string) error {
-	awaitingEntry := false
-	for _, raw := range strings.Split(content, "\n") {
-		line := strings.TrimRight(raw, " \t\r")
-		if strings.HasPrefix(line, "### ") {
-			awaitingEntry = true
+// checkEntryListItems requires every unindented line of a section body to
+// start with "- "; anything else is either a list item's indented continuation
+// or a blank line. assemble copies bodies verbatim, so an unindented
+// non-item line ends the list and lands as prose between list items.
+func checkEntryListItems(name string, sections map[string]string) error {
+	for _, section := range sectionOrder {
+		body := sections[section]
+		if body == "" {
 			continue
 		}
-		if !awaitingEntry || strings.TrimSpace(line) == "" {
-			continue
+		for i, line := range strings.Split(body, "\n") {
+			indented := strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
+			if strings.HasPrefix(line, "- ") || (i > 0 && (line == "" || indented)) {
+				continue
+			}
+			return fmt.Errorf("%s: every unindented line under %q must start with %q (a list item; indent continuation lines), got %q", name, section, "- ", strings.TrimSpace(line))
 		}
-		if !strings.HasPrefix(line, "- ") {
-			return fmt.Errorf("%s: the first entry line under a section header must start with %q (a list item), got %q", name, "- ", strings.TrimSpace(line))
-		}
-		awaitingEntry = false
 	}
 	return nil
 }
