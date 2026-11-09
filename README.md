@@ -208,11 +208,11 @@ Up and running? A ⭐ on the repository helps others find Ovumcy.
   </tr>
   <tr>
     <th>Get started quickly</th>
-    <th>Install it on a phone</th>
+    <th>Use it on a phone</th>
   </tr>
   <tr>
     <td><img src="docs/screenshots/register.jpg" alt="Ovumcy registration screen"></td>
-    <td align="center"><img src="docs/screenshots/install-prompt.png" alt="Ovumcy login screen on a phone with the install offer" width="300"></td>
+    <td align="center"><img src="docs/screenshots/dashboard-mobile.jpg" alt="Ovumcy dashboard on a phone, light theme: cycle ring, estimate-qualified ribbon, medical disclaimer and the daily journal" width="300"></td>
   </tr>
 </table>
 
