@@ -17,7 +17,8 @@
 //	    pull request will carry — or when it edits CHANGELOG.md itself in a way only
 //	    release assembly does (adding the "## [x.y.z]" heading of a new release,
 //	    not re-typing an existing one); every added or modified
-//	    fragment must be valid. Independently of either, a CHANGELOG.md edit
+//	    fragment must be valid and must not repeat another fragment byte for
+//	    byte (after trimming); assemble refuses the same. Independently of either, a CHANGELOG.md edit
 //	    that is neither assembly nor confined to an already-released section
 //	    fails. Exit 0 when the gate passes, 1 when it fails.
 //
@@ -188,6 +189,12 @@ func check(root, baseRef, headRef string, git gitRunner) (string, error) {
 		}
 	}
 
+	// A touched fragment that repeats another one, landed or not, is a copy.
+	duplicates, err := duplicateFragments(root, changedFragments(nameStatus))
+	if err != nil {
+		return "", err
+	}
+
 	// CHANGELOG.md is judged whether or not a fragment was added: an added
 	// fragment must not license a rewrite of the [Unreleased] body beside it.
 	changelogDiff, err := git(root, "diff", "--unified=0", "--no-color", baseRef+"...HEAD", "--", changelogFile)
@@ -242,8 +249,11 @@ func check(root, baseRef, headRef string, git gitRunner) (string, error) {
 		}
 	}
 
-	if len(fragmentProblems) > 0 || len(offending) > 0 || len(removed) > 0 {
+	if len(fragmentProblems) > 0 || len(duplicates) > 0 || len(offending) > 0 || len(removed) > 0 {
 		var report []string
+		if len(duplicates) > 0 {
+			report = append(report, duplicateFragmentHelp(duplicates))
+		}
 		if len(fragmentProblems) > 0 {
 			report = append(report, strings.Join(fragmentProblems, "\n")+"\n\n"+fragmentFormatHelp())
 		}
@@ -503,6 +513,74 @@ func addsReleaseHeading(diff, current string) bool {
 	return true
 }
 
+// duplicateFragments reads every fragment under changelog.d/ and reports each
+// group of two or more whose content is byte-identical once leading and
+// trailing whitespace is trimmed: the same entry copy-pasted into a second
+// fragment would be released twice. A group is reported only when it holds one
+// of the focus fragments (repository-relative, slash-separated); a nil focus
+// judges every group. A fragment carrying the none marker holds no entry, so
+// two of them are never a duplicate. Each report line names every file of its
+// group.
+func duplicateFragments(root string, focus []string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(root, fragmentDir, "*.md"))
+	if err != nil {
+		return nil, fmt.Errorf("list fragments: %w", err)
+	}
+	sort.Strings(paths)
+
+	groups := map[string][]string{}
+	var order []string
+	for _, path := range paths {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return nil, fmt.Errorf("read fragment %s: %w", filepath.ToSlash(path), readErr)
+		}
+		if isNoneMarker(string(data)) {
+			continue
+		}
+		// Line endings are normalised first: a checkout with autocrlf rewrites
+		// one copy and not the other, and that is not a different entry.
+		key := strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n"))
+		if key == "" {
+			continue
+		}
+		if _, seen := groups[key]; !seen {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], fragmentDir+"/"+filepath.Base(path))
+	}
+
+	inFocus := map[string]bool{}
+	for _, name := range focus {
+		inFocus[name] = true
+	}
+	var reports []string
+	for _, key := range order {
+		names := groups[key]
+		if len(names) < 2 {
+			continue
+		}
+		touched := focus == nil
+		for _, name := range names {
+			if inFocus[name] {
+				touched = true
+			}
+		}
+		if touched {
+			reports = append(reports, "  "+strings.Join(names, " and ")+" are identical")
+		}
+	}
+	return reports, nil
+}
+
+// duplicateFragmentHelp is the failure text for duplicateFragments' report.
+func duplicateFragmentHelp(reports []string) string {
+	return "Duplicate changelog fragments (the same entry would be released twice):\n" +
+		strings.Join(reports, "\n") + "\n\n" +
+		"Keep the entry in one fragment. If the other is an unreleased entry already on the base branch, " +
+		"turn it into a `none` fragment (the first line `none`, a blank line, the reason) rather than deleting it.\n"
+}
+
 // validateFragment accepts either the "none" marker or a fragment whose first
 // non-empty line is a known section header, whose every "### " line is a known
 // section header, and which carries at least one line of entry text.
@@ -661,6 +739,14 @@ func assemble(root, version, date string) (string, error) {
 		return "", fmt.Errorf("list fragments: %w", err)
 	}
 	sort.Strings(fragments)
+
+	duplicates, err := duplicateFragments(root, nil)
+	if err != nil {
+		return "", err
+	}
+	if len(duplicates) > 0 {
+		return "", errors.New(strings.TrimRight(duplicateFragmentHelp(duplicates), "\n"))
+	}
 
 	changelogPath := filepath.Join(root, changelogFile)
 	content, err := os.ReadFile(changelogPath)

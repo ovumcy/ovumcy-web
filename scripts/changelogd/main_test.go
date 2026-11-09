@@ -65,6 +65,97 @@ func TestCheckPassesOnAddedFragment(t *testing.T) {
 	}
 }
 
+const duplicateEntry = "### Fixed\n\n- **The same entry.** Pasted into two fragments.\n"
+
+func TestCheckRefusesAFragmentThatRepeatsALandedOneAndNamesBoth(t *testing.T) {
+	dir := initRepo(t)
+	landOnMain(t, dir, "changelog.d/web1-first.md", duplicateEntry)
+	// Surrounding whitespace is trimmed before the comparison.
+	writeFile(t, dir, "changelog.d/web2-second.md", "\n"+duplicateEntry+"\n\n")
+	commitAll(t, dir, "fix: copy of a landed fragment")
+
+	failure, err := check(dir, "main", "fix/web2-second", gitOutput)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	for _, want := range []string{"Duplicate changelog fragments", "changelog.d/web1-first.md", "changelog.d/web2-second.md"} {
+		if !strings.Contains(failure, want) {
+			t.Errorf("failure does not mention %q:\n%s", want, failure)
+		}
+	}
+}
+
+func TestCheckAcceptsADistinctFragmentBesideALandedOne(t *testing.T) {
+	dir := initRepo(t)
+	landOnMain(t, dir, "changelog.d/web1-first.md", duplicateEntry)
+	writeFile(t, dir, "changelog.d/web2-second.md", "### Fixed\n\n- **A different entry.**\n")
+	commitAll(t, dir, "fix: distinct entry")
+
+	failure, err := check(dir, "main", "fix/web2-second", gitOutput)
+	if err != nil || failure != "" {
+		t.Fatalf("distinct fragments must pass, got %q, %v", failure, err)
+	}
+}
+
+func TestCheckAcceptsANoneFragmentRepeatingALandedNoneFragment(t *testing.T) {
+	const none = "none\n\nNo operator-visible change.\n"
+	dir := initRepo(t)
+	landOnMain(t, dir, "changelog.d/web1-none.md", none)
+	writeFile(t, dir, "changelog.d/web2-none.md", none)
+	commitAll(t, dir, "chore: a none fragment repeating another")
+
+	failure, err := check(dir, "main", "chore/web2-none", gitOutput)
+	if err != nil || failure != "" {
+		t.Fatalf("two identical none fragments carry no entry and must pass, got %q, %v", failure, err)
+	}
+}
+
+func TestDuplicateFragmentsOnlyReportsGroupsTheBranchTouches(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "changelog.d/a.md", duplicateEntry)
+	writeFile(t, dir, "changelog.d/b.md", duplicateEntry)
+	writeFile(t, dir, "changelog.d/c.md", "### Added\n\n- **Unrelated.**\n")
+
+	if got, err := duplicateFragments(dir, []string{"changelog.d/c.md"}); err != nil || len(got) != 0 {
+		t.Fatalf("a branch touching only c.md must not be blamed for a.md/b.md, got %v, %v", got, err)
+	}
+	got, err := duplicateFragments(dir, nil)
+	if err != nil || len(got) != 1 || !strings.Contains(got[0], "changelog.d/a.md") || !strings.Contains(got[0], "changelog.d/b.md") {
+		t.Fatalf("a nil focus must report the a.md/b.md group naming both, got %v, %v", got, err)
+	}
+}
+
+func TestDuplicateFragmentsTreatsCRLFAndLFCopiesAsTheSameEntry(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "changelog.d/lf.md", duplicateEntry)
+	writeFile(t, dir, "changelog.d/crlf.md", strings.ReplaceAll(duplicateEntry, "\n", "\r\n"))
+
+	got, err := duplicateFragments(dir, nil)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("an autocrlf copy must be reported as a duplicate, got %v, %v", got, err)
+	}
+}
+
+func TestAssembleRefusesDuplicateFragmentsNamingBothAndWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "CHANGELOG.md", fixtureChangelog)
+	writeFile(t, dir, "changelog.d/one.md", duplicateEntry)
+	writeFile(t, dir, "changelog.d/two.md", duplicateEntry)
+
+	_, err := assemble(dir, "1.1.0", "2026-02-02")
+	if err == nil || !strings.Contains(err.Error(), "changelog.d/one.md") || !strings.Contains(err.Error(), "changelog.d/two.md") {
+		t.Fatalf("assemble error = %v, want one naming both fragments", err)
+	}
+	if got := readFile(t, dir, "CHANGELOG.md"); got != fixtureChangelog {
+		t.Errorf("a refused assembly must not write CHANGELOG.md:\n%s", got)
+	}
+	for _, name := range []string{"one.md", "two.md"} {
+		if _, statErr := os.Stat(filepath.Join(dir, "changelog.d", name)); statErr != nil {
+			t.Errorf("a refused assembly must not delete %s: %v", name, statErr)
+		}
+	}
+}
+
 func TestCheckPassesOnNoneMarkerFragment(t *testing.T) {
 	dir := initRepo(t)
 	writeFile(t, dir, "changelog.d/chore-branch.md", "none\n\nOnly the CI workflow moved; nothing an operator can observe.\n")
