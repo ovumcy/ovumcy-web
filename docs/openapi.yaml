@@ -2206,7 +2206,8 @@ paths:
         Bumps `auth_session_version` (invalidating every other auth cookie for
         the account), clears auth-related cookies, and may return an OIDC
         end-session bridge URL if the session was OIDC-backed.
-        Per-account rate limit: 60 / 15 min.
+        Per-IP rate limit: default 60 / 15 min, on top of the per-account
+        limit: default 20 / 15 min.
       responses:
         '200':
           description: Logged out.
@@ -2526,6 +2527,8 @@ paths:
           schema:
             type: string
             format: date
+      security:
+        - sessionCookie: []
       responses:
         '200':
           description: Array of day entries. Empty array when no rows match the range.
@@ -2592,6 +2595,8 @@ paths:
         `id: 0` means "no stored record"; a stored record always has a
         non-zero `id`. A stored record can still hold no data (a `PUT` that
         sends no values creates one), so ask `HEAD` whether the day holds data.
+      security:
+        - sessionCookie: []
       responses:
         '200':
           description: 'The stored day record, or the `id: 0` placeholder when the day has none.'
@@ -2890,6 +2895,8 @@ paths:
     get:
       tags: [symptoms]
       summary: List symptoms for the current user.
+      security:
+        - sessionCookie: []
       responses:
         '200':
           description: Symptoms array.
@@ -3016,6 +3023,8 @@ paths:
     get:
       tags: [stats]
       summary: Current cycle statistics for the signed-in user.
+      security:
+        - sessionCookie: []
       responses:
         '200':
           description: Overview payload.
@@ -3036,6 +3045,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/FromQuery'
         - $ref: '#/components/parameters/ToQuery'
+      security:
+        - sessionCookie: []
       responses:
         '200':
           description: Summary payload.
@@ -3054,6 +3065,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/FromQuery'
         - $ref: '#/components/parameters/ToQuery'
+      security:
+        - sessionCookie: []
       responses:
         '200':
           description: CSV download.
@@ -3076,6 +3089,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/FromQuery'
         - $ref: '#/components/parameters/ToQuery'
+      security:
+        - sessionCookie: []
       responses:
         '200':
           description: JSON download.
@@ -3150,6 +3165,8 @@ paths:
         name), authorization tier (role), and lifecycle flags it must respect
         before mutating calls (onboarding_completed, local_auth_enabled,
         must_change_password). Sensitive fields are never included.
+      security:
+        - sessionCookie: []
       responses:
         '200':
           description: Current user shape.
