@@ -299,10 +299,13 @@ jobs:
           listing="$(go list -f '{{.ImportPath}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...)"
           pg_lines="$(grep -E ' [^ ]*/internal/testdb( |$)' <<< "$listing" || true)"
           mapfile -t pg_packages < <(cut -d' ' -f1 <<< "$pg_lines")
-          if ! printf '%s\n' "${pg_packages[@]}" | grep -qx 'github.com/ovumcy/ovumcy-web/internal/db'; then
-            echo "::error::internal/db is not among the packages whose tests import internal/testdb; the Postgres pass would not test the migrations"
-            exit 1
-          fi
+          case " ${pg_packages[*]} " in
+            *" github.com/ovumcy/ovumcy-web/internal/db "*) ;;
+            *)
+              echo "::error::internal/db is not among the packages whose tests import internal/testdb; the Postgres pass would not test the migrations"
+              exit 1
+              ;;
+          esac
           echo "testing ${#pg_packages[@]} package(s) on $OVUMCY_TEST_POSTGRES_IMAGE: ${pg_packages[*]}"
           go test "${pg_packages[@]}" -timeout 20m
 
