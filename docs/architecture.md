@@ -37,7 +37,7 @@ flowchart TB
     subgraph app["Ovumcy server — single Go binary"]
         direction TB
         api["internal/api — transport only<br/>routing · auth · role · CSRF · HTMX / JSON / HTML"]
-        cli["internal/cli — operator commands<br/>users · reset-password · notify · webhook · healthcheck · repair"]
+        cli["internal/cli — operator commands<br/>users · reset-password · notify · webhook · healthcheck · readycheck · repair · link-oidc-identity"]
         reminders["internal/reminders — background scheduler<br/>trigger for the request-free webhook notify pass"]
         services["internal/services — domain logic<br/>cycle · stats · dashboard · settings · export · onboarding · webhook delivery"]
         db["internal/db — persistence<br/>repositories · forward-only migrations"]
@@ -93,8 +93,9 @@ flowchart TB
   from the same per-`user_id` repository calls the request path uses.
 - **`internal/cli` (operator commands).** The second entry point of the binary
   (`ovumcy users`, `reset-password`, `notify`, `webhook`, `healthcheck`,
-  `repair`). It is not transport and does not pass through the authorization
-  boundary below — it reaches `internal/services` and `internal/db` directly, and
+  `readycheck`, `repair`, `link-oidc-identity`). It is not transport and does
+  not pass through the authorization boundary below — it reaches
+  `internal/services` and `internal/db` directly, and
   is gated by shell or container access to the host instead. All of them but
   `repair` open the database the way the server does, migrations included;
   `repair` is the one that must reach a database a migration is refusing, so it
