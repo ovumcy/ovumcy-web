@@ -46,7 +46,8 @@ func (anchor *switchableFenceAnchor) Write(value string) error {
 // marker), the owner arms and revokes a feed while the volume is still away
 // (refusalWaiver waives both writes and records nothing), the old volume is
 // mounted again with its old token, and the backup taken before the drop is
-// restored. The next fenced boot must not leave the backup's feed armed.
+// restored. The next fenced boot reads the halves as agreeing and leaves the
+// backup's feed armed: that is the residual this test holds in place.
 //
 // The credential "authenticates" when its selector still resolves to a row,
 // which is the lookup the feed endpoint performs first and the only one a
