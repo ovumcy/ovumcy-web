@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"gorm.io/gorm"
@@ -98,6 +99,84 @@ func TestALiveBackupTakenMidRevocationIsReadAsARestore(t *testing.T) {
 			}
 			if _, _, err := auth.ResolveAuthSession(ctx, restoreAcrossRevocationSecret, cookie, now); !errors.Is(err, services.ErrAuthSessionTokenRevoked) {
 				t.Fatalf("the cookie the sign-out revoked must not resolve after the boot, got %v", err)
+			}
+		})
+	}
+}
+
+// TestABackupTakenBetweenTheMarkerAndTheRowShowsNeitherOfThem is the other half
+// of the same property: the test above snapshots before the writer's
+// transaction opens, so a regression that committed the marker in a
+// transaction of its own, ahead of the row's, would pass it. This one takes
+// the copy from a second connection at the moment the users update is about to
+// run — after the marker statement, before the row statement — so the marker
+// has to still be uncommitted there. The copy must show the old marker and the
+// old row; the new marker beside the old row is the state a restore reads as
+// continuity.
+func TestABackupTakenBetweenTheMarkerAndTheRowShowsNeitherOfThem(t *testing.T) {
+	dialects := map[string]func(t *testing.T) *gorm.DB{
+		"sqlite": func(t *testing.T) *gorm.DB {
+			return openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "between-statements.db"))
+		},
+		"postgres": func(t *testing.T) *gorm.DB {
+			return openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t))
+		},
+	}
+	for dialect, open := range dialects {
+		t.Run(dialect, func(t *testing.T) {
+			ctx := context.Background()
+			database := open(t)
+			repositories := NewRepositories(database)
+			file := security.NewCalendarFeedFenceFile(filepath.Join(t.TempDir(), "calendar-feed.fence"))
+			fence := services.NewCalendarFeedRestoreFence(repositories.AppState, repositories.Users, file)
+			user := createUserForTimezoneTest(t, repositories.Users, "between-statements@example.com")
+			repositories = repositories.WithCalendarFeedFence(fence)
+			if outcome, err := fence.EnforceRequired(ctx); err != nil || !outcome.FirstBoot {
+				t.Fatalf("first boot: %+v, %v", outcome, err)
+			}
+			before := takeRestoreSnapshot(t, database, user.ID)
+
+			// The seam is a test-registered callback on the users update: it runs
+			// inside the writer's transaction, and the copy it takes goes through
+			// the pool, which is a connection of its own, as a live backup is.
+			var between restoreSnapshot
+			taken := 0
+			callbackName := "web517:snapshot-between-marker-and-row"
+			if err := database.Callback().Update().Before("gorm:update").Register(callbackName, func(db *gorm.DB) {
+				if db.Statement.Table == "users" && taken == 0 {
+					taken++
+					between = takeRestoreSnapshot(t, database, user.ID)
+				}
+			}); err != nil {
+				t.Fatalf("register the snapshot callback: %v", err)
+			}
+			t.Cleanup(func() { _ = database.Callback().Update().Remove(callbackName) })
+
+			if err := repositories.Users.BumpAuthSessionVersion(ctx, user.ID); err != nil {
+				t.Fatalf("sign-out: %v", err)
+			}
+			if taken != 1 {
+				t.Fatalf("fixture: the seam must fire once on the users update, fired %d times", taken)
+			}
+			after := takeRestoreSnapshot(t, database, user.ID)
+			if after.user.AuthSessionVersion == before.user.AuthSessionVersion {
+				t.Fatalf("fixture: the sign-out must have moved the row past version %d", before.user.AuthSessionVersion)
+			}
+			markers := func(snapshot restoreSnapshot) map[string]string {
+				values := map[string]string{}
+				for _, row := range snapshot.appState {
+					values[row.Key] = row.Value
+				}
+				return values
+			}
+			if markers(before)[models.AppStateKeyCalendarFeedRestoreFence] == markers(after)[models.AppStateKeyCalendarFeedRestoreFence] {
+				t.Fatal("fixture: the sign-out must have moved the marker")
+			}
+			if between.user.AuthSessionVersion != before.user.AuthSessionVersion {
+				t.Fatalf("a copy taken between the two statements shows the new row (version %d, was %d)", between.user.AuthSessionVersion, before.user.AuthSessionVersion)
+			}
+			if got, want := markers(between)[models.AppStateKeyCalendarFeedRestoreFence], markers(before)[models.AppStateKeyCalendarFeedRestoreFence]; got != want {
+				t.Fatalf("a copy taken between the two statements shows the new marker %q beside the old row (was %q): the marker committed apart from the row", got, want)
 			}
 		})
 	}
