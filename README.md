@@ -46,7 +46,7 @@ Ovumcy is a menstrual cycle tracker you run on your own server. If the thought o
 
 > ⭐ **If Ovumcy is useful to you, star the repository.** Ovumcy is under active development, and stars are how people looking for a private cycle tracker find it. More ways to help: [Support the Project](#support-the-project).
 
-This README describes the current `main` branch. The latest tagged release is `v2.0.0`.
+This README describes the current `main` branch. The latest tagged release is `v2.1.0`.
 
 ## Contents
 
@@ -73,10 +73,10 @@ docker compose up -d
 
 Then open `http://127.0.0.1:8080`.
 
-The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v2.0.0`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. Tagged releases from `v0.7.1` onward publish under these names. `:latest` names the newest stable release (a pre-release tag never moves it); `:main` is the moving pre-release channel built from the tip of `main`, signed the same way but not a release, so pin a release tag for anything you rely on. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
+The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v2.1.0`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. Tagged releases from `v0.7.1` onward publish under these names. `:latest` names the newest stable release (a pre-release tag never moves it); `:main` is the moving pre-release channel built from the tip of `main`, signed the same way but not a release, so pin a release tag for anything you rely on. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
 
 ```bash
-OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v2.0.0 docker compose up -d
+OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v2.1.0 docker compose up -d
 ```
 
 The base compose file binds to loopback. For a deliberate LAN or private-network bind, set `HOST_BIND_ADDRESS` in `.env` to a specific private IP you control; only compose reads it. Inside the container the server listens on `PORT` on every IPv4 interface, which the port publish needs, so leave `LISTEN_ADDRESS` unset under compose.
@@ -89,12 +89,12 @@ For production-style setups:
 
 > **Upgrading an existing install to v2.0.0 or later? Take the new compose file first.** The new image expects the `ovumcy_fence` volume at `/app/fence`, and the new compose files forward `.env` keys an older copy silently ignored (`REGISTRATION_MODE` among them), so values already sitting in `.env` take effect at the first start. Follow the [Safe Upgrade Procedure](docs/self-hosted.md#safe-upgrade-procedure).
 
-> **Known issues in v2.0.0, until 2.1.0 ships.** Three steps keep a v2.0.0 instance safe:
-> - **Never run the container without the fence volume.** Started with plain `docker run` on a writable container filesystem and no volume at `/app/fence`, v2.0.0 keeps the fence inside the container, and every recreation of the container revokes every local password, recovery code, session and webhook endpoint. The compose file above already runs the container read-only with both volumes; a `docker run` needs `--read-only --tmpfs /tmp -v ovumcy_fence:/app/fence -v ovumcy_data:/app/data`. Fixed in 2.1.0: the image refuses that start instead, naming `CALENDAR_FEED_FENCE_PATH`, and writes nothing.
-> - **Back up only with the server stopped**, and with no `users delete`, `reset-password` or `webhook set` command running. A backup taken while the server ran is restored with the fence file removed, which signs every owner out and revokes every local password on the next start.
-> - **Check the date before you record a day** after signing out or in a new browser: the first page of the session can show the server's date rather than yours.
+> **Upgrading from v2.0.0?** 2.1.0 fixes the issues known in 2.0.0:
+> - **A container without the fence volume is refused.** v2.0.0 started under plain `docker run` on a writable container filesystem with no volume at `/app/fence`, kept the fence inside the container, and revoked every local password, recovery code, session and webhook endpoint on each recreation. 2.1.0 refuses that start, naming `CALENDAR_FEED_FENCE_PATH`, and writes nothing. The compose file above already mounts both volumes; a `docker run` needs `--read-only --tmpfs /tmp -v ovumcy_fence:/app/fence -v ovumcy_data:/app/data`.
+> - **Revocations commit atomically with the fence marker**, so a backup taken with the server stopped restores correctly. Still back up only with the server stopped, and with no `users delete`, `reset-password` or `webhook set` command running: a copy taken while the server ran, on any version, is restored with the fence file removed ([Restoring a backup taken online](docs/self-hosted.md#restoring-a-backup-taken-online)).
+> - **"Today" follows the owner's saved timezone** on the first page of a session, instead of the server's date.
 >
-> Full commands and recovery steps: [Known Issues in 2.0.0](docs/self-hosted.md#known-issues-in-200).
+> An instance already hit by the first issue: [Known Issues in 2.0.0](docs/self-hosted.md#known-issues-in-200).
 
 Running the image with plain `docker run` (Portainer, Watchtower and Kubernetes take the same two mounts) instead of compose? Give it the fence volume as well as the data volume, and **never recreate the container without the fence volume**:
 
@@ -102,7 +102,7 @@ Running the image with plain `docker run` (Portainer, Watchtower and Kubernetes 
 docker run -d --name ovumcy --read-only --tmpfs /tmp \
   -p 127.0.0.1:8080:8080 -e SECRET_KEY="$(openssl rand -hex 32)" \
   -v ovumcy_fence:/app/fence -v ovumcy_data:/app/data \
-  ghcr.io/ovumcy/ovumcy-web:v2.0.0
+  ghcr.io/ovumcy/ovumcy-web:v2.1.0
 ```
 
 Keep the `SECRET_KEY` you generate: a recreated container needs the same one. Without a volume at `/app/fence` the fence would sit on the container's writable layer, which every recreation throws away, and the next start would read the database as a restored backup and revoke every local password. From 2.1.0 the image refuses that start instead, naming `CALENDAR_FEED_FENCE_PATH` — see [Calendar Feed Restore Fence](docs/self-hosted.md#calendar-feed-restore-fence).
@@ -118,22 +118,22 @@ Every published image is Cosign-signed (keyless, via GitHub Actions OIDC — no 
 cosign verify \
   --certificate-identity-regexp '^https://github\.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/ovumcy/ovumcy-web:v2.0.0
+  ghcr.io/ovumcy/ovumcy-web:v2.1.0
 
 # 2. SLSA build provenance (GitHub attestation)
-gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v2.0.0 --repo ovumcy/ovumcy-web
+gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v2.1.0 --repo ovumcy/ovumcy-web
 
 # 3. SBOM attached at build time
-docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v2.0.0 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v2.1.0 --format '{{ json .SBOM }}'
 ```
 
 The Docker Hub mirror answers to the same checks: substitute `docker.io/ovumcy/ovumcy-web` for the GHCR name. The mirror is a copy of the signed manifest, not a second build; it is signed on Docker Hub itself by the same workflow identity over the same digest, and the release workflow refuses to report the mirror published until it has run the signature check above against Docker Hub. Details: [SECURITY.md](SECURITY.md#verifying-release-authenticity).
 
-The `v2.0.0` tag is mutable and `pull_policy: always` re-pulls it on every restart, so a one-time check does not by itself guarantee later restarts run the same bytes. To pin the exact image you verified, set `OVUMCY_IMAGE` to its digest instead of the tag:
+The `v2.1.0` tag is mutable and `pull_policy: always` re-pulls it on every restart, so a one-time check does not by itself guarantee later restarts run the same bytes. To pin the exact image you verified, set `OVUMCY_IMAGE` to its digest instead of the tag:
 
 ```bash
 # Resolve the digest of the tag you just verified, then pin it in .env:
-docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v2.0.0 --format '{{ .Manifest.Digest }}'
+docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v2.1.0 --format '{{ .Manifest.Digest }}'
 # .env → OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web@sha256:<digest>
 ```
 
@@ -491,7 +491,7 @@ Want to support Ovumcy with a donation? Crypto options (Bitcoin, Monero, USDT, E
 <a id="roadmap" name="roadmap"></a>
 ## Releases
 
-- Latest tagged release: `v2.0.0`.
+- Latest tagged release: `v2.1.0`.
 - Release notes are published via GitHub Releases and [CHANGELOG.md](CHANGELOG.md).
 - Product planning lives in GitHub Issues and the `Ovumcy Roadmap` project board. This README describes functionality that exists today, not roadmap items.
 
