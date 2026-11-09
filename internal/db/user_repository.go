@@ -634,8 +634,8 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 	}
 	return repo.advanceCalendarFeedFence(ctx, func(tx *gorm.DB) error {
 		query, err := scopedUserUpdateTx(tx, userID)
-		if err != nil {
-			return err
+		if err != nil { // codecov:ignore -- requireUserOwnerID above already refused the one id scopedUserUpdateTx rejects
+			return err // codecov:ignore -- see above
 		}
 		// Pinned to the epoch the caller read: every delivery-configuration
 		// writer advances it, so a match proves no removal or other save landed
@@ -681,8 +681,8 @@ func (repo *UserRepository) RemoveWebhookDestination(ctx context.Context, userID
 	}
 	return repo.advanceCalendarFeedFence(ctx, func(tx *gorm.DB) error {
 		query, err := scopedUserUpdateTx(tx, userID)
-		if err != nil {
-			return err
+		if err != nil { // codecov:ignore -- requireUserOwnerID above already refused the one id scopedUserUpdateTx rejects
+			return err // codecov:ignore -- see above
 		}
 		return query.Updates(map[string]any{
 			"webhook_enabled":           false,
@@ -1066,8 +1066,8 @@ func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID ui
 	// write is a revocation as much as ClearCalendarFeedToken is.
 	return repo.advanceCalendarFeedFence(ctx, func(tx *gorm.DB) error {
 		query, err := scopedUserUpdateTx(tx, userID)
-		if err != nil {
-			return err
+		if err != nil { // codecov:ignore -- requireUserOwnerID above already refused the one id scopedUserUpdateTx rejects
+			return err // codecov:ignore -- see above
 		}
 		return query.Updates(map[string]any{
 			"calendar_feed_selector":      columns.Selector,
@@ -1222,8 +1222,8 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 	// enforced at the next boot instead of lost.
 	return repo.advanceCalendarFeedFence(ctx, func(tx *gorm.DB) error {
 		query, err := scopedUserUpdateTx(tx, userID)
-		if err != nil {
-			return err
+		if err != nil { // codecov:ignore -- requireUserOwnerID above already refused the one id scopedUserUpdateTx rejects
+			return err // codecov:ignore -- see above
 		}
 		return query.Updates(map[string]any{
 			"calendar_feed_selector":        nil,
@@ -1700,8 +1700,8 @@ func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID u
 	}
 	return repo.advanceCalendarFeedFenceOrRefuse(ctx, func(tx *gorm.DB) error {
 		query, err := scopedUserUpdateTx(tx, userID)
-		if err != nil {
-			return err
+		if err != nil { // codecov:ignore -- requireUserOwnerID above already refused the one id scopedUserUpdateTx rejects
+			return err // codecov:ignore -- see above
 		}
 		return query.UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error
 	})

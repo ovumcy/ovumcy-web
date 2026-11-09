@@ -438,10 +438,12 @@ func (fence *CalendarFeedRestoreFence) advanceLocked(ctx context.Context, diverg
 	}
 	token, err := security.NewCalendarFeedFenceToken()
 	if err != nil {
+		// codecov:ignore:start -- crypto/rand failure; unreachable without an OS-level entropy fault
 		if diverge {
-			return commit("") // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
+			return commit("")
 		}
-		return err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
+		return err
+		// codecov:ignore:end
 	}
 	writeErr := fence.writeAnchorRetrying(ctx, token)
 	if errors.Is(writeErr, security.ErrCalendarFeedFenceNotConfigured) {

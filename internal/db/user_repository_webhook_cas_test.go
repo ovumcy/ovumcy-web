@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"gorm.io/gorm"
 )
 
 // TestSaveWebhookSettingsRefusesARowAnotherWriterMovedOn is the remove-versus-
@@ -61,18 +62,23 @@ func TestSaveWebhookSettingsRefusesARowAnotherWriterMovedOn(t *testing.T) {
 }
 
 // TestSaveWebhookSettingsSurfacesAWriteFailureAsItself: a failed UPDATE is a
-// storage error, never reported as a lost pin the caller would retry.
+// storage error, never reported as a lost pin the caller would retry. The
+// failure is injected into the UPDATE itself: a closed handle would fail the
+// fence's transaction before the write ever ran (WEB-505).
 func TestSaveWebhookSettingsSurfacesAWriteFailureAsItself(t *testing.T) {
 	repo := openWebhookRepoForTest(t)
 	user := createUserForTimezoneTest(t, repo, "wh-cas-write-fails@example.com")
-	sqlDB, err := repo.database.DB()
-	if err != nil {
-		t.Fatalf("database handle: %v", err)
+	writeFailed := errors.New("disk I/O error")
+	if err := repo.database.Callback().Update().Before("gorm:update").Register("test:webhook_cas_write_fails", func(tx *gorm.DB) {
+		if tx.Statement.Table == "users" {
+			_ = tx.AddError(writeFailed)
+		}
+	}); err != nil {
+		t.Fatalf("register update callback: %v", err)
 	}
-	_ = sqlDB.Close()
 
-	err = repo.SaveWebhookSettings(context.Background(), user.ID, models.WebhookSettingsColumns{ReminderLeadDays: 3})
-	if err == nil || errors.Is(err, models.ErrWebhookConfigVersionChanged) {
+	err := repo.SaveWebhookSettings(context.Background(), user.ID, models.WebhookSettingsColumns{ReminderLeadDays: 3})
+	if !errors.Is(err, writeFailed) || errors.Is(err, models.ErrWebhookConfigVersionChanged) {
 		t.Fatalf("expected the storage error itself, got %v", err)
 	}
 }
