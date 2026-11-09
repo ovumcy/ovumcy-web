@@ -1315,6 +1315,33 @@ func TestValidateFragmentAcceptsTheNoneMarkerAndRejectsAnEmptyFile(t *testing.T)
 	}
 }
 
+func TestValidateFragmentRequiresAListItemAsEachSectionsFirstEntry(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		wantErr bool
+	}{
+		{"list item", "### Fixed\n\n- **One.** Text.\n", false},
+		{"list item without blank line", "### Fixed\n- One.\n", false},
+		{"bare paragraph", "### Fixed\n\nA bare paragraph.\n", true},
+		{"bare paragraph right after header", "### Fixed\nA bare paragraph.\n", true},
+		{"none marker with prose", "none\n\nNo user-visible change.\n", false},
+		{"multi-section all list items", "### Added\n\n- One.\n\n### Fixed\n\n- Two.\n", false},
+		{"multi-section second bare", "### Added\n\n- One.\n\n### Fixed\n\nTwo.\n", true},
+		{"continuation after list item", "### Added\n\n- One,\n  continued.\n\nTrailing prose.\n", false},
+	}
+	for _, tc := range cases {
+		err := validateFragment("frag.md", tc.content)
+		if tc.wantErr {
+			if err == nil || !strings.Contains(err.Error(), "frag.md") || !strings.Contains(err.Error(), `"- "`) {
+				t.Errorf("%s: want an error naming the path and the %q prefix, got %v", tc.name, "- ", err)
+			}
+		} else if err != nil {
+			t.Errorf("%s: unexpected error: %v", tc.name, err)
+		}
+	}
+}
+
 // --- helpers ----------------------------------------------------------------
 
 // initRepo builds a real one-commit git repository with the fixture changelog

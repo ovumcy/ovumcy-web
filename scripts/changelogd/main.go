@@ -595,6 +595,28 @@ func validateFragment(name, content string) error {
 	if len(sections) == 0 {
 		return fmt.Errorf("%s: no changelog entry found (expected a %q header followed by entry text, or the single line %q)", name, sectionOrder[0], noneMarker)
 	}
+	return checkEntryListItems(name, content)
+}
+
+// checkEntryListItems requires the first non-blank line under every section
+// header to start with "- ", so a bare paragraph cannot land as prose between
+// list items in the assembled changelog.
+func checkEntryListItems(name, content string) error {
+	awaitingEntry := false
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimRight(raw, " \t\r")
+		if strings.HasPrefix(line, "### ") {
+			awaitingEntry = true
+			continue
+		}
+		if !awaitingEntry || strings.TrimSpace(line) == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "- ") {
+			return fmt.Errorf("%s: the first entry line under a section header must start with %q (a list item), got %q", name, "- ", strings.TrimSpace(line))
+		}
+		awaitingEntry = false
+	}
 	return nil
 }
 
