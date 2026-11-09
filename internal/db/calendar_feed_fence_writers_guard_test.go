@@ -396,7 +396,9 @@ func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAd
 		}
 		var handles []ast.Expr
 		switch {
-		case callee.Pkg().Path() == "gorm.io/gorm" && persistenceWriteMethods["gorm.io/gorm"][callee.Name()]:
+		case persistenceWriteMethods[callee.Pkg().Path()][callee.Name()]:
+			// A database/sql handle never roots at the closure's *gorm.DB tx,
+			// so a raw Exec anywhere in a fenced writer is a violation.
 			if selector, ok := call.Fun.(*ast.SelectorExpr); ok {
 				handles = append(handles, selector.X)
 			}
