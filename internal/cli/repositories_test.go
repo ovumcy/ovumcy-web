@@ -213,6 +213,51 @@ func TestConfirmOperatorFeedRevocationSucceedsAndAdvancesWhenTheHalvesAgree(t *t
 	}
 }
 
+// TestConfirmOperatorFeedRevocationRefusesAFenceThatMovedAfterTheGate pins the
+// window between the gate and the write: the gate confirmed an agreeing pair,
+// then another writer moved the file before the operator's write advanced. The
+// write's advance re-reads the pair, refuses before writing the file or running
+// the account write, and the command renders the gate's own refusal, ending
+// "Nothing was changed".
+func TestConfirmOperatorFeedRevocationRefusesAFenceThatMovedAfterTheGate(t *testing.T) {
+	appState := &fakeConfirmFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: confirmFenceTestToken,
+	}}
+	anchor := &fakeConfirmFenceAnchor{value: confirmFenceTestToken, found: true}
+	fence := services.NewCalendarFeedRestoreFence(appState, fakeConfirmFenceUsers{}, anchor)
+
+	const fencePath = "/app/fence/calendar-feed.fence"
+	if err := confirmOperatorFeedRevocation(context.Background(), fencePath, fence, &bytes.Buffer{}); err != nil {
+		t.Fatalf("the gate must confirm an agreeing pair: %v", err)
+	}
+	anchor.value = "moved-by-another-writer"
+
+	committed := false
+	writeErr := fence.Advance(context.Background(), func(string) error {
+		committed = true
+		return nil
+	})
+	if writeErr == nil || committed {
+		t.Fatalf("a pair that moved after the gate must refuse before the write, err %v committed %v", writeErr, committed)
+	}
+	err := operatorFeedRevocationCommitted(fencePath, writeErr, func(err error) error {
+		t.Fatalf("the refusal must not be rendered as the account write's own failure: %v", err)
+		return err
+	})
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	message := err.Error()
+	for _, want := range []string{fencePath, "Nothing was changed"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("refusal must contain %q, got %q", want, message)
+		}
+	}
+	if anchor.written != "" || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != confirmFenceTestToken {
+		t.Fatalf("a refusal must write neither half, file %q app_state %q", anchor.written, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
+	}
+}
+
 // TestConfirmOperatorFeedRevocationRefusesAndWritesNothing covers every
 // refusal shape and, for each, that the message names the variable, the
 // state, the consequence of proceeding anyway, a remedy, and ends "Nothing
