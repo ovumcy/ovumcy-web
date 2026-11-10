@@ -173,6 +173,36 @@ func insertUserOmittingAutoPeriodFill(t *testing.T, database *gorm.DB, email str
 	return stored
 }
 
+// TestMigration035LeavesAStoredAutoPeriodFillOn is the other half of the
+// default flip: an owner who already runs with auto-fill keeps it. The fixture
+// replays 035 against an account stored with the setting ON, the way an
+// upgrade from a pre-035 release meets it; the reopen re-recording every
+// migration is the anchor that the replay actually ran.
+func TestMigration035LeavesAStoredAutoPeriodFillOn(t *testing.T) {
+	forEachMigrationReplayStore(t, func(t *testing.T, store migrationReplayStore) {
+		database := store.open(t)
+		user := createUserForTimezoneTest(t, NewUserRepository(database), "kept-auto-period-fill@example.com")
+		if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("auto_period_fill", true).Error; err != nil {
+			t.Fatalf("seed auto_period_fill on: %v", err)
+		}
+		if err := database.Exec(`DELETE FROM schema_migrations WHERE version = ?`, "035").Error; err != nil {
+			t.Fatalf("delete migration 035 record: %v", err)
+		}
+		closeForMigrationReplay(t, database)
+
+		reopened := store.open(t)
+		store.assertMigrationsApplied(t, reopened)
+
+		var stored models.User
+		if err := reopened.First(&stored, user.ID).Error; err != nil {
+			t.Fatalf("reload account: %v", err)
+		}
+		if !stored.AutoPeriodFill {
+			t.Fatal("migration 035 turned a stored auto_period_fill=true off: the default flip must not rewrite an existing account's choice")
+		}
+	})
+}
+
 // TestClearAllDataTurnsAutoPeriodFillOff is the containment half. Erasure that
 // re-arms the generator of inferred period days answers "wipe my records" by
 // restarting part of what produced them, which the security constitution's
