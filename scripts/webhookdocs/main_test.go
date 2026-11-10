@@ -208,6 +208,11 @@ var claimAnchors = []claimAnchor{
 		mirror: []string{"sets no proxy"},
 	},
 	{
+		name:   "the built-in reminder scheduler ships off",
+		row:    "reminder scheduler ships off",
+		mirror: []string{"reminder scheduler ships off"},
+	},
+	{
 		name: "clear-data removes the endpoint",
 		row:  "clear-data removes the webhook endpoint itself",
 		why:  "SECURITY.md carries it in its GDPR cross-reference (Art. 9(2)(a)); the mirror does not list what clear-data resets column by column",
