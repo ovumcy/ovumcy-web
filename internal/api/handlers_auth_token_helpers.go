@@ -100,7 +100,8 @@ func (handler *Handler) clearAuthCookie(c fiber.Ctx) {
 // the session being ended: the session itself, the provider-logout bridge, and
 // each in-flight handoff carrying account-scoped state or a secret — recovery
 // code, reset token, pending 2FA challenge, the pending TOTP enrollment secret,
-// and the one-time calendar-feed subscribe URL.
+// the one-time calendar-feed subscribe URL, and the pending OIDC identity-link
+// confirmation.
 //
 // It runs where the session ends (logout, account deletion) and where an
 // unsupported role is refused. A session refused as expired, revoked or invalid

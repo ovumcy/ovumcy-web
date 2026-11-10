@@ -69,7 +69,7 @@ func TestSessionRejectionRetractsSessionOnlyHandoffsButKeepsPreSessionOnes(t *te
 		},
 	}
 
-	retracted := []string{recoveryCodeCookieName, totpSetupCookieName, calendarFeedRevealCookieName}
+	retracted := []string{recoveryCodeCookieName, totpSetupCookieName, calendarFeedRevealCookieName, oidcLinkPendingCookieName}
 	kept := []string{resetPasswordCookieName, totpPendingCookieName}
 
 	for _, testCase := range tests {
