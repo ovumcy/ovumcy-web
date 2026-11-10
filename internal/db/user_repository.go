@@ -902,13 +902,16 @@ func canonicalWatermarkAnchor(cycleAnchor time.Time) time.Time {
 // revocation. configVersion is the webhook_config_version the same snapshot
 // carried, and it is pinned too: every write to an owner's webhook configuration
 // — a settings save, a disable, an endpoint replacement or removal, a change to
-// the shared reminder lead window, a clear-data wipe — advances that column in
-// the statement that performs it, so a claim presenting the previous epoch
-// matches no row. That list is the complete set of writers, not an
-// illustration: SaveWebhookSettings, UpdateReminderLeadDays and
-// ClearAllDataAndResetSettings are the three, and a later writer owes the same
-// advance whenever it CHANGES that configuration — never merely because it
-// touched the users row. MarkWebhookDelivered is the counter-example and must
+// the shared reminder lead window, a clear-data wipe, a restore revocation, a
+// forced reset that clears second factors — advances that column in the
+// statement that performs it, so a claim presenting the previous epoch matches
+// no row. That list is the complete set of writers, not an illustration:
+// SaveWebhookSettings, RemoveWebhookDestination, UpdateReminderLeadDays,
+// RevokeRestoredAccess, ForceResetPasswordAndRevokeSessions and
+// ClearAllDataAndResetSettings (recompute: grep this file for
+// "webhook_config_version + 1"), and a later writer owes the same advance
+// whenever it CHANGES that configuration — never merely because it touched the
+// users row. MarkWebhookDelivered is the counter-example and must
 // stay one: it records a delivery that already happened, and advancing there
 // would lose this same pass's next claim. It covers WHETHER, WHERE and HOW
 // EARLY delivery happens and deliberately not what the reminder would say — a
