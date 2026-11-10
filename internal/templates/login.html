@@ -8,6 +8,8 @@
       <p class="journal-muted mt-2">{{t .Messages "auth.login_subtitle"}}</p>
     </div>
 
+    {{template "instance_data_notice" (dict "Messages" .Messages "Variant" "line" "Host" .InstanceHost)}}
+
     {{if .ErrorKey}}
     <div id="auth-server-error" class="status-error mt-5" role="alert" data-auth-server-error data-error-key="{{.ErrorKey}}">{{t .Messages .ErrorKey}}</div>
     {{end}}

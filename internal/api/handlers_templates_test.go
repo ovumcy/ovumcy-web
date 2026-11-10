@@ -439,3 +439,152 @@ func TestParsePartialTemplatesIncludesBaseHelpers(t *testing.T) {
 		}
 	}
 }
+
+func fetchInstanceNoticePage(t *testing.T, path string, mutate func(*http.Request)) *html.Node {
+	t.Helper()
+	app, _ := newOnboardingTestApp(t)
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Accept-Language", "en")
+	if mutate != nil {
+		mutate(request)
+	}
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+}
+
+func instanceNoticeVariants(document *html.Node, variant string) []*html.Node {
+	return htmlFindElements(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-instance-notice") == variant
+	})
+}
+
+// TestInstanceDataNoticeRendersOnSignInRegistrationAndPrivacy pins that the one
+// shared "where your data lives" component is on all three pages: the one-line
+// form on sign-in (naming the host the request arrived on, linking to the
+// panel) and the full panel on registration and on the privacy page the panel's
+// link points at. Structural hooks only; the panel's bullet count is the
+// component's own fixed list.
+func TestInstanceDataNoticeRendersOnSignInRegistrationAndPrivacy(t *testing.T) {
+	t.Parallel()
+
+	login := fetchInstanceNoticePage(t, "/login", func(r *http.Request) { r.Host = "diary.example.test" })
+	lines := instanceNoticeVariants(login, "line")
+	if len(lines) != 1 {
+		t.Fatalf("expected one instance notice line on sign-in, got %d", len(lines))
+	}
+	if len(instanceNoticeVariants(login, "panel")) != 0 {
+		t.Fatal("did not expect the full panel on sign-in")
+	}
+	text := htmlFindElement(lines[0], func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-instance-notice-text")
+	})
+	if text == nil || !strings.Contains(htmlNodeText(text), "diary.example.test") {
+		t.Fatalf("expected the sign-in line to name the request host, got %v", text)
+	}
+	link := htmlFindElement(lines[0], func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-instance-notice-link")
+	})
+	if link == nil || htmlAttr(link, "href") != "/privacy#instance-data-notice" {
+		t.Fatalf("expected the sign-in line to link to the privacy page panel, got %v", link)
+	}
+
+	for _, path := range []string{"/register", "/privacy"} {
+		document := fetchInstanceNoticePage(t, path, nil)
+		panels := instanceNoticeVariants(document, "panel")
+		if len(panels) != 1 {
+			t.Fatalf("%s: expected one instance notice panel, got %d", path, len(panels))
+		}
+		if htmlAttr(panels[0], "id") != "instance-data-notice" {
+			t.Fatalf("%s: expected the panel to carry the anchor the sign-in link targets", path)
+		}
+		items := htmlFindElements(panels[0], func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "li"
+		})
+		if len(items) != 5 {
+			t.Fatalf("%s: expected five statements in the panel, got %d", path, len(items))
+		}
+		if len(instanceNoticeVariants(document, "line")) != 0 {
+			t.Fatalf("%s: did not expect the sign-in line", path)
+		}
+	}
+}
+
+// TestInstanceDataNoticeEscapesAHostileHostAndIgnoresAnUntrustedForwardedHost
+// feeds the pre-auth page a Host that carries markup and an X-Forwarded-Host the
+// test app does not trust. The host must reach the page as text, never as an
+// element, and the forwarded value must not replace the real one.
+func TestInstanceDataNoticeEscapesAHostileHostAndIgnoresAnUntrustedForwardedHost(t *testing.T) {
+	t.Parallel()
+
+	// Go's HTTP client refuses a Host holding < > or ", so the hostile value is
+	// the markup-significant text the client does let through: character
+	// references and quotes. Unescaped, the parser would decode "&lt;b&gt;" to
+	// a literal "<b>" and the rendered text would differ from what was sent.
+	const hostile = `x&lt;script&gt;&amp;'.example`
+	baseline := fetchInstanceNoticePage(t, "/login", nil)
+	document := fetchInstanceNoticePage(t, "/login", func(r *http.Request) {
+		r.Host = hostile
+		r.Header.Set("X-Forwarded-Host", "forwarded.example.test")
+	})
+
+	scripts := func(root *html.Node) int {
+		return len(htmlFindElements(root, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "script"
+		}))
+	}
+	if got, want := scripts(document), scripts(baseline); got != want {
+		t.Fatalf("a hostile Host added %d script element(s) to the sign-in page", got-want)
+	}
+	lines := instanceNoticeVariants(document, "line")
+	if len(lines) != 1 {
+		t.Fatalf("expected one instance notice line, got %d", len(lines))
+	}
+	rendered := htmlNodeText(lines[0])
+	if !strings.Contains(rendered, hostile) {
+		t.Fatalf("expected the hostile host to be shown verbatim as text, got %q", rendered)
+	}
+	if strings.Contains(rendered, "forwarded.example.test") {
+		t.Fatalf("an untrusted X-Forwarded-Host must not be shown, got %q", rendered)
+	}
+	if children := htmlFindElements(lines[0], func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data != "p" && node.Data != "span" && node.Data != "a"
+	}); len(children) != 0 {
+		t.Fatalf("the notice line grew an unexpected element: %s", children[0].Data)
+	}
+}
+
+// TestInstanceDataNoticeAddsNothingThatFetches pins the component as purely
+// informational: no element in it can issue a request (script, image, frame,
+// form, stylesheet) and its only link stays on this site.
+func TestInstanceDataNoticeAddsNothingThatFetches(t *testing.T) {
+	t.Parallel()
+
+	for _, page := range []struct{ path, variant string }{{"/login", "line"}, {"/register", "panel"}, {"/privacy", "panel"}} {
+		document := fetchInstanceNoticePage(t, page.path, nil)
+		roots := instanceNoticeVariants(document, page.variant)
+		if len(roots) != 1 {
+			t.Fatalf("%s: expected one notice, got %d", page.path, len(roots))
+		}
+		fetching := htmlFindElements(roots[0], func(node *html.Node) bool {
+			if node.Type != html.ElementNode {
+				return false
+			}
+			switch node.Data {
+			case "script", "img", "iframe", "form", "link", "object", "embed", "video", "audio", "source":
+				return true
+			}
+			return false
+		})
+		if len(fetching) != 0 {
+			t.Fatalf("%s: the notice contains a <%s> element", page.path, fetching[0].Data)
+		}
+		for _, anchor := range htmlFindElements(roots[0], func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "a"
+		}) {
+			if href := htmlAttr(anchor, "href"); !strings.HasPrefix(href, "/") || strings.HasPrefix(href, "//") {
+				t.Fatalf("%s: the notice links off-site: %q", page.path, href)
+			}
+		}
+	}
+}
