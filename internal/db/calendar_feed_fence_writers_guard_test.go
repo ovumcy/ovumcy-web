@@ -179,7 +179,7 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 			advancesFirst[name] = true
 		}
 		if advanceAt >= 0 {
-			count, found := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
+			count, found, _ := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
 				callee, ok := typeutil.Callee(info, call).(*types.Func)
 				return ok && callee.Pkg() == pkg.Types && calendarFeedFenceAdvanceCalls[callee.Name()]
 			})
@@ -340,46 +340,20 @@ func handleRoots(info *types.Info, assigned map[types.Object][]ast.Expr, expr as
 // a write through the repository's own handle inside it, and a helper handed
 // that handle all name a root other than tx. It returns the sites it found
 // rooted at tx, so a caller can assert a load-bearing writer was really read.
-func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAdvance func(*ast.CallExpr) bool) (checked int, violations []string) {
+//
+// Every same-package helper called inside the closure is walked by
+// declaration (fenceHelperWalk); helpers maps each helper entered to the
+// tx-rooted writes found in its own body, so a caller can assert a
+// load-bearing helper was really read.
+func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAdvance func(*ast.CallExpr) bool) (checked int, violations []string, helpers map[types.Object]int) {
 	info := pkg.TypesInfo
 	var closures []*ast.FuncLit
-	assigned := map[types.Object][]ast.Expr{}
-	record := func(target ast.Expr, source ast.Expr) {
-		if ident, ok := target.(*ast.Ident); ok {
-			object := info.Defs[ident]
-			if object == nil {
-				object = info.Uses[ident]
-			}
-			if object != nil {
-				assigned[object] = append(assigned[object], source)
-			}
-		}
-	}
+	assigned := assignmentsIn(info, function.Body)
+	walk := newFenceHelperWalk(pkg)
 	ast.Inspect(function.Body, func(node ast.Node) bool {
-		switch typed := node.(type) {
-		case *ast.CallExpr:
-			if isAdvance(typed) {
-				if closure := fenceWriteClosure(typed); closure != nil {
-					closures = append(closures, closure)
-				}
-			}
-		case *ast.AssignStmt:
-			for index, target := range typed.Lhs {
-				switch {
-				case len(typed.Lhs) == len(typed.Rhs):
-					record(target, typed.Rhs[index])
-				case len(typed.Rhs) == 1:
-					record(target, typed.Rhs[0])
-				}
-			}
-		case *ast.ValueSpec:
-			for index, name := range typed.Names {
-				switch {
-				case len(typed.Names) == len(typed.Values):
-					record(name, typed.Values[index])
-				case len(typed.Values) == 1:
-					record(name, typed.Values[0])
-				}
+		if call, ok := node.(*ast.CallExpr); ok && isAdvance(call) {
+			if closure := fenceWriteClosure(call); closure != nil {
+				closures = append(closures, closure)
 			}
 		}
 		return true
@@ -409,23 +383,34 @@ func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAd
 				}
 			}
 		}
-		if len(handles) == 0 {
-			return true
-		}
 		var enclosing *ast.FuncLit
 		for _, closure := range closures {
 			if insideNode(closure, int(call.Pos())) && (enclosing == nil || closure.Pos() > enclosing.Pos()) {
 				enclosing = closure
 			}
 		}
+		var txObject types.Object
+		if enclosing != nil {
+			if params := enclosing.Type.Params.List; len(params) > 0 && len(params[0].Names) > 0 {
+				txObject = info.Defs[params[0].Names[0]]
+			}
+		}
+		// WEB-517: a same-package helper called inside the closure is walked,
+		// whether or not it is handed a handle — one given none must not write
+		// through the repository's own *gorm.DB, and one given tx must write
+		// through that parameter and nothing else.
+		if enclosing != nil && txObject != nil && callee.Pkg() == pkg.Types {
+			helperChecked, helperViolations := walk.enter(info, assigned, map[types.Object]bool{txObject: true}, call, callee, 0)
+			checked += helperChecked
+			violations = append(violations, helperViolations...)
+		}
+		if len(handles) == 0 {
+			return true
+		}
 		where := pkg.Fset.Position(call.Pos())
 		if enclosing == nil {
 			violations = append(violations, fmt.Sprintf("%s: %s writes outside the closure handed to the advance, so it commits apart from the marker", where, callee.Name()))
 			return true
-		}
-		var txObject types.Object
-		if params := enclosing.Type.Params.List; len(params) > 0 && len(params[0].Names) > 0 {
-			txObject = info.Defs[params[0].Names[0]]
 		}
 		for _, handle := range handles {
 			roots := handleRoots(info, assigned, handle, map[types.Object]bool{})
@@ -438,6 +423,167 @@ func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAd
 				continue
 			}
 			checked++
+		}
+		return true
+	})
+	return checked, violations, walk.helpers
+}
+
+// assignmentsIn maps each local object in body to every expression it was
+// assigned, so handleRoots can follow a query variable back to its handle.
+func assignmentsIn(info *types.Info, body ast.Node) map[types.Object][]ast.Expr {
+	assigned := map[types.Object][]ast.Expr{}
+	record := func(target ast.Expr, source ast.Expr) {
+		if ident, ok := target.(*ast.Ident); ok {
+			object := info.Defs[ident]
+			if object == nil {
+				object = info.Uses[ident]
+			}
+			if object != nil {
+				assigned[object] = append(assigned[object], source)
+			}
+		}
+	}
+	ast.Inspect(body, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.AssignStmt:
+			for index, target := range typed.Lhs {
+				switch {
+				case len(typed.Lhs) == len(typed.Rhs):
+					record(target, typed.Rhs[index])
+				case len(typed.Rhs) == 1:
+					record(target, typed.Rhs[0])
+				}
+			}
+		case *ast.ValueSpec:
+			for index, name := range typed.Names {
+				switch {
+				case len(typed.Names) == len(typed.Values):
+					record(name, typed.Values[index])
+				case len(typed.Values) == 1:
+					record(name, typed.Values[0])
+				}
+			}
+		}
+		return true
+	})
+	return assigned
+}
+
+// fenceHelperDepth bounds the interprocedural walk: a helper chain deeper
+// than this is a violation, never a silent stop.
+const fenceHelperDepth = 8
+
+// fenceHelperWalk follows a fenced closure into the same-package helpers it
+// calls, resolved by declaration (WEB-517). A helper's parameters are bound to
+// the closure's tx when the argument passed for them roots at an already-bound
+// object; inside the helper every write must root at a bound parameter, so a
+// helper given no handle may not write at all — the repository's own *gorm.DB
+// (repo.database) roots at the receiver, which is never bound.
+type fenceHelperWalk struct {
+	pkg     *packages.Package
+	decls   map[*types.Func]*ast.FuncDecl
+	visited map[string]bool
+	helpers map[types.Object]int
+}
+
+func newFenceHelperWalk(pkg *packages.Package) *fenceHelperWalk {
+	decls := map[*types.Func]*ast.FuncDecl{}
+	for _, file := range pkg.Syntax {
+		for _, declaration := range file.Decls {
+			if function, ok := declaration.(*ast.FuncDecl); ok && function.Body != nil {
+				if object, ok := pkg.TypesInfo.Defs[function.Name].(*types.Func); ok {
+					decls[object] = function
+				}
+			}
+		}
+	}
+	return &fenceHelperWalk{pkg: pkg, decls: decls, visited: map[string]bool{}, helpers: map[types.Object]int{}}
+}
+
+// rootedIn reports whether every root of handle is a bound object, and that
+// there is at least one.
+func rootedIn(info *types.Info, assigned map[types.Object][]ast.Expr, bound map[types.Object]bool, handle ast.Expr) bool {
+	roots := handleRoots(info, assigned, handle, map[types.Object]bool{})
+	for _, root := range roots {
+		if !bound[root] {
+			return false
+		}
+	}
+	return len(roots) > 0
+}
+
+// enter walks callee as called by call, from a scope whose assignments and
+// tx-bound objects are given. It returns the tx-rooted writes it read.
+func (walk *fenceHelperWalk) enter(info *types.Info, assigned map[types.Object][]ast.Expr, bound map[types.Object]bool, call *ast.CallExpr, callee *types.Func, depth int) (checked int, violations []string) {
+	where := walk.pkg.Fset.Position(call.Pos())
+	decl := walk.decls[callee.Origin()]
+	if decl == nil {
+		return 0, []string{fmt.Sprintf("%s: helper %s has no body in package db to walk, so its writes cannot be placed", where, callee.FullName())}
+	}
+	if depth >= fenceHelperDepth {
+		return 0, []string{fmt.Sprintf("%s: helper chain through %s exceeds %d calls, so its writes were not placed", where, callee.FullName(), fenceHelperDepth)}
+	}
+	var params []*ast.Ident
+	for _, field := range decl.Type.Params.List {
+		params = append(params, field.Names...)
+		if len(field.Names) == 0 {
+			params = append(params, nil)
+		}
+	}
+	inner := map[types.Object]bool{}
+	key := callee.FullName() + ":"
+	for index, argument := range call.Args {
+		if index >= len(params) || params[index] == nil || !isGormDBHandle(info, argument) {
+			continue
+		}
+		if !rootedIn(info, assigned, bound, argument) {
+			violations = append(violations, fmt.Sprintf("%s: %s is handed a handle that is not the closure's tx, so it commits apart from the marker", where, callee.Name()))
+			continue
+		}
+		inner[info.Defs[params[index]]] = true
+		key += fmt.Sprintf("%d,", index)
+	}
+	if _, seen := walk.helpers[callee.Origin()]; !seen {
+		walk.helpers[callee.Origin()] = 0
+	}
+	if walk.visited[key] {
+		return 0, violations
+	}
+	walk.visited[key] = true
+
+	helperAssigned := assignmentsIn(info, decl.Body)
+	ast.Inspect(decl.Body, func(node ast.Node) bool {
+		inside, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		at := walk.pkg.Fset.Position(inside.Pos())
+		switch resolved := typeutil.Callee(info, inside).(type) {
+		case *types.Func:
+			if resolved.Pkg() == nil {
+				return true
+			}
+			if persistenceWriteMethods[resolved.Pkg().Path()][resolved.Name()] {
+				selector, ok := inside.Fun.(*ast.SelectorExpr)
+				if !ok || !rootedIn(info, helperAssigned, inner, selector.X) {
+					violations = append(violations, fmt.Sprintf("%s: %s inside helper %s goes through a handle that is not the closure's tx, so it commits apart from the marker", at, resolved.Name(), callee.Name()))
+					return true
+				}
+				checked++
+				walk.helpers[callee.Origin()]++
+				return true
+			}
+			if resolved.Pkg() == walk.pkg.Types {
+				innerChecked, innerViolations := walk.enter(info, helperAssigned, inner, inside, resolved, depth+1)
+				checked += innerChecked
+				violations = append(violations, innerViolations...)
+			}
+		case nil:
+			if tv, ok := info.Types[inside.Fun]; ok && tv.IsType() {
+				return true
+			}
+			violations = append(violations, fmt.Sprintf("%s: helper %s makes a call that does not resolve to a declaration, so its writes cannot be placed", at, callee.Name()))
 		}
 		return true
 	})

@@ -144,6 +144,7 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 	diverging := map[string]bool{}
 	txViolations := map[string][]string{}
 	txChecked := map[string]int{}
+	helperWrites := map[types.Object]int{}
 	for _, file := range pkg.Syntax {
 		for _, declaration := range file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
@@ -236,10 +237,13 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 			if advanceAt == token.NoPos {
 				continue
 			}
-			count, found := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
+			count, found, helpers := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
 				callee, ok := typeutil.Callee(info, call).(*types.Func)
 				return ok && advances[callee]
 			})
+			for helper, rooted := range helpers {
+				helperWrites[helper] += rooted
+			}
 			txChecked[name] += count
 			txViolations[name] = append(txViolations[name], found...)
 			advancing[name] = true
@@ -270,6 +274,17 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 	// a resolver that rooted nothing would report no violation anywhere.
 	if txChecked["UserRepository.BumpAuthSessionVersion"] == 0 {
 		t.Fatal("the tx-root check resolved no write of UserRepository.BumpAuthSessionVersion to its closure's tx parameter: it is not measuring what it claims")
+	}
+	// WEB-517: the helper walk must have entered the OIDC unlink's helper and
+	// placed the compare-and-set write two calls down at the tx it was handed,
+	// both resolved by declaration.
+	bumpHelper := pkg.Types.Scope().Lookup("bumpAuthSessionVersionFromTx")
+	casHelper := pkg.Types.Scope().Lookup("updateFromAuthSessionVersionTx")
+	if _, entered := helperWrites[bumpHelper]; bumpHelper == nil || !entered {
+		t.Fatal("the helper walk never entered bumpAuthSessionVersionFromTx from a fenced closure: it is not measuring what it claims")
+	}
+	if casHelper == nil || helperWrites[casHelper] == 0 {
+		t.Fatal("the helper walk placed no write of updateFromAuthSessionVersionTx at the tx it was handed: it is not measuring what it claims")
 	}
 
 	var violations []string
