@@ -132,13 +132,13 @@ func TestOIDCConfigValidateHoldsThePostLogoutRedirectToTheCallbackOrigin(t *test
 	}
 
 	for name, raw := range map[string]string{
-		"other host":    "https://elsewhere.example.com/logout-complete",
-		"other port":    "https://ovumcy.example.com:8443/logout-complete",
-		"plain http":    "http://ovumcy.example.com/logout-complete",
-		"query":         "https://ovumcy.example.com/logout-complete?next=x",
-		"fragment":      "https://ovumcy.example.com/logout-complete#x",
-		"relative":      "/logout-complete",
-		"loopback":      "https://127.0.0.1/logout-complete",
+		"other host": "https://elsewhere.example.com/logout-complete",
+		"other port": "https://ovumcy.example.com:8443/logout-complete",
+		"plain http": "http://ovumcy.example.com/logout-complete",
+		"query":      "https://ovumcy.example.com/logout-complete?next=x",
+		"fragment":   "https://ovumcy.example.com/logout-complete#x",
+		"relative":   "/logout-complete",
+		"loopback":   "https://127.0.0.1/logout-complete",
 	} {
 		t.Run(name, func(t *testing.T) {
 			refused := base
