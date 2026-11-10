@@ -10,7 +10,7 @@ Ovumcy's supported self-hosted baseline is a single application instance with a 
 **Setting up**
 - [Baseline Contract](#baseline-contract) · [Production Checklist](#production-checklist)
 - [Configuration Profiles](#configuration-profiles) — [required](#required-in-all-deployments), [local/private](#localprivate-base-compose-path), [public reverse-proxy](#public-reverse-proxy-stack), [advanced knobs](#advanced-knobs)
-- [Optional OIDC Sign-In](#optional-oidc-sign-in) · [Privacy Responsibility Split](#privacy-responsibility-split)
+- [Optional OIDC Sign-In](#optional-oidc-sign-in) · [Privacy Responsibility Split](#privacy-responsibility-split) · [Third-Party and Managed Hosting](#third-party-and-managed-hosting)
 
 **Putting it behind a proxy**
 - [Reverse Proxy and HTTPS Contract](#reverse-proxy-and-https-contract) · [Reverse Proxy Examples](#reverse-proxy-examples)
@@ -187,6 +187,15 @@ The self-hoster must still provide:
 - backup retention, off-host copy strategy, and recovery discipline;
 - native Postgres backup/restore tooling and operational ownership if the advanced Postgres path is used, including the bundled local/private Postgres stack;
 - network exposure policy, firewall rules, and any administrator access controls around the server.
+
+## Third-Party and Managed Hosting
+
+Some hosting providers offer Ovumcy as a one-click app. None of them is affiliated with the Ovumcy project, and the project does not review or endorse them. What may be offered under the Ovumcy name is set out in [TRADEMARKS.md](../TRADEMARKS.md). If you use one:
+
+- **The provider can read your data.** Whoever administers the server can read the database, its backups and `SECRET_KEY`; on a managed server that includes the provider. Ovumcy keeps your records from other accounts and from the network, not from the administrator of the machine it runs on.
+- **Check which release it installs.** A provider's template pins a version and does not upgrade itself. Compare it with the latest release in [CHANGELOG.md](../CHANGELOG.md), and find out whether the provider upgrades existing installs or leaves that to you ([Safe Upgrade Procedure](#safe-upgrade-procedure)).
+- **Change a password you typed into the provider's panel.** A panel that creates your account from a password you enter there has seen that password. After the first sign-in, change it in Settings (which also signs out every other session) and generate a recovery code.
+- **Hosting for other people adds obligations.** If the instance holds other people's data, you need a data processing agreement with the provider: [docs/gdpr.md](gdpr.md).
 
 ## Reverse Proxy and HTTPS Contract
 

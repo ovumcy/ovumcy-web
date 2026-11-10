@@ -337,6 +337,10 @@ Yes. The canonical JSON surface lives at `/api/v1/*` and is described in [docs/o
 
 Not much. If you're comfortable with the basics of Docker, the quick start will get you there — the repository ships a `docker-compose.yml` with working defaults, so you're not starting from a blank page.
 
+### Can I use a hosting provider's one-click Ovumcy?
+
+Yes, but those offers are unofficial: no hosting provider is affiliated with the project. The provider can read everything on a server it administers, and its template may install an older release. Read [Third-Party and Managed Hosting](docs/self-hosted.md#third-party-and-managed-hosting) before you choose one.
+
 ### Is Ovumcy a medical product?
 
 No. Ovumcy provides estimates and logs based on recorded data. It is not a medical device and should not be treated as diagnostic or treatment advice.
@@ -511,3 +515,6 @@ obliges you to make the complete source code of that version available to its us
 
 Third-party software redistributed with the built application (e.g. htmx) is listed with its
 license in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+The license covers the code, not the Ovumcy name or logo; how those may be used, including by
+hosting providers, is in [TRADEMARKS.md](TRADEMARKS.md).
