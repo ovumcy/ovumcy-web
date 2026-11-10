@@ -116,6 +116,40 @@ func TestOIDCConfigResolvedPostLogoutRedirectURL(t *testing.T) {
 	}
 }
 
+func TestOIDCConfigValidateHoldsThePostLogoutRedirectToTheCallbackOrigin(t *testing.T) {
+	base := OIDCConfig{
+		Enabled:      true,
+		IssuerURL:    "https://id.example.com",
+		ClientID:     "ovumcy",
+		ClientSecret: "secret",
+		RedirectURL:  "https://ovumcy.example.com/auth/oidc/callback",
+	}
+
+	accepted := base
+	accepted.PostLogoutRedirectURL = "https://ovumcy.example.com/logout-complete"
+	if err := accepted.Validate(true, true); err != nil {
+		t.Fatalf("same-origin https post-logout redirect must validate, got %v", err)
+	}
+
+	for name, raw := range map[string]string{
+		"other host":    "https://elsewhere.example.com/logout-complete",
+		"other port":    "https://ovumcy.example.com:8443/logout-complete",
+		"plain http":    "http://ovumcy.example.com/logout-complete",
+		"query":         "https://ovumcy.example.com/logout-complete?next=x",
+		"fragment":      "https://ovumcy.example.com/logout-complete#x",
+		"relative":      "/logout-complete",
+		"loopback":      "https://127.0.0.1/logout-complete",
+	} {
+		t.Run(name, func(t *testing.T) {
+			refused := base
+			refused.PostLogoutRedirectURL = raw
+			if err := refused.Validate(true, true); err == nil {
+				t.Fatalf("OIDC_POST_LOGOUT_REDIRECT_URL=%q must fail validation", raw)
+			}
+		})
+	}
+}
+
 func TestOIDCConfigValidateRejectsInvalidCAFile(t *testing.T) {
 	config := OIDCConfig{
 		Enabled:      true,
