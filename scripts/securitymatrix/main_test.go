@@ -7,7 +7,9 @@
 // row pointing at nothing while the claim read as enforced.
 //
 // A row fails when a cited file is missing, when a cited `TestXxx` is not a
-// top-level function of the Go file it is cited with, or when it cites no test
+// top-level function of the Go file it is cited with, when a Go `_test.go`
+// file is cited with no `TestXxx` bound to it (any test in the file would
+// satisfy it; JS test files stay file-level), or when it cites no test
 // at all and does not carry the label the document uses for claims no test can
 // enforce. Function names are found with go/parser, so a name that survives
 // only in a comment does not count.
@@ -279,6 +281,7 @@ func checkRow(root string, row matrixRow) []string {
 		parsed[f.rel] = names
 	}
 
+	named := map[string]bool{}
 	for _, c := range cites {
 		if c.kind != "test" {
 			continue
@@ -309,6 +312,9 @@ func checkRow(root string, row matrixRow) []string {
 			fail(c.value + " is cited with no Go file after it")
 			continue
 		}
+		for _, b := range bound {
+			named[b] = true
+		}
 		m := testName.FindStringSubmatch(c.value)
 		found, parsedAny := false, false
 		for _, b := range bound {
@@ -329,6 +335,12 @@ func checkRow(root string, row matrixRow) []string {
 			fail("no function with prefix " + c.value + " is declared in " + strings.Join(bound, " or "))
 		default:
 			fail(c.value + " is not declared as a top-level function in " + strings.Join(bound, " or "))
+		}
+	}
+
+	for _, f := range files {
+		if strings.HasSuffix(f.rel, "_test.go") && !named[f.rel] {
+			fail("Go test file cited with no test function: " + f.rel)
 		}
 	}
 
@@ -396,6 +408,7 @@ func writeFixtureTree(t *testing.T) string {
 	write("pkg/a_test.go", "package pkg\n\nimport \"testing\"\n\n// TestOnlyInComment is mentioned here.\nfunc TestReal(t *testing.T) {}\n\nfunc TestPrefixOne(t *testing.T) {}\n\ntype S struct{}\n\nfunc (S) TestMethod(t *testing.T) {}\n")
 	write("pkg/b_test.go", "package pkg\n\nimport \"testing\"\n\nfunc TestOther(t *testing.T) {}\n")
 	write("docs/x.md", "x\n")
+	write("web/x.test.mjs", "// js test, held at file level\n")
 	return root
 }
 
@@ -422,6 +435,9 @@ func TestSecurityMatrixCheckerFiresOnEachFailureClass(t *testing.T) {
 		{"two cells only", "| a | b | c |", "does not split into 2 cells (3)"},
 		{"one cell only", "| a |", "does not split into 2 cells (1)"},
 		{"bare names resolve against the named directory", "| c | `a_test.go`, `gone_test.go` in `pkg/` |", "cited file does not exist: pkg/gone_test.go"},
+		{"Go test file with no function", "| c | [pkg/a_test.go](pkg/a_test.go) |", "Go test file cited with no test function: pkg/a_test.go"},
+		{"bare Go test file in a directory cite", "| c | `a_test.go`, `b_test.go` in `pkg/` |", "Go test file cited with no test function: pkg/b_test.go"},
+		{"file beside a named test bound to another file", "| c | `TestReal` in [pkg/a_test.go](pkg/a_test.go); [pkg/b_test.go](pkg/b_test.go) |", "Go test file cited with no test function: pkg/b_test.go"},
 		{"directory missing", "| c | `a_test.go` in `nodir/` |", "cited directory does not exist: nodir/"},
 	}
 	for _, tc := range cases {
@@ -440,12 +456,12 @@ func TestSecurityMatrixCheckerAcceptsEachDocumentedShape(t *testing.T) {
 	rows := []string{
 		"| c | `TestReal`, `TestPrefixOne` in [pkg/a_test.go](pkg/a_test.go) |",
 		"| c | `TestPrefix*` in [pkg/a_test.go](pkg/a_test.go); `TestOther` in [pkg/b_test.go](pkg/b_test.go) |",
-		"| c | `a_test.go`, `b_test.go` in `pkg/` |",
-		"| c | [pkg/b_test.go](pkg/b_test.go) |",
+		"| c | `TestReal` in `a_test.go`, `TestOther` in `b_test.go` in `pkg/` |",
+		"| c | [web/x.test.mjs](web/x.test.mjs) |",
 		"| c | `TestOther` in [pkg/a_test.go](pkg/a_test.go) / [pkg/b_test.go](pkg/b_test.go) |",
 		"| c | Not test-enforceable: a reviewed policy, see [docs/x.md](docs/x.md#top) |",
 		"| c | Policy-level — not test-enforceable |",
-		"| c | `a \\| b` in [pkg/a_test.go](pkg/a_test.go) and [site](https://example.invalid/x_test.go) |",
+		"| c | `a \\| b`, `TestReal` in [pkg/a_test.go](pkg/a_test.go) and [site](https://example.invalid/x_test.go) |",
 	}
 	failures, got, sections := checkMatrix(root, fixtureDoc(rows...))
 	if len(failures) != 0 {
