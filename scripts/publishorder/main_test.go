@@ -837,6 +837,38 @@ func TestTheMirrorNameIsSpelledOnceAcrossTheRepository(t *testing.T) {
 	}
 }
 
+// thisRepositoryIdentityPattern is the signer identity the verify step derives
+// for this repository, and the one SECURITY.md hands an operator.
+const thisRepositoryIdentityPattern = `^https://github\.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@`
+
+// TestTheDocumentedVerificationCommandNamesTheSignerTheWorkflowChecks reads the
+// `cosign verify` command SECURITY.md gives an operator. It is literal text
+// beside a pattern the workflow computes: a command naming another signer
+// either rejects every genuine release or accepts an image this workflow never
+// signed, and no step of the publish job reads the document.
+func TestTheDocumentedVerificationCommandNamesTheSignerTheWorkflowChecks(t *testing.T) {
+	policy := workflowfile.Read(t, "SECURITY.md")
+	for _, flag := range []struct {
+		name string
+		want string
+		re   *regexp.Regexp
+	}{
+		{"--certificate-identity-regexp", thisRepositoryIdentityPattern, regexp.MustCompile(`--certificate-identity-regexp '([^']+)'`)},
+		{"--certificate-oidc-issuer", "https://token.actions.githubusercontent.com", regexp.MustCompile(`--certificate-oidc-issuer (\S+)`)},
+	} {
+		matches := flag.re.FindAllStringSubmatch(policy, -1)
+		if len(matches) == 0 {
+			t.Errorf("SECURITY.md no longer carries a `cosign verify` command with %s, so the signer an operator is told to check is compared against nothing", flag.name)
+			continue
+		}
+		for _, match := range matches {
+			if match[1] != flag.want {
+				t.Errorf("SECURITY.md tells an operator to verify with %s %q while the publish job checks its own signature against %q", flag.name, match[1], flag.want)
+			}
+		}
+	}
+}
+
 // TestTheMirrorsToolIsPinnedRatherThanInherited holds the cosign version to
 // this file. `cosign copy` is deprecated as of v3.0.6 — the command names its
 // own replacements — so the version that still carries it is a fact this
@@ -878,6 +910,11 @@ func TestTheSigningStepsActOnThePushedDigest(t *testing.T) {
 			because:  "provenance attested for another subject is provenance the published digest does not carry",
 		},
 		{
+			step:     attestStep,
+			contains: []string{"push-to-registry: true"},
+			because:  "without it the attestation lives only in GitHub's store, and a registry client pulling the image finds no provenance next to it",
+		},
+		{
 			step:     verifyStep,
 			contains: []string{"cosign verify", "gh attestation verify", "steps.build.outputs.digest"},
 			because:  "signing and attesting are two API calls that reported success; this step is the only one that reads either back, and the promotion below is gated on it",
@@ -894,6 +931,60 @@ func TestTheSigningStepsActOnThePushedDigest(t *testing.T) {
 				t.Errorf("%s, step %q does not carry %q. %s", publishWorkflow, want.step, needle, want.because)
 			}
 		}
+	}
+}
+
+// TestEverySignatureThePublishJobMakesIsKeyless holds both `cosign sign` calls
+// to the keyless form an operator verifies with an identity and an issuer: a
+// `--key` on either, or a key handed to cosign through the job's environment,
+// signs with a key the published verification commands never ask about.
+func TestEverySignatureThePublishJobMakesIsKeyless(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+
+	_, permissions, found := strings.Cut(job, "\n    permissions:\n")
+	if !found {
+		t.Fatalf("%s, job %q declares no `permissions:`", publishWorkflow, publishJob)
+	}
+	permissions, _, _ = strings.Cut(permissions, "\n    env:\n")
+	if !strings.Contains(permissions, "\n      id-token: write\n") {
+		t.Errorf("%s, job %q does not grant `id-token: write`, which a keyless signature needs to obtain its certificate", publishWorkflow, publishJob)
+	}
+
+	var signers []string
+	for _, name := range stepNames(t, job) {
+		block := withoutComments(stepBlock(t, job, name))
+		if !strings.Contains(block, "cosign sign") {
+			continue
+		}
+		signers = append(signers, name)
+		if strings.Contains(block, "--key") {
+			t.Errorf("%s, step %q passes cosign a `--key`; the release is signed keyless", publishWorkflow, name)
+		}
+	}
+	for _, want := range []string{signStep, mirrorStep} {
+		if !slices.Contains(signers, want) {
+			t.Errorf("%s, step %q no longer runs `cosign sign`; found it in %v", publishWorkflow, want, signers)
+		}
+	}
+
+	text := withoutComments(job)
+	for _, key := range []string{"COSIGN_PRIVATE_KEY", "COSIGN_KEY", "COSIGN_PASSWORD"} {
+		if strings.Contains(text, key) {
+			t.Errorf("%s, job %q names %s, which hands cosign a signing key instead of the run's OIDC identity", publishWorkflow, publishJob, key)
+		}
+	}
+}
+
+// TestTheMirrorSignsUnderThePatternTheGhcrCheckExported reads the identity the
+// mirror's read-back is handed. Its fixtures supply one, so a pattern spelled
+// here instead of wired from `verify` passes them and checks the Docker Hub
+// signature against a looser signer than the GHCR one.
+func TestTheMirrorSignsUnderThePatternTheGhcrCheckExported(t *testing.T) {
+	job := workflowfile.Job(t, publishWorkflow, publishJob)
+
+	const want = "\n          IDENTITY_REGEXP: ${{ steps.verify.outputs.identity_regexp }}\n"
+	if !strings.Contains(stepBlock(t, job, mirrorStep), want) {
+		t.Errorf("%s, step %q does not wire IDENTITY_REGEXP to exactly `${{ steps.verify.outputs.identity_regexp }}`", publishWorkflow, mirrorStep)
 	}
 }
 
@@ -1406,7 +1497,7 @@ func TestTheIdentityPatternPinsEveryCharacterOfTheRepository(t *testing.T) {
 		{
 			name:        "this repository",
 			repository:  "ovumcy/ovumcy-web",
-			wantPattern: `^https://github\.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@`,
+			wantPattern: thisRepositoryIdentityPattern,
 		},
 		{
 			// GitHub allows a dot in a repository name. Unescaped it matches

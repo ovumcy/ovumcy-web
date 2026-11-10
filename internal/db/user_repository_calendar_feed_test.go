@@ -164,6 +164,7 @@ func TestClearCalendarFeedTokenRevokes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed token: %v", err)
 	}
+	before := reloadUserForCalendarFeed(t, repo, user.ID)
 
 	if err := repo.ClearCalendarFeedToken(context.Background(), user.ID); err != nil {
 		t.Fatalf("ClearCalendarFeedToken: %v", err)
@@ -173,6 +174,9 @@ func TestClearCalendarFeedTokenRevokes(t *testing.T) {
 	if got.CalendarFeedSelector != "" || got.CalendarFeedVerifierHash != "" || got.CalendarFeedVerifierMAC != "" {
 		t.Fatalf("expected feed columns cleared after revoke, got selector=%q hash=%q mac=%q",
 			got.CalendarFeedSelector, got.CalendarFeedVerifierHash, got.CalendarFeedVerifierMAC)
+	}
+	if got.AuthSessionVersion != before.AuthSessionVersion {
+		t.Fatalf("ClearCalendarFeedToken must not bump auth_session_version: before=%d after=%d", before.AuthSessionVersion, got.AuthSessionVersion)
 	}
 	if _, ok, err := repo.FindByCalendarFeedSelector(context.Background(), "REVOKESELECT16XX"); err != nil || ok {
 		t.Fatalf("expected revoked selector to be not-found (ok=%v err=%v)", ok, err)

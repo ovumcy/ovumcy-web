@@ -683,3 +683,42 @@ func TestTestAppCSRFExemptionIsExactlyProductionsShape(t *testing.T) {
 		mustServeCalendarFeed(t, app, token, "through the CSRF-enabled test app")
 	})
 }
+
+// TestCalendarFeedURLRefusesEveryWritingMethod pins "read-only" at the route
+// table, without CSRF in front of it: a valid feed URL answers no writing
+// method, and none of them touches the owner's row. The GET afterwards is the
+// anchor that the same URL is live.
+func TestCalendarFeedURLRefusesEveryWritingMethod(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "feed-read-only@example.com", "StrongPass1", true)
+	token := armCalendarFeedForUser(t, database, user.ID)
+
+	var before models.User
+	if err := database.First(&before, user.ID).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		response := mustAppResponse(t, app, httptest.NewRequest(method, calendarFeedURL(token), nil))
+		if response.StatusCode < http.StatusBadRequest {
+			t.Fatalf("expected %s to the feed URL to be refused, got %d", method, response.StatusCode)
+		}
+		if body := mustReadBodyString(t, response.Body); strings.Contains(body, "BEGIN:VCALENDAR") {
+			t.Fatalf("expected %s to the feed URL to serve no calendar, got:\n%s", method, body)
+		}
+	}
+
+	var after models.User
+	if err := database.First(&after, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if after.CalendarFeedSelector != before.CalendarFeedSelector ||
+		after.CalendarFeedVerifierHash != before.CalendarFeedVerifierHash ||
+		after.CalendarFeedVerifierMAC != before.CalendarFeedVerifierMAC ||
+		after.CalendarFeedDetailedTitles != before.CalendarFeedDetailedTitles ||
+		after.AuthSessionVersion != before.AuthSessionVersion {
+		t.Fatal("a refused writing method changed the owner's feed columns or session version")
+	}
+
+	mustServeCalendarFeed(t, app, token, "after the refused writing methods")
+}

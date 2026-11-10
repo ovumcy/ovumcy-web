@@ -197,6 +197,21 @@ var claimAnchors = []claimAnchor{
 		row:    "only from a source the operator names",
 		mirror: []string{"read only under `--url-env`"},
 	},
+	{
+		name: "open registration with the block switched off warns at startup",
+		row:  "the startup log carries a warning",
+		why:  "an operator advisory in the boot log; the mirror states the gate's default and that an explicit value wins, not the log line beside it",
+	},
+	{
+		name:   "the webhook client sets no proxy",
+		row:    "sets no proxy",
+		mirror: []string{"sets no proxy"},
+	},
+	{
+		name: "clear-data removes the endpoint",
+		row:  "clear-data removes the webhook endpoint itself",
+		why:  "SECURITY.md carries it in its GDPR cross-reference (Art. 9(2)(a)); the mirror does not list what clear-data resets column by column",
+	},
 }
 
 type matrixRow struct {

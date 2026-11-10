@@ -3,9 +3,11 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"golang.org/x/net/html"
 )
 
@@ -46,6 +48,71 @@ func TestPrivacyRouteRendersPublicPage(t *testing.T) {
 
 	if !privacyHasBackLink(document, "/login") {
 		t.Fatal("expected privacy back link to point to /login for guest users")
+	}
+}
+
+// TestPrivacyRouteRendersEverySectionInEveryShippedLocale pins the page's
+// six-locale promise: the shipped set is exactly six, and in each of them every
+// section carries a translated heading and body rather than the message key the
+// renderer falls back to.
+func TestPrivacyRouteRendersEverySectionInEveryShippedLocale(t *testing.T) {
+	manager, err := i18n.NewManager("en")
+	if err != nil {
+		t.Fatalf("i18n.NewManager: %v", err)
+	}
+	languages := manager.SupportedLanguages()
+	if want := []string{"de", "en", "es", "fr", "it", "ru"}; !slices.Equal(languages, want) {
+		t.Fatalf("expected the shipped locales %v, got %v", want, languages)
+	}
+
+	app, _ := newOnboardingTestApp(t)
+	messageKey := regexp.MustCompile(`privacy\.[a-z_]+\.[a-z_]+`)
+	expectedSections := []string{
+		"zero-collection", "your-data", "your-rights", "retention",
+		"hidden-sections", "predictions", "third-parties", "open-source",
+	}
+
+	for _, language := range languages {
+		t.Run(language, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/privacy", nil)
+			request.Header.Set("Accept-Language", language)
+			response := mustAppResponse(t, app, request)
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("expected 200, got %d", response.StatusCode)
+			}
+			document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+
+			root := htmlFindElement(document, func(node *html.Node) bool {
+				return node.Type == html.ElementNode && node.Data == "html"
+			})
+			if root == nil || htmlAttr(root, "lang") != language {
+				t.Fatalf("expected the page rendered in %q", language)
+			}
+
+			for _, id := range expectedSections {
+				section := htmlFindElement(document, func(node *html.Node) bool {
+					return node.Type == html.ElementNode && node.Data == "section" && htmlAttr(node, "data-privacy-section") == id
+				})
+				if section == nil {
+					t.Fatalf("expected privacy section %q in %s", id, language)
+				}
+				for _, tag := range []string{"h2", "p"} {
+					element := htmlFindElement(section, func(node *html.Node) bool {
+						return node.Type == html.ElementNode && node.Data == tag
+					})
+					if element == nil {
+						t.Fatalf("expected a <%s> in privacy section %q (%s)", tag, id, language)
+					}
+					text := normalizeHTMLText(htmlNodeText(element))
+					if text == "" {
+						t.Fatalf("expected non-empty <%s> text in privacy section %q (%s)", tag, id, language)
+					}
+					if key := messageKey.FindString(text); key != "" {
+						t.Fatalf("privacy section %q (%s) renders the untranslated key %q", id, language, key)
+					}
+				}
+			}
+		})
 	}
 }
 
