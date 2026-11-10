@@ -23,6 +23,9 @@
     {{end}}
 
     {{if .RegistrationOpen}}
+    <div class="mt-5">
+      {{template "instance_data_notice" (dict "Messages" .Messages "Variant" "panel")}}
+    </div>
     <form
       id="register-form"
       action="/api/v1/users"

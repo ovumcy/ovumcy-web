@@ -101,6 +101,10 @@ func (handler *Handler) ShowLoginPage(c fiber.Ctx) error {
 		handler.oidcEnabled(),
 		handler.localPublicAuthEnabled(),
 	)
+	// The host the request arrived on, read the way every other absolute address
+	// is: Fiber honours X-Forwarded-Host only from a trusted proxy. The template
+	// escapes it; nothing here is operator-configured.
+	data["InstanceHost"] = c.Host()
 	return handler.render(c, "login", data)
 }
 

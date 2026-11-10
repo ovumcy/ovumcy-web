@@ -19,6 +19,10 @@
     <p class="journal-muted">{{t .Messages "privacy.your_data.body"}}</p>
   </section>
 
+  <section class="card p-5 sm:p-6 space-y-3" data-privacy-section="instance-data">
+    {{template "instance_data_notice" (dict "Messages" .Messages "Variant" "panel")}}
+  </section>
+
   <section class="card p-5 sm:p-6 space-y-3" data-privacy-section="your-rights">
     <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "key"}}</span> {{t .Messages "privacy.your_rights.title"}}</h2>
     <p class="journal-muted">{{t .Messages "privacy.your_rights.body"}}</p>

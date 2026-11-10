@@ -1,0 +1,31 @@
+{{define "instance_data_notice"}}
+{{/* Where this instance's data lives, in one string set for every place that
+     says it. Called with Messages, Variant ("line" or "panel") and, for the
+     line, Host. The line is the one sentence on the sign-in screen: the host the
+     request arrived on (escaped like any template value) plus a link to the
+     panel. The panel is the full statement on the registration and privacy
+     pages. Everything here is fixed copy: no operator-supplied text and no
+     request to anywhere. */}}
+{{if eq .Variant "line"}}
+<p class="journal-muted mt-3 text-sm wrap-anywhere" data-instance-notice="line">
+  {{- if .Host -}}
+  <span data-instance-notice-text>{{printf (t .Messages "instance_notice.line") .Host}}</span>
+  {{- else -}}
+  <span data-instance-notice-text>{{t .Messages "instance_notice.intro"}}</span>
+  {{- end}}
+  <a href="/privacy#instance-data-notice" class="inline-link" data-instance-notice-link>{{t .Messages "instance_notice.link"}}</a>
+</p>
+{{else}}
+<div class="space-y-2" id="instance-data-notice" data-instance-notice="panel">
+  <h2 class="journal-subtitle">{{t .Messages "instance_notice.title"}}</h2>
+  <p class="journal-muted text-sm">{{t .Messages "instance_notice.intro"}}</p>
+  <ul class="journal-muted list-disc space-y-1 pl-5 text-sm">
+    <li>{{t .Messages "instance_notice.operator"}}</li>
+    <li>{{t .Messages "instance_notice.admin"}}</li>
+    <li>{{t .Messages "instance_notice.project"}}</li>
+    <li>{{t .Messages "instance_notice.password"}}</li>
+    <li>{{t .Messages "instance_notice.export"}}</li>
+  </ul>
+</div>
+{{end}}
+{{end}}
