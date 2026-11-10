@@ -49,12 +49,8 @@ func TestStatsOverviewUsesRequestTimezoneForCycleContext(t *testing.T) {
 		t.Helper()
 		request := httptest.NewRequest(http.MethodGet, "/api/v1/stats/overview", nil)
 		request.Header.Set("Accept", "application/json")
-		cookie := authCookie
-		if zoneName != "" {
-			cookie = joinCookieHeader(authCookie, timezoneCookieName+"="+zoneName)
-			request.Header.Set(timezoneHeaderName, zoneName)
-		}
-		request.Header.Set("Cookie", cookie)
+		request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+zoneName))
+		request.Header.Set(timezoneHeaderName, zoneName)
 
 		response := mustAppResponse(t, app, request)
 		assertStatusCode(t, response, http.StatusOK)
@@ -87,7 +83,7 @@ func TestStatsOverviewUsesRequestTimezoneForCycleContext(t *testing.T) {
 		t.Fatalf("in %s suppression = %+v, want the out-of-date fertility suppression = %t", timezoneName, payload.Suppression, localStale)
 	}
 
-	control := fetch(t, "")
+	control := fetch(t, "UTC")
 	if control.CurrentCycleDay == localDay || stale(control) == localStale {
 		t.Fatalf("fixture: the same history read as UTC gives cycle day %d with reasons %v, which does not differ from the zone's verdict", control.CurrentCycleDay, control.Suppression.Reasons)
 	}

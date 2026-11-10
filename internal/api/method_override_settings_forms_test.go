@@ -46,6 +46,7 @@ func renderNoJSForm(t *testing.T, app *fiber.App, page string, cookies map[strin
 	request := httptest.NewRequest(http.MethodGet, page, nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", cookieHeaderFromMap(cookies))
+	sendHeldTimezoneHeader(request, cookies)
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
@@ -89,6 +90,14 @@ func cookieHeaderFromMap(cookies map[string]string) string {
 	return strings.Join(pairs, "; ")
 }
 
+// sendHeldTimezoneHeader sends the zone header beside a held zone cookie, as a
+// browser holding the cookie does; with no zone cookie held it sends nothing.
+func sendHeldTimezoneHeader(request *http.Request, cookies map[string]string) {
+	if zone, ok := cookies[timezoneCookieName]; ok {
+		request.Header.Set(timezoneHeaderName, zone)
+	}
+}
+
 // submit POSTs the form's hidden inputs merged with typed, as a browser does
 // for a form with method="post" and no enctype. drop removes named fields
 // first, for the negative cases.
@@ -109,6 +118,7 @@ func (form noJSForm) submit(t *testing.T, app *fiber.App, typed url.Values, drop
 	request.Header.Set("Accept", "text/html,application/xhtml+xml")
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", cookieHeaderFromMap(form.cookies))
+	sendHeldTimezoneHeader(request, form.cookies)
 	return mustAppResponse(t, app, request)
 }
 

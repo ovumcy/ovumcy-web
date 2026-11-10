@@ -301,6 +301,7 @@ func renderSettingsPageForTest(t *testing.T, app *fiber.App, authCookie string) 
 	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)

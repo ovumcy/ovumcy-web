@@ -185,6 +185,7 @@ func TestOverviewAndFeedRoutesAnswerProjectionsPastYear9999AsAbsent(t *testing.T
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/stats/overview", nil)
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", issueAuthCookieForUser(t, owner))
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("GET /api/v1/stats/overview: %v", err)

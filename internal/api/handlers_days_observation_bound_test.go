@@ -61,6 +61,7 @@ func sendObservationDayWrite(t *testing.T, app *fiber.App, authCookie string, me
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Accept", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	return mustAppResponse(t, app, request)
 }
 
@@ -182,6 +183,7 @@ func TestHTMXDayFormRefusesAnObservationPastTheBoundWithItsOwnCopy(t *testing.T)
 				request.Header.Set("HX-Request", "true")
 				request.Header.Set("Accept-Language", language)
 				request.Header.Set("Cookie", authCookie)
+				sendRequestTimezoneForTest(request, testRequestTimezone)
 				bindDayWriteForTest(t, request, user.ID)
 
 				response := mustAppResponse(t, app, request)
@@ -257,7 +259,9 @@ func TestNoJSDayFormRefusesAnObservationPastTheBoundWithItsOwnCopy(t *testing.T)
 				envelopeTransportErrors: true,
 				now:                     func() time.Time { return now },
 			})
-			form := renderNoJSForm(t, ctx.app, "/calendar/day/"+iso+"?mode=edit", authCookieMap(t, ctx.authCookie), formWithFlag("data-day-editor-form"))
+			cookies := authCookieMap(t, ctx.authCookie)
+			cookies[timezoneCookieName] = testRequestTimezone
+			form := renderNoJSForm(t, ctx.app, "/calendar/day/"+iso+"?mode=edit", cookies, formWithFlag("data-day-editor-form"))
 
 			response := form.submit(t, ctx.app, c.typed)
 			assertRefusalPageCarrying(t, response, http.StatusUnprocessableEntity, observationBoundCopy(t, i18n.LangEN, c.messageKey), calendarLanding(iso))

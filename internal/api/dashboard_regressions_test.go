@@ -699,6 +699,7 @@ func TestDashboardTodaySavePersistsPeriodToggleAndNotes(t *testing.T) {
 	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	dashboardRequest.Header.Set("Accept-Language", "en")
 	dashboardRequest.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(dashboardRequest, testRequestTimezone)
 	dashboardResponse := mustAppResponse(t, app, dashboardRequest)
 	assertStatusCode(t, dashboardResponse, http.StatusOK)
 
@@ -718,10 +719,14 @@ func dashboardSaveRequest(todayRaw string, form url.Values, authCookie string) *
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	return request
 }
 
-func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
+// Instance-timezone fallback: the save and the reload carry neither
+// X-Ovumcy-Timezone nor ovumcy_tz, and the owner has no stored zone, so "today"
+// is resolved by the last link of the chain — the zone the instance runs in.
+func TestDashboardTodaySaveFallsBackToTheInstanceTimezoneWithNoRequestSignal(t *testing.T) {
 	app, database, location := newOnboardingTestAppWithLocation(t, time.FixedZone("UTC+3", 3*60*60))
 	user := createOnboardingTestUser(t, database, "dashboard-today-tz@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
@@ -806,6 +811,7 @@ func TestDashboardRendersReminderBannerWhenPeriodIsDueSoon(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
@@ -856,6 +862,7 @@ func TestDashboardRendersTomorrowReminderBannerCopy(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)

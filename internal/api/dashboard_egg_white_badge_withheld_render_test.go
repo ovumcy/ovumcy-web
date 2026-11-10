@@ -98,6 +98,7 @@ func renderDashboardEggWhiteBadge(t *testing.T, goal string, spotting bool) *htm
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 	dashboard := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))

@@ -11,5 +11,6 @@ func newExportRequestForTest(t *testing.T, target string, authCookie string) *ht
 
 	request := httptest.NewRequest(http.MethodGet, target, nil)
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	return request
 }

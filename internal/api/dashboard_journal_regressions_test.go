@@ -48,6 +48,7 @@ func TestDashboardSymptomsNotesPanelUsesSavedSymptomsAndNotesState(t *testing.T)
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)

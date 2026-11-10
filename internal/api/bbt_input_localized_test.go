@@ -79,6 +79,7 @@ func TestDashboardBBTFieldCarriesTheLanguageSeparator(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "ru")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 	rendered := mustReadBodyString(t, response.Body)

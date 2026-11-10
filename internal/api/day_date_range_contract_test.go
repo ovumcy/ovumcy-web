@@ -41,7 +41,7 @@ func TestGetDayAcceptsOnlyTheDocumentedDateRange(t *testing.T) {
 	// range moves neither edge. Asia/Tokyo and Pacific/Auckland had a positive
 	// offset in 1900, which is what would pull 1900-01-01 before the bound if the
 	// comparison ran on the resolved instant; the other two had negative ones.
-	for _, timezone := range []string{"", "Asia/Tokyo", "Pacific/Auckland", "Pacific/Kiritimati", "Pacific/Pago_Pago"} {
+	for _, timezone := range []string{testRequestTimezone, "Asia/Tokyo", "Pacific/Auckland", "Pacific/Kiritimati", "Pacific/Pago_Pago"} {
 		for _, tc := range cases {
 			path := "/api/v1/days/" + tc.date
 			status, raw := sendDayRequest(t, app, http.MethodGet, path, authCookie, timezone, "")

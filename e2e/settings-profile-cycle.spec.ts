@@ -23,6 +23,7 @@ import {
   mutatingRequestsDuring,
 } from './support/confirm-dialog-helpers';
 import { CYCLE_FLOOR, localeText, localeTextWithCount } from './support/locale-helpers';
+import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
 // The duplicate-name rejection is asserted on three surfaces in this file (the
 // create form twice, an archived row once). Source it once from the catalogue
@@ -129,6 +130,7 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
   await readRecoveryCode(page);
   await continueFromRecoveryCode(page);
   await completeOnboardingIfPresent(page);
+  await setRequestTimezoneFromBrowser(page);
 
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings$/);

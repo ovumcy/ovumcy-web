@@ -342,6 +342,7 @@ func TestEveryRenderedDayWriteCarriesTheAccountBinding(t *testing.T) {
 	} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		request.Header.Set("Cookie", fixture.firstCookie)
+		sendRequestTimezoneForTest(request, testRequestTimezone)
 		response := mustAppResponse(t, fixture.app, request)
 		assertStatusCode(t, response, http.StatusOK)
 		document, err := html.Parse(strings.NewReader(mustReadBodyString(t, response.Body)))
