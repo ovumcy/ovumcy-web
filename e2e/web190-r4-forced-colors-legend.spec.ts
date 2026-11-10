@@ -123,7 +123,7 @@ test.describe('WEB-436: pre-fertile days', () => {
 
 test('WEB-435: a failed dashboard save is brought on screen on a desktop viewport', async ({ page, browserErrors }) => {
   browserErrors.allow(/^console\.error: Failed to load resource/, 'the test forces the day PATCH to be refused');
-  browserErrors.allow(/^console\.error: Response Status Error Code/, 'the test forces the day PATCH to be refused');
+  browserErrors.allow(/^console\.error: Response Status Error Code 500 from \/api\/v1\/days\//, 'the test forces the day PATCH to be refused');
   await registerAndOnboardWithStartDaysAgo(page, 'autosave-failure-visible', 10);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/dashboard');
