@@ -588,3 +588,29 @@ func TestInstanceDataNoticeAddsNothingThatFetches(t *testing.T) {
 		}
 	}
 }
+
+// TestInstanceDataNoticeLineNamesTheHostInEveryLocale pins the one placeholder
+// the sign-in line's string carries: a locale that drops it or adds a second
+// verb would print a Go format error on the public sign-in page.
+func TestInstanceDataNoticeLineNamesTheHostInEveryLocale(t *testing.T) {
+	t.Parallel()
+
+	const host = "diary.example.test"
+	for _, language := range []string{"en", "de", "es", "fr", "it", "ru"} {
+		document := fetchInstanceNoticePage(t, "/login", func(r *http.Request) {
+			r.Host = host
+			r.Header.Set("Accept-Language", language)
+		})
+		lines := instanceNoticeVariants(document, "line")
+		if len(lines) != 1 {
+			t.Fatalf("%s: expected one instance notice line, got %d", language, len(lines))
+		}
+		rendered := htmlNodeText(lines[0])
+		if !strings.Contains(rendered, host) {
+			t.Fatalf("%s: expected the line to name the host, got %q", language, rendered)
+		}
+		if strings.Contains(rendered, "%!") || strings.Contains(rendered, "%s") {
+			t.Fatalf("%s: the line carries a format artefact: %q", language, rendered)
+		}
+	}
+}
