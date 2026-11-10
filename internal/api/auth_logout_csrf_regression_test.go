@@ -31,6 +31,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 			totpPendingCookieName+"=temporary-totp-pending",
 			totpSetupCookieName+"=temporary-totp-setup",
 			calendarFeedRevealCookieName+"=temporary-feed-reveal",
+			oidcLinkPendingCookieName+"=temporary-oidc-link-pending",
 			oidcStepupCookieName+"=temporary-oidc-stepup",
 			oidcStepupContinuationCookieName+"=temporary-oidc-continuation",
 			languageCookieName+"=ru",
@@ -68,6 +69,11 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	// redeemed, so one left by a cross-site return finishes an erasure for an
 	// owner who signed out a moment earlier.
 	//
+	// `ovumcy_oidc_link_confirm` parks a provider identity the owner has not yet
+	// confirmed. Its payload binding already makes it inert for any later
+	// session; the sign-out still retracts it rather than leave a pending link
+	// of the ended session riding in the browser until it closes.
+	//
 	// `ovumcy_lang` is the one member that is neither sealed nor session-scoped:
 	// a year-long plaintext cache of the account's stored language. Surviving a
 	// sign-out it tells whoever opens the browser next that this app is used here
@@ -81,6 +87,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 		totpPendingCookieName,
 		totpSetupCookieName,
 		calendarFeedRevealCookieName,
+		oidcLinkPendingCookieName,
 		oidcStepupCookieName,
 		oidcStepupContinuationCookieName,
 		languageCookieName,
