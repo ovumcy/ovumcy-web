@@ -25,13 +25,17 @@ const testRequestTimezone = "UTC"
 // sendRequestTimezoneForTest makes a request carry its zone the way a
 // signed-in browser does: the X-Ovumcy-Timezone header and the ovumcy_tz
 // cookie, naming the same zone. Call it after the Cookie header is set — a
-// later Header.Set("Cookie", …) drops the cookie again. A request that already
-// carries an ovumcy_tz cookie keeps it.
+// later Header.Set("Cookie", …) drops the cookie again. An ovumcy_tz cookie
+// the request already carries is replaced, so the two signals never disagree.
 func sendRequestTimezoneForTest(request *http.Request, timezoneName string) {
 	request.Header.Set(timezoneHeaderName, timezoneName)
-	if _, err := request.Cookie(timezoneCookieName); err != nil {
-		request.AddCookie(&http.Cookie{Name: timezoneCookieName, Value: timezoneName})
+	pairs := make([]string, 0, 4)
+	for _, pair := range strings.Split(request.Header.Get("Cookie"), "; ") {
+		if !strings.HasPrefix(pair, timezoneCookieName+"=") {
+			pairs = append(pairs, pair)
+		}
 	}
+	request.Header.Set("Cookie", joinCookieHeader(append(pairs, timezoneCookieName+"="+timezoneName)...))
 }
 
 func mustAppResponse(t *testing.T, app *fiber.App, request *http.Request) *http.Response {
