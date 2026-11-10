@@ -10,6 +10,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { isoToday, shiftISODate } from './support/iso-date-helpers';
+import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
 /**
  * TS-M17 (WEB-17): every export download button, for every supported range,
@@ -72,6 +73,7 @@ async function registerOwnerAndSeedExportFixture(page: Page, prefix: string): Pr
   await continueFromRecoveryCode(page);
   await completeOnboardingIfPresent(page);
   await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+  await setRequestTimezoneFromBrowser(page);
 
   const today = isoToday();
   const dates: SeedDates = {

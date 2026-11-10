@@ -189,7 +189,9 @@ func TestNoJSHXPostFormsPostToTheirEndpoint(t *testing.T) {
 	for name, build := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			runNoJSFormCase(t, build(t))
+			c := build(t)
+			c.cookies[timezoneCookieName] = testRequestTimezone
+			runNoJSFormCase(t, c)
 		})
 	}
 }

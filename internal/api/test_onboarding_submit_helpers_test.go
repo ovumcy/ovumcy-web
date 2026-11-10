@@ -20,6 +20,7 @@ func submitOnboardingStep1(t *testing.T, app *fiber.App, authCookie string, user
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	bindDayWriteForTest(t, request, userID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
@@ -40,6 +41,7 @@ func submitOnboardingStep2(t *testing.T, app *fiber.App, authCookie string, user
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	bindDayWriteForTest(t, request, userID)
 
 	response, err := app.Test(request, testConfigNoTimeout)
@@ -59,6 +61,7 @@ func submitOnboardingComplete(t *testing.T, app *fiber.App, authCookie string, u
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/complete", nil)
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	bindDayWriteForTest(t, request, userID)
 
 	response, err := app.Test(request, testConfigNoTimeout)

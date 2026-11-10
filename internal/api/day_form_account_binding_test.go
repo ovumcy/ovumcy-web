@@ -72,6 +72,7 @@ func putDayForm(t *testing.T, app *fiber.App, cookie string, day time.Time, form
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+day.Format("2006-01-02"), strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", cookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	if htmx {
 		request.Header.Set("HX-Request", "true")
 	} else {

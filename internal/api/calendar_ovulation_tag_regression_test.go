@@ -173,6 +173,7 @@ func renderCalendarMonthHTML(t *testing.T, app *fiber.App, authCookie string, mo
 	request := httptest.NewRequest(http.MethodGet, "/calendar?month="+month, nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {

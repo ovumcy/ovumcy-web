@@ -535,6 +535,7 @@ func mustRenderDashboard(t *testing.T, app *fiber.App, authCookie string, langua
 	} else {
 		request.Header.Set("Cookie", authCookie+"; ovumcy_lang="+languageCookie)
 	}
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {

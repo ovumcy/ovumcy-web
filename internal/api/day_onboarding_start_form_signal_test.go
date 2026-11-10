@@ -52,6 +52,7 @@ func renderedDayForm(t *testing.T, app *fiber.App, authCookie, path, marker stri
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set(dayFormAccountHeader, renderedDayFormAccount(t, app, authCookie, "/dashboard"))
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 	body := mustReadBodyString(t, response.Body)
@@ -110,6 +111,7 @@ func putRenderedDayForm(t *testing.T, app *fiber.App, authCookie, dateISO string
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 }

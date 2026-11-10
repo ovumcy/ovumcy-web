@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -441,8 +442,9 @@ func TestExportSummaryUsesRequestTimezoneForRangeParsing(t *testing.T) {
 	}
 
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	request := newExportRequestForTest(t, "/api/v1/exports/summary?from=2026-03-13&to=2026-03-13", joinCookieHeader(authCookie, timezoneCookieName+"=Pacific/Kiritimati"))
-	request.Header.Set(timezoneHeaderName, "Pacific/Kiritimati")
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/exports/summary?from=2026-03-13&to=2026-03-13", nil)
+	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, "Pacific/Kiritimati")
 
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {

@@ -433,6 +433,7 @@ func TestCalendarDayPanelRendersNoProjectionSignal(t *testing.T) {
 				request := httptest.NewRequest(http.MethodGet, path, nil)
 				request.Header.Set("Accept-Language", "en")
 				request.Header.Set("Cookie", cookie)
+				sendRequestTimezoneForTest(request, testRequestTimezone)
 				response := mustAppResponse(t, app, request)
 				body := mustReadBodyString(t, response.Body)
 				if response.StatusCode != http.StatusOK {

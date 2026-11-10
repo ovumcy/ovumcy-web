@@ -199,8 +199,29 @@ func TestFullPageFallbackOnboardingAndSettingsRedirects(t *testing.T) {
 	fresh := createOnboardingTestUser(t, database, "fullpage-onboarding@example.com", "StrongPass1", false)
 	freshCookie := loginAndExtractAuthCookie(t, app, fresh.Email, "StrongPass1")
 
+	signedFullPageRequest := func(t *testing.T, method string, path string, form url.Values, cookieHeader string) *http.Response {
+		t.Helper()
+		var body *strings.Reader
+		if form == nil {
+			body = strings.NewReader("")
+		} else {
+			body = strings.NewReader(form.Encode())
+		}
+		request := httptest.NewRequest(method, path, body)
+		if form != nil {
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		request.Header.Set("Cookie", cookieHeader)
+		sendRequestTimezoneForTest(request, testRequestTimezone)
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("%s %s failed: %v", method, path, err)
+		}
+		return response
+	}
+
 	t.Run("protected page before onboarding redirects to onboarding", func(t *testing.T) {
-		response := fullPageRequest(t, app, http.MethodGet, "/dashboard", nil, freshCookie)
+		response := signedFullPageRequest(t, http.MethodGet, "/dashboard", nil, freshCookie)
 		assertSeeOther(t, response, "/onboarding")
 	})
 
@@ -209,6 +230,7 @@ func TestFullPageFallbackOnboardingAndSettingsRedirects(t *testing.T) {
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Accept", "application/json")
 		request.Header.Set("Cookie", freshCookie)
+		sendRequestTimezoneForTest(request, testRequestTimezone)
 
 		response, err := app.Test(request, testConfigNoTimeout)
 		if err != nil {
@@ -222,20 +244,20 @@ func TestFullPageFallbackOnboardingAndSettingsRedirects(t *testing.T) {
 
 	t.Run("step2 before step1 redirects back to step1", func(t *testing.T) {
 		form := url.Values{"cycle_length": {"28"}, "period_length": {"5"}}
-		response := fullPageRequest(t, app, http.MethodPost, "/api/v1/onboarding/steps/2", form, freshCookie)
+		response := signedFullPageRequest(t, http.MethodPost, "/api/v1/onboarding/steps/2", form, freshCookie)
 		assertSeeOther(t, response, "/onboarding?step=1")
 	})
 
 	t.Run("step1 success redirects to step2", func(t *testing.T) {
 		today := time.Now().UTC().Format("2006-01-02")
 		form := url.Values{"last_period_start": {today}}
-		response := fullPageRequest(t, app, http.MethodPost, "/api/v1/onboarding/steps/1", form, freshCookie)
+		response := signedFullPageRequest(t, http.MethodPost, "/api/v1/onboarding/steps/1", form, freshCookie)
 		assertSeeOther(t, response, "/onboarding?step=2")
 	})
 
 	t.Run("step2 success redirects to dashboard", func(t *testing.T) {
 		form := url.Values{"cycle_length": {"28"}, "period_length": {"5"}}
-		response := fullPageRequest(t, app, http.MethodPost, "/api/v1/onboarding/steps/2", form, freshCookie)
+		response := signedFullPageRequest(t, http.MethodPost, "/api/v1/onboarding/steps/2", form, freshCookie)
 		assertSeeOther(t, response, "/dashboard")
 	})
 
@@ -243,19 +265,19 @@ func TestFullPageFallbackOnboardingAndSettingsRedirects(t *testing.T) {
 	completedCookie := loginAndExtractAuthCookie(t, app, completed.Email, "StrongPass1")
 
 	t.Run("onboarding page after completion redirects to dashboard", func(t *testing.T) {
-		response := fullPageRequest(t, app, http.MethodGet, "/onboarding", nil, completedCookie)
+		response := signedFullPageRequest(t, http.MethodGet, "/onboarding", nil, completedCookie)
 		assertSeeOther(t, response, "/dashboard")
 	})
 
 	t.Run("symptom create with blank name redirects to settings", func(t *testing.T) {
 		form := url.Values{"name": {"   "}}
-		response := fullPageRequest(t, app, http.MethodPost, "/api/v1/symptoms", form, completedCookie)
+		response := signedFullPageRequest(t, http.MethodPost, "/api/v1/symptoms", form, completedCookie)
 		assertSeeOther(t, response, "/settings")
 	})
 
 	t.Run("symptom create success redirects to settings", func(t *testing.T) {
 		form := url.Values{"name": {"Fallback Symptom"}}
-		response := fullPageRequest(t, app, http.MethodPost, "/api/v1/symptoms", form, completedCookie)
+		response := signedFullPageRequest(t, http.MethodPost, "/api/v1/symptoms", form, completedCookie)
 		assertSeeOther(t, response, "/settings")
 	})
 }

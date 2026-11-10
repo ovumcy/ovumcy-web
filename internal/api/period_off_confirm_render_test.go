@@ -51,6 +51,7 @@ func renderPeriodOffPage(t *testing.T, app *fiber.App, path string, language str
 	request := httptest.NewRequest(http.MethodGet, path, nil)
 	request.Header.Set("Accept-Language", language)
 	request.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(request, testRequestTimezone)
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 	return html.UnescapeString(mustReadBodyString(t, response.Body))

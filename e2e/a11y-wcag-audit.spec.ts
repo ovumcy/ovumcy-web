@@ -9,6 +9,7 @@ import {
 } from './support/auth-helpers';
 import { applyTheme, expectTextContrastAA, measureTextContrast } from './support/contrast-helpers';
 import { isoToday, markCycleStart, shiftISODate } from './support/stats-helpers';
+import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
 /**
  * WCAG 2.2 AA 2.5.8: a pointer target must be at least 24 CSS pixels in both
@@ -26,6 +27,7 @@ async function registerOwnerAndReachDashboard(page: Page, prefix: string): Promi
   await readRecoveryCode(page);
   await continueFromRecoveryCode(page);
   await completeOnboardingIfPresent(page);
+  await setRequestTimezoneFromBrowser(page);
 
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/dashboard$/);

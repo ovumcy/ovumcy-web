@@ -22,6 +22,7 @@ import {
   registerOwnerViaUI,
   apiOriginHeader,
 } from './support/auth-helpers';
+import { browserTimezone, setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
 function shiftISODate(iso: string, days: number): string {
   const [y, m, d] = iso.split('-').map((part) => Number(part));
@@ -43,6 +44,7 @@ async function registerOwnerAndReachDashboard(page: Page, prefix: string) {
   await continueFromRecoveryCode(page);
   await completeOnboardingIfPresent(page);
   await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+  await setRequestTimezoneFromBrowser(page);
 
   return credentials;
 }
@@ -58,6 +60,7 @@ async function onboardOwnerWithAutoPeriodFill(
   await readRecoveryCode(page);
   await continueFromRecoveryCode(page);
   await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
+  await setRequestTimezoneFromBrowser(page);
 
   await selectOnboardingStartDate(page, onboardingDate);
   await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
@@ -107,57 +110,19 @@ async function setRangeValue(selector: string, page: Page, value: number): Promi
   }, value);
 }
 
-async function pickTimezoneWithDifferentUTCDate(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'UTC',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    const utcDate = formatter.format(now);
-    const candidates = [
-      'Pacific/Kiritimati',
-      'Pacific/Pago_Pago',
-      'Pacific/Auckland',
-      'America/Adak',
-      'Europe/Moscow',
-    ];
-
-    for (const timezone of candidates) {
-      try {
-        const localDate = new Intl.DateTimeFormat('en-CA', {
-          timeZone: timezone,
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        }).format(now);
-        if (localDate !== utcDate) {
-          return timezone;
-        }
-      } catch {
-        // Ignore unsupported timezones and continue.
-      }
-    }
-    return 'UTC';
-  });
-}
-
-async function setTimezoneCookie(page: Page, timezone: string): Promise<void> {
-  await page.context().setExtraHTTPHeaders({
-    'X-Ovumcy-Timezone': timezone,
-  });
-
-  const origin = new URL(page.url()).origin;
-  await page.context().addCookies([
-    {
-      name: 'ovumcy_tz',
-      value: timezone,
-      url: origin,
-      sameSite: 'Lax',
-    },
-  ]);
+// Picked in Node, before any page exists: the browser context is created in
+// this zone (`test.use({ timezoneId })`), so the app's own script writes the
+// ovumcy_tz cookie and the X-Ovumcy-Timezone header in it. A zone forced onto
+// the requests of a browser running in another one does not survive a page
+// load — the bootstrap script rewrites the cookie to the browser's zone, and
+// the two signals then disagree.
+function timezoneWithDifferentUTCDate(): string {
+  const now = new Date();
+  const dateIn = (timeZone: string): string =>
+    new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const utcDate = dateIn('UTC');
+  const candidates = ['Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Pacific/Auckland', 'America/Adak', 'Europe/Moscow'];
+  return candidates.find((timezone) => dateIn(timezone) !== utcDate) ?? 'UTC';
 }
 
 async function timezoneToday(page: Page, timezone: string): Promise<{
@@ -213,91 +178,92 @@ const UNPREDICTABLE_EXPLAINER_KEY = 'prediction.explainer.unpredictable';
 
 test.describe('Bug regressions', () => {
   test.describe('BUG-01: request-local date consistency', () => {
-    test('dashboard date subtitle, cycle day and calendar today badge use request timezone', async ({
-      page,
-    }) => {
-      await page.goto('/login');
-      const timezone = await pickTimezoneWithDifferentUTCDate(page);
+    test.describe('in a browser whose zone is a calendar day away from UTC', () => {
+      test.use({ timezoneId: timezoneWithDifferentUTCDate() });
 
-      const creds = await registerOwnerAndReachDashboard(page, 'bug01-timezone');
-      await setTimezoneCookie(page, timezone);
+      test('dashboard date subtitle, cycle day and calendar today badge use request timezone', async ({
+        page,
+      }) => {
+        const creds = await registerOwnerAndReachDashboard(page, 'bug01-timezone');
+        const timezone = await browserTimezone(page);
 
-      const expectedToday = await timezoneToday(page, timezone);
+        const expectedToday = await timezoneToday(page, timezone);
 
-      await page.goto('/settings');
-      await expect(page).toHaveURL(/\/settings$/);
+        await page.goto('/settings');
+        await expect(page).toHaveURL(/\/settings$/);
 
-      // Remove onboarding-generated logs so cycle-day math is anchored only by the date
-      // we set in cycle settings below.
-      const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
-      const clearResponse = await page.request.post('/api/v1/users/current/data-wipe', {
-        headers: apiOriginHeader(page),
-        form: {
-          csrf_token: csrfToken,
-          password: creds.password,
-        },
-        maxRedirects: 0,
+        // Remove onboarding-generated logs so cycle-day math is anchored only by the date
+        // we set in cycle settings below.
+        const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
+        const clearResponse = await page.request.post('/api/v1/users/current/data-wipe', {
+          headers: apiOriginHeader(page),
+          form: {
+            csrf_token: csrfToken,
+            password: creds.password,
+          },
+          maxRedirects: 0,
+        });
+        expect([200, 303]).toContain(clearResponse.status());
+
+        await page.goto('/settings');
+        await expect(page).toHaveURL(/\/settings$/);
+
+        const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
+        await expect(cycleForm).toBeVisible();
+        await fillDateField(
+          cycleForm.locator('#settings-last-period-start'),
+          shiftISODate(expectedToday.iso, -2)
+        );
+        await cycleForm.locator('button[data-save-button]').click();
+        await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
+        const savedStartISO = await cycleForm.locator('#settings-last-period-start').inputValue();
+
+        await page.goto('/dashboard');
+        await expect(page).toHaveURL(/\/dashboard$/);
+
+        const todayAction = await page.locator('form[hx-put^="/api/v1/days/"]').first().getAttribute('hx-put');
+        expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
+        const actualTodayISO = String(todayAction || '').replace('/api/v1/days/', '');
+
+        // The date subtitle has its own hook now: `p.journal-muted` + `.first()`
+        // picked whichever muted paragraph the card happened to render first.
+        const subtitleText = String(
+          (await page.locator('[data-dashboard-date-subtitle]').first().textContent()) || ''
+        );
+        expect(subtitleText).toContain(expectedToday.day);
+        expect(
+          subtitleText.toLowerCase(),
+          `date subtitle "${subtitleText}" should name ${expectedToday.weekday}`
+        ).toContain(expectedToday.weekday.toLowerCase());
+
+        // The visible journal date carries the ISO day it edits, and the quick
+        // switch offers the request-local yesterday — an evening entry made after
+        // midnight has to be able to see and correct the day it lands on.
+        await expect(page.locator('[data-dashboard-entry-date]').first()).toHaveAttribute(
+          'data-dashboard-entry-date',
+          actualTodayISO
+        );
+        await expect(
+          page.locator('[data-dashboard-entry-date-switch] [data-entry-date-choice="yesterday"]')
+        ).toHaveAttribute('data-entry-date', shiftISODate(actualTodayISO, -1));
+
+        const expectedCycleDay = page.evaluate(({ todayISO, startISO }) => {
+          const today = new Date(`${todayISO}T00:00:00`);
+          const start = new Date(`${startISO}T00:00:00`);
+          return Math.floor((today.getTime() - start.getTime()) / 86400000) + 1;
+        }, {
+          todayISO: actualTodayISO,
+          startISO: savedStartISO,
+        });
+        expect(await dashboardCurrentCycleDay(page)).toBe(await expectedCycleDay);
+
+        await page.goto('/calendar');
+        await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
+        const todayButton = page.locator('button[data-day]:has(.calendar-today-pill)').first();
+        await expect(todayButton).toBeVisible();
+        await expect(todayButton).toHaveAttribute('data-day', expectedToday.iso);
+
       });
-      expect([200, 303]).toContain(clearResponse.status());
-
-      await page.goto('/settings');
-      await expect(page).toHaveURL(/\/settings$/);
-
-      const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
-      await expect(cycleForm).toBeVisible();
-      await fillDateField(
-        cycleForm.locator('#settings-last-period-start'),
-        shiftISODate(expectedToday.iso, -2)
-      );
-      await cycleForm.locator('button[data-save-button]').click();
-      await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
-      const savedStartISO = await cycleForm.locator('#settings-last-period-start').inputValue();
-
-      await page.goto('/dashboard');
-      await expect(page).toHaveURL(/\/dashboard$/);
-
-      const todayAction = await page.locator('form[hx-put^="/api/v1/days/"]').first().getAttribute('hx-put');
-      expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
-      const actualTodayISO = String(todayAction || '').replace('/api/v1/days/', '');
-
-      // The date subtitle has its own hook now: `p.journal-muted` + `.first()`
-      // picked whichever muted paragraph the card happened to render first.
-      const subtitleText = String(
-        (await page.locator('[data-dashboard-date-subtitle]').first().textContent()) || ''
-      );
-      expect(subtitleText).toContain(expectedToday.day);
-      expect(
-        subtitleText.toLowerCase(),
-        `date subtitle "${subtitleText}" should name ${expectedToday.weekday}`
-      ).toContain(expectedToday.weekday.toLowerCase());
-
-      // The visible journal date carries the ISO day it edits, and the quick
-      // switch offers the request-local yesterday — an evening entry made after
-      // midnight has to be able to see and correct the day it lands on.
-      await expect(page.locator('[data-dashboard-entry-date]').first()).toHaveAttribute(
-        'data-dashboard-entry-date',
-        actualTodayISO
-      );
-      await expect(
-        page.locator('[data-dashboard-entry-date-switch] [data-entry-date-choice="yesterday"]')
-      ).toHaveAttribute('data-entry-date', shiftISODate(actualTodayISO, -1));
-
-      const expectedCycleDay = page.evaluate(({ todayISO, startISO }) => {
-        const today = new Date(`${todayISO}T00:00:00`);
-        const start = new Date(`${startISO}T00:00:00`);
-        return Math.floor((today.getTime() - start.getTime()) / 86400000) + 1;
-      }, {
-        todayISO: actualTodayISO,
-        startISO: savedStartISO,
-      });
-      expect(await dashboardCurrentCycleDay(page)).toBe(await expectedCycleDay);
-
-      await page.goto('/calendar');
-      await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
-      const todayButton = page.locator('button[data-day]:has(.calendar-today-pill)').first();
-      await expect(todayButton).toBeVisible();
-      await expect(todayButton).toHaveAttribute('data-day', expectedToday.iso);
-
     });
 
     test('calendar marks the current baseline period window, and withholds the fertile half of it, before manual day logs exist', async ({

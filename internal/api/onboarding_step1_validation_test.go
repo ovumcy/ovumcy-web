@@ -23,6 +23,7 @@ func TestOnboardingStep1RejectsFutureAndTooOldDates(t *testing.T) {
 	futureRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	futureRequest.Header.Set("HX-Request", "true")
 	futureRequest.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(futureRequest, testRequestTimezone)
 	bindDayWriteForTest(t, futureRequest, user.ID)
 
 	futureResponse, err := app.Test(futureRequest, testConfigNoTimeout)
@@ -42,6 +43,7 @@ func TestOnboardingStep1RejectsFutureAndTooOldDates(t *testing.T) {
 	oldRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	oldRequest.Header.Set("HX-Request", "true")
 	oldRequest.Header.Set("Cookie", authCookie)
+	sendRequestTimezoneForTest(oldRequest, testRequestTimezone)
 	bindDayWriteForTest(t, oldRequest, user.ID)
 
 	oldResponse, err := app.Test(oldRequest, testConfigNoTimeout)

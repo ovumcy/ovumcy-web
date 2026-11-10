@@ -29,9 +29,10 @@ func sendDayRequest(t *testing.T, app *fiber.App, method, path, authCookie, time
 	}
 	request := httptest.NewRequest(method, path, reader)
 	request.Header.Set("Cookie", authCookie)
-	if timezone != "" {
-		request.Header.Set(timezoneHeaderName, timezone)
+	if timezone == "" {
+		timezone = testRequestTimezone
 	}
+	sendRequestTimezoneForTest(request, timezone)
 	if body != "" {
 		request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	}
@@ -81,7 +82,7 @@ func TestGetDayWithoutRecordAnswersTheDocumentedPlaceholder(t *testing.T) {
 		t.Fatalf("seed other owner's day: %v", err)
 	}
 
-	for _, timezone := range []string{"", "Pacific/Kiritimati", "Pacific/Pago_Pago"} {
+	for _, timezone := range []string{testRequestTimezone, "Pacific/Kiritimati", "Pacific/Pago_Pago"} {
 		status, raw := sendDayRequest(t, app, http.MethodGet, "/api/v1/days/2026-03-04", authCookie, timezone, "")
 		if status != http.StatusOK {
 			t.Fatalf("GET day without a record (tz %q): status %d, want 200", timezone, status)
