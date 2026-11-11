@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func TestRegisterValidationErrorRedirectDoesNotLeakEmailOrErrorInQuery(t *testing.T) {
@@ -208,6 +209,23 @@ func assertCookieParity(t *testing.T, name string, want, got *http.Cookie) {
 	if want.SameSite != got.SameSite {
 		t.Fatalf("cookie %q SameSite mismatch", name)
 	}
+	if want.MaxAge != got.MaxAge {
+		t.Fatalf("cookie %q Max-Age mismatch: new=%d duplicate=%d", name, want.MaxAge, got.MaxAge)
+	}
+	if want.Domain != got.Domain {
+		t.Fatalf("cookie %q Domain mismatch: new=%q duplicate=%q", name, want.Domain, got.Domain)
+	}
+	if want.Partitioned != got.Partitioned {
+		t.Fatalf("cookie %q Partitioned mismatch", name)
+	}
+	// Both branches are minted a request apart, so Expires may straddle a
+	// second boundary; a different TTL moves it by minutes.
+	if want.Expires.IsZero() != got.Expires.IsZero() {
+		t.Fatalf("cookie %q Expires present on one branch only: new=%v duplicate=%v", name, want.Expires, got.Expires)
+	}
+	if drift := want.Expires.Sub(got.Expires).Abs(); drift > 2*time.Second {
+		t.Fatalf("cookie %q Expires mismatch: new=%v duplicate=%v", name, want.Expires, got.Expires)
+	}
 }
 
 // TestRegisterPickupDecoyPayloadHasTheShapeOfTheRealOne pins the cookie-shape
@@ -222,7 +240,11 @@ func TestRegisterPickupDecoyPayloadHasTheShapeOfTheRealOne(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, time.May, 13, 10, 0, 0, 0, time.UTC)
-	realPayload, err := newRegisterPickupPayload(now, "OVUM-ABCD-EF01-2345")
+	recoveryCode, err := services.GenerateRecoveryCode()
+	if err != nil {
+		t.Fatalf("generate recovery code: %v", err)
+	}
+	realPayload, err := newRegisterPickupPayload(now, recoveryCode)
 	if err != nil {
 		t.Fatalf("build real payload: %v", err)
 	}
