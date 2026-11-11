@@ -1,2 +1,2 @@
 none
-The register response-parity test now also compares the pickup cookie's Expires, Max-Age, Domain and Partitioned attributes, and the decoy-shape test builds its real payload from a generated recovery code.
+The registration decoy's recovery code is now drawn by the real generator, so its alphabet matches a real code's; the register parity test compares the pickup cookie's lifetime against each response's Date, its extra attributes, and the full cookie-name set.
