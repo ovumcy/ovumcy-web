@@ -318,6 +318,13 @@ type User struct {
 	// left on a revoked row would carry over to that link. Pinned by
 	// calendar_feed_disarm_clears_titles_guard_test.go.
 	CalendarFeedDetailedTitles bool `gorm:"column:calendar_feed_detailed_titles;not null;default:false"`
+	// CalendarFeedPeriodSpan and CalendarFeedFertileWindow are the owner's two
+	// other per-link opt-ins (migration 045, WEB-381): send each predicted period
+	// as a multi-day span, and add the estimated fertile window. Both false keeps
+	// the feed body as it was. Written and reset exactly like
+	// CalendarFeedDetailedTitles, and pinned by the same guard.
+	CalendarFeedPeriodSpan    bool `gorm:"column:calendar_feed_period_span;not null;default:false"`
+	CalendarFeedFertileWindow bool `gorm:"column:calendar_feed_fertile_window;not null;default:false"`
 }
 
 // CalendarFeedTokenColumns is the transport-free narrow view of the three stored
@@ -346,4 +353,8 @@ type CalendarFeedTokenColumns struct {
 	// DetailedTitles is the owner's title choice from the generate/rotate form,
 	// written in the same UPDATE as the token it applies to (WEB-379).
 	DetailedTitles bool
+	// PeriodSpan and FertileWindow are the link's span opt-ins from the same
+	// form, written in the same UPDATE (WEB-381).
+	PeriodSpan    bool
+	FertileWindow bool
 }

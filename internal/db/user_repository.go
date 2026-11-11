@@ -1088,6 +1088,9 @@ func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID ui
 			// left on a revoked row would carry over to that link after a
 			// re-upgrade (WEB-389).
 			"calendar_feed_detailed_titles": columns.DetailedTitles,
+			// The span opt-ins belong to this link the same way (WEB-381).
+			"calendar_feed_period_span":    columns.PeriodSpan,
+			"calendar_feed_fertile_window": columns.FertileWindow,
 		}).Error
 	})
 }
@@ -1233,6 +1236,8 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 			"calendar_feed_verifier_hash":   nil,
 			"calendar_feed_verifier_mac":    nil,
 			"calendar_feed_detailed_titles": false,
+			"calendar_feed_period_span":     false,
+			"calendar_feed_fertile_window":  false,
 			"calendar_feed_last_polled_on":  nil,
 		}).Error
 	})
@@ -1260,6 +1265,8 @@ func (repo *UserRepository) DisarmCalendarFeedTokensWithoutMAC(ctx context.Conte
 			"calendar_feed_verifier_hash":   nil,
 			"calendar_feed_verifier_mac":    nil,
 			"calendar_feed_detailed_titles": false,
+			"calendar_feed_period_span":     false,
+			"calendar_feed_fertile_window":  false,
 			"calendar_feed_last_polled_on":  nil,
 		})
 	return result.RowsAffected, result.Error
@@ -1292,6 +1299,8 @@ func (repo *UserRepository) DisarmAllCalendarFeedTokens(ctx context.Context) (in
 			"calendar_feed_verifier_hash":   nil,
 			"calendar_feed_verifier_mac":    nil,
 			"calendar_feed_detailed_titles": false,
+			"calendar_feed_period_span":     false,
+			"calendar_feed_fertile_window":  false,
 			"calendar_feed_last_polled_on":  nil,
 		})
 	return result.RowsAffected, result.Error
@@ -1428,6 +1437,8 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 			"calendar_feed_verifier_hash":   nil,
 			"calendar_feed_verifier_mac":    nil,
 			"calendar_feed_detailed_titles": false,
+			"calendar_feed_period_span":     false,
+			"calendar_feed_fertile_window":  false,
 			"calendar_feed_last_polled_on":  nil,
 		}); err != nil {
 			return err
@@ -1530,6 +1541,8 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 			"calendar_feed_verifier_hash":   nil,
 			"calendar_feed_verifier_mac":    nil,
 			"calendar_feed_detailed_titles": false,
+			"calendar_feed_period_span":     false,
+			"calendar_feed_fertile_window":  false,
 			"calendar_feed_last_polled_on":  nil,
 			"auth_session_version":          gorm.Expr("auth_session_version + 1"),
 		}
@@ -1681,6 +1694,8 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 				"calendar_feed_verifier_hash":   nil,
 				"calendar_feed_verifier_mac":    nil,
 				"calendar_feed_detailed_titles": false,
+				"calendar_feed_period_span":     false,
+				"calendar_feed_fertile_window":  false,
 				"calendar_feed_last_polled_on":  nil,
 				"auth_session_version":          gorm.Expr("auth_session_version + 1"),
 			})
@@ -2024,6 +2039,8 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"calendar_feed_revealed_at",
 			"calendar_feed_last_polled_on",
 			"calendar_feed_detailed_titles",
+			"calendar_feed_period_span",
+			"calendar_feed_fertile_window",
 		).
 		First(&user, userID).Error; err != nil {
 		return models.User{}, err
@@ -2182,6 +2199,8 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"calendar_feed_verifier_hash":   nil,
 			"calendar_feed_verifier_mac":    nil,
 			"calendar_feed_detailed_titles": false,
+			"calendar_feed_period_span":     false,
+			"calendar_feed_fertile_window":  false,
 			"calendar_feed_last_polled_on":  nil,
 			// The two shown-once reveal marks (migration 036) are deliberately
 			// ABSENT from this map. They are not preferences and hold no health

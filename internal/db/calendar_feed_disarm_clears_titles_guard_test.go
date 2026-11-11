@@ -6,9 +6,12 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 )
 
@@ -32,11 +35,16 @@ var calendarFeedSelectorReaders = []string{
 }
 
 // TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn is WEB-389's
-// completeness guard. Every column map that writes calendar_feed_selector must
-// also write calendar_feed_detailed_titles, and a disarm (any selector value
-// that is not a non-empty string) must write it false: a pre-v2 binary mints a
-// link without writing that column, so a flag left on a revoked row would carry
-// over to that link after a re-upgrade.
+// completeness guard, widened to every per-link opt-in (WEB-381). Every column
+// map that writes calendar_feed_selector must also write each opt-in column, and
+// a disarm (any selector value that is not a non-empty string) must write each
+// of them false: a binary that predates an opt-in mints a link without writing
+// that column, so a flag left on a revoked row would carry over to that link
+// after a re-upgrade.
+//
+// The opt-in columns are not listed here: they are every bool calendar_feed_*
+// column of models.User (calendarFeedPerLinkOptInColumns), so a flag added to
+// the link later is held to the same rule without touching this file.
 //
 // Columns are resolved by the type checker over every non-test file of this
 // package, so a key spelled as a named constant counts. Only this package
@@ -56,8 +64,14 @@ func TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn(t *testing.T) {
 	if testpackages.Isolate(t) {
 		return
 	}
+	optIns := calendarFeedPerLinkOptInColumns()
+	for _, known := range []string{"calendar_feed_detailed_titles", "calendar_feed_period_span", "calendar_feed_fertile_window"} {
+		if !slices.Contains(optIns, known) {
+			t.Fatalf("the opt-in derivation missed %s (%v): it is not measuring what it claims", known, optIns)
+		}
+	}
 	pkg := loadTypedDBPackage(t)
-	disarms, reads, problems := scanCalendarFeedTitleWrites(pkg.Fset, pkg.TypesInfo, pkg.Syntax)
+	disarms, reads, problems := scanCalendarFeedTitleWrites(pkg.Fset, pkg.TypesInfo, pkg.Syntax, optIns)
 	for _, problem := range problems {
 		t.Error(problem)
 	}
@@ -159,7 +173,7 @@ func namedArm(s FeedSelector, d bool) any { return map[string]any{"calendar_feed
 		t.Fatalf("type-check: %v", err)
 	}
 
-	disarms, reads, problems := scanCalendarFeedTitleWrites(fileSet, info, []*ast.File{file})
+	disarms, reads, problems := scanCalendarFeedTitleWrites(fileSet, info, []*ast.File{file}, []string{"calendar_feed_detailed_titles"})
 	for _, name := range []string{"missing", "constantKey", "empty", "kept", "cleared", "typedNil", "expression"} {
 		if !disarms[name] {
 			t.Errorf("the scan did not classify %s as a disarm: %v", name, sortedNamesOf(disarms))
@@ -191,15 +205,76 @@ func namedArm(s FeedSelector, d bool) any { return map[string]any{"calendar_feed
 	}
 }
 
+// TestCalendarFeedOptInScanJudgesEachOptInColumnOnItsOwn proves a second opt-in
+// column is held to the rule independently of the first: a disarm clearing
+// only one of two, and an arm deciding only one of two, are each refused by
+// the column they miss, while a map writing both passes.
+func TestCalendarFeedOptInScanJudgesEachOptInColumnOnItsOwn(t *testing.T) {
+	const source = `package db
+func clearsBoth() any { return map[string]any{"calendar_feed_selector": nil, "calendar_feed_detailed_titles": false, "calendar_feed_period_span": false} }
+func clearsOne() any { return map[string]any{"calendar_feed_selector": nil, "calendar_feed_detailed_titles": false} }
+func keepsSecond() any { return map[string]any{"calendar_feed_selector": nil, "calendar_feed_detailed_titles": false, "calendar_feed_period_span": true} }
+func armsBoth(s string, d, p bool) any { return map[string]any{"calendar_feed_selector": s, "calendar_feed_detailed_titles": d, "calendar_feed_period_span": p} }
+func armsOne(s string, d bool) any { return map[string]any{"calendar_feed_selector": s, "calendar_feed_detailed_titles": d} }
+`
+	fileSet := token.NewFileSet()
+	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}, Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
+	file, err := parser.ParseFile(fileSet, "synthetic.go", source, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if _, err := (&types.Config{}).Check("db", fileSet, []*ast.File{file}, info); err != nil {
+		t.Fatalf("type-check: %v", err)
+	}
+	_, _, problems := scanCalendarFeedTitleWrites(fileSet, info, []*ast.File{file}, []string{"calendar_feed_detailed_titles", "calendar_feed_period_span"})
+	want := []string{
+		"clearsOne at :: calendar_feed_period_span",
+		"keepsSecond at :: calendar_feed_period_span",
+		"armsOne at :: calendar_feed_period_span",
+	}
+	if len(problems) != len(want) {
+		t.Fatalf("expected %d problems, got %v", len(want), problems)
+	}
+	for _, expected := range want {
+		name, column, _ := strings.Cut(expected, " at :: ")
+		found := false
+		for _, problem := range problems {
+			found = found || (strings.HasPrefix(problem, name+" at ") && strings.Contains(problem, column))
+		}
+		if !found {
+			t.Errorf("the scan missed %s leaving %s undecided: %v", name, column, problems)
+		}
+	}
+}
+
+// calendarFeedPerLinkOptInColumns is every per-link opt-in of the calendar feed:
+// each bool field of models.User stored in a calendar_feed_* column. The token
+// columns are strings or times, so the set names the link's choices only.
+func calendarFeedPerLinkOptInColumns() []string {
+	var columns []string
+	userType := reflect.TypeFor[models.User]()
+	for index := range userType.NumField() {
+		field := userType.Field(index)
+		if field.Type.Kind() != reflect.Bool {
+			continue
+		}
+		for _, setting := range strings.Split(field.Tag.Get("gorm"), ";") {
+			if column, ok := strings.CutPrefix(setting, "column:"); ok && strings.HasPrefix(column, "calendar_feed_") {
+				columns = append(columns, column)
+			}
+		}
+	}
+	return columns
+}
+
 type singlePackageImporter struct{ pkg *types.Package }
 
 func (importer singlePackageImporter) Import(string) (*types.Package, error) {
 	return importer.pkg, nil
 }
 
-func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files []*ast.File) (map[string]bool, map[string]bool, []string) {
+func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files []*ast.File, optInColumns []string) (map[string]bool, map[string]bool, []string) {
 	const selectorColumn = "calendar_feed_selector"
-	const titlesColumn = "calendar_feed_detailed_titles"
 	readers := map[string]bool{}
 	for _, name := range calendarFeedSelectorReaders {
 		readers[name] = true
@@ -264,18 +339,19 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 				if _, isMap := literalType.Underlying().(*types.Map); !isMap {
 					return true
 				}
-				var selector, titles ast.Expr
+				var selector ast.Expr
+				optIns := map[string]ast.Expr{}
 				for _, element := range literal.Elts {
 					keyValue, ok := element.(*ast.KeyValueExpr)
 					if !ok {
 						continue
 					}
 					allowed[keyValue.Key] = true
-					switch columnOf(keyValue.Key) {
-					case selectorColumn:
+					column := columnOf(keyValue.Key)
+					if column == selectorColumn {
 						selector = keyValue.Value
-					case titlesColumn:
-						titles = keyValue.Value
+					} else if slices.Contains(optInColumns, column) {
+						optIns[column] = keyValue.Value
 					}
 				}
 				if selector == nil {
@@ -289,15 +365,19 @@ func scanCalendarFeedTitleWrites(fileSet *token.FileSet, info *types.Info, files
 					basic, isBasic := selectorType.Underlying().(*types.Basic)
 					arms = isBasic && basic.Info()&types.IsString != 0 && !isConstant(selector, constant.MakeString(""))
 				}
-				disarm := !arms
-				switch {
-				case disarm:
+				if !arms {
 					disarms[name] = true
-					if titles == nil || !isConstant(titles, constant.MakeBool(false)) {
-						problems = append(problems, name+" at "+position+": a calendar-feed disarm leaves calendar_feed_detailed_titles standing")
+				}
+				for _, column := range optInColumns {
+					value := optIns[column]
+					switch {
+					case !arms:
+						if value == nil || !isConstant(value, constant.MakeBool(false)) {
+							problems = append(problems, name+" at "+position+": a calendar-feed disarm leaves "+column+" standing")
+						}
+					case value == nil:
+						problems = append(problems, name+" at "+position+": a calendar_feed_selector write does not decide "+column+" for the link it arms")
 					}
-				case titles == nil:
-					problems = append(problems, name+" at "+position+": a calendar_feed_selector write does not decide calendar_feed_detailed_titles for the link it arms")
 				}
 				return true
 			})
