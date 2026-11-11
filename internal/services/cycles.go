@@ -9,21 +9,21 @@ import (
 )
 
 type CycleStats struct {
-	CurrentCycleDay      int       `json:"current_cycle_day"`
-	CurrentPhase         string    `json:"current_phase"`
-	CurrentFertility     string    `json:"current_fertility"`
-	FertilityBasis       string    `json:"fertility_basis"`
-	AverageCycleLength   float64   `json:"average_cycle_length"`
-	MedianCycleLength    int       `json:"median_cycle_length"`
-	MinCycleLength       int       `json:"min_cycle_length"`
-	MaxCycleLength       int       `json:"max_cycle_length"`
-	CycleLengthStdDev    float64   `json:"cycle_length_std_dev"`
-	CompletedCycleCount  int       `json:"completed_cycle_count"`
-	AveragePeriodLength  float64   `json:"average_period_length"`
+	CurrentCycleDay     int     `json:"current_cycle_day"`
+	CurrentPhase        string  `json:"current_phase"`
+	CurrentFertility    string  `json:"current_fertility"`
+	FertilityBasis      string  `json:"fertility_basis"`
+	AverageCycleLength  float64 `json:"average_cycle_length"`
+	MedianCycleLength   int     `json:"median_cycle_length"`
+	MinCycleLength      int     `json:"min_cycle_length"`
+	MaxCycleLength      int     `json:"max_cycle_length"`
+	CycleLengthStdDev   float64 `json:"cycle_length_std_dev"`
+	CompletedCycleCount int     `json:"completed_cycle_count"`
+	AveragePeriodLength float64 `json:"average_period_length"`
 	// PeriodLengthObserved reports that AveragePeriodLength was read off logged
 	// period days, not the configured length that stands in without one. Not
 	// published.
-	PeriodLengthObserved bool `json:"-"`
+	PeriodLengthObserved bool      `json:"-"`
 	LastCycleLength      int       `json:"last_cycle_length"`
 	LastPeriodLength     int       `json:"last_period_length"`
 	LutealPhase          int       `json:"luteal_phase"`
