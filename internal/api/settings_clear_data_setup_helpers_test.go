@@ -37,9 +37,12 @@ func setupClearDataScenario(t *testing.T) clearDataScenario {
 
 	lastPeriodStart := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
-		"cycle_length":      41,
-		"period_length":     8,
-		"auto_period_fill":  false,
+		"cycle_length":  41,
+		"period_length": 8,
+		// Seeded armed: the wipe resets it to models.DefaultAutoPeriodFill (off),
+		// and a seed equal to that default would let a wipe that skipped the
+		// reset pass unseen.
+		"auto_period_fill":  true,
 		"last_period_start": lastPeriodStart,
 	}).Error; err != nil {
 		t.Fatalf("update user baseline settings: %v", err)
