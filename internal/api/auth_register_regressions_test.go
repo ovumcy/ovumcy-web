@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -115,15 +116,13 @@ func TestRegisterResponseParityBetweenNewAndDuplicateEmail(t *testing.T) {
 	newCookies := indexSetCookies(newResponse)
 	dupCookies := indexSetCookies(dupResponse)
 
-	if len(newCookies) != len(dupCookies) {
-		t.Fatalf(
-			"Set-Cookie count mismatch: new=%d duplicate=%d (new=%v duplicate=%v)",
-			len(newCookies), len(dupCookies), cookieNames(newResponse), cookieNames(dupResponse),
-		)
+	if newNames, dupNames := cookieNames(newResponse), cookieNames(dupResponse); !slices.Equal(newNames, dupNames) {
+		t.Fatalf("Set-Cookie names differ: new=%v duplicate=%v", newNames, dupNames)
 	}
 
+	newDate, dupDate := responseDate(t, newResponse), responseDate(t, dupResponse)
 	for _, name := range cookieNames(newResponse) {
-		assertCookieParity(t, name, newCookies[name], dupCookies[name])
+		assertCookieParity(t, name, newCookies[name], dupCookies[name], newDate, dupDate)
 	}
 
 	// Both branches must specifically emit the pickup cookie and must NOT leak
@@ -189,7 +188,18 @@ func assertRegisterJSONPayloadParity(t *testing.T, app *fiber.App, freshEmail, d
 	}
 }
 
-func assertCookieParity(t *testing.T, name string, want, got *http.Cookie) {
+// responseDate is the response's own Date header, the clock a cookie's
+// Expires is measured against.
+func responseDate(t *testing.T, response *http.Response) time.Time {
+	t.Helper()
+	date, err := http.ParseTime(response.Header.Get("Date"))
+	if err != nil {
+		t.Fatalf("response carries no parseable Date header: %v", err)
+	}
+	return date
+}
+
+func assertCookieParity(t *testing.T, name string, want, got *http.Cookie, wantDate, gotDate time.Time) {
 	t.Helper()
 	if got == nil {
 		t.Fatalf("duplicate response missing cookie %q present in new response", name)
@@ -218,13 +228,20 @@ func assertCookieParity(t *testing.T, name string, want, got *http.Cookie) {
 	if want.Partitioned != got.Partitioned {
 		t.Fatalf("cookie %q Partitioned mismatch", name)
 	}
-	// Both branches are minted a request apart, so Expires may straddle a
-	// second boundary; a different TTL moves it by minutes.
+	if !slices.Equal(want.Unparsed, got.Unparsed) {
+		t.Fatalf("cookie %q carries different extra attributes: new=%q duplicate=%q", name, want.Unparsed, got.Unparsed)
+	}
+	// The lifetime each branch granted, measured against its own response's
+	// Date, so request latency cancels out. Both headers have one-second
+	// resolution and are stamped a moment apart, hence the one-second slack.
 	if want.Expires.IsZero() != got.Expires.IsZero() {
 		t.Fatalf("cookie %q Expires present on one branch only: new=%v duplicate=%v", name, want.Expires, got.Expires)
 	}
-	if drift := want.Expires.Sub(got.Expires).Abs(); drift > 2*time.Second {
-		t.Fatalf("cookie %q Expires mismatch: new=%v duplicate=%v", name, want.Expires, got.Expires)
+	if !want.Expires.IsZero() {
+		wantTTL, gotTTL := want.Expires.Sub(wantDate), got.Expires.Sub(gotDate)
+		if (wantTTL - gotTTL).Abs() > time.Second {
+			t.Fatalf("cookie %q lifetime mismatch: new=%v duplicate=%v", name, wantTTL, gotTTL)
+		}
 	}
 }
 
@@ -275,6 +292,31 @@ func TestRegisterPickupDecoyPayloadHasTheShapeOfTheRealOne(t *testing.T) {
 	}
 	if !validPickupRecoveryCodeShape(decoy.RC) {
 		t.Fatalf("decoy recovery code %q does not have the real code's shape", decoy.RC)
+	}
+
+	// Same alphabet, not only the same length: a decoy character a real code
+	// never holds would tell the two apart to anyone who sees the payload.
+	// 400 real codes cover every character of the generator's alphabet.
+	realAlphabet := map[rune]bool{}
+	for range 400 {
+		code, err := services.GenerateRecoveryCode()
+		if err != nil {
+			t.Fatalf("generate recovery code: %v", err)
+		}
+		for _, character := range code {
+			realAlphabet[character] = true
+		}
+	}
+	for range 400 {
+		sample, err := newRegisterPickupDecoyPayload(now)
+		if err != nil {
+			t.Fatalf("build decoy payload: %v", err)
+		}
+		for _, character := range sample.RC {
+			if !realAlphabet[character] {
+				t.Fatalf("decoy recovery code %q holds %q, which no real code does", sample.RC, character)
+			}
+		}
 	}
 }
 
