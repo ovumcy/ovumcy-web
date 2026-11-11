@@ -17,6 +17,7 @@ package testpackages
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -49,8 +50,14 @@ func Isolate(t *testing.T) bool {
 		segments[i] = "^" + regexp.QuoteMeta(segment) + "$"
 	}
 	args := []string{"-test.run=" + strings.Join(segments, "/"), "-test.count=1", "-test.v"}
+	if testing.Short() {
+		args = append(args, "-test.short")
+	}
+	if failfast := flag.Lookup("test.failfast"); failfast != nil && failfast.Value.String() == "true" {
+		args = append(args, "-test.failfast")
+	}
 	if deadline, ok := t.Deadline(); ok {
-		args = append(args, "-test.timeout="+time.Until(deadline).Round(time.Second).String())
+		args = append(args, "-test.timeout="+max(time.Until(deadline), time.Second).String())
 	}
 	child := exec.Command(os.Args[0], args...) // #nosec G204 -- test-only (imported solely by _test.go callers); the binary is this test binary itself, and the arguments are the running test's own name, regexp-quoted, and its deadline, never external input.
 	child.Env = append(os.Environ(), serialChildEnv+"=1", "GOMAXPROCS=1")
