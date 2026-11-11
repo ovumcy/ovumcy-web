@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // registerPickupCookieTTL caps how long the sealed register-pickup cookie is
@@ -79,12 +80,12 @@ func newRegisterPickupDecoyPayload(now time.Time) (registerPickupPayload, error)
 	if err != nil {
 		return registerPickupPayload{}, err
 	}
-	rcBytes := make([]byte, 6)
-	if _, err := rand.Read(rcBytes); err != nil {
+	// The real generator, so a decoy code is drawn from the same alphabet as a
+	// real one and no character can tell them apart.
+	rc, err := services.GenerateRecoveryCode()
+	if err != nil {
 		return registerPickupPayload{}, err
 	}
-	rcHex := strings.ToUpper(hex.EncodeToString(rcBytes))
-	rc := "OVUM-" + rcHex[0:4] + "-" + rcHex[4:8] + "-" + rcHex[8:12]
 	expiresHex, err := encodePickupExpiryHex(now.UTC().Add(registerPickupCookieTTL))
 	if err != nil {
 		return registerPickupPayload{}, err
