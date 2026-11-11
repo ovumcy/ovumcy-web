@@ -86,14 +86,19 @@ func (handler *Handler) issueCalendarFeedToken(c fiber.Ctx, mutation healthMutat
 		return handler.failMutation(c, mutation, unauthorizedErrorSpec())
 	}
 
-	// Absent means unchecked: the neutral title is the default (WEB-379).
-	detailedTitles := services.ParseBoolLike(c.FormValue("calendar_feed_detailed_titles"))
+	// Absent means unchecked: the neutral title (WEB-379), single estimated
+	// days and no fertile window (WEB-381) are the defaults.
+	options := services.CalendarFeedLinkOptions{
+		DetailedTitles: services.ParseBoolLike(c.FormValue("calendar_feed_detailed_titles")),
+		PeriodSpan:     services.ParseBoolLike(c.FormValue("calendar_feed_period_span")),
+		FertileWindow:  services.ParseBoolLike(c.FormValue("calendar_feed_fertile_window")),
+	}
 	// The reveal cookie is sealed BEFORE the token is saved, inside the service's
 	// delivery hook: a seal that fails then stores nothing and the previous URL
 	// keeps serving, instead of the old URL dying with the new one never shown.
 	// The cookie names the minted selector, so it opens only the link it was
 	// sealed for.
-	_, err := handler.calendarFeedSettings.GenerateFeedToken(c.Context(), user.ID, detailedTitles, func(token, selector string) error {
+	_, err := handler.calendarFeedSettings.GenerateFeedToken(c.Context(), user.ID, options, func(token, selector string) error {
 		return handler.setCalendarFeedRevealCookie(c, user.ID, selector, calendarFeedSubscribeURL(c, token), rotated)
 	})
 	if err != nil {

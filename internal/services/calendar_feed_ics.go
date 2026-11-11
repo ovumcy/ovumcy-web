@@ -92,21 +92,33 @@ type CalendarFeedICSInput struct {
 	Location   *time.Location
 	Disclaimer string
 	SecretKey  []byte
-	// Titles is the owner-localized pair used only when the owner opted into
+	// Titles is the owner-localized set used only when the owner opted into
 	// detailed titles (User.CalendarFeedDetailedTitles, WEB-379).
 	Titles CalendarFeedTitles
+	// FertileWindowNotice is the localized second DESCRIPTION line of every
+	// fertile-window event (WEB-381): pregnancy is possible on any day,
+	// including outside the window. A calendar app shows the window without
+	// the app around it, so a blank notice withholds every fertile-window
+	// event rather than sending one without it.
+	FertileWindowNotice string
 }
 
-// CalendarFeedTitles is the per-type SUMMARY pair of the detailed-titles opt-in.
-// Each carries the estimate qualifier in its locale. If either is empty, the
-// whole feed falls back to calendarFeedNeutralSummary: a half-detailed feed
-// would name one type by elimination.
+// CalendarFeedTitles is the per-type SUMMARY set of the detailed-titles opt-in.
+// Each carries the estimate qualifier in its locale. If one the feed can send is
+// empty, the whole feed falls back to calendarFeedNeutralSummary: a
+// half-detailed feed would name one type by elimination.
 type CalendarFeedTitles struct {
 	Period    string
 	Ovulation string
+	// FertileWindow titles the fertile-window events, and is required only
+	// when the link opted into them (User.CalendarFeedFertileWindow).
+	FertileWindow string
 }
 
-func (titles CalendarFeedTitles) complete() bool {
+func (titles CalendarFeedTitles) complete(fertileWindow bool) bool {
+	if fertileWindow && strings.TrimSpace(titles.FertileWindow) == "" {
+		return false
+	}
 	return strings.TrimSpace(titles.Period) != "" && strings.TrimSpace(titles.Ovulation) != ""
 }
 
@@ -117,12 +129,23 @@ func calendarFeedSummary(kind string, detailed *CalendarFeedTitles) string {
 		return calendarFeedNeutralSummary
 	}
 	switch kind {
-	case calendarFeedKindPeriod, calendarFeedKindPeriodWindow:
+	case calendarFeedKindPeriod, calendarFeedKindPeriodWindow, calendarFeedKindPeriodSpan:
 		return detailed.Period
 	case calendarFeedKindOvulation, calendarFeedKindOvulationWindow:
 		return detailed.Ovulation
+	case calendarFeedKindFertileWindow:
+		return detailed.FertileWindow
 	}
 	return calendarFeedNeutralSummary
+}
+
+// calendarFeedDescription is an event's DESCRIPTION: the disclaimer, and on a
+// fertile-window event the notice after it on a line of its own.
+func calendarFeedDescription(kind string, disclaimer string, fertileWindowNotice string) string {
+	if kind == calendarFeedKindFertileWindow {
+		return disclaimer + "\n" + fertileWindowNotice
+	}
+	return disclaimer
 }
 
 const (
@@ -140,6 +163,15 @@ const (
 	// matching a single-day event that starts on the same date.
 	calendarFeedKindPeriodWindow    = "period-window"
 	calendarFeedKindOvulationWindow = "ovulation-window"
+
+	// calendarFeedKindPeriodSpan and calendarFeedKindFertileWindow are the two
+	// per-link opt-in events (WEB-381): a predicted period sent as the days it
+	// is expected to last, and the estimated fertile window. Distinct kinds keep
+	// each from sharing a UID with a single-day event on the same start, and the
+	// UID keys on the start alone, so a changed period length moves only DTEND
+	// and the client updates the event in place.
+	calendarFeedKindPeriodSpan    = "period-span"
+	calendarFeedKindFertileWindow = "fertile-window"
 )
 
 // calendarFeedEvent is one resolved all-day event before rendering.
@@ -189,12 +221,12 @@ func BuildCalendarFeedICS(input CalendarFeedICSInput) []byte {
 		if uids, err = security.NewCalendarFeedEventUIDs(input.SecretKey, input.User.ID); err == nil && strings.TrimSpace(input.Disclaimer) != "" {
 			events = calendarFeedEvents(input)
 		}
-		if input.User.CalendarFeedDetailedTitles && input.Titles.complete() {
+		if input.User.CalendarFeedDetailedTitles && input.Titles.complete(input.User.CalendarFeedFertileWindow) {
 			titles := input.Titles
 			detailed = &titles
 		}
 	}
-	return renderCalendarFeedICS(events, uids, input.Disclaimer, detailed, input.Now)
+	return renderCalendarFeedICS(events, uids, input.Disclaimer, input.FertileWindowNotice, detailed, input.Now)
 }
 
 // calendarFeedEvents resolves the neutral, all-day events for the feed: the
@@ -327,13 +359,35 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// chainedFertilityCycles after it while the periods run the whole horizon,
 	// exactly as the grid shades them (WEB-388).
 	lastOvulationCycle := chainedFertilityCycles(user, stats)
+	// Under the link's period-span opt-in (WEB-381) each projected period goes
+	// out as the days it is expected to last, the length the grid shades
+	// (predictedPeriodLength), clamped below the cycle length so two spans never
+	// touch. Only once a period length has been observed: before that the
+	// length is onboarding or a default, a window drawn from configuration, so
+	// the single start day goes out as it always has.
+	spanDays := 0
+	if user.CalendarFeedPeriodSpan && PeriodLengthObserved(stats) {
+		spanDays = min(predictedPeriodLength(stats.AveragePeriodLength), cycleLength-1)
+	}
 	for cycle := range cycles {
 		anchor := AddCalendarDays(runningStart, cycle*cycleLength, input.Location)
 
 		nextPeriodStart := AddCalendarDays(anchor, cycleLength, input.Location)
-		if !nextPeriodStart.Before(today) &&
-			(!periodWindow || !calendarDayWithin(nextPeriodStart, ranges.NextPeriodStart, ranges.NextPeriodEnd)) {
-			appendEvent(calendarFeedKindPeriod, nextPeriodStart)
+		// Where the start window above covers this start, the window is the event
+		// and this cycle gets neither a day nor a span: a solid span drawn from
+		// the median inside a start window would show its edges as more precise
+		// than the projection is.
+		if !periodWindow || !calendarDayWithin(nextPeriodStart, ranges.NextPeriodStart, ranges.NextPeriodEnd) {
+			if spanDays > 0 {
+				// A span is sent while its last day is not behind today, so a late
+				// period keeps its own start and UID until the span has passed.
+				spanEnd := AddCalendarDays(nextPeriodStart, spanDays-1, input.Location)
+				if CalendarDaysBetween(today, spanEnd) >= 0 {
+					appendSpan(calendarFeedKindPeriodSpan, nextPeriodStart, spanEnd)
+				}
+			} else if !nextPeriodStart.Before(today) {
+				appendEvent(calendarFeedKindPeriod, nextPeriodStart)
+			}
 		}
 
 		window := PredictCycleWindow(anchor, cycleLength, stats.LutealPhase)
@@ -354,7 +408,55 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 			appendEvent(calendarFeedKindOvulation, CalendarDay(window.OvulationDate, input.Location))
 		}
 	}
+
+	if user.CalendarFeedFertileWindow && !suppression.FertilitySuppressed && strings.TrimSpace(input.FertileWindowNotice) != "" {
+		appendFertileWindows(user, input.Logs, stats, suppression, today, input.Location, appendSpan)
+	}
 	return events
+}
+
+// appendFertileWindows sends, under the link's fertile-window opt-in (WEB-381),
+// the windows the calendar grid shades, decided exactly as
+// buildCalendarPredictionMaps decides them: the running cycle's window from the
+// stats the grid resolves (ResolveConfirmedCycleStats, so a confirmed shift
+// moves it, and irregular mode widens it, as on the grid), then the chained
+// cycles' windows (projectedCycleWindow) up to chainedFertilityCycles, none once
+// the chain is suppressed. The caller has already applied the grid's fertility
+// gate. A window whose last day is behind today is not sent. FertilityWindow*
+// are UTC-midnight date-only values, so every comparison here is by calendar
+// day (issue #48 class).
+func appendFertileWindows(user *models.User, logs []models.DailyLog, stats CycleStats, suppression PredictionSuppression, today time.Time, location *time.Location, appendSpan func(kind string, date time.Time, end time.Time)) {
+	appendWindow := func(start time.Time, end time.Time) {
+		if start.IsZero() || end.IsZero() || CalendarDaysBetween(start, end) < 0 || CalendarDaysBetween(today, end) < 0 {
+			return
+		}
+		appendSpan(calendarFeedKindFertileWindow, CalendarDay(start, location), CalendarDay(end, location))
+	}
+
+	currentStats, _ := ResolveConfirmedCycleStats(user, logs, stats, today, location)
+	appendWindow(currentStats.FertilityWindowStart, currentStats.FertilityWindowEnd)
+
+	fertileCycles := chainedFertilityCycles(user, stats)
+	if suppression.ProjectionChainSuppressed {
+		fertileCycles = 0
+	}
+	if stats.NextPeriodStart.IsZero() {
+		return
+	}
+	step := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
+	// codecov:ignore:start -- defensive: a published NextPeriodStart always
+	// comes with a positive length, the same guard appendPredictedCycles keeps.
+	if step <= 0 {
+		return
+	}
+	// codecov:ignore:end
+	cycleStart := CalendarDay(stats.NextPeriodStart, location)
+	for range fertileCycles {
+		if window, ok := projectedCycleWindow(cycleStart, step, stats.LutealPhase); ok {
+			appendWindow(window.FertilityWindowStart, window.FertilityWindowEnd)
+		}
+		cycleStart = AddCalendarDays(cycleStart, step, location)
+	}
 }
 
 // calendarDayWithin reports whether day falls on or between first and last, by
@@ -368,7 +470,7 @@ func calendarDayWithin(day time.Time, first time.Time, last time.Time) bool {
 // VEVENT is an all-day event (VALUE=DATE DTSTART, exclusive next-day DTEND per
 // RFC 5545 §3.6.1), carries the fixed neutral SUMMARY (or, under the owner's
 // opt-in, its type's estimate title), and puts the disclaimer in DESCRIPTION.
-func renderCalendarFeedICS(events []calendarFeedEvent, uids *security.CalendarFeedEventUIDs, disclaimer string, detailed *CalendarFeedTitles, now time.Time) []byte {
+func renderCalendarFeedICS(events []calendarFeedEvent, uids *security.CalendarFeedEventUIDs, disclaimer string, fertileWindowNotice string, detailed *CalendarFeedTitles, now time.Time) []byte {
 	stamp := now.UTC().Format(calendarFeedTimestampLayout)
 
 	var b strings.Builder
@@ -380,7 +482,7 @@ func renderCalendarFeedICS(events []calendarFeedEvent, uids *security.CalendarFe
 	// No UID key, no events: an event is never written without an opaque UID.
 	if uids != nil {
 		for _, event := range events {
-			writeCalendarFeedEvent(&b, event, uids, stamp, disclaimer, calendarFeedSummary(event.kind, detailed))
+			writeCalendarFeedEvent(&b, event, uids, stamp, calendarFeedDescription(event.kind, disclaimer, fertileWindowNotice), calendarFeedSummary(event.kind, detailed))
 		}
 	}
 	writeICSLine(&b, "END:VCALENDAR")

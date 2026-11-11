@@ -64,6 +64,11 @@ type settingsEgressView struct {
 	// FeedDetailedTitles pre-checks the rotate form's title opt-in with the
 	// stored link's choice (WEB-379). Always false when no link is stored.
 	FeedDetailedTitles bool
+	// FeedPeriodSpan and FeedFertileWindow pre-check the rotate form's span
+	// opt-ins with the stored link's choices (WEB-381). Always false when no
+	// link is stored.
+	FeedPeriodSpan    bool
+	FeedFertileWindow bool
 
 	// ResultPath names the control group the answer's result belongs beside:
 	// egressResultWebhook or egressResultFeed. Empty for a plain page load, where
@@ -134,7 +139,7 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location
 			EvidenceKey:  feedEvidenceKey,
 			EvidenceISO:  feedISO,
 			EvidenceText: feedText,
-			PayloadKeys:  egressFeedPayloadMessageKeys(ledger.Feed.PayloadFields, ledger.Feed.DetailedTitles),
+			PayloadKeys:  egressFeedPayloadMessageKeys(ledger.Feed),
 			PolledKey:    feedPolledKey,
 			PolledISO:    feedPolledISO,
 			PolledText:   feedPolledText,
@@ -142,6 +147,8 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location
 		FeedActionable:     ledger.Feed.State != services.EgressFeedUnknown,
 		FeedTokenPresent:   egressFeedTokenPresent(ledger.Feed.State),
 		FeedDetailedTitles: ledger.Feed.DetailedTitles,
+		FeedPeriodSpan:     ledger.Feed.PeriodSpan,
+		FeedFertileWindow:  ledger.Feed.FertileWindow,
 	}
 }
 
@@ -278,10 +285,12 @@ func egressWebhookPayloadMessageKeys(fields []services.EgressPayloadField) []str
 }
 
 // egressFeedPayloadMessageKeys names each iCalendar property a feed event carries.
-// The SUMMARY line follows the stored link's title choice (WEB-379), so the
-// ledger says what the feed actually sends.
-func egressFeedPayloadMessageKeys(fields []services.EgressPayloadField, detailedTitles bool) []string {
-	keys := make([]string, 0, len(fields))
+// The SUMMARY line follows the stored link's title choice (WEB-379), and the
+// span opt-ins (WEB-381) name the extra events and the extra DESCRIPTION line
+// they add, so the ledger says what the feed actually sends.
+func egressFeedPayloadMessageKeys(feed services.EgressFeedLedger) []string {
+	fields := feed.PayloadFields
+	keys := make([]string, 0, len(fields)+2)
 	for _, field := range fields {
 		switch field {
 		case "uid":
@@ -293,16 +302,29 @@ func egressFeedPayloadMessageKeys(fields []services.EgressPayloadField, detailed
 		case "dtend":
 			keys = append(keys, "settings.egress.payload.feed.dtend")
 		case "summary":
-			if detailedTitles {
+			switch {
+			case feed.DetailedTitles && feed.FertileWindow:
+				keys = append(keys, "settings.egress.payload.feed.summary_detailed_fertile_window")
+			case feed.DetailedTitles:
 				keys = append(keys, "settings.egress.payload.feed.summary_detailed")
-			} else {
+			default:
 				keys = append(keys, "settings.egress.payload.feed.summary")
 			}
 		case "description":
-			keys = append(keys, "settings.egress.payload.feed.description")
+			if feed.FertileWindow {
+				keys = append(keys, "settings.egress.payload.feed.description_fertile_window")
+			} else {
+				keys = append(keys, "settings.egress.payload.feed.description")
+			}
 		case "transp":
 			keys = append(keys, "settings.egress.payload.feed.transp")
 		}
+	}
+	if feed.PeriodSpan {
+		keys = append(keys, "settings.egress.payload.feed.period_span")
+	}
+	if feed.FertileWindow {
+		keys = append(keys, "settings.egress.payload.feed.fertile_window")
 	}
 	return keys
 }

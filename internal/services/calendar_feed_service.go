@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -35,6 +36,10 @@ type CalendarFeedService struct {
 const (
 	calendarFeedPeriodTitleKey    = "calendar_feed.event.period"
 	calendarFeedOvulationTitleKey = "calendar_feed.event.ovulation"
+	// WEB-381: the fertile-window title, and the second DESCRIPTION line of
+	// every fertile-window event.
+	calendarFeedFertileWindowTitleKey  = "calendar_feed.event.fertile_window"
+	calendarFeedFertileWindowNoticeKey = "calendar_feed.event.fertile_window_notice"
 )
 
 // CalendarFeedUserStore resolves the single owner whose calendar_feed_selector
@@ -201,9 +206,16 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 	var titles CalendarFeedTitles
 	if user.CalendarFeedDetailedTitles && service.disclaimer != nil {
 		titles = CalendarFeedTitles{
-			Period:    service.disclaimer.Message(user.InterfaceLanguage, calendarFeedPeriodTitleKey),
-			Ovulation: service.disclaimer.Message(user.InterfaceLanguage, calendarFeedOvulationTitleKey),
+			Period:        service.disclaimer.Message(user.InterfaceLanguage, calendarFeedPeriodTitleKey),
+			Ovulation:     service.disclaimer.Message(user.InterfaceLanguage, calendarFeedOvulationTitleKey),
+			FertileWindow: service.disclaimer.Message(user.InterfaceLanguage, calendarFeedFertileWindowTitleKey),
 		}
+	}
+	// The fertile-window notice is resolved at the owner's language like the
+	// disclaimer. Blank, it withholds the fertile-window events (WEB-381).
+	var fertileWindowNotice string
+	if user.CalendarFeedFertileWindow && service.disclaimer != nil {
+		fertileWindowNotice = strings.TrimSpace(service.disclaimer.Message(user.InterfaceLanguage, calendarFeedFertileWindowNoticeKey))
 	}
 
 	feedUser := user
@@ -215,6 +227,8 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 		Disclaimer: disclaimer,
 		SecretKey:  service.secretKey,
 		Titles:     titles,
+
+		FertileWindowNotice: fertileWindowNotice,
 	})
 	// The build succeeded: this is a successful, token-verified poll. Record
 	// the coarse day mark (WEB-46) synchronously, AFTER the body the caller

@@ -472,6 +472,15 @@ func DashboardAwaitingFirstCycle(stats CycleStats) bool {
 	return stats.CompletedCycleCount < 1
 }
 
+// PeriodLengthObserved reports that at least one cycle has been completed, so
+// the period length a projection would shade comes from the account's own
+// record rather than from onboarding or a default alone. It is the floor of the
+// .ics feed's period-span opt-in (WEB-381): before it, a multi-day span would be
+// a window drawn from configuration, and the feed sends the start day alone.
+func PeriodLengthObserved(stats CycleStats) bool {
+	return !DashboardAwaitingFirstCycle(stats)
+}
+
 // DashboardAwaitingMoreCycles reports a regular-mode account that has completed
 // at least one cycle but fewer than fertilityMinimumCycles. It is the second tier
 // of the same reliability signal as DashboardAwaitingFirstCycle, read off the
