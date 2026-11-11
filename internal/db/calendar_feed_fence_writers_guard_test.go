@@ -114,8 +114,11 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		// exemption without a reason is how this guard would quietly turn into an
 		// allowlist for whatever was easiest to skip. A Select naming the columns
 		// a following Updates writes is still caught, because that function does
-		// issue a write.
-		if !functionIssuesAWrite(function) {
+		// issue a write. A function with no write verb of its own is still read
+		// for an advance (WEB-526): one that hands every write to helpers is not
+		// a column writer, but its helpers must still be walked.
+		issuesWrite := functionIssuesAWrite(function)
+		if !issuesWrite && !callsAnAdvance(info, pkg, function) {
 			continue
 		}
 		markColumn := func(node ast.Node) {
@@ -160,7 +163,7 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 		if advanceAt >= 0 {
 			advances[name] = true
 		}
-		if columnAt >= 0 {
+		if columnAt >= 0 && issuesWrite {
 			writers[name] = true
 		}
 		// The write is the writer's first feed column or, for one that opens a
@@ -368,13 +371,21 @@ func handleRoots(info *types.Info, assigned map[types.Object][]ast.Expr, expr as
 func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAdvance func(*ast.CallExpr) bool) (checked int, violations []string, helpers map[types.Object]int, postCommit map[string]bool) {
 	info := pkg.TypesInfo
 	var closures []*ast.FuncLit
+	var advanceCalls []*ast.CallExpr
+	deferred := map[*ast.CallExpr]bool{}
 	assigned := assignmentsIn(info, function.Body)
 	walk := newFenceHelperWalk(pkg, isAdvance)
 	outside := walk.outsideTwin()
 	ast.Inspect(function.Body, func(node ast.Node) bool {
-		if call, ok := node.(*ast.CallExpr); ok && isAdvance(call) {
-			if closure := fenceWriteClosure(call); closure != nil {
-				closures = append(closures, closure)
+		switch typed := node.(type) {
+		case *ast.DeferStmt:
+			deferred[typed.Call] = true
+		case *ast.CallExpr:
+			if isAdvance(typed) {
+				advanceCalls = append(advanceCalls, typed)
+				if closure := fenceWriteClosure(typed); closure != nil {
+					closures = append(closures, closure)
+				}
 			}
 		}
 		return true
@@ -427,7 +438,8 @@ func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAd
 		switch {
 		case callee.Pkg() != pkg.Types:
 		case postCommitFenceHelpers[callee.FullName()] != "" && enclosing == nil:
-			if !afterEvery(closures, call.Pos()) {
+			// A deferred call runs as the writer returns, after every advance.
+			if !deferred[call] && !afterEvery(advanceCalls, call.Pos()) {
 				violations = append(violations, fmt.Sprintf("%s: post-commit helper %s runs before the advance has committed", pkg.Fset.Position(call.Pos()), callee.Name()))
 			}
 			walk.postCommit[callee.FullName()] = true
@@ -436,7 +448,11 @@ func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAd
 			checked += helperChecked
 			violations = append(violations, helperViolations...)
 		case txObject == nil:
-			violations = append(violations, fmt.Sprintf("%s: %s is called inside a closure whose tx parameter is unnamed, so its writes cannot be placed", pkg.Fset.Position(call.Pos()), callee.Name()))
+			// An unnamed tx parameter binds nothing: a helper that writes is
+			// refused, one that writes nothing passes.
+			helperChecked, helperViolations := walk.enter(info, assigned, map[types.Object]bool{}, call, callee, 0)
+			checked += helperChecked
+			violations = append(violations, helperViolations...)
 		default:
 			helperChecked, helperViolations := walk.enter(info, assigned, map[types.Object]bool{txObject: true}, call, callee, 0)
 			checked += helperChecked
@@ -554,15 +570,30 @@ func (walk *fenceHelperWalk) apart() string {
 	return "goes through a handle that is not the closure's tx"
 }
 
-// afterEvery reports whether at lies after every closure, i.e. after each
-// advance — and the transaction it opens — has returned.
-func afterEvery(closures []*ast.FuncLit, at token.Pos) bool {
-	for _, closure := range closures {
-		if at <= closure.End() {
+// callsAnAdvance reports whether function calls one of the fence advances.
+func callsAnAdvance(info *types.Info, pkg *packages.Package, function *ast.FuncDecl) bool {
+	found := false
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		if call, ok := node.(*ast.CallExpr); ok {
+			if callee, ok := typeutil.Callee(info, call).(*types.Func); ok && callee.Pkg() == pkg.Types && calendarFeedFenceAdvanceCalls[callee.Name()] {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// afterEvery reports whether at lies after every advance call, i.e. after
+// each advance — and the transaction it opens — has returned. A closure
+// passed as a variable is placed by its advance call all the same.
+func afterEvery(advanceCalls []*ast.CallExpr, at token.Pos) bool {
+	for _, advance := range advanceCalls {
+		if at <= advance.End() {
 			return false
 		}
 	}
-	return len(closures) > 0
+	return len(advanceCalls) > 0
 }
 
 // postCommitFenceHelpers write after a fenced writer's transaction has
@@ -646,7 +677,8 @@ func (walk *fenceHelperWalk) enter(info *types.Info, assigned map[types.Object][
 		if walk.isAdvance(inside) {
 			return false
 		}
-		opener, _ := typeutil.Callee(info, inside).(*types.Func)
+		calleeObject := typeutil.Callee(info, inside)
+		opener, _ := calleeObject.(*types.Func)
 		opensSavepoint := opener != nil && opener.Pkg() != nil && opener.Pkg().Path() == "gorm.io/gorm" && opener.Name() == "Transaction"
 		if selector, ok := inside.Fun.(*ast.SelectorExpr); ok && opensSavepoint && rootedIn(info, helperAssigned, inner, selector.X) {
 			for _, argument := range inside.Args {
@@ -664,7 +696,7 @@ func (walk *fenceHelperWalk) enter(info *types.Info, assigned map[types.Object][
 			}
 		}
 		at := walk.pkg.Fset.Position(inside.Pos())
-		switch resolved := typeutil.Callee(info, inside).(type) {
+		switch resolved := calleeObject.(type) {
 		case *types.Func:
 			if resolved.Pkg() == nil {
 				return true
