@@ -145,6 +145,15 @@ func TestCalendarFeedSpansFollowEverySuppression(t *testing.T) {
 	if events := calendarFeedEvents(input); len(events) != 0 {
 		t.Fatalf("unpredictable-cycle mode must send no span: %v", events)
 	}
+	paused := spanFeedInput(t, "2026-03-20", true, true, spanFeedThreeCycles...)
+	paused.Logs = append(paused.Logs, models.DailyLog{Date: mustParseDashboardDay(t, "2026-03-10"), PregnancyTest: models.PregnancyTestPositive})
+	if events := calendarFeedEvents(paused); len(events) != 0 {
+		t.Fatalf("a pregnancy pause must send no span: %v", events)
+	}
+	overdue := spanFeedInput(t, "2026-04-20", true, true, spanFeedThreeCycles...)
+	if events := calendarFeedEvents(overdue); len(events) != 0 {
+		t.Fatalf("an overdue cycle must send no span: %v", events)
+	}
 	blank := spanFeedInput(t, "2026-03-20", true, true, spanFeedThreeCycles...)
 	blank.Disclaimer = " "
 	if body := string(buildTestFeedICS(blank)); strings.Contains(body, "BEGIN:VEVENT") {
@@ -188,8 +197,10 @@ func TestCalendarFeedFertileWindowCarriesTheNoticeOrNothing(t *testing.T) {
 	if !strings.Contains(strings.ReplaceAll(body, "\r\n ", ""), escapeICSText(input.Disclaimer+"\n"+spanTestNotice)) {
 		t.Fatalf("a fertile-window event must carry the disclaimer and then the notice:\n%s", body)
 	}
-	if strings.Count(body, "BEGIN:VEVENT") != strings.Count(body, "DESCRIPTION:")+0 {
-		t.Fatal("every event must carry a DESCRIPTION")
+	for _, event := range strings.Split(body, "BEGIN:VEVENT")[1:] {
+		if strings.Count(event, "\r\nDESCRIPTION:") != 1 {
+			t.Fatalf("every event must carry exactly one DESCRIPTION:\n%s", event)
+		}
 	}
 	input.FertileWindowNotice = "  "
 	if windows := feedEventsOfKind(calendarFeedEvents(input), calendarFeedKindFertileWindow); len(windows) != 0 {
@@ -209,6 +220,30 @@ func TestCalendarFeedTitlesRequireTheFertileTitleOnlyUnderItsOptIn(t *testing.T)
 	}
 	if calendarFeedSummary(calendarFeedKindFertileWindow, &all) != all.FertileWindow || calendarFeedSummary(calendarFeedKindPeriodSpan, &all) != all.Period {
 		t.Fatal("a span takes its type's title")
+	}
+}
+
+// A cycle bounded only by the onboarding start completes without a period day,
+// and while the next period is still running the configured length stands in
+// for the average (BuildCycleStatsFromLogs). A completed cycle is therefore not
+// proof of an observed length: the floor also needs the length read off logged
+// period days.
+func TestPeriodLengthObservedNeedsALoggedLengthNotJustACompletedCycle(t *testing.T) {
+	for name, tc := range map[string]struct {
+		stats CycleStats
+		want  bool
+	}{
+		"no completed cycle":                 {CycleStats{PeriodLengthObserved: true}, false},
+		"completed cycle, configured length": {CycleStats{CompletedCycleCount: 1, AveragePeriodLength: 6}, false},
+		"completed cycle, logged length":     {CycleStats{CompletedCycleCount: 1, AveragePeriodLength: 5, PeriodLengthObserved: true}, true},
+	} {
+		if got := PeriodLengthObserved(tc.stats); got != tc.want {
+			t.Errorf("%s: PeriodLengthObserved = %v, want %v", name, got, tc.want)
+		}
+	}
+	logged := spanFeedInput(t, "2026-03-05", true, false, spanFeedThreeCycles...)
+	if !BuildCycleStatsFromLogs(logged.User, logged.Logs, logged.Now, time.UTC).PeriodLengthObserved {
+		t.Fatal("five logged period days per cycle must mark the length observed")
 	}
 }
 

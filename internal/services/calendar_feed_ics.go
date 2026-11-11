@@ -1,6 +1,7 @@
 package services
 
 import (
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -221,7 +222,10 @@ func BuildCalendarFeedICS(input CalendarFeedICSInput) []byte {
 		if uids, err = security.NewCalendarFeedEventUIDs(input.SecretKey, input.User.ID); err == nil && strings.TrimSpace(input.Disclaimer) != "" {
 			events = calendarFeedEvents(input)
 		}
-		if input.User.CalendarFeedDetailedTitles && input.Titles.complete(input.User.CalendarFeedFertileWindow) {
+		// The fertile title is required only when a fertile-window event goes out:
+		// a link whose window is withheld keeps its other detailed titles.
+		sendsFertileWindow := slices.ContainsFunc(events, func(event calendarFeedEvent) bool { return event.kind == calendarFeedKindFertileWindow })
+		if input.User.CalendarFeedDetailedTitles && input.Titles.complete(sendsFertileWindow) {
 			titles := input.Titles
 			detailed = &titles
 		}

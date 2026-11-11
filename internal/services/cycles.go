@@ -20,6 +20,10 @@ type CycleStats struct {
 	CycleLengthStdDev    float64   `json:"cycle_length_std_dev"`
 	CompletedCycleCount  int       `json:"completed_cycle_count"`
 	AveragePeriodLength  float64   `json:"average_period_length"`
+	// PeriodLengthObserved reports that AveragePeriodLength was read off logged
+	// period days, not the configured length that stands in without one. Not
+	// published.
+	PeriodLengthObserved bool `json:"-"`
 	LastCycleLength      int       `json:"last_cycle_length"`
 	LastPeriodLength     int       `json:"last_period_length"`
 	LutealPhase          int       `json:"luteal_phase"`
@@ -135,6 +139,7 @@ func buildCycleStats(logs []models.DailyLog, today time.Time, ctx BoundaryContex
 		// bounded only by the onboarding start completes without a period day,
 		// and applyObservedBaseline writes no length once a cycle has completed.
 		stats.AveragePeriodLength = averageInts(recentPositivePeriodLengths(cycles[:len(cycles)-1], cyclePredictionWindow))
+		stats.PeriodLengthObserved = stats.AveragePeriodLength > 0
 		if stats.AveragePeriodLength == 0 {
 			stats.AveragePeriodLength = float64(rule.periodLength)
 		}
@@ -311,6 +316,7 @@ func populateObservedCycleStats(stats *CycleStats, lengths []int, cycles []detec
 	periodLengths := recentPositivePeriodLengths(cycles, cyclePredictionWindow)
 	if len(periodLengths) > 0 {
 		stats.AveragePeriodLength = averageInts(periodLengths)
+		stats.PeriodLengthObserved = true
 	}
 	completedCycleCount := len(lengths)
 	if completedCycleCount > 0 && len(cycles) >= completedCycleCount {
