@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -24,6 +25,9 @@ import (
 // function must look up the very value it was passed (judgeExemptBody), or the
 // callers' keys vouch for nothing.
 func TestExemptLookupCallersPassOnlyDeclaredKeys(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	evidence := loadTreeEvidence(t)
 	imports := importableTypes(evidence)
 	lookups := fiberLookups(t, imports)

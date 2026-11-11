@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -58,6 +59,9 @@ var emailResolverCallersThatMustStay = []string{
 //     whether called on *db.UserRepository itself or through any interface
 //     (or constraint) it satisfies, as a call or as a method value.
 func TestEveryEmailAddressedAccountLookupRefusesAnAmbiguousMatch(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	loaded := withoutEmailGuardFixtures(loadEmailGuardTree(t))
 
 	readers := findEmailReaders(loaded)
@@ -110,6 +114,9 @@ func TestEveryEmailAddressedAccountLookupRefusesAnAmbiguousMatch(t *testing.T) {
 // services packages and type-checked with them, so each shape resolves exactly
 // as a real one would.
 func TestEmailLookupGuardRecognisesItsOwnFixtures(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	loaded := loadEmailGuardTree(t)
 
 	fixtureMethod := func(name string) string { return "(*" + emailGuardDBPath + ".UserRepository)." + name }
@@ -573,7 +580,7 @@ func loadEmailGuardPackages() ([]*packages.Package, error) {
 		Overlay: overlay,
 		Tests:   false,
 	}
-	loaded, err := packages.Load(config, patterns...)
+	loaded, err := testpackages.Load(config, patterns...)
 	if err != nil {
 		return nil, fmt.Errorf("load %v: %w", patterns, err)
 	}

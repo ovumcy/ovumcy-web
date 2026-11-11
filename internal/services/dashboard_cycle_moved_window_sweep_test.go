@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -37,6 +38,9 @@ const movedWindowServicesPath = "github.com/ovumcy/ovumcy-web/internal/services"
 // the calendar starts publishing it becomes a page builder and owes the
 // assignment.
 func TestEveryPageBuildingTheDashboardCycleContextSetsItsMovedWindow(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	tree := loadMovedWindowTree(t)
 
 	reachesContext := tree.callersOf(tree.buildContext)
@@ -165,7 +169,7 @@ func loadMovedWindowTree(t *testing.T) *movedWindowTree {
 		// Production only: a test that calls the pair is not a page.
 		Tests: false,
 	}
-	loaded, err := packages.Load(config, "./internal/...")
+	loaded, err := testpackages.Load(config, "./internal/...")
 	if err != nil {
 		t.Fatalf("load internal: %v", err)
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -69,7 +70,7 @@ func loadAuthSessionVersionPredicatePackage(t *testing.T) *packages.Package {
 		Dir:   root,
 		Tests: false,
 	}
-	loaded, err := packages.Load(config, "./internal/db")
+	loaded, err := testpackages.Load(config, "./internal/db")
 	if err != nil {
 		t.Fatalf("type-checking internal/db: %v", err)
 	}
@@ -112,6 +113,9 @@ func resolveAuthSessionVersionFromPredicateConstant(t *testing.T, pkg *packages.
 // declaration-resolved half of the WEB-50/WEB-65 guard: the predicate must be
 // exactly plain equality, whatever spelling produced its value.
 func TestAuthSessionVersionFromPredicateConstantIsPlainEquality(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	pkg := loadAuthSessionVersionPredicatePackage(t)
 	got := resolveAuthSessionVersionFromPredicateConstant(t, pkg)
 	if got != authSessionVersionPlainEqualityPredicate {
@@ -210,6 +214,9 @@ func resolveUpdatePasswordRecoveryCodeAndRevokeSessionsCASSessionVersionWhere(t 
 // merely that the sweep visited the file it lives in) and is the same
 // plain-equality predicate as authSessionVersionFromPredicate.
 func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASWhereIsPlainEquality(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	pkg := loadAuthSessionVersionPredicatePackage(t)
 	literal, found := resolveUpdatePasswordRecoveryCodeAndRevokeSessionsCASSessionVersionWhere(t, pkg)
 	if !found {

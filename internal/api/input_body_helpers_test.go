@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -451,6 +452,9 @@ func isVarUse(info *types.Info, expr ast.Expr, v *types.Var) bool {
 // load sees only the host's build, so every other non-test file under internal/
 // and cmd/ is judged by spelling (filesOutsideTheLoad, untypedQueryReads).
 func TestAuthFieldsAreNeverReadFromTheQueryString(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	evidence := loadTreeEvidence(t)
 	imports := importableTypes(evidence)
 	lookups := fiberLookups(t, imports)

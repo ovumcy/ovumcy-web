@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -123,6 +124,9 @@ func findOutboundClientUses(loaded []*packages.Package) []outboundClientUse {
 // every named file still does. A new one means a new path out of the
 // instance, which the policy has to name before this list does.
 func TestOutboundNetworkClientsAreAClosedSet(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("resolve module root: %v", err)
@@ -157,12 +161,15 @@ func TestOutboundNetworkClientsAreAClosedSet(t *testing.T) {
 // shape it claims, overlaid into internal/services and type-checked there, and
 // on a bystander that only uses net/http's and net's constants and parsers.
 func TestOutboundClientScanClassifiesItsOwnFixtures(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("resolve module root: %v", err)
 	}
 	fixture := filepath.Join(root, "internal", "services", outboundFixtureFile)
-	loaded, err := packages.Load(&packages.Config{
+	loaded, err := testpackages.Load(&packages.Config{
 		Mode:    packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 		Dir:     root,
 		Overlay: map[string][]byte{fixture: []byte(outboundClientFixtureSource)},

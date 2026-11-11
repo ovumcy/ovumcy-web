@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -353,6 +354,9 @@ func findPostureWrites(t *testing.T, pkg *packages.Package, casHelper types.Obje
 }
 
 func TestEveryPostureColumnWriterBumpsAuthSessionVersionExceptTheNamedException(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	pkgs := loadPasswordHashWriterTree(t)
 	dbPkg := passwordHashWriterPackageByPath(pkgs, passwordHashWriterDBPackage)
 	modelsPkg := passwordHashWriterPackageByPath(pkgs, passwordHashWriterModelsPackage)
@@ -432,6 +436,9 @@ func judgePostureUpdatesArgument(pkg *packages.Package, evidence map[types.Objec
 }
 
 func TestNoUpdateByIDCallerPassesAPostureColumnWithoutABump(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	pkgs := loadPasswordHashWriterTree(t)
 	userRepo := resolveUserRepositoryNamed(t, pkgs)
 	signature := resolveUpdateByIDSignature(t, userRepo)

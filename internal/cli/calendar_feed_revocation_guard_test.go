@@ -7,6 +7,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -53,6 +54,9 @@ var gateBeforeWriteCallbacks = map[string]string{
 // function that gates: runUsersDelete gates and then calls
 // usersDeleteOptions.delete, which is where DeleteUserByID actually appears.
 func TestEveryFeedRevokingCLICallPassesTheFenceGate(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	t.Parallel()
 
 	scope, functions := loadCLIPackageFunctions(t)
@@ -189,7 +193,7 @@ func loadCLIPackageFunctions(t *testing.T) (*types.Scope, map[*types.Func]*cliFu
 		Dir:   ".",
 		Tests: false,
 	}
-	loaded, err := packages.Load(config, ".")
+	loaded, err := testpackages.Load(config, ".")
 	if err != nil {
 		t.Fatalf("type-check this package: %v", err)
 	}

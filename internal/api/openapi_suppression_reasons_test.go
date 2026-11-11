@@ -11,6 +11,7 @@ import (
 	"golang.org/x/tools/go/packages"
 
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 )
 
 // The JSON overview publishes the reasons a projection was withheld as a closed
@@ -21,6 +22,9 @@ import (
 // list here would be the shape that hides the next reason), and is anchored to
 // the compiler so a scan that silently stops matching cannot pass as an empty set.
 func TestOpenAPISuppressionReasonEnumMatchesTheServiceConstants(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	declared := declaredSuppressionReasons(t)
 	published := openAPIPublishedSuppressionReasons(t, filepath.Join("..", "..", "docs", "openapi.yaml"))
 
@@ -53,7 +57,7 @@ func TestOpenAPISuppressionReasonEnumMatchesTheServiceConstants(t *testing.T) {
 // package is still one.
 func declaredSuppressionReasons(t *testing.T) map[string]struct{} {
 	t.Helper()
-	loaded, err := packages.Load(&packages.Config{
+	loaded, err := testpackages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
 		Dir:  filepath.Join("..", ".."),
 	}, "./internal/services")

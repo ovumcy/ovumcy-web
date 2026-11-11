@@ -18,6 +18,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/net/html"
 	"golang.org/x/tools/go/packages"
 	"gorm.io/gorm"
@@ -319,7 +320,7 @@ func suppressionReasonConstants(t *testing.T) map[string]string {
 	if err != nil {
 		t.Fatalf("anchor: locating the module root: %v", err)
 	}
-	loaded, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedTypes, Dir: root}, "./internal/services")
+	loaded, err := testpackages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedTypes, Dir: root}, "./internal/services")
 	if err != nil || len(loaded) != 1 || len(loaded[0].Errors) > 0 || loaded[0].Types == nil {
 		t.Fatalf("anchor: type-checking %s/internal/services: %v %v", modulePath, err, loaded)
 	}
@@ -406,6 +407,9 @@ func dayPanelDatePattern(day time.Time) *regexp.Regexp {
 // the dashboard at each band's clock prints that band's verdict copy, which the
 // same scan detects — so the panel's silence is the panel's.
 func TestCalendarDayPanelRendersNoProjectionSignal(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	t.Parallel()
 
 	copyByKey := dayPanelProjectionCopy(t)

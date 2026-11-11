@@ -15,6 +15,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -27,8 +28,11 @@ import (
 // the type checker — the callee as bootstrap.BuildRepositories, the variadic
 // argument as this package's calendarFeedFenceOptions — never by name.
 func TestMainBuildsTheServerRepositoriesWithTheFenceMountOptions(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	const bootstrapPath = "github.com/ovumcy/ovumcy-web/internal/bootstrap"
-	loaded, err := packages.Load(&packages.Config{
+	loaded, err := testpackages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
 			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 	}, ".")

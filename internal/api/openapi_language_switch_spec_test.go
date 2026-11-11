@@ -24,6 +24,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -264,7 +265,7 @@ func isFiberAppPointer(typ types.Type) bool {
 // that is never reassigned or addressed.
 func loadCompositionRoot(t *testing.T) compositionRoot {
 	t.Helper()
-	loaded, err := packages.Load(&packages.Config{
+	loaded, err := testpackages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
 		Dir: filepath.Join("..", ".."),
@@ -828,6 +829,9 @@ type languageSwitchAnswer struct {
 // in the spec's example; the form and HTMX callers, which get an HTML fragment
 // instead, are required to be named as such in the response's description.
 func TestOpenAPILanguageSwitchDeclaresTheRefusalsItAnswers(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	requireLanguageSwitchLimiterAnswersThroughRespondAPIRateLimited(t)
 
 	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "openapi.yaml"))

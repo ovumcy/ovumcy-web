@@ -11,6 +11,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -79,6 +80,9 @@ var revocationColumnInSQL = regexp.MustCompile(`\b(auth_session_version|password
 // fence advances, and must call it BEFORE its first write or transaction
 // (WEB-397).
 func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	pkg := loadTypedDBPackage(t)
 	info := pkg.TypesInfo
 
@@ -345,8 +349,11 @@ var persistenceWriteMethods = map[string]map[string]bool{
 // package, this pins the premise it rests on: no non-test package outside
 // internal/db reaches a gorm or database/sql write at all.
 func TestNoPackageOutsideDBWritesThroughThePersistenceLayer(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	const module = "github.com/ovumcy/ovumcy-web"
-	listed, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedImports | packages.NeedDeps, Dir: "../.."}, "./...")
+	listed, err := testpackages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedImports | packages.NeedDeps, Dir: "../.."}, "./...")
 	if err != nil {
 		t.Fatalf("list the module: %v", err)
 	}
@@ -386,7 +393,7 @@ func TestNoPackageOutsideDBWritesThroughThePersistenceLayer(t *testing.T) {
 		t.Fatalf("the importer scan missed internal/db or internal/cli: %v", candidates)
 	}
 
-	typed, err := packages.Load(&packages.Config{
+	typed, err := testpackages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 		Dir:  "../..",
 	}, candidates...)

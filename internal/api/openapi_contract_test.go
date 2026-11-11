@@ -17,6 +17,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 )
 
 // TestOpenAPIContractMatchesRegisteredRoutes is the route↔spec contract guard:
@@ -177,6 +178,9 @@ func requireAPIRateLimitMountHasNoNextFilter(t *testing.T) {
 // it is asserted first so a mount that grows an exemption reddens this test
 // instead of leaving the spec free to over-declare 429 with nothing to catch it.
 func TestOpenAPIDeclaresRateLimitedOnEveryLimiterCoveredOperation(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	requireAPIRateLimitMountHasNoNextFilter(t)
 
 	app, _ := newOnboardingTestApp(t)

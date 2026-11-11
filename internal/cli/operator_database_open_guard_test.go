@@ -6,6 +6,7 @@ import (
 	"go/types"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -38,6 +39,9 @@ type operatorGuardSite struct {
 // it exists for a database a migration refuses — and builds no repository set,
 // so it is outside this class.
 func TestOperatorCommandsOpenTheDatabaseOnlyThroughTheSchemaCheck(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	t.Parallel()
 
 	pkg := loadOperatorGuardPackage(t)
@@ -140,7 +144,7 @@ func operatorGuardQualifiedName(fn *types.Func) string {
 func loadOperatorGuardPackage(t *testing.T) *packages.Package {
 	t.Helper()
 
-	loaded, err := packages.Load(&packages.Config{
+	loaded, err := testpackages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedSyntax | packages.NeedImports | packages.NeedDeps,
 	}, operatorGuardCLIPath)
 	if err != nil {

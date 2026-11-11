@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -63,6 +64,9 @@ var calendarFeedFenceAdvanceCalls = map[string]bool{
 // The set is derived from the file rather than re-listed: a hand-written mirror
 // of the writers would agree with itself while a new writer went unguarded.
 func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	// The whole package, type-checked: a writer in another file, or one that
 	// names the column through a constant, is as much a writer as one spelling
 	// the literal in user_repository.go. Columns are recognised by their
@@ -734,6 +738,9 @@ func (walk *fenceHelperWalk) enter(info *types.Info, assigned map[types.Object][
 // must call setAppStateTx and the write closure inside the closure it hands
 // gorm's Transaction, resolved by declaration.
 func TestTheFencedWriteRecordsTheMarkerInsideTheWritersTransaction(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	pkg := loadTypedDBPackage(t)
 	setMarker := pkg.Types.Scope().Lookup("setAppStateTx")
 	builder := pkg.Types.Scope().Lookup("runFencedWrite")
@@ -819,6 +826,9 @@ func TestTheFencedWriteRecordsTheMarkerInsideTheWritersTransaction(t *testing.T)
 // outright. The behavior of each writer this guard finds is exercised one
 // subtest per site in user_repository_calendar_feed_last_polled_test.go.
 func TestEveryCalendarFeedSelectorWriterAlsoClearsTheLastPolledMark(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	const selectorColumn = "calendar_feed_selector"
 	const markColumn = "calendar_feed_last_polled_on"
 
@@ -956,7 +966,7 @@ var loadTypedDBPackageOnce = sync.OnceValues(func() ([]*packages.Package, error)
 			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 		Tests: false,
 	}
-	return packages.Load(config, ".")
+	return testpackages.Load(config, ".")
 })
 
 // userModelField resolves a models.User field to its declaration, so a use is
