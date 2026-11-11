@@ -237,7 +237,7 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 			if advanceAt == token.NoPos {
 				continue
 			}
-			count, found, helpers := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
+			count, found, helpers, _ := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
 				callee, ok := typeutil.Callee(info, call).(*types.Func)
 				return ok && advances[callee]
 			})

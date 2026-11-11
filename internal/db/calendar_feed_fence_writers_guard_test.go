@@ -83,6 +83,8 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 	advancesFirst := map[string]bool{}
 	txViolations := map[string][]string{}
 	txChecked := map[string]int{}
+	clearEnteredScopedUpdate := false
+	postCommitCalled := map[string]bool{}
 	var functions []*ast.FuncDecl
 	for _, file := range pkg.Syntax {
 		for _, declaration := range file.Decls {
@@ -179,10 +181,16 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 			advancesFirst[name] = true
 		}
 		if advanceAt >= 0 {
-			count, found, _ := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
+			count, found, helpers, postCommit := fencedWriteTxViolations(pkg, function, func(call *ast.CallExpr) bool {
 				callee, ok := typeutil.Callee(info, call).(*types.Func)
 				return ok && callee.Pkg() == pkg.Types && calendarFeedFenceAdvanceCalls[callee.Name()]
 			})
+			for helper := range postCommit {
+				postCommitCalled[helper] = true
+			}
+			if name == "ClearCalendarFeedToken" {
+				_, clearEnteredScopedUpdate = helpers[pkg.Types.Scope().Lookup("scopedUserUpdateTx")]
+			}
 			txChecked[name] += count
 			txViolations[name] = append(txViolations[name], found...)
 		}
@@ -200,6 +208,17 @@ func TestEveryCalendarFeedWriterAdvancesTheRestoreFence(t *testing.T) {
 	// name: a resolver that rooted nothing would report no violation anywhere.
 	if txChecked["ClearCalendarFeedToken"] == 0 {
 		t.Fatal("the tx-root check resolved no write of ClearCalendarFeedToken to its closure's tx parameter: it is not measuring what it claims")
+	}
+	// WEB-526: this guard shares the helper walk with the session guard, so it
+	// owns a name check of its own — the revocation's query helper, by
+	// declaration.
+	if !clearEnteredScopedUpdate {
+		t.Fatal("the helper walk never entered scopedUserUpdateTx from ClearCalendarFeedToken's closure: it is not measuring what it claims")
+	}
+	for helper := range postCommitFenceHelpers {
+		if !postCommitCalled[helper] {
+			t.Errorf("post-commit helper %s is no longer called outside a fenced closure: drop it from postCommitFenceHelpers", helper)
+		}
 	}
 	for name, found := range txViolations {
 		if _, exempt := exemptCalendarFeedWriters[name]; exempt || len(found) == 0 {
@@ -345,11 +364,11 @@ func handleRoots(info *types.Info, assigned map[types.Object][]ast.Expr, expr as
 // declaration (fenceHelperWalk); helpers maps each helper entered to the
 // tx-rooted writes found in its own body, so a caller can assert a
 // load-bearing helper was really read.
-func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAdvance func(*ast.CallExpr) bool) (checked int, violations []string, helpers map[types.Object]int) {
+func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAdvance func(*ast.CallExpr) bool) (checked int, violations []string, helpers map[types.Object]int, postCommit map[string]bool) {
 	info := pkg.TypesInfo
 	var closures []*ast.FuncLit
 	assigned := assignmentsIn(info, function.Body)
-	walk := newFenceHelperWalk(pkg)
+	walk := newFenceHelperWalk(pkg, isAdvance)
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		if call, ok := node.(*ast.CallExpr); ok && isAdvance(call) {
 			if closure := fenceWriteClosure(call); closure != nil {
@@ -398,11 +417,21 @@ func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAd
 		// WEB-517: a same-package helper called inside the closure is walked,
 		// whether or not it is handed a handle — one given none must not write
 		// through the repository's own *gorm.DB, and one given tx must write
-		// through that parameter and nothing else.
-		if enclosing != nil && txObject != nil && callee.Pkg() == pkg.Types {
-			helperChecked, helperViolations := walk.enter(info, assigned, map[types.Object]bool{txObject: true}, call, callee, 0)
-			checked += helperChecked
-			violations = append(violations, helperViolations...)
+		// through that parameter and nothing else. WEB-526: one called outside
+		// every closure is walked with nothing bound, so any write it makes is
+		// one committed apart from the marker.
+		if reason := postCommitFenceHelpers[callee.FullName()]; enclosing == nil && callee.Pkg() == pkg.Types && reason != "" {
+			walk.postCommit[callee.FullName()] = true
+		} else if callee.Pkg() == pkg.Types {
+			bound := map[types.Object]bool{}
+			if enclosing != nil && txObject != nil {
+				bound[txObject] = true
+			}
+			if enclosing == nil || txObject != nil {
+				helperChecked, helperViolations := walk.enter(info, assigned, bound, call, callee, 0)
+				checked += helperChecked
+				violations = append(violations, helperViolations...)
+			}
 		}
 		if len(handles) == 0 {
 			return true
@@ -426,7 +455,7 @@ func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAd
 		}
 		return true
 	})
-	return checked, violations, walk.helpers
+	return checked, violations, walk.helpers, walk.postCommit
 }
 
 // assignmentsIn maps each local object in body to every expression it was
@@ -480,14 +509,31 @@ const fenceHelperDepth = 8
 // object; inside the helper every write must root at a bound parameter, so a
 // helper given no handle may not write at all — the repository's own *gorm.DB
 // (repo.database) roots at the receiver, which is never bound.
+//
+// A helper's own call that is an advance fences its own writes and is not
+// descended: that helper is checked where it is itself a writer. A func
+// literal handed to a call on a bound handle (tx.Transaction(func(inner
+// *gorm.DB) …)) has its *gorm.DB parameter bound too: gorm runs it as a
+// savepoint of the same transaction.
 type fenceHelperWalk struct {
-	pkg     *packages.Package
-	decls   map[*types.Func]*ast.FuncDecl
-	visited map[string]bool
-	helpers map[types.Object]int
+	pkg       *packages.Package
+	isAdvance func(*ast.CallExpr) bool
+	decls     map[*types.Func]*ast.FuncDecl
+	visited   map[string]bool
+	helpers   map[types.Object]int
+	// postCommit records the postCommitFenceHelpers a fenced writer called
+	// outside its closure, so a stale entry can be refused.
+	postCommit map[string]bool
 }
 
-func newFenceHelperWalk(pkg *packages.Package) *fenceHelperWalk {
+// postCommitFenceHelpers write after a fenced writer's transaction has
+// committed, on purpose, and outside every closure; each says why that write
+// revokes and grants nothing a restore could undo.
+var postCommitFenceHelpers = map[string]string{
+	"(*github.com/ovumcy/ovumcy-web/internal/db.UserRepository).purgeExpiredOIDCLogoutStatesBestEffort": "erasure housekeeping: it deletes only globally EXPIRED logout states, which no restore can make valid again, and it must stay out of the erasure transaction because a failed statement there poisons it on Postgres",
+}
+
+func newFenceHelperWalk(pkg *packages.Package, isAdvance func(*ast.CallExpr) bool) *fenceHelperWalk {
 	decls := map[*types.Func]*ast.FuncDecl{}
 	for _, file := range pkg.Syntax {
 		for _, declaration := range file.Decls {
@@ -498,7 +544,7 @@ func newFenceHelperWalk(pkg *packages.Package) *fenceHelperWalk {
 			}
 		}
 	}
-	return &fenceHelperWalk{pkg: pkg, decls: decls, visited: map[string]bool{}, helpers: map[types.Object]int{}}
+	return &fenceHelperWalk{pkg: pkg, isAdvance: isAdvance, decls: decls, visited: map[string]bool{}, helpers: map[types.Object]int{}, postCommit: map[string]bool{}}
 }
 
 // rootedIn reports whether every root of handle is a bound object, and that
@@ -557,6 +603,24 @@ func (walk *fenceHelperWalk) enter(info *types.Info, assigned map[types.Object][
 		inside, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
+		}
+		if walk.isAdvance(inside) {
+			return false
+		}
+		if selector, ok := inside.Fun.(*ast.SelectorExpr); ok && isGormDBHandle(info, selector.X) && rootedIn(info, helperAssigned, inner, selector.X) {
+			for _, argument := range inside.Args {
+				literal, ok := argument.(*ast.FuncLit)
+				if !ok {
+					continue
+				}
+				for _, field := range literal.Type.Params.List {
+					for _, name := range field.Names {
+						if object := info.Defs[name]; object != nil && isGormDBHandle(info, name) {
+							inner[object] = true
+						}
+					}
+				}
+			}
 		}
 		at := walk.pkg.Fset.Position(inside.Pos())
 		switch resolved := typeutil.Callee(info, inside).(type) {
