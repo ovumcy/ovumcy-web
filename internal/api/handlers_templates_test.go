@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
@@ -443,7 +442,12 @@ func TestParsePartialTemplatesIncludesBaseHelpers(t *testing.T) {
 
 func fetchInstanceNoticePage(t *testing.T, path string, mutate func(*http.Request)) *html.Node {
 	t.Helper()
-	app, _ := newOnboardingTestApp(t)
+	return fetchInstanceNoticePageWith(t, onboardingTestAppOptions{}, path, mutate)
+}
+
+func fetchInstanceNoticePageWith(t *testing.T, options onboardingTestAppOptions, path string, mutate func(*http.Request)) *html.Node {
+	t.Helper()
+	app, _ := newOnboardingTestAppWithOptions(t, options)
 	request := httptest.NewRequest(http.MethodGet, path, nil)
 	request.Header.Set("Accept-Language", "en")
 	if mutate != nil {
@@ -558,47 +562,54 @@ func TestInstanceDataNoticeEscapesAHostileHostAndIgnoresAnUntrustedForwardedHost
 // TestInstanceDataNoticeShowsTheForwardedHostFromATrustedProxy is the other
 // half of the untrusted case above: behind a proxy the server trusts, the host
 // the visitor typed arrives in X-Forwarded-Host, and the sign-in line must name
-// that host rather than the upstream address the proxy dialled. The app is
-// configured the way cmd/ovumcy/server.go configures a trusted proxy.
+// that host rather than the upstream address the proxy dialled. A proxy chain
+// appends to the header, and only the first, client-facing entry may show; a
+// hostile value from a proxy that forwards the header unchanged reaches the
+// page as text. The trust is configured through the shared test app, the way
+// cmd/ovumcy/server.go configures an operator's proxy list.
 func TestInstanceDataNoticeShowsTheForwardedHostFromATrustedProxy(t *testing.T) {
 	t.Parallel()
 
-	_, database := newOnboardingTestApp(t)
-	i18nManager, err := i18n.NewManager("en")
-	if err != nil {
-		t.Fatalf("init i18n: %v", err)
+	const hostile = `x&lt;script&gt;&amp;'.example`
+	trusted := onboardingTestAppOptions{trustedProxies: []string{"0.0.0.0/0", "::/0"}}
+	baseline := fetchInstanceNoticePageWith(t, trusted, "/login", nil)
+	scripts := func(root *html.Node) int {
+		return len(htmlFindElements(root, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "script"
+		}))
 	}
-	handler, err := NewHandler(testAppSecretKey, time.UTC, i18nManager, false,
-		newTestHandlerDependencies(database, i18nManager, onboardingTestAppOptions{}))
-	if err != nil {
-		t.Fatalf("init handler: %v", err)
-	}
-	app := fiber.New(fiber.Config{
-		ProxyHeader:      fiber.HeaderXForwardedFor,
-		TrustProxy:       true,
-		TrustProxyConfig: fiber.TrustProxyConfig{Proxies: []string{"0.0.0.0/0", "::/0"}},
-	})
-	app.Use(handler.LanguageMiddleware)
-	RegisterRoutes(app, handler)
 
-	request := httptest.NewRequest(http.MethodGet, "/login", nil)
-	request.Header.Set("Accept-Language", "en")
-	request.Host = "upstream.internal"
-	request.Header.Set("X-Forwarded-Host", "diary.example.test")
-	response := mustAppResponse(t, app, request)
-	assertStatusCode(t, response, http.StatusOK)
-	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
-
-	lines := instanceNoticeVariants(document, "line")
-	if len(lines) != 1 {
-		t.Fatalf("expected one instance notice line, got %d", len(lines))
-	}
-	rendered := htmlNodeText(lines[0])
-	if !strings.Contains(rendered, "diary.example.test") {
-		t.Fatalf("expected the trusted forwarded host on the sign-in line, got %q", rendered)
-	}
-	if strings.Contains(rendered, "upstream.internal") {
-		t.Fatalf("the sign-in line named the upstream host behind a trusted proxy: %q", rendered)
+	for _, tc := range []struct {
+		name, forwarded, want string
+		absent                []string
+	}{
+		{name: "single", forwarded: "diary.example.test", want: "diary.example.test", absent: []string{"upstream.internal"}},
+		{name: "chain", forwarded: "diary.example.test, inner.proxy.internal", want: "diary.example.test", absent: []string{"upstream.internal", "inner.proxy.internal"}},
+		{name: "hostile", forwarded: hostile, want: hostile, absent: []string{"upstream.internal"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			document := fetchInstanceNoticePageWith(t, trusted, "/login", func(r *http.Request) {
+				r.Host = "upstream.internal"
+				r.Header.Set("X-Forwarded-Host", tc.forwarded)
+			})
+			if got, want := scripts(document), scripts(baseline); got != want {
+				t.Fatalf("the forwarded host added %d script element(s) to the sign-in page", got-want)
+			}
+			lines := instanceNoticeVariants(document, "line")
+			if len(lines) != 1 {
+				t.Fatalf("expected one instance notice line, got %d", len(lines))
+			}
+			rendered := htmlNodeText(lines[0])
+			if !strings.Contains(rendered, tc.want) {
+				t.Fatalf("expected %q on the sign-in line, got %q", tc.want, rendered)
+			}
+			for _, absent := range tc.absent {
+				if strings.Contains(rendered, absent) {
+					t.Fatalf("the sign-in line named %q behind a trusted proxy: %q", absent, rendered)
+				}
+			}
+		})
 	}
 }
 

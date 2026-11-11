@@ -106,6 +106,10 @@ type onboardingTestAppOptions struct {
 	// (through the same ConfigureEnrollAttempts the composition root calls), so a
 	// regression can wait a spent budget out on the wall clock.
 	totpEnrollWindow time.Duration
+	// trustedProxies, when set, trusts those CIDRs the way cmd/ovumcy/server.go
+	// trusts an operator's proxy list: X-Forwarded-For as the proxy header, and
+	// the forwarded host honoured from a trusted peer.
+	trustedProxies []string
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
@@ -142,6 +146,11 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 	handler.now = options.now
 
 	appConfig := fiber.Config{BodyLimit: options.bodyLimit}
+	if len(options.trustedProxies) > 0 {
+		appConfig.ProxyHeader = fiber.HeaderXForwardedFor
+		appConfig.TrustProxy = true
+		appConfig.TrustProxyConfig = fiber.TrustProxyConfig{Proxies: options.trustedProxies}
+	}
 	if options.envelopeTransportErrors {
 		appConfig.ErrorHandler = func(c fiber.Ctx, err error) error {
 			if errors.Is(err, ErrCSRFRefused) {
