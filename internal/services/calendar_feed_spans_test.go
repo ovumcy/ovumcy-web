@@ -1,0 +1,258 @@
+package services
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
+)
+
+// WEB-381: the period-span and fertile-window opt-ins of the .ics feed. Each is
+// off by default (the byte-identical body is pinned by
+// TestCalendarFeedNeutralDefaultIsByteIdenticalWithoutTheOptIn), and each sends
+// only what the calendar grid shades. Cited by SECURITY.md's Calendar Feed rows.
+
+const spanTestNotice = "Pregnancy is possible on any day, including outside these dates."
+
+// spanFeedLogs records cycle starts 28 days apart ending 2026-03-02, each with
+// five logged period days, so the observed period length is five.
+func spanFeedLogs(t *testing.T, starts ...string) []models.DailyLog {
+	t.Helper()
+	logs := make([]models.DailyLog, 0, len(starts)*5)
+	for _, start := range starts {
+		day := mustParseDashboardDay(t, start)
+		for offset := range 5 {
+			logs = append(logs, models.DailyLog{Date: day.AddDate(0, 0, offset), IsPeriod: true, CycleStart: offset == 0})
+		}
+	}
+	return logs
+}
+
+var spanFeedThreeCycles = []string{"2025-12-08", "2026-01-05", "2026-02-02", "2026-03-02"}
+
+func spanFeedInput(t *testing.T, today string, periodSpan, fertileWindow bool, starts ...string) CalendarFeedICSInput {
+	t.Helper()
+	user := predictableFeedUser(t, starts[len(starts)-1])
+	user.CalendarFeedPeriodSpan = periodSpan
+	user.CalendarFeedFertileWindow = fertileWindow
+	return CalendarFeedICSInput{
+		User:                user,
+		Logs:                spanFeedLogs(t, starts...),
+		Now:                 mustParseDashboardDay(t, today),
+		Location:            time.UTC,
+		Disclaimer:          "Predictions are estimates, not medical advice or a method of contraception.",
+		SecretKey:           []byte(calendarFeedTestSecretKey),
+		FertileWindowNotice: spanTestNotice,
+	}
+}
+
+func feedEventsOfKind(events []calendarFeedEvent, kind string) []calendarFeedEvent {
+	var matched []calendarFeedEvent
+	for _, event := range events {
+		if event.kind == kind {
+			matched = append(matched, event)
+		}
+	}
+	return matched
+}
+
+func feedEventDay(event calendarFeedEvent) string { return event.date.Format("2006-01-02") }
+func feedEventEnd(event calendarFeedEvent) string { return event.end.Format("2006-01-02") }
+
+func TestCalendarFeedPeriodSpanReplacesTheSingleStartDay(t *testing.T) {
+	input := spanFeedInput(t, "2026-03-20", true, false, spanFeedThreeCycles...)
+	events := calendarFeedEvents(input)
+
+	if single := feedEventsOfKind(events, calendarFeedKindPeriod); len(single) != 0 {
+		t.Fatalf("a span must replace the single start day, got single days %v", single)
+	}
+	spans := feedEventsOfKind(events, calendarFeedKindPeriodSpan)
+	want := [][2]string{{"2026-03-30", "2026-04-03"}, {"2026-04-27", "2026-05-01"}, {"2026-05-25", "2026-05-29"}}
+	if len(spans) != len(want) {
+		t.Fatalf("expected %d spans, got %v", len(want), spans)
+	}
+	for index, span := range spans {
+		if feedEventDay(span) != want[index][0] || feedEventEnd(span) != want[index][1] {
+			t.Fatalf("span %d = %s..%s, want %s..%s", index, feedEventDay(span), feedEventEnd(span), want[index][0], want[index][1])
+		}
+		if feedEventDay(span) == "2026-03-02" {
+			t.Fatal("the running cycle's own period is a recorded start and must never be sent")
+		}
+	}
+
+	body := string(buildTestFeedICS(input))
+	if !strings.Contains(body, "DTSTART;VALUE=DATE:20260330\r\nDTEND;VALUE=DATE:20260404\r\n") {
+		t.Fatalf("the first span must end on the exclusive day after its fifth day:\n%s", body)
+	}
+	if !strings.Contains(body, "UID:"+feedTestUID(t, input.User.ID, calendarFeedKindPeriodSpan, "20260330")) {
+		t.Fatal("the span does not carry the period-span UID of its start")
+	}
+}
+
+func TestCalendarFeedPeriodSpanNeedsAnObservedPeriodLength(t *testing.T) {
+	events := calendarFeedEvents(spanFeedInput(t, "2026-03-05", true, false, "2026-03-02"))
+	if spans := feedEventsOfKind(events, calendarFeedKindPeriodSpan); len(spans) != 0 {
+		t.Fatalf("without a completed cycle the length is configuration, so no span may go out: %v", spans)
+	}
+	if single := feedEventsOfKind(events, calendarFeedKindPeriod); len(single) == 0 {
+		t.Fatal("without a completed cycle the single start day must still go out, as before the opt-in")
+	}
+}
+
+func TestCalendarFeedLateSpanKeepsItsStartUntilItEnds(t *testing.T) {
+	late := calendarFeedEvents(spanFeedInput(t, "2026-03-31", true, false, spanFeedThreeCycles...))
+	spans := feedEventsOfKind(late, calendarFeedKindPeriodSpan)
+	if len(spans) != 1 || feedEventDay(spans[0]) != "2026-03-30" {
+		t.Fatalf("a late period keeps its own start, and the chain after a due start is suppressed: %v", spans)
+	}
+	ended := calendarFeedEvents(spanFeedInput(t, "2026-04-04", true, false, spanFeedThreeCycles...))
+	if spans := feedEventsOfKind(ended, calendarFeedKindPeriodSpan); len(spans) != 0 {
+		t.Fatalf("a span whose last day is behind today must not be sent: %v", spans)
+	}
+}
+
+func TestCalendarFeedSpanUIDSurvivesALengthChange(t *testing.T) {
+	five := spanFeedInput(t, "2026-03-20", true, false, spanFeedThreeCycles...)
+	four := spanFeedInput(t, "2026-03-20", true, false, spanFeedThreeCycles...)
+	// spanFeedLogs writes five days per cycle in order: drop each fifth.
+	var trimmed []models.DailyLog
+	for index, log := range four.Logs {
+		if index%5 != 4 {
+			trimmed = append(trimmed, log)
+		}
+	}
+	four.Logs = trimmed
+	first := func(input CalendarFeedICSInput) calendarFeedEvent {
+		spans := feedEventsOfKind(calendarFeedEvents(input), calendarFeedKindPeriodSpan)
+		if len(spans) == 0 {
+			t.Fatal("no span")
+		}
+		return spans[0]
+	}
+	a, b := first(five), first(four)
+	if feedEventDay(a) != feedEventDay(b) {
+		t.Fatalf("a changed length must not move the start: %s vs %s", feedEventDay(a), feedEventDay(b))
+	}
+	if feedEventEnd(a) == feedEventEnd(b) {
+		t.Fatal("the fixture did not change the observed period length, so this test measures nothing")
+	}
+}
+
+func TestCalendarFeedSpansFollowEverySuppression(t *testing.T) {
+	input := spanFeedInput(t, "2026-03-20", true, true, spanFeedThreeCycles...)
+	input.User.UnpredictableCycle = true
+	if events := calendarFeedEvents(input); len(events) != 0 {
+		t.Fatalf("unpredictable-cycle mode must send no span: %v", events)
+	}
+	blank := spanFeedInput(t, "2026-03-20", true, true, spanFeedThreeCycles...)
+	blank.Disclaimer = " "
+	if body := string(buildTestFeedICS(blank)); strings.Contains(body, "BEGIN:VEVENT") {
+		t.Fatal("a blank disclaimer must still render zero events")
+	}
+}
+
+func TestCalendarFeedFertileWindowKeepsTheGridsFloor(t *testing.T) {
+	for name, starts := range map[string][]string{
+		"no completed cycle":   {"2026-03-02"},
+		"two completed cycles": {"2026-01-05", "2026-02-02", "2026-03-02"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			events := calendarFeedEvents(spanFeedInput(t, "2026-03-05", false, true, starts...))
+			if windows := feedEventsOfKind(events, calendarFeedKindFertileWindow); len(windows) != 0 {
+				t.Fatalf("below the completed-cycle floor no fertile window may go out: %v", windows)
+			}
+		})
+	}
+	events := calendarFeedEvents(spanFeedInput(t, "2026-03-05", false, true, spanFeedThreeCycles...))
+	if windows := feedEventsOfKind(events, calendarFeedKindFertileWindow); len(windows) != 2 {
+		t.Fatalf("three completed cycles send the running window and N+1 only, got %v", windows)
+	}
+}
+
+func TestCalendarFeedFertileWindowStopsAtNPlusOneAndDropsWhatIsBehindToday(t *testing.T) {
+	events := calendarFeedEvents(spanFeedInput(t, "2026-03-20", false, true, spanFeedThreeCycles...))
+	windows := feedEventsOfKind(events, calendarFeedKindFertileWindow)
+	if len(windows) != 1 {
+		t.Fatalf("with the running window behind today only N+1 remains, got %v", windows)
+	}
+	today := mustParseDashboardDay(t, "2026-03-20")
+	if CalendarDaysBetween(today, windows[0].end) < 0 || CalendarDaysBetween(mustParseDashboardDay(t, "2026-03-30"), windows[0].date) < 0 {
+		t.Fatalf("the window sent must be the next cycle's, not one behind today: %v", windows)
+	}
+}
+
+func TestCalendarFeedFertileWindowCarriesTheNoticeOrNothing(t *testing.T) {
+	input := spanFeedInput(t, "2026-03-20", false, true, spanFeedThreeCycles...)
+	body := string(buildTestFeedICS(input))
+	if !strings.Contains(strings.ReplaceAll(body, "\r\n ", ""), escapeICSText(input.Disclaimer+"\n"+spanTestNotice)) {
+		t.Fatalf("a fertile-window event must carry the disclaimer and then the notice:\n%s", body)
+	}
+	if strings.Count(body, "BEGIN:VEVENT") != strings.Count(body, "DESCRIPTION:")+0 {
+		t.Fatal("every event must carry a DESCRIPTION")
+	}
+	input.FertileWindowNotice = "  "
+	if windows := feedEventsOfKind(calendarFeedEvents(input), calendarFeedKindFertileWindow); len(windows) != 0 {
+		t.Fatalf("a blank notice must withhold every fertile-window event: %v", windows)
+	}
+}
+
+func TestCalendarFeedTitlesRequireTheFertileTitleOnlyUnderItsOptIn(t *testing.T) {
+	pair := CalendarFeedTitles{Period: "Period (estimate)", Ovulation: "Ovulation (estimate)"}
+	if !pair.complete(false) || pair.complete(true) {
+		t.Fatal("the fertile title is required exactly when the fertile opt-in is on")
+	}
+	all := pair
+	all.FertileWindow = "Fertile window (estimate)"
+	if !all.complete(true) {
+		t.Fatal("three titles are complete under the fertile opt-in")
+	}
+	if calendarFeedSummary(calendarFeedKindFertileWindow, &all) != all.FertileWindow || calendarFeedSummary(calendarFeedKindPeriodSpan, &all) != all.Period {
+		t.Fatal("a span takes its type's title")
+	}
+}
+
+// TestCalendarFeedSpansMatchTheGridDays pins the feed to the calendar grid: the
+// days its period spans cover are the grid's projected period days for those
+// cycles, and the days its fertile windows cover are the grid's fertile days
+// for the cycles it sends.
+func TestCalendarFeedSpansMatchTheGridDays(t *testing.T) {
+	for _, today := range []string{"2026-03-05", "2026-03-20"} {
+		t.Run(today, func(t *testing.T) {
+			input := spanFeedInput(t, today, true, true, spanFeedThreeCycles...)
+			events := calendarFeedEvents(input)
+			stats, _ := PublishedStats(input.User, BuildCycleStatsFromLogs(input.User, input.Logs, input.Now, time.UTC), input.Logs, input.Now, time.UTC)
+			grid := map[string]CalendarDayState{}
+			for month := range 4 {
+				for _, state := range BuildCalendarDayStates(input.User, time.Date(2026, time.Month(3+month), 1, 0, 0, 0, 0, time.UTC), input.Logs, stats, input.Now, time.UTC) {
+					grid[state.Date.Format("2006-01-02")] = state
+				}
+			}
+			for _, kind := range []string{calendarFeedKindPeriodSpan, calendarFeedKindFertileWindow} {
+				sent := feedEventsOfKind(events, kind)
+				if len(sent) == 0 {
+					t.Fatalf("the fixture sends no %s, so the parity below measures nothing", kind)
+				}
+				for _, event := range sent {
+					before := event.date.AddDate(0, 0, -1).Format("2006-01-02")
+					after := event.end.AddDate(0, 0, 1).Format("2006-01-02")
+					shaded := func(day string) bool {
+						state := grid[day]
+						if kind == calendarFeedKindPeriodSpan {
+							return state.IsPredicted
+						}
+						return state.IsFertilityEdge || state.IsFertilityPeak
+					}
+					for day := event.date; !day.After(event.end); day = day.AddDate(0, 0, 1) {
+						if !shaded(day.Format("2006-01-02")) {
+							t.Fatalf("%s covers %s, which the grid does not shade", kind, day.Format("2006-01-02"))
+						}
+					}
+					if shaded(before) || shaded(after) {
+						t.Fatalf("%s %s..%s is narrower than the grid's band", kind, feedEventDay(event), feedEventEnd(event))
+					}
+				}
+			}
+		})
+	}
+}

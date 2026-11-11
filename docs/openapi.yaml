@@ -1654,6 +1654,21 @@ components:
             "Ovulation (estimate)", in the owner's interface language). Absent or
             any other value keeps the fixed neutral title. Read from the form only,
             so a rotate that omits it returns the new link to the neutral title.
+        calendar_feed_period_span:
+          type: string
+          description: |
+            Owner opt-in for the minted link only: a truthy value (`true`) sends
+            each predicted period as an all-day span of its expected length once
+            at least one cycle is complete. Absent or any other value keeps the
+            single estimated start day. Read from the form only.
+        calendar_feed_fertile_window:
+          type: string
+          description: |
+            Owner opt-in for the minted link only: a truthy value (`true`) adds
+            the estimated fertile window the calendar grid shades, under the same
+            gates, with a second DESCRIPTION line saying pregnancy is possible on
+            any day. Absent or any other value sends no fertile window. Read from
+            the form only.
     CalendarFeedRevealResponse:
       type: object
       description: |

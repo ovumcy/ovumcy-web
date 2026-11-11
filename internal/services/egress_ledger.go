@@ -221,7 +221,11 @@ type EgressFeedLedger struct {
 	// DetailedTitles reports the stored link's title choice (WEB-379). It is
 	// false whenever no link is stored: there is no feed for it to describe.
 	DetailedTitles bool
-	PayloadFields  []EgressPayloadField
+	// PeriodSpan and FertileWindow report the stored link's span choices
+	// (WEB-381), false whenever no link is stored, like DetailedTitles.
+	PeriodSpan    bool
+	FertileWindow bool
+	PayloadFields []EgressPayloadField
 }
 
 // EgressLedger is the whole owner-scoped account. It is built only for an owner
@@ -320,6 +324,8 @@ func (service *EgressLedgerService) BuildEgressLedger(ctx context.Context, row E
 			RevealedAt:     revealEvidenceForState(feedState, feedStatus.RevealedAt),
 			LastPolledOn:   pollEvidenceForState(feedState, feedStatus.LastPolledOn),
 			DetailedTitles: feedStatus.Configured && feedStatus.DetailedTitles,
+			PeriodSpan:     feedStatus.Configured && feedStatus.PeriodSpan,
+			FertileWindow:  feedStatus.Configured && feedStatus.FertileWindow,
 			PayloadFields:  CalendarFeedPayloadFields(),
 		},
 	}

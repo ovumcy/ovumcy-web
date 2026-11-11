@@ -218,6 +218,7 @@
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
           {{template "settings_calendar_feed_titles_choice" (dict "Messages" .Messages "ID" "calendar-feed-detailed-titles-rotate" "Checked" .Egress.FeedDetailedTitles)}}
+          {{template "settings_calendar_feed_spans_choice" (dict "Messages" .Messages "Form" "rotate" "PeriodSpan" .Egress.FeedPeriodSpan "FertileWindow" .Egress.FeedFertileWindow)}}
           <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.rotate"}}</button>
         </form>
 
@@ -246,6 +247,7 @@
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
           {{template "settings_calendar_feed_titles_choice" (dict "Messages" .Messages "ID" "calendar-feed-detailed-titles-generate" "Checked" false)}}
+          {{template "settings_calendar_feed_spans_choice" (dict "Messages" .Messages "Form" "generate" "PeriodSpan" false "FertileWindow" false)}}
           <button type="submit" class="btn-secondary" {{if eq .Egress.ResultPath "feed"}}data-focus-after-swap aria-describedby="settings-egress-feed-status"{{end}}>{{t .Messages "settings.calendar_feed.generate"}}</button>
         </form>
         {{end}}
@@ -280,6 +282,26 @@
     {{t .Messages "settings.calendar_feed.detailed_titles.label"}}
   </label>
   <p id="{{.ID}}-warning" class="journal-muted text-sm" data-settings-calendar-feed-titles-warning>{{t .Messages "settings.calendar_feed.detailed_titles.warning"}}</p>
+</div>
+{{end}}
+
+{{/* WEB-381: the period-span and fertile-window opt-ins, chosen per link on
+     generate and rotate beside the title choice. Unchecked submits nothing,
+     which the handler reads as off. */}}
+{{define "settings_calendar_feed_spans_choice"}}
+<div class="space-y-1" data-settings-calendar-feed-period-span>
+  <label class="inline-flex items-center gap-2 text-sm" for="calendar-feed-period-span-{{.Form}}">
+    <input type="checkbox" id="calendar-feed-period-span-{{.Form}}" name="calendar_feed_period_span" value="true" aria-describedby="calendar-feed-period-span-{{.Form}}-warning" {{if .PeriodSpan}}checked{{end}}>
+    {{t .Messages "settings.calendar_feed.period_span.label"}}
+  </label>
+  <p id="calendar-feed-period-span-{{.Form}}-warning" class="journal-muted text-sm" data-settings-calendar-feed-period-span-warning>{{t .Messages "settings.calendar_feed.period_span.warning"}}</p>
+</div>
+<div class="space-y-1" data-settings-calendar-feed-fertile-window>
+  <label class="inline-flex items-center gap-2 text-sm" for="calendar-feed-fertile-window-{{.Form}}">
+    <input type="checkbox" id="calendar-feed-fertile-window-{{.Form}}" name="calendar_feed_fertile_window" value="true" aria-describedby="calendar-feed-fertile-window-{{.Form}}-warning" {{if .FertileWindow}}checked{{end}}>
+    {{t .Messages "settings.calendar_feed.fertile_window.label"}}
+  </label>
+  <p id="calendar-feed-fertile-window-{{.Form}}-warning" class="journal-muted text-sm" data-settings-calendar-feed-fertile-window-warning>{{t .Messages "settings.calendar_feed.fertile_window.warning"}}</p>
 </div>
 {{end}}
 

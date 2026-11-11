@@ -97,8 +97,8 @@ func NewCalendarFeedSettingsService(users CalendarFeedSettingsRepository, secret
 // (sealed one-time cookie) and never render it into an HTML value on a later
 // settings load. This method never logs the token.
 //
-// detailedTitles is the owner's title choice for this link (WEB-379), persisted
-// in the same write as the token.
+// options are the owner's choices for this link (CalendarFeedLinkOptions),
+// persisted in the same write as the token.
 //
 // deliver, when non-nil, hands the minted token and its selector to the one
 // place that can show it (the sealed reveal cookie) AFTER the mint and BEFORE
@@ -107,12 +107,14 @@ func NewCalendarFeedSettingsService(users CalendarFeedSettingsRepository, secret
 // delivery error stops the call with nothing saved, so the previous token keeps
 // serving; a save error after a delivery leaves the delivered value naming a
 // selector that was never stored, which the caller retracts.
-func (service *CalendarFeedSettingsService) GenerateFeedToken(ctx context.Context, userID uint, detailedTitles bool, deliver func(token, selector string) error) (string, error) {
+func (service *CalendarFeedSettingsService) GenerateFeedToken(ctx context.Context, userID uint, options CalendarFeedLinkOptions, deliver func(token, selector string) error) (string, error) {
 	fullToken, columns, err := GenerateCalendarFeedToken(service.secretKey)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenGenerate, err)
 	}
-	columns.DetailedTitles = detailedTitles
+	columns.DetailedTitles = options.DetailedTitles
+	columns.PeriodSpan = options.PeriodSpan
+	columns.FertileWindow = options.FertileWindow
 	if deliver != nil {
 		if err := deliver(fullToken, columns.Selector); err != nil {
 			return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenDeliver, err)
@@ -202,6 +204,25 @@ type CalendarFeedStatus struct {
 	// DetailedTitles is the stored title choice (WEB-379). It describes the
 	// stored link only, so a reader must ignore it when no link is configured.
 	DetailedTitles bool
+	// PeriodSpan and FertileWindow are the stored span choices (WEB-381), read
+	// under the same rule as DetailedTitles.
+	PeriodSpan    bool
+	FertileWindow bool
+}
+
+// CalendarFeedLinkOptions are the owner's per-link choices from the generate or
+// rotate form. Every field defaults to false, which keeps the feed body as it
+// was before each opt-in existed. They belong to the link they were chosen for:
+// written beside its token and reset by every disarm.
+type CalendarFeedLinkOptions struct {
+	// DetailedTitles names the estimate type in event titles (WEB-379).
+	DetailedTitles bool
+	// PeriodSpan sends each predicted period as a multi-day span once the
+	// period length has been observed (WEB-381).
+	PeriodSpan bool
+	// FertileWindow adds the estimated fertile window the calendar grid shades
+	// (WEB-381).
+	FertileWindow bool
 }
 
 // BuildFeedStatus derives the render-safe feed projection for an owner, scoped
@@ -234,5 +255,7 @@ func (service *CalendarFeedSettingsService) BuildFeedStatus(ctx context.Context,
 		KeyEpoch:        strings.TrimSpace(user.CalendarFeedKeyEpoch),
 		CurrentKeyEpoch: currentEpoch,
 		DetailedTitles:  user.CalendarFeedDetailedTitles,
+		PeriodSpan:      user.CalendarFeedPeriodSpan,
+		FertileWindow:   user.CalendarFeedFertileWindow,
 	}
 }
