@@ -52,7 +52,7 @@ func Isolate(t *testing.T) bool {
 	if deadline, ok := t.Deadline(); ok {
 		args = append(args, "-test.timeout="+time.Until(deadline).Round(time.Second).String())
 	}
-	child := exec.Command(os.Args[0], args...)
+	child := exec.Command(os.Args[0], args...) // #nosec G204 -- test-only (imported solely by _test.go callers); the binary is this test binary itself, and the arguments are the running test's own name, regexp-quoted, and its deadline, never external input.
 	child.Env = append(os.Environ(), serialChildEnv+"=1", "GOMAXPROCS=1")
 	output, err := child.CombinedOutput()
 
