@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/constant"
+	"go/token"
 	"go/types"
 	"sort"
 	"strings"
@@ -369,6 +370,7 @@ func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAd
 	var closures []*ast.FuncLit
 	assigned := assignmentsIn(info, function.Body)
 	walk := newFenceHelperWalk(pkg, isAdvance)
+	outside := walk.outsideTwin()
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		if call, ok := node.(*ast.CallExpr); ok && isAdvance(call) {
 			if closure := fenceWriteClosure(call); closure != nil {
@@ -419,19 +421,26 @@ func fencedWriteTxViolations(pkg *packages.Package, function *ast.FuncDecl, isAd
 		// through the repository's own *gorm.DB, and one given tx must write
 		// through that parameter and nothing else. WEB-526: one called outside
 		// every closure is walked with nothing bound, so any write it makes is
-		// one committed apart from the marker.
-		if reason := postCommitFenceHelpers[callee.FullName()]; enclosing == nil && callee.Pkg() == pkg.Types && reason != "" {
+		// one committed apart from the marker; that walk records into its own
+		// helpers map, so a name check never reads an outside entry as one
+		// made from the closure.
+		switch {
+		case callee.Pkg() != pkg.Types:
+		case postCommitFenceHelpers[callee.FullName()] != "" && enclosing == nil:
+			if !afterEvery(closures, call.Pos()) {
+				violations = append(violations, fmt.Sprintf("%s: post-commit helper %s runs before the advance has committed", pkg.Fset.Position(call.Pos()), callee.Name()))
+			}
 			walk.postCommit[callee.FullName()] = true
-		} else if callee.Pkg() == pkg.Types {
-			bound := map[types.Object]bool{}
-			if enclosing != nil && txObject != nil {
-				bound[txObject] = true
-			}
-			if enclosing == nil || txObject != nil {
-				helperChecked, helperViolations := walk.enter(info, assigned, bound, call, callee, 0)
-				checked += helperChecked
-				violations = append(violations, helperViolations...)
-			}
+		case enclosing == nil:
+			helperChecked, helperViolations := outside.enter(info, assigned, map[types.Object]bool{}, call, callee, 0)
+			checked += helperChecked
+			violations = append(violations, helperViolations...)
+		case txObject == nil:
+			violations = append(violations, fmt.Sprintf("%s: %s is called inside a closure whose tx parameter is unnamed, so its writes cannot be placed", pkg.Fset.Position(call.Pos()), callee.Name()))
+		default:
+			helperChecked, helperViolations := walk.enter(info, assigned, map[types.Object]bool{txObject: true}, call, callee, 0)
+			checked += helperChecked
+			violations = append(violations, helperViolations...)
 		}
 		if len(handles) == 0 {
 			return true
@@ -512,9 +521,10 @@ const fenceHelperDepth = 8
 //
 // A helper's own call that is an advance fences its own writes and is not
 // descended: that helper is checked where it is itself a writer. A func
-// literal handed to a call on a bound handle (tx.Transaction(func(inner
-// *gorm.DB) …)) has its *gorm.DB parameter bound too: gorm runs it as a
-// savepoint of the same transaction.
+// literal handed to gorm's Transaction on a bound handle (tx.Transaction(
+// func(inner *gorm.DB) …)) has its *gorm.DB parameter bound too: gorm runs it
+// at once, as a savepoint of the same transaction. Any other func literal —
+// a callback gorm may run later, outside this transaction — binds nothing.
 type fenceHelperWalk struct {
 	pkg       *packages.Package
 	isAdvance func(*ast.CallExpr) bool
@@ -524,6 +534,35 @@ type fenceHelperWalk struct {
 	// postCommit records the postCommitFenceHelpers a fenced writer called
 	// outside its closure, so a stale entry can be refused.
 	postCommit map[string]bool
+	// outside marks the walk of helpers called outside every closure, where
+	// nothing is bound and any write is one made apart from the marker.
+	outside bool
+}
+
+// outsideTwin is a walk over the same declarations for helpers called outside
+// every closure. Its visited set and helpers map are its own, so its entries
+// never satisfy a check that a helper was entered from a closure.
+func (walk *fenceHelperWalk) outsideTwin() *fenceHelperWalk {
+	return &fenceHelperWalk{pkg: walk.pkg, isAdvance: walk.isAdvance, decls: walk.decls, visited: map[string]bool{}, helpers: map[types.Object]int{}, postCommit: walk.postCommit, outside: true}
+}
+
+// apart names why a misplaced write commits apart from the marker.
+func (walk *fenceHelperWalk) apart() string {
+	if walk.outside {
+		return "runs outside the closure handed to the advance"
+	}
+	return "goes through a handle that is not the closure's tx"
+}
+
+// afterEvery reports whether at lies after every closure, i.e. after each
+// advance — and the transaction it opens — has returned.
+func afterEvery(closures []*ast.FuncLit, at token.Pos) bool {
+	for _, closure := range closures {
+		if at <= closure.End() {
+			return false
+		}
+	}
+	return len(closures) > 0
 }
 
 // postCommitFenceHelpers write after a fenced writer's transaction has
@@ -607,7 +646,9 @@ func (walk *fenceHelperWalk) enter(info *types.Info, assigned map[types.Object][
 		if walk.isAdvance(inside) {
 			return false
 		}
-		if selector, ok := inside.Fun.(*ast.SelectorExpr); ok && isGormDBHandle(info, selector.X) && rootedIn(info, helperAssigned, inner, selector.X) {
+		opener, _ := typeutil.Callee(info, inside).(*types.Func)
+		opensSavepoint := opener != nil && opener.Pkg() != nil && opener.Pkg().Path() == "gorm.io/gorm" && opener.Name() == "Transaction"
+		if selector, ok := inside.Fun.(*ast.SelectorExpr); ok && opensSavepoint && rootedIn(info, helperAssigned, inner, selector.X) {
 			for _, argument := range inside.Args {
 				literal, ok := argument.(*ast.FuncLit)
 				if !ok {
@@ -631,7 +672,7 @@ func (walk *fenceHelperWalk) enter(info *types.Info, assigned map[types.Object][
 			if persistenceWriteMethods[resolved.Pkg().Path()][resolved.Name()] {
 				selector, ok := inside.Fun.(*ast.SelectorExpr)
 				if !ok || !rootedIn(info, helperAssigned, inner, selector.X) {
-					violations = append(violations, fmt.Sprintf("%s: %s inside helper %s goes through a handle that is not the closure's tx, so it commits apart from the marker", at, resolved.Name(), callee.Name()))
+					violations = append(violations, fmt.Sprintf("%s: %s inside helper %s %s, so it commits apart from the marker", at, resolved.Name(), callee.Name(), walk.apart()))
 					return true
 				}
 				checked++
