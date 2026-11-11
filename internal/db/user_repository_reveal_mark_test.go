@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 )
 
 // Shown-once reveal marks (migration 036). users.recovery_code_revealed_at and
@@ -284,6 +285,9 @@ var revealMarkPairings = map[string]string{
 // A paired column added to a map by index is refused outright
 // (revealMarkIndexWrites): that form is a mint the literal sweep cannot see.
 func TestEveryRecoveryCodeMintClearsItsRevealMark(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	assertRevealMarkSweepAnswersBothWays(t)
 
 	fileSet := token.NewFileSet()

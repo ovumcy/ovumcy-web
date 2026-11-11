@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -26,11 +27,14 @@ import (
 // second caller that never resets, Authenticate taken as a value, or a reset
 // anywhere else fails here.
 func TestLoginResetsOnlyAfterEachArmIssuesItsCookie(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	root, err := moduleRootForBarrier()
 	if err != nil {
 		t.Fatalf("locate the module root: %v", err)
 	}
-	loaded, err := packages.Load(&packages.Config{
+	loaded, err := testpackages.Load(&packages.Config{
 		Mode:  packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
 		Dir:   root,
 		Tests: false,

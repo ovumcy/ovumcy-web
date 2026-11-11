@@ -16,6 +16,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/security"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -53,6 +54,9 @@ var limiterReachabilityProbes = map[string]limiterReachabilityProbe{
 // the sweep) and refuses a stale probe (one naming a constructor server.go no
 // longer wires), then runs every probe.
 func TestEveryLimiterConfigLimitReachedIsDrivenForThePageFlashCookie(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	resolved := resolveLimiterReachedConstructors(t)
 	if len(resolved) < 2 {
 		t.Fatalf("resolved only %d LimitReached constructor(s) from cmd/ovumcy/server.go; the sweep is reading the wrong file", len(resolved))
@@ -124,7 +128,7 @@ func resolveLimiterReachedConstructors(t *testing.T) map[string]bool {
 		Dir:   root,
 		Tests: false,
 	}
-	loaded, err := packages.Load(config, "./cmd/ovumcy")
+	loaded, err := testpackages.Load(config, "./cmd/ovumcy")
 	if err != nil {
 		t.Fatalf("type-checking cmd/ovumcy: %v", err)
 	}

@@ -8,6 +8,8 @@ import (
 	"go/types"
 	"strings"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 )
 
 // calendarFeedDisarmWriters are the functions that disarm a feed today. Each is
@@ -51,6 +53,9 @@ var calendarFeedSelectorReaders = []string{
 // (the migration runner's files), are out of reach of any source scan;
 // migrations are pinned by their own tests.
 func TestEveryCalendarFeedDisarmClearsTheDetailedTitlesOptIn(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	pkg := loadTypedDBPackage(t)
 	disarms, reads, problems := scanCalendarFeedTitleWrites(pkg.Fset, pkg.TypesInfo, pkg.Syntax)
 	for _, problem := range problems {

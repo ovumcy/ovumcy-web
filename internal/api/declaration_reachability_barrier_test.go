@@ -15,6 +15,7 @@ import (
 	"text/template/parse"
 
 	"github.com/ovumcy/ovumcy-web/internal/templates"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -175,6 +176,9 @@ var (
 
 // TestEveryViewModelFieldIsReadByATemplateOrProductionGo is the field barrier.
 func TestEveryViewModelFieldIsReadByATemplateOrProductionGo(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	evidence := loadTreeEvidence(t)
 	refuseUndeclaredTypeExclusions(t, evidence)
 
@@ -215,6 +219,9 @@ func TestEveryViewModelFieldIsReadByATemplateOrProductionGo(t *testing.T) {
 // service type that owns the shape, and every dead-code pass has to re-derive
 // that its single reference lives in a `_test.go`.
 func TestEveryTypeDeclaredInTheAPIPackageIsNamedByProductionGo(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	evidence := loadTreeEvidence(t)
 
 	apiPkg := evidence.packageByPath(apiPackagePath)
@@ -640,7 +647,7 @@ func buildTreeEvidence() (*treeEvidence, error) {
 	}
 	// The same five package trees the repository's other Go steps scope
 	// themselves to; ./... would sweep node_modules in a checkout that has one.
-	loaded, err := packages.Load(config, "./cmd/...", "./internal/...", "./migrations/...", "./scripts/...", "./web/...")
+	loaded, err := testpackages.Load(config, "./cmd/...", "./internal/...", "./migrations/...", "./scripts/...", "./web/...")
 	if err != nil {
 		return nil, fmt.Errorf("type-checking the shipped packages: %w", err)
 	}

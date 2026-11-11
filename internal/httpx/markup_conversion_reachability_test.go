@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -50,6 +51,9 @@ import (
 // does not bypass html/template's escaper either, so it is correctly out of
 // scope rather than missed.
 func TestTemplateHTMLConversionIsConfinedToTheMarkupChokePoint(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	sites := loadTemplateHTMLConversionSites(t)
 
 	// Anti-vacuity floor: a sweep that resolved nothing would report a clean
@@ -171,7 +175,7 @@ func loadTemplateHTMLConversionSites(t *testing.T) []conversionSite {
 	}
 	// The same package trees the repository's other Go steps scope
 	// themselves to; ./... would also sweep a checkout's node_modules.
-	loaded, err := packages.Load(config, "./cmd/...", "./internal/...", "./migrations/...", "./scripts/...", "./web/...")
+	loaded, err := testpackages.Load(config, "./cmd/...", "./internal/...", "./migrations/...", "./scripts/...", "./web/...")
 	if err != nil {
 		t.Fatalf("type-checking the shipped packages: %v", err)
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/net/html"
 	"golang.org/x/tools/go/packages"
 	"gorm.io/gorm"
@@ -537,6 +538,9 @@ func guardedSettingsRoutes(t *testing.T, app *fiber.App) []string {
 // either reddens here, and so does a reason left behind for a route that is
 // bound or gone.
 func TestEveryStateChangingV1RouteIsAccountBoundOrNamedWithItsReason(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	t.Parallel()
 
 	fixture := newDayFormAccountFixture(t, "settings-route-sweep")
@@ -617,7 +621,7 @@ func declaredAPITestFunctions(t *testing.T) map[string]bool {
 		Dir:   root,
 		Tests: true,
 	}
-	loaded, err := packages.Load(config, "./internal/api")
+	loaded, err := testpackages.Load(config, "./internal/api")
 	if err != nil {
 		t.Fatalf("type-check the api package with its tests: %v", err)
 	}

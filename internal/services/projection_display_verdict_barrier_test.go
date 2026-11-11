@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -62,6 +63,9 @@ var projectionVerdictSoleReferrers = map[string]string{
 }
 
 func TestEveryProjectedDateSurfaceReachesTheSharedDisplayVerdict(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	graph := loadProjectionVerdictGraph(t)
 
 	var failures []string
@@ -173,7 +177,7 @@ func loadProjectionVerdictGraph(t *testing.T) *projectionVerdictGraph {
 		// Production only: a test that calls the verdict is not a surface that does.
 		Tests: false,
 	}
-	loaded, err := packages.Load(config, "./internal/services")
+	loaded, err := testpackages.Load(config, "./internal/services")
 	if err != nil {
 		t.Fatalf("load internal/services: %v", err)
 	}

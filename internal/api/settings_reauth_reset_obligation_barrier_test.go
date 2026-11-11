@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -39,11 +40,14 @@ type resetObligation struct {
 // (TestDisableTOTP2FARefusedWriteDoesNotResetTheReauthBudget,
 // TestVerifyTOTP2FAEnrollmentRefusedWriteDoesNotResetTheTOTPEnrollBudget).
 func TestEverySettingsReauthCallerResetsTheBudgetItWasHanded(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	root, err := moduleRootForBarrier()
 	if err != nil {
 		t.Fatalf("locate the module root: %v", err)
 	}
-	loaded, err := packages.Load(&packages.Config{
+	loaded, err := testpackages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 		Dir:  root,
 		// Production callers only: a test that validates and never resets is

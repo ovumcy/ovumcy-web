@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 )
 
 // The i18n manager hands out ONE catalogue map per language, shared by every
@@ -437,6 +439,9 @@ func describeMessagesFindings(findings []messagesWriteFinding) string {
 
 // TestNoProductionCodeWritesToTheSharedMessagesMap sweeps the shipped tree.
 func TestNoProductionCodeWritesToTheSharedMessagesMap(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	evidence := loadTreeEvidence(t)
 
 	i18nPackage := evidence.packageByPath(modulePath + "/internal/i18n")

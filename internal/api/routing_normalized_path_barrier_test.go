@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -126,6 +127,9 @@ type rawPathSink struct {
 
 // TestEveryRawRequestPathReadIsRoutingNormalized is the barrier.
 func TestEveryRawRequestPathReadIsRoutingNormalized(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	evidence := loadTreeEvidence(t)
 	sinks := rawPathSinks(t, evidence)
 

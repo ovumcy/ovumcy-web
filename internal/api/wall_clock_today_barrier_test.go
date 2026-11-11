@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 )
 
 // Which calendar day it is, in this package, comes from Handler.clockNow and
@@ -45,6 +47,9 @@ var wallClockLocalisedForExpiry = map[string]string{
 const wallClockLoadBearingSite = "Handler.currentPageViewContext"
 
 func TestNoAPIFunctionTurnsTheWallClockIntoADay(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	evidence := loadTreeEvidence(t)
 	apiPkg := evidence.packageByPath(apiPackagePath)
 	if apiPkg == nil {

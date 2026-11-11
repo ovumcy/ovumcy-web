@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -179,6 +180,9 @@ func oidcWriterFuncDecl(t *testing.T, loaded []*packages.Package, target *types.
 // authenticateExchange calls linkIdentity only past its refusal of an account
 // it did not just provision.
 func TestOIDCIdentityRowsHaveAClosedSetOfWriters(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	loaded := withoutEmailGuardFixtures(loadEmailGuardTree(t))
 	targets := map[string]*types.Func{
 		oidcWriterConfirm:      lookupEmailGuardMethod(t, loaded, emailGuardServicesPath, "OIDCLoginService", "ConfirmAndLinkIdentity"),
@@ -230,11 +234,14 @@ func TestOIDCIdentityRowsHaveAClosedSetOfWriters(t *testing.T) {
 // interface, inserts by value, slice and raw SQL, a bystander insert of
 // another model, and a linkIdentity call with and without the refusal.
 func TestOIDCIdentityWriterScanClassifiesItsOwnFixtures(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("resolve module root: %v", err)
 	}
-	loaded, err := packages.Load(&packages.Config{
+	loaded, err := testpackages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports,
 		Dir:  root,
 		Overlay: map[string][]byte{

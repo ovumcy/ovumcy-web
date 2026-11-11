@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -105,7 +106,7 @@ var refusedEnvFuncs = map[string]bool{
 // unresolved identifier would leave exactly the evidence this scan reads empty.
 func loadModulePackages(dir, pattern string) ([]*packages.Package, error) {
 	env := append(os.Environ(), "CGO_ENABLED=0")
-	linked, err := packages.Load(&packages.Config{
+	linked, err := testpackages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedModule | packages.NeedImports | packages.NeedDeps,
 		Dir:  dir,
 		Env:  env,
@@ -123,7 +124,7 @@ func loadModulePackages(dir, pattern string) ([]*packages.Package, error) {
 		return nil, fmt.Errorf("%s links no package of the module: the scan is not reaching the binary", pattern)
 	}
 	sort.Strings(paths)
-	loaded, err := packages.Load(&packages.Config{
+	loaded, err := testpackages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedImports |
 			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
 		Dir: dir,
@@ -823,6 +824,9 @@ func TestStackJudgmentRefusesWhatIgnoresTheOperator(t *testing.T) {
 // binary reads reaches the app in every shipped example stack, or is exempted
 // above with a stated reason.
 func TestEveryExampleStackForwardsEveryRuntimeConfigKey(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	root := repoRoot(t)
 	scan, err := scanModule(root, "./cmd/ovumcy")
 	if err != nil {
@@ -1031,6 +1035,9 @@ func fixtureModule(t *testing.T, files map[string]string) moduleScan {
 // whichever package of the module declares the reader; a fallback is never a
 // key; and a function that only borrows a reader's name is not one.
 func TestConfigKeyScanResolvesKeysByDeclaration(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	scan := fixtureModule(t, map[string]string{
 		"cfg/cfg.go": `package cfg
 
@@ -1117,6 +1124,9 @@ func main() {
 // position instead of being skipped, and so does each use of os.Environ,
 // os.ExpandEnv and os.Expand, called or merely named.
 func TestConfigKeyScanRefusesWhatItCannotResolve(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	scan := fixtureModule(t, map[string]string{
 		"main.go": `package main
 
@@ -1169,6 +1179,9 @@ func main() {}
 // the caller's constant is not recorded as a key, and the read fails the run
 // naming the function. A parameter nothing writes is still a reader.
 func TestConfigKeyScanDoesNotFollowAParameterTheFunctionChanges(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	scan := fixtureModule(t, map[string]string{
 		"main.go": `package main
 

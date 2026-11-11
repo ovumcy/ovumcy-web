@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/testpackages"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -96,6 +97,9 @@ const (
 // TestEveryPasswordHashWriterBumpsAuthSessionVersionExceptTheNamedException is
 // the direct-writer half of the barrier.
 func TestEveryPasswordHashWriterBumpsAuthSessionVersionExceptTheNamedException(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	pkgs := loadPasswordHashWriterTree(t)
 	userRepo := resolveUserRepositoryNamed(t, pkgs)
 	dbPkg := passwordHashWriterPackageByPath(pkgs, passwordHashWriterDBPackage)
@@ -159,6 +163,9 @@ func TestEveryPasswordHashWriterBumpsAuthSessionVersionExceptTheNamedException(t
 // bumps auth_session_version itself, so a future caller handing it
 // password_hash is exactly the gap the prose invariant did not guard against.
 func TestNoUpdateByIDCallerPassesPasswordHashWithoutABump(t *testing.T) {
+	if testpackages.Isolate(t) {
+		return
+	}
 	pkgs := loadPasswordHashWriterTree(t)
 	userRepo := resolveUserRepositoryNamed(t, pkgs)
 	signature := resolveUpdateByIDSignature(t, userRepo)
@@ -1271,7 +1278,7 @@ func buildPasswordHashWriterTree() ([]*packages.Package, error) {
 		// caller of UpdateByID.
 		Tests: false,
 	}
-	loaded, err := packages.Load(config, "./cmd/...", "./internal/...", "./migrations/...", "./scripts/...", "./web/...")
+	loaded, err := testpackages.Load(config, "./cmd/...", "./internal/...", "./migrations/...", "./scripts/...", "./web/...")
 	if err != nil {
 		return nil, fmt.Errorf("type-checking the shipped packages: %w", err)
 	}
