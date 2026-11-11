@@ -131,6 +131,7 @@ func buildCycleStats(logs []models.DailyLog, today time.Time, ctx BoundaryContex
 
 	cycles := buildCycles(starts, sorted)
 	populateObservedCycleStats(&stats, cycleLengths(starts), cycles)
+	averagedCycles := cycles
 	if !runningPeriodHasEnded(cycles, rule) {
 		// A period still running is as long as the owner has logged it so far:
 		// one day on the day it is marked, and stopped at today by the
@@ -138,12 +139,13 @@ func buildCycleStats(logs []models.DailyLog, today time.Time, ctx BoundaryContex
 		// With no other period left the configured length stands in: a cycle
 		// bounded only by the onboarding start completes without a period day,
 		// and applyObservedBaseline writes no length once a cycle has completed.
-		stats.AveragePeriodLength = averageInts(recentPositivePeriodLengths(cycles[:len(cycles)-1], cyclePredictionWindow))
-		stats.PeriodLengthObserved = stats.AveragePeriodLength > 0
+		averagedCycles = cycles[:len(cycles)-1]
+		stats.AveragePeriodLength = averageInts(recentPositivePeriodLengths(averagedCycles, cyclePredictionWindow))
 		if stats.AveragePeriodLength == 0 {
 			stats.AveragePeriodLength = float64(rule.periodLength)
 		}
 	}
+	stats.PeriodLengthObserved = periodLengthObservedIn(tailCycles(averagedCycles, cyclePredictionWindow), sorted, rule.periodLength)
 	stats.LastPeriodStart = starts[len(starts)-1]
 	stats.LutealPhase = defaultLutealPhaseDays
 	applyPredictedCycleStats(&stats)
@@ -316,7 +318,6 @@ func populateObservedCycleStats(stats *CycleStats, lengths []int, cycles []detec
 	periodLengths := recentPositivePeriodLengths(cycles, cyclePredictionWindow)
 	if len(periodLengths) > 0 {
 		stats.AveragePeriodLength = averageInts(periodLengths)
-		stats.PeriodLengthObserved = true
 	}
 	completedCycleCount := len(lengths)
 	if completedCycleCount > 0 && len(cycles) >= completedCycleCount {
@@ -336,6 +337,36 @@ func runningPeriodHasEnded(cycles []detectedCycle, rule runningPeriodRule) bool 
 	}
 	running := cycles[len(cycles)-1]
 	return CalendarDaysBetween(running.Start, rule.today) >= rule.periodLength
+}
+
+// periodLengthObservedIn reports whether one of these periods has a length the
+// owner set rather than the period fills: onboarding and the period top-up write
+// auto-filled days up to the configured length, and a ticked start alone is
+// then all the owner recorded. A period counts when its length differs from the
+// configured one (the owner trimmed or extended the fill) or when a day past its
+// start was marked by hand. With no configured length (the bare path, no owner)
+// any recorded period counts.
+func periodLengthObservedIn(cycles []detectedCycle, logs []models.DailyLog, configuredLength int) bool {
+	handMarked := make(map[time.Time]bool, len(logs))
+	for _, log := range logs {
+		if log.IsPeriod && (log.AutoFilled == nil || !*log.AutoFilled) {
+			handMarked[dateOnly(log.Date)] = true
+		}
+	}
+	for _, cycle := range cycles {
+		if cycle.PeriodLength <= 0 {
+			continue
+		}
+		if configuredLength <= 0 || cycle.PeriodLength != configuredLength {
+			return true
+		}
+		for offset := 1; offset < cycle.PeriodLength; offset++ {
+			if handMarked[dateOnly(cycle.Start.AddDate(0, 0, offset))] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func recentPositivePeriodLengths(cycles []detectedCycle, limit int) []int {

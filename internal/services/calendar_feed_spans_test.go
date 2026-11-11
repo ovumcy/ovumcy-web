@@ -245,6 +245,47 @@ func TestPeriodLengthObservedNeedsALoggedLengthNotJustACompletedCycle(t *testing
 	if !BuildCycleStatsFromLogs(logged.User, logged.Logs, logged.Now, time.UTC).PeriodLengthObserved {
 		t.Fatal("five logged period days per cycle must mark the length observed")
 	}
+
+	// The period fills write the configured length as auto-filled days behind a
+	// ticked start: that length is configuration, so no span goes out.
+	// The configured length is the owner's (ownerRunningPeriodRule), so these
+	// fixtures are owners.
+	filled := spanFeedInput(t, "2026-03-05", true, false, spanFeedThreeCycles...)
+	filled.User.Role = models.RoleOwner
+	autoFilled := true
+	for i := range filled.Logs {
+		if !filled.Logs[i].CycleStart {
+			filled.Logs[i].AutoFilled = &autoFilled
+		}
+	}
+	if BuildCycleStatsFromLogs(filled.User, filled.Logs, filled.Now, time.UTC).PeriodLengthObserved {
+		t.Fatal("auto-filled days up to the configured length must not mark the length observed")
+	}
+	events := calendarFeedEvents(filled)
+	if spans := feedEventsOfKind(events, calendarFeedKindPeriodSpan); len(spans) != 0 {
+		t.Fatalf("a span drawn from the fill's configured length went out: %v", spans)
+	}
+	if len(feedEventsOfKind(events, calendarFeedKindPeriod)) == 0 {
+		t.Fatal("the single start day must still go out")
+	}
+
+	// A fill the owner trimmed to four days is the owner's length.
+	trimmed := spanFeedInput(t, "2026-03-05", true, false, spanFeedThreeCycles...)
+	trimmed.User.Role = models.RoleOwner
+	kept := trimmed.Logs[:0]
+	for _, log := range trimmed.Logs {
+		if !log.CycleStart {
+			log.AutoFilled = &autoFilled
+		}
+		if log.Date.Equal(mustParseDashboardDay(t, "2026-02-06")) {
+			continue
+		}
+		kept = append(kept, log)
+	}
+	trimmed.Logs = kept
+	if !BuildCycleStatsFromLogs(trimmed.User, trimmed.Logs, trimmed.Now, time.UTC).PeriodLengthObserved {
+		t.Fatal("a fill trimmed below the configured length must mark the length observed")
+	}
 }
 
 // Where the dashboard names a next-period start window, the feed sends that
