@@ -294,6 +294,24 @@ var localizedFormatContracts = []localizedFormatContract{
 		note:          "reminder.EventDate and reminder.EventDateEnd formatted as 2006-01-02",
 	},
 	{
+		// The cycle-day reminder sentence (WEB-383): the cycle day alone.
+		file:          "internal/services/webhook_notify_cycle_day.go",
+		function:      "cycleDayMessage",
+		keys:          []string{"webhook.reminder.cycle_day.message"},
+		verbs:         []string{"%d"},
+		argumentTypes: []string{"int"},
+		note:          "the rule's cycle day",
+	},
+	{
+		// The same sentence carrying the label the owner opted to send.
+		file:          "internal/services/webhook_notify_cycle_day.go",
+		function:      "cycleDayLabelMessage",
+		keys:          []string{"webhook.reminder.cycle_day.message_label"},
+		verbs:         []string{"%d", "%s"},
+		argumentTypes: []string{"int", "string"},
+		note:          "the rule's cycle day and its owner-entered label",
+	},
+	{
 		// The day-observation refusals: plural families whose one %d is the
 		// bound, so the number and the noun agreeing with it both follow
 		// services.ManualCycleStartFutureDays. No fallback literal: a miss

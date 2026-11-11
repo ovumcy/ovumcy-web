@@ -1,0 +1,106 @@
+{{/* WEB-383: reminders on a fixed cycle day, delivered through the webhook
+     above. The block lives inside the egress card and every form targets the
+     card, which the server re-renders from a read taken after the write. The
+     label is owner-only: it leaves the server only for a rule whose opt-in is
+     ticked, and the warning beside that opt-in names the destination host. */}}
+{{define "settings_cycle_day_reminders"}}
+<div class="space-y-3" data-egress-cycle-day>
+  <h4 class="field-label"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.cycle_day_reminders.title"}}</h4>
+  <p class="journal-muted text-sm">{{t .Messages "settings.cycle_day_reminders.subtitle"}}</p>
+  <p class="journal-muted text-sm" data-egress-cycle-day-hold-hint>{{t .Messages "settings.cycle_day_reminders.hold_hint"}}</p>
+
+  {{if not .Egress.CycleDay.Readable}}
+  <p class="journal-muted text-sm" data-egress-cycle-day-unreadable>{{t .Messages "settings.cycle_day_reminders.unreadable"}}</p>
+  {{end}}
+
+  {{range .Egress.CycleDay.Rules}}
+  <div class="space-y-2" data-egress-cycle-day-rule="{{.ID}}">
+    <form
+      action="/api/v1/users/current/cycle-day-reminders/{{.ID}}"
+      method="post"
+      hx-patch="/api/v1/users/current/cycle-day-reminders/{{.ID}}"
+      hx-target="#settings-egress"
+      hx-swap="outerHTML"
+      class="space-y-2"
+      data-egress-cycle-day-update>
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_method" value="PATCH">
+      <input type="hidden" name="day_form_account" value="{{$.DayFormAccount}}">
+      {{template "settings_cycle_day_reminder_fields" (dict "Messages" $.Messages "ID" (printf "cycle-day-reminder-%d" .ID) "View" $.Egress.CycleDay "CycleDay" .CycleDay "Hour" .RemindAtHour "Label" .Label "SendLabel" .SendLabel)}}
+      <div class="settings-form-actions">
+        <button type="submit" class="btn-secondary">{{t $.Messages "settings.cycle_day_reminders.save"}}</button>
+      </div>
+    </form>
+    <form
+      action="/api/v1/users/current/cycle-day-reminders/{{.ID}}"
+      method="post"
+      hx-delete="/api/v1/users/current/cycle-day-reminders/{{.ID}}"
+      hx-target="#settings-egress"
+      hx-swap="outerHTML"
+      hx-confirm="{{t $.Messages "settings.cycle_day_reminders.confirm_remove"}}"
+      data-confirm-accept="{{t $.Messages "settings.cycle_day_reminders.remove"}}"
+      data-egress-cycle-day-remove>
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="_method" value="DELETE">
+      <input type="hidden" name="day_form_account" value="{{$.DayFormAccount}}">
+      <button type="submit" class="btn-secondary">{{t $.Messages "settings.cycle_day_reminders.remove"}}</button>
+    </form>
+  </div>
+  {{end}}
+
+  <div data-focus-scroll-anchor data-status-island-group="cycle_day">
+    {{if .Egress.CycleDay.CanAdd}}
+    <form
+      action="/api/v1/users/current/cycle-day-reminders"
+      method="post"
+      hx-post="/api/v1/users/current/cycle-day-reminders"
+      hx-target="#settings-egress"
+      hx-swap="outerHTML"
+      class="space-y-2"
+      data-egress-cycle-day-add>
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
+      {{template "settings_cycle_day_reminder_fields" (dict "Messages" .Messages "ID" "cycle-day-reminder-new" "View" .Egress.CycleDay "CycleDay" "" "Hour" 9 "Label" "" "SendLabel" false)}}
+      <div class="settings-form-actions">
+        <button
+          type="submit"
+          class="btn-secondary"
+          {{if eq .Egress.ResultPath "cycle_day"}}data-focus-after-swap aria-describedby="settings-egress-cycle-day-status"{{end}}>{{t .Messages "settings.cycle_day_reminders.add"}}</button>
+      </div>
+    </form>
+    {{else if .Egress.CycleDay.Readable}}
+    <p class="journal-muted text-sm" data-egress-cycle-day-limit>{{t .Messages "settings.cycle_day_reminders.limit"}}</p>
+    {{end}}
+    <div id="settings-egress-cycle-day-status" class="save-status text-sm" aria-live="polite">
+      {{if eq .Egress.ResultPath "cycle_day"}}{{template "settings_egress_result" .}}{{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "settings_cycle_day_reminder_fields"}}
+<div class="grid gap-2 sm:grid-cols-2">
+  <div class="space-y-1">
+    <label class="field-label" for="{{.ID}}-day">{{t .Messages "settings.cycle_day_reminders.day_label"}}</label>
+    <input type="number" id="{{.ID}}-day" name="cycle_day" class="input-field" inputmode="numeric" min="{{.View.MinDay}}" max="{{.View.MaxDay}}" step="1" required value="{{.CycleDay}}">
+  </div>
+  <div class="space-y-1">
+    <label class="field-label" for="{{.ID}}-hour">{{t .Messages "settings.cycle_day_reminders.hour_label"}}</label>
+    <select id="{{.ID}}-hour" name="remind_at_hour" class="input-field">
+      {{$selected := .Hour}}{{range .View.Hours}}<option value="{{.}}" {{if eq . $selected}}selected{{end}}>{{printf "%02d:00" .}}</option>{{end}}
+    </select>
+  </div>
+</div>
+<div class="space-y-1">
+  <label class="field-label" for="{{.ID}}-label">{{t .Messages "settings.cycle_day_reminders.label_label"}}</label>
+  <input type="text" id="{{.ID}}-label" name="label" class="input-field" maxlength="{{.View.MaxLabel}}" autocomplete="off" value="{{.Label}}" aria-describedby="{{.ID}}-label-hint">
+  <p id="{{.ID}}-label-hint" class="journal-muted text-sm">{{t .Messages "settings.cycle_day_reminders.label_hint"}}</p>
+</div>
+<div class="space-y-1" data-egress-cycle-day-send-label>
+  <label class="inline-flex items-center gap-2 text-sm" for="{{.ID}}-send-label">
+    <input type="checkbox" id="{{.ID}}-send-label" name="send_label" value="true" aria-describedby="{{.ID}}-send-label-warning" {{if .SendLabel}}checked{{end}}>
+    {{t .Messages "settings.cycle_day_reminders.send_label"}}
+  </label>
+  <p id="{{.ID}}-send-label-warning" class="journal-muted text-sm" data-egress-cycle-day-send-label-warning>{{t .Messages "settings.cycle_day_reminders.send_label_warning"}}{{if .View.LabelHost}} {{t .Messages "settings.egress.host_label"}} <span data-egress-cycle-day-label-host>{{.View.LabelHost}}</span>{{end}}</p>
+</div>
+{{end}}

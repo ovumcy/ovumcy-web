@@ -153,7 +153,8 @@ type EgressPayloadField string
 //
 // event_date is a PREDICTED date and disclaimer is the medical-safety sentence:
 // both are payload, not decoration, and are named here as things that leave.
-// event_date_end leaves only with a range, and is listed because it can leave.
+// event_date_end leaves only with a range, and cycle_day only with a cycle-day
+// reminder; both are listed because they can leave.
 func WebhookPayloadFields() []EgressPayloadField {
 	return []EgressPayloadField{
 		"title",
@@ -163,6 +164,7 @@ func WebhookPayloadFields() []EgressPayloadField {
 		"event_date",
 		"event_date_end",
 		"lead_days",
+		"cycle_day",
 	}
 }
 
@@ -235,6 +237,58 @@ type EgressLedger struct {
 	Section EgressSectionState
 	Webhook EgressWebhookLedger
 	Feed    EgressFeedLedger
+	// CycleDay is the owner's cycle-day reminder rules (WEB-383), which ride the
+	// webhook path.
+	CycleDay EgressCycleDayLedger
+}
+
+// EgressCycleDayLedger lists the rules without their send watermark: a claim is
+// not delivery evidence, so it never reaches the view. Readable is false when
+// the rules could not be loaded; the view then offers no add form.
+type EgressCycleDayLedger struct {
+	Readable bool
+	Rules    []EgressCycleDayRule
+}
+
+// EgressCycleDayRule is one rule as the settings card shows it.
+type EgressCycleDayRule struct {
+	ID           uint
+	CycleDay     int
+	RemindAtHour int
+	Label        string
+	SendLabel    bool
+}
+
+// EgressLedgerCycleDayReader is the rules seam (*db.CycleDayReminderRepository).
+type EgressLedgerCycleDayReader interface {
+	ListByUser(ctx context.Context, userID uint) ([]models.CycleDayReminder, error)
+}
+
+// WithCycleDayReminders wires the rules reader into the ledger.
+func (service *EgressLedgerService) WithCycleDayReminders(reader EgressLedgerCycleDayReader) *EgressLedgerService {
+	service.cycleDay = reader
+	return service
+}
+
+func (service *EgressLedgerService) buildCycleDayLedger(ctx context.Context, userID uint) EgressCycleDayLedger {
+	if service.cycleDay == nil {
+		return EgressCycleDayLedger{}
+	}
+	rules, err := service.cycleDay.ListByUser(ctx, userID)
+	if err != nil {
+		return EgressCycleDayLedger{}
+	}
+	ledger := EgressCycleDayLedger{Readable: true, Rules: make([]EgressCycleDayRule, 0, len(rules))}
+	for _, rule := range rules {
+		ledger.Rules = append(ledger.Rules, EgressCycleDayRule{
+			ID:           rule.ID,
+			CycleDay:     rule.CycleDay,
+			RemindAtHour: rule.RemindAtHour,
+			Label:        rule.Label,
+			SendLabel:    rule.SendLabel,
+		})
+	}
+	return ledger
 }
 
 // EgressLedgerWebhookDisplayBuilder is the readability seam. It exists so the
@@ -257,6 +311,7 @@ type EgressLedgerService struct {
 	webhook                 EgressLedgerWebhookDisplayBuilder
 	feed                    EgressLedgerFeedStatusBuilder
 	outboundDeliveryEnabled bool
+	cycleDay                EgressLedgerCycleDayReader
 }
 
 // NewEgressLedgerService wires the ledger.
@@ -328,6 +383,7 @@ func (service *EgressLedgerService) BuildEgressLedger(ctx context.Context, row E
 			FertileWindow:  feedStatus.Configured && feedStatus.FertileWindow,
 			PayloadFields:  CalendarFeedPayloadFields(),
 		},
+		CycleDay: service.buildCycleDayLedger(ctx, row.UserID),
 	}
 }
 

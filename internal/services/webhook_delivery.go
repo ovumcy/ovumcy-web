@@ -81,6 +81,7 @@ const (
 	// ntfy client, never to a failed delivery.
 	webhookNtfyTagsPeriod    = "drop_of_blood"
 	webhookNtfyTagsOvulation = "sparkles"
+	webhookNtfyTagsCycleDay  = "calendar"
 )
 
 // ErrWebhookDeliveryURLScheme is returned when a decrypted URL does not use
@@ -137,6 +138,11 @@ type WebhookPayload struct {
 	EventDateEnd string `json:"event_date_end,omitempty"`
 	// LeadDays echoes the lead window that surfaced this reminder.
 	LeadDays int `json:"lead_days"`
+	// CycleDay is the cycle day a "cycle-day" reminder fires on (WEB-383), so a
+	// consumer can route on it. Absent on every other kind, the held notice
+	// included. The owner's rule label is never a field: it reaches Message only
+	// for a rule whose send_label opt-in is on.
+	CycleDay int `json:"cycle_day,omitempty"`
 }
 
 // WebhookDeliverer is the narrow delivery seam the notify service depends on. It
@@ -447,9 +453,15 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 // a period reminder, sparkles (✨) for ovulation — and are cosmetic only: an
 // unknown kind, or a client without the shortcode, degrades to plain tag text
 // in the notification, never a failed delivery.
+//
+// Both cycle-day kinds take a neutral calendar icon: a pill would name a
+// medication on a lock screen the label opt-in was meant to keep it off.
 func ntfyTagsForReminderType(reminderType string) string {
-	if reminderType == DueReminderTypeOvulation {
+	switch reminderType {
+	case DueReminderTypeOvulation:
 		return webhookNtfyTagsOvulation
+	case DueReminderTypeCycleDay, DueReminderTypeCycleDayHeld:
+		return webhookNtfyTagsCycleDay
 	}
 	return webhookNtfyTagsPeriod
 }

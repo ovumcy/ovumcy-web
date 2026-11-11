@@ -282,6 +282,36 @@ either is fine for a self-hosted single-owner setup, and the CLI is
 particularly useful for scripted provisioning (for example, setting a default
 webhook as part of an install script that also runs `ovumcy users create`).
 
+### Cycle-day reminders
+
+Under **Settings → Outbound data → Cycle-day reminders** an owner can add up
+to 10 reminders on a fixed cycle day (1–90), each with an owner-local time of
+day and an optional private label — for example a medication taken on cycle
+days 15 and 25. Day 1 is the first day of the last cycle start the app
+recognises (the same boundary the dashboard counts from). They are delivered
+through the same webhook, only while webhook reminders are on.
+
+- **Exact day, from the chosen hour.** A reminder is due on its cycle day once
+  the owner-local hour reaches the one chosen. A pass that misses the hour
+  (instance down) catches up later the same day, never on the next day: a
+  prompt to take something on day N is wrong on any other day.
+- **Once per cycle.** A reminder sent in the current cycle is not sent again
+  in it, even if the cycle start is corrected afterwards.
+- **Held when the count is unreliable.** Nothing is sent while no cycle start
+  is logged, during pregnancy mode, for a day 1 or 2 counted from a single
+  bleeding day not yet confirmed, and once the cycle runs past the owner's
+  usual length — a late or unlogged period would make the day wrong. In the
+  last case the owner receives one neutral `cycle-day-held` notice per cycle
+  instead of silence.
+- **Hourly pass.** The built-in scheduler runs a cycle-day-only pass at the top
+  of every hour (and once at startup) beside its daily pass. An operator who
+  runs `ovumcy notify` from cron instead must run it hourly for cycle-day
+  reminders to arrive near their chosen time. In a time zone offset by a
+  fraction of an hour, a reminder arrives within that fraction of its time.
+- **Labels stay on the server by default.** The label is shown only on the
+  settings page unless the owner ticks the per-reminder opt-in, whose warning
+  names the destination host. `ovumcy notify --dry-run` never prints a label.
+
 ### Idempotency and safety
 
 - Each reminder kind (period, ovulation) has its own **watermark**, storing
@@ -476,6 +506,26 @@ adds `event_date_end`, the range's last day, and `event_date` is its first
 day; `message` then names both (*"Next period estimated to start between
 2026-07-11 and 2026-07-17."*). A single-date reminder has no `event_date_end`.
 A range reminder is sent once, when the range comes within the lead window.
+
+A cycle-day reminder (below) has `type` `cycle-day`, `event_date` set to the
+owner's current day, `lead_days` `0`, and one extra field, `cycle_day`:
+
+```json
+{
+  "title": "Cycle-day reminder",
+  "message": "Today is cycle day 15.",
+  "disclaimer": "Predictions are estimates, not medical advice or a method of contraception.",
+  "type": "cycle-day",
+  "event_date": "2026-07-28",
+  "lead_days": 0,
+  "cycle_day": 15
+}
+```
+
+The rule's label is never a field. It appears in `message` only for a rule
+whose owner ticked **Include the label in the notification**. The paused
+notice has `type` `cycle-day-held` and carries neither `cycle_day` nor a
+label. ntfy-format delivery shows both kinds with a neutral calendar icon.
 
 #### ntfy-native delivery (`?format=ntfy`)
 

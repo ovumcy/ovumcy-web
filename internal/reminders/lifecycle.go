@@ -3,6 +3,7 @@ package reminders
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -23,11 +24,19 @@ const DefaultStopBudget = 5 * time.Second
 // SIGINT/SIGTERM that stops the HTTP server. The launched goroutine never
 // touches the fiber app or its shutdown, so it cannot delay app.Listen or
 // interfere with the boot-window shutdown retry.
+//
+// A runner that also serves the hourly cycle-day pass gets a second goroutine;
+// done closes only once both loops have returned.
 func (s *Scheduler) Start(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
+	var loops sync.WaitGroup
+	loops.Go(func() { s.Run(ctx) })
+	if hourly, ok := s.runner.(CycleDayPassRunner); ok {
+		loops.Go(func() { s.RunHourly(ctx, hourly) })
+	}
 	go func() {
-		defer close(done)
-		s.Run(ctx)
+		loops.Wait()
+		close(done)
 	}()
 	return done
 }

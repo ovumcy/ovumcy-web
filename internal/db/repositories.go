@@ -11,6 +11,7 @@ type Repositories struct {
 	RegisterPickupTokens *RegisterPickupTokenRepository
 	AppState             *AppStateRepository
 	Health               *HealthRepository
+	CycleDayReminders    *CycleDayReminderRepository
 }
 
 func NewRepositories(database *gorm.DB) *Repositories {
@@ -23,6 +24,7 @@ func NewRepositories(database *gorm.DB) *Repositories {
 		RegisterPickupTokens: NewRegisterPickupTokenRepository(database),
 		AppState:             NewAppStateRepository(database),
 		Health:               NewHealthRepository(database),
+		CycleDayReminders:    NewCycleDayReminderRepository(database),
 	}
 }
 

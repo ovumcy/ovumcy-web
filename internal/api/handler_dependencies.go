@@ -29,6 +29,7 @@ func (handler *Handler) withDependencies(dependencies Dependencies) *Handler {
 	handler.settingsService = dependencies.SettingsService
 	handler.settingsViewService = dependencies.SettingsViewService
 	handler.webhookSettingsSvc = dependencies.WebhookSettingsService
+	handler.cycleDayReminderSvc = dependencies.CycleDayReminders
 	handler.onboardingSvc = dependencies.OnboardingService
 	handler.setupService = dependencies.SetupService
 	handler.totpService = dependencies.TOTPService

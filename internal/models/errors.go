@@ -64,4 +64,10 @@ var (
 	// CLI) landed in between, and this save wrote nothing rather than re-store an
 	// endpoint decided from a row that no longer exists.
 	ErrWebhookConfigVersionChanged = errors.New("webhook settings changed since they were read")
+	// ErrCycleDayReminderNotFound reports that no cycle-day reminder with the id
+	// belongs to the owner — the same answer for another owner's id.
+	ErrCycleDayReminderNotFound = errors.New("cycle-day reminder not found")
+	// ErrCycleDayReminderLimit reports that the owner already holds
+	// CycleDayReminderMaxPerOwner rules.
+	ErrCycleDayReminderLimit = errors.New("cycle-day reminder limit reached")
 )

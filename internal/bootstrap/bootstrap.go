@@ -108,7 +108,7 @@ func BuildNotifyService(repositories *db.Repositories, secretKey []byte, i18nMan
 		webhookSettings,
 		deliverer,
 		i18nDisclaimerProvider{manager: i18nManager},
-	)
+	).WithCycleDayReminders(repositories.CycleDayReminders)
 }
 
 // BuildDependencies wires the repositories and configuration into the domain
@@ -161,7 +161,8 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 		services.DefaultSettingsReauthAttemptsWindow,
 	)
 	webhookSettingsService := services.NewWebhookSettingsService(repositories.Users, secretKey)
-	egressLedgerService := services.NewEgressLedgerService(webhookSettingsService, calendarFeedSettingsService, opts.OutboundDeliveryEnabled)
+	egressLedgerService := services.NewEgressLedgerService(webhookSettingsService, calendarFeedSettingsService, opts.OutboundDeliveryEnabled).
+		WithCycleDayReminders(repositories.CycleDayReminders)
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
 	// The enrollment-code budget (totp.enroll) books every wrong code a signed-in
 	// owner submits while confirming 2FA. Like settings.reauth above it is not
@@ -211,6 +212,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 		SettingsService:        settingsService,
 		SettingsViewService:    services.NewSettingsViewService(settingsService, exportService, symptomService, egressLedgerService),
 		WebhookSettingsService: webhookSettingsService,
+		CycleDayReminders:      services.NewCycleDayReminderService(repositories.CycleDayReminders),
 		OnboardingService:      services.NewOnboardingService(repositories.Users),
 		SetupService:           services.NewSetupService(repositories.Users),
 		TOTPService:            totpService,

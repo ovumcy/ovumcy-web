@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -80,11 +81,47 @@ type settingsEgressView struct {
 	// endpoint: a successful save, a reload and every other refusal leave it
 	// empty, so the stored URL still never leaves the server.
 	DraftWebhookURL string
+
+	// CycleDay is the cycle-day reminder rules block (WEB-383).
+	CycleDay settingsEgressCycleDayView
+}
+
+// settingsEgressCycleDayView is the rules block. CanAdd is false while the rules
+// could not be read or the per-owner cap is reached. LabelHost names where an
+// opted-in label would be sent, so the warning beside the opt-in says it.
+type settingsEgressCycleDayView struct {
+	Readable  bool
+	Rules     []services.EgressCycleDayRule
+	CanAdd    bool
+	Hours     []int
+	MinDay    int
+	MaxDay    int
+	MaxLabel  int
+	LabelHost string
+}
+
+func buildSettingsEgressCycleDayView(ledger services.EgressLedger) settingsEgressCycleDayView {
+	hours := make([]int, 24)
+	for hour := range hours {
+		hours[hour] = hour
+	}
+	return settingsEgressCycleDayView{
+		Readable:  ledger.CycleDay.Readable,
+		Rules:     ledger.CycleDay.Rules,
+		CanAdd:    ledger.CycleDay.Readable && len(ledger.CycleDay.Rules) < models.CycleDayReminderMaxPerOwner,
+		Hours:     hours,
+		MinDay:    models.CycleDayReminderMinDay,
+		MaxDay:    models.CycleDayReminderMaxDay,
+		MaxLabel:  models.CycleDayReminderLabelMaxRunes,
+		LabelHost: ledger.Webhook.Host,
+	}
 }
 
 const (
 	egressResultWebhook = "webhook"
 	egressResultFeed    = "feed"
+	// egressResultCycleDay answers a cycle-day reminder rule write (WEB-383).
+	egressResultCycleDay = "cycle_day"
 )
 
 // buildSettingsEgressView projects the domain ledger onto the template's view.
@@ -128,6 +165,7 @@ func buildSettingsEgressView(c fiber.Ctx, ledger services.EgressLedger, location
 			EvidenceText: webhookText,
 			PayloadKeys:  egressWebhookPayloadMessageKeys(ledger.Webhook.PayloadFields),
 		},
+		CycleDay:         buildSettingsEgressCycleDayView(ledger),
 		WebhookRemovable: ledger.Webhook.State != services.EgressWebhookNotConfigured,
 		Enabled:          ledger.Webhook.Enabled,
 		NotifyPeriod:     ledger.Webhook.NotifyPeriod,
@@ -279,6 +317,8 @@ func egressWebhookPayloadMessageKeys(fields []services.EgressPayloadField) []str
 			keys = append(keys, "settings.egress.payload.webhook.event_date_end")
 		case "lead_days":
 			keys = append(keys, "settings.egress.payload.webhook.lead_days")
+		case "cycle_day":
+			keys = append(keys, "settings.egress.payload.webhook.cycle_day")
 		}
 	}
 	return keys

@@ -138,7 +138,7 @@
                island of the data-status-island-group the request came from, so
                the order of the two islands in the card does not matter. */}}
           <div id="settings-egress-status" class="save-status text-sm" aria-live="polite">
-            {{if ne .Egress.ResultPath "feed"}}{{template "settings_egress_result" .}}{{end}}
+            {{if and (ne .Egress.ResultPath "feed") (ne .Egress.ResultPath "cycle_day")}}{{template "settings_egress_result" .}}{{end}}
           </div>
         </div>
       </form>
@@ -171,6 +171,8 @@
         </form>
       </div>
       {{end}}
+
+      {{template "settings_cycle_day_reminders" .}}
     </div>
 
     {{/* ---------- calendar (.ics) feed ---------- */}}

@@ -176,6 +176,7 @@ func assertAccountErasureLeavesNoUserScopedRows(t *testing.T, database *gorm.DB,
 	seed := []any{
 		&models.DailyLog{UserID: user.ID, Date: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true},
 		&models.SymptomType{UserID: user.ID, Name: "custom", Color: "#AABBCC"},
+		&models.CycleDayReminder{UserID: user.ID, CycleDay: 15, RemindAtHour: 9},
 		&models.RegisterPickupToken{Nonce: "nonce-1", UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour).UTC(), CreatedAt: time.Now().UTC()},
 		&models.OIDCIdentity{UserID: user.ID, Issuer: "https://idp.example.com", Subject: "subject-1", CreatedAt: time.Now().UTC()},
 		// oidc_logout_states: a row minted for this owner carries user_id and is
@@ -258,6 +259,7 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 	}{
 		{name: "daily_logs delete fails", dropTable: "daily_logs"},
 		{name: "symptom_types delete fails", dropTable: "symptom_types"},
+		{name: "cycle_day_reminders delete fails", dropTable: "cycle_day_reminders"},
 		{name: "register_pickup_tokens delete fails", dropTable: "register_pickup_tokens"},
 		{name: "oidc_identities delete fails", dropTable: "oidc_identities"},
 		{name: "oidc_logout_states delete fails", dropTable: "oidc_logout_states"},
@@ -298,6 +300,7 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 			for _, row := range []any{
 				&models.DailyLog{UserID: user.ID, Date: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true},
 				&models.SymptomType{UserID: user.ID, Name: "custom", Color: "#AABBCC"},
+				&models.CycleDayReminder{UserID: user.ID, CycleDay: 15, RemindAtHour: 9},
 				&models.RegisterPickupToken{Nonce: "nonce-" + tc.dropTable, UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour).UTC(), CreatedAt: time.Now().UTC()},
 				&models.OIDCIdentity{UserID: user.ID, Issuer: "https://idp.example.com", Subject: "subject-" + tc.dropTable, CreatedAt: time.Now().UTC()},
 				&models.OIDCLogoutState{SessionID: "sess-" + tc.dropTable, UserID: user.ID, EndSessionEndpoint: "https://idp.example.com/logout", IDTokenHint: "hint", ExpiresAt: time.Now().Add(time.Hour).UTC()},
