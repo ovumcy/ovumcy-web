@@ -212,6 +212,67 @@ func TestCalendarFeedTitlesRequireTheFertileTitleOnlyUnderItsOptIn(t *testing.T)
 	}
 }
 
+// Where the dashboard names a next-period start window, the feed sends that
+// window and the cycle it covers gets no span: a solid span drawn from the
+// median would show the window's edges as more precise than they are. The
+// cycles chained after it still go out as spans.
+func TestCalendarFeedPeriodSpanYieldsToTheStartWindow(t *testing.T) {
+	base := mustParseDashboardDay(t, "2026-01-01")
+	var logs []models.DailyLog
+	for _, offset := range []int{0, 28, 56, 84, 112, 172} {
+		for day := range 5 {
+			logs = append(logs, models.DailyLog{Date: base.AddDate(0, 0, offset+day), IsPeriod: true, CycleStart: day == 0})
+		}
+	}
+	user := regularWebhookUser()
+	user.ID = 7
+	user.CalendarFeedPeriodSpan = true
+	events := calendarFeedEvents(CalendarFeedICSInput{User: user, Logs: logs, Now: base.AddDate(0, 0, 190), Location: time.UTC})
+
+	windows := feedEventsOfKind(events, calendarFeedKindPeriodWindow)
+	if len(windows) != 1 {
+		t.Fatalf("scenario setup: the spread should send one start window, got %v", windows)
+	}
+	spans := feedEventsOfKind(events, calendarFeedKindPeriodSpan)
+	if len(spans) == 0 {
+		t.Fatal("the cycles chained after the window must still go out as spans")
+	}
+	for _, span := range spans {
+		if calendarDayWithin(span.date, windows[0].date, windows[0].end) {
+			t.Fatalf("span %s..%s starts inside the start window %s..%s", feedEventDay(span), feedEventEnd(span), feedEventDay(windows[0]), feedEventEnd(windows[0]))
+		}
+	}
+	if singles := feedEventsOfKind(events, calendarFeedKindPeriod); len(singles) != 0 {
+		t.Fatalf("under the span opt-in no single start day may go out: %v", singles)
+	}
+}
+
+// A fertile window is still sent on its own last day in a UTC-minus zone, where
+// that local evening is already the next day in UTC (issue #48 class).
+func TestCalendarFeedFertileWindowSurvivesItsLastEveningWestOfUTC(t *testing.T) {
+	location, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	early := spanFeedInput(t, "2026-03-05", false, true, spanFeedThreeCycles...)
+	early.Location = location
+	early.Now = time.Date(2026, time.March, 5, 12, 0, 0, 0, location)
+	windows := feedEventsOfKind(calendarFeedEvents(early), calendarFeedKindFertileWindow)
+	if len(windows) == 0 {
+		t.Fatal("scenario setup: the fixture sends no fertile window")
+	}
+	running := windows[0]
+
+	lastEvening := early
+	lastEvening.Now = time.Date(running.end.Year(), running.end.Month(), running.end.Day(), 20, 0, 0, 0, location)
+	for _, window := range feedEventsOfKind(calendarFeedEvents(lastEvening), calendarFeedKindFertileWindow) {
+		if feedEventDay(window) == feedEventDay(running) {
+			return
+		}
+	}
+	t.Fatalf("the window %s..%s left the feed on its own last local evening", feedEventDay(running), feedEventEnd(running))
+}
+
 // TestCalendarFeedSpansMatchTheGridDays pins the feed to the calendar grid: the
 // days its period spans cover are the grid's projected period days for those
 // cycles, and the days its fertile windows cover are the grid's fertile days

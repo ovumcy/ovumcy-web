@@ -800,7 +800,7 @@
   "calendar_feed.event.ovulation": "Ovulazione (stima)",
   "calendar_feed.event.fertile_window": "Finestra fertile (stima)",
   "calendar_feed.event.fertile_window_notice": "Una gravidanza è possibile in qualsiasi giorno, anche al di fuori di queste date.",
-  "settings.calendar_feed.period_span.label": "Mostra ogni ciclo mestruale stimato sui giorni che dovrebbe durare",
+  "settings.calendar_feed.period_span.label": "Mostra ogni mestruazione stimata su tutti i giorni che dovrebbe durare",
   "settings.calendar_feed.period_span.warning": "Ogni mestruazione stimata diventa un evento di più giorni quando almeno un ciclo è completo. Il tuo fornitore di calendario conserva una copia di ciò che riceve, e quella copia non può essere ritirata.",
   "settings.calendar_feed.fertile_window.label": "Aggiungi la finestra fertile stimata",
   "settings.calendar_feed.fertile_window.warning": "Aggiunge la finestra fertile stimata quando sono registrati abbastanza cicli. È una stima, non un’indicazione contraccettiva: una gravidanza è possibile in qualsiasi giorno. Il tuo fornitore di calendario conserva una copia di ciò che riceve, e quella copia non può essere ritirata.",

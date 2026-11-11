@@ -549,6 +549,25 @@ reminders send no projected date at all. A regular account with fewer than
 three completed cycles gets no ovulation event and no ovulation reminder
 either; its next-period estimate is still sent.
 
+Two more choices are made per link, when it is generated or rotated, and both
+are off by default:
+
+- **Period as a span.** Each estimated period goes out as the days it is
+  expected to last, the days the in-app calendar shades, instead of its first
+  day alone. It starts once at least one cycle is complete; before that the
+  length would come only from onboarding, and the feed keeps sending the first
+  day. Where the feed sends a start window, that cycle gets the window and no
+  span.
+- **Fertile window.** The estimated fertile window the in-app calendar shades,
+  under the same rules: none before three completed cycles, none in a
+  pregnancy pause or an overdue cycle, and no further ahead than the next
+  cycle. Each fertile-window event carries a second line saying pregnancy is
+  possible on any day, including outside those dates. It is not contraception
+  guidance.
+
+Changing either choice means rotating the link, so a URL already handed out
+never starts carrying more than it was created with.
+
 ### How to enable it
 
 On the Settings page, under **Calendar feed**:
