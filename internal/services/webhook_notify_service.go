@@ -244,6 +244,9 @@ type WebhookNotifyService struct {
 	decryptor WebhookURLDecryptor
 	deliverer WebhookDeliverer
 	localized NotifyCopyProvider
+	// cycleDayRules is nil until WithCycleDayReminders wires it: the pass then
+	// sends no cycle-day reminder at all.
+	cycleDayRules NotifyCycleDayReminderStore
 }
 
 // NewWebhookNotifyService assembles the notify service from its collaborators.
@@ -273,7 +276,25 @@ func NewWebhookNotifyService(
 // A per-owner failure (decrypt error, delivery error) is contained: it is
 // counted, logged host-only, and the pass continues to the next owner — one bad
 // endpoint never aborts every other owner's reminders.
+//
+// RunOnce covers every kind: the predictions and the cycle-day reminders.
 func (service *WebhookNotifyService) RunOnce(ctx context.Context, now time.Time, location *time.Location, dryRun bool) (NotifyReport, error) {
+	return service.run(ctx, now, location, dryRun, notifyScope{predictions: true, cycleDay: true})
+}
+
+// RunCycleDayOnce is the hourly pass: cycle-day reminders only, each due from
+// its own owner-local hour. The predictions keep their once-a-day pass.
+func (service *WebhookNotifyService) RunCycleDayOnce(ctx context.Context, now time.Time, location *time.Location, dryRun bool) (NotifyReport, error) {
+	return service.run(ctx, now, location, dryRun, notifyScope{cycleDay: true})
+}
+
+// notifyScope selects the reminder kinds a pass decides.
+type notifyScope struct {
+	predictions bool
+	cycleDay    bool
+}
+
+func (service *WebhookNotifyService) run(ctx context.Context, now time.Time, location *time.Location, dryRun bool, scope notifyScope) (NotifyReport, error) {
 	report := NotifyReport{DryRun: dryRun}
 
 	records, err := service.users.ListAllForNotify(ctx)
@@ -285,7 +306,7 @@ func (service *WebhookNotifyService) RunOnce(ctx context.Context, now time.Time,
 	for i := range records {
 		record := records[i]
 		report.OwnersScanned++
-		if service.processOwner(ctx, record, now, location, dryRun, &report) {
+		if service.processOwner(ctx, record, now, location, dryRun, scope, &report) {
 			withheldOwnersByLocale[record.InterfaceLanguage]++
 		}
 	}
@@ -308,6 +329,7 @@ func (service *WebhookNotifyService) processOwner(
 	now time.Time,
 	location *time.Location,
 	dryRun bool,
+	scope notifyScope,
 	report *NotifyReport,
 ) bool {
 	if !record.WebhookEnabled {
@@ -315,6 +337,18 @@ func (service *WebhookNotifyService) processOwner(
 	}
 
 	ownerLocation := resolveOwnerLocation(record.Timezone, location)
+
+	var rules []models.CycleDayReminder
+	if scope.cycleDay && service.cycleDayRules != nil {
+		listed, err := service.cycleDayRules.ListByUser(ctx, record.ID)
+		if err != nil {
+			log.Printf("webhook notify: load cycle-day reminders failed, owner id=%d", record.ID)
+		}
+		rules = listed
+	}
+	if !scope.predictions && len(rules) == 0 {
+		return false
+	}
 
 	decryptedURL, err := service.decryptor.DecryptWebhookURL(record.ID, record.WebhookURL)
 	if err != nil {
@@ -343,8 +377,18 @@ func (service *WebhookNotifyService) processOwner(
 	// deciding a second time. That second decision was pure and I/O-free but not
 	// cheap — it rebuilt the owner's cycle statistics from their logged
 	// history, so the counter cost as much as the work it counted.
-	due, watermarkSuppressed := decideDueReminders(&user, settings, dayLogs, now, ownerLocation)
-	report.SkippedIdempotent += watermarkSuppressed
+	var due []DueReminder
+	if scope.predictions {
+		var watermarkSuppressed int
+		due, watermarkSuppressed = decideDueReminders(&user, settings, dayLogs, now, ownerLocation)
+		report.SkippedIdempotent += watermarkSuppressed
+	}
+	cycleDay := DecideDueCycleDayReminders(&user, rules, record.WebhookCycleDayHoldSentStart, dayLogs, now, ownerLocation)
+	report.SkippedIdempotent += cycleDay.Watermarked
+	total := len(due) + len(cycleDay.Due)
+	if cycleDay.Hold != nil {
+		total++
+	}
 
 	// No reminder leaves without its "not medical advice" text, the rule the
 	// calendar feed applies to a blank disclaimer. Nothing is claimed, so every
@@ -352,50 +396,102 @@ func (service *WebhookNotifyService) processOwner(
 	// after the copy resolves. The dry-run preview withholds too: it shows what
 	// would be sent. The disclaimer resolves once, here, and every payload below
 	// carries this same value.
-	if len(due) == 0 {
+	if total == 0 {
 		return false
 	}
 	disclaimer := resolveDisclaimer(service.localized, record.InterfaceLanguage)
 	if disclaimer == "" {
-		report.WithheldDisclaimer += len(due)
+		report.WithheldDisclaimer += total
 		return true
 	}
 
 	// Destination HOST only, for the dry-run preview and any host-scoped logging.
 	// Never keep or print more of the URL than this.
 	host := hostOnly(decryptedURL)
+	target := notifyTarget{record: record, url: decryptedURL, host: host, dryRun: dryRun}
 
 	for _, reminder := range due {
-		report.Due++
-		payload := service.buildPayload(reminder, record.InterfaceLanguage, disclaimer)
+		previousWatermark := watermarkForReminderType(settings, reminder.Type)
+		service.deliverOne(ctx, target, now, report, service.buildPayload(reminder, record.InterfaceLanguage, disclaimer),
+			func() (bool, error) {
+				return service.users.ClaimWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor, previousWatermark, record.WebhookConfigVersion)
+			},
+			func() error {
+				return service.users.ReleaseWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor, previousWatermark)
+			})
+	}
+	for _, reminder := range cycleDay.Due {
+		previousSent := reminder.Rule.LastSentOn
+		service.deliverOne(ctx, target, now, report, service.buildCycleDayPayload(reminder, record.InterfaceLanguage, disclaimer),
+			func() (bool, error) {
+				return service.cycleDayRules.ClaimSend(ctx, record.ID, reminder.Rule.ID, reminder.Day, previousSent, record.WebhookConfigVersion)
+			},
+			func() error {
+				return service.cycleDayRules.ReleaseSend(ctx, record.ID, reminder.Rule.ID, reminder.Day, previousSent)
+			})
+	}
+	if hold := cycleDay.Hold; hold != nil {
+		previousHold := record.WebhookCycleDayHoldSentStart
+		service.deliverOne(ctx, target, now, report, service.buildCycleDayHoldPayload(*hold, record.InterfaceLanguage, disclaimer),
+			func() (bool, error) {
+				return service.users.ClaimWebhookWatermark(ctx, record.ID, DueReminderTypeCycleDayHeld, hold.CycleStart, previousHold, record.WebhookConfigVersion)
+			},
+			func() error {
+				return service.users.ReleaseWebhookWatermark(ctx, record.ID, DueReminderTypeCycleDayHeld, hold.CycleStart, previousHold)
+			})
+	}
+	return false
+}
 
-		if dryRun {
+// notifyTarget is one owner's destination for the reminders of a pass.
+type notifyTarget struct {
+	record models.WebhookNotifyRecord
+	url    string
+	host   string
+	dryRun bool
+}
+
+// deliverOne claims, delivers and records one reminder. claim and release are
+// the kind's own watermark compare-and-set and its undo.
+func (service *WebhookNotifyService) deliverOne(
+	ctx context.Context,
+	target notifyTarget,
+	now time.Time,
+	report *NotifyReport,
+	payload WebhookPayload,
+	claim func() (bool, error),
+	release func() error,
+) {
+	record, decryptedURL, host := target.record, target.url, target.host
+	{
+		report.Due++
+
+		if target.dryRun {
 			// Compute-only: no outbound request, no watermark. Record what WOULD be
 			// sent (type + date + destination HOST only) so the CLI can print an
 			// auditable preview without leaking the URL or token.
 			report.DryRunPreview = append(report.DryRunPreview, NotifyPreviewLine{
 				OwnerID:   record.ID,
-				Type:      reminder.Type,
+				Type:      payload.Type,
 				EventDate: previewEventDate(payload),
 				Host:      host,
 			})
-			continue
+			return
 		}
 
-		// Claim the send BEFORE the request leaves. previousWatermark is the value
-		// this pass's snapshot carried: it is what the claim compares against — so a
-		// pass whose snapshot has been overtaken loses rather than writing the column
-		// backwards — and it is what a failed delivery restores.
+		// Claim the send BEFORE the request leaves. The claim compares against the
+		// watermark this pass's snapshot carried — so a pass whose snapshot has
+		// been overtaken loses rather than writing the column backwards — and that
+		// value is what a failed delivery restores.
 		//
 		// record.WebhookConfigVersion is pinned alongside it, and it is the SAME
-		// snapshot's value on purpose: everything this loop is about to send was
+		// snapshot's value on purpose: everything this pass is about to send was
 		// decided from that snapshot — the enabled flag, the per-kind opt-in, the
-		// decrypted URL above — so the claim has to ask whether THAT configuration
-		// is still the owner's, not whether some configuration is. Re-reading the
-		// row here to get a fresher epoch would defeat the check by agreeing with
-		// whatever the revocation just wrote.
-		previousWatermark := watermarkForReminderType(settings, reminder.Type)
-		claimed, err := service.users.ClaimWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor, previousWatermark, record.WebhookConfigVersion)
+		// cycle-day rules, the decrypted URL above — so the claim has to ask
+		// whether THAT configuration is still the owner's, not whether some
+		// configuration is. Re-reading the row here to get a fresher epoch would
+		// defeat the check by agreeing with whatever the revocation just wrote.
+		claimed, err := claim()
 		if err != nil {
 			// Owner id only: the reminder type is a health specific, and this line
 			// lands in whatever log the pass was started from. Nothing was delivered
@@ -404,7 +500,7 @@ func (service *WebhookNotifyService) processOwner(
 			log.Printf("webhook notify: watermark claim failed, owner id=%d", record.ID)
 			report.Failed++
 			report.OwnerIDsFailed = appendUniqueID(report.OwnerIDsFailed, record.ID)
-			continue
+			return
 		}
 		if !claimed {
 			// Either a concurrent pass owns this send — the reminder is being
@@ -417,7 +513,7 @@ func (service *WebhookNotifyService) processOwner(
 			// the owner whose endpoint was revoked, and the correct action is
 			// identical.
 			report.SkippedIdempotent++
-			continue
+			return
 		}
 
 		if err := service.deliverer.Deliver(ctx, decryptedURL, payload); err != nil {
@@ -427,10 +523,10 @@ func (service *WebhookNotifyService) processOwner(
 			// and suppress the reminder for good.
 			report.Failed++
 			report.OwnerIDsFailed = appendUniqueID(report.OwnerIDsFailed, record.ID)
-			if releaseErr := service.users.ReleaseWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor, previousWatermark); releaseErr != nil {
+			if releaseErr := release(); releaseErr != nil {
 				log.Printf("webhook notify: watermark release failed after a failed delivery, owner id=%d", record.ID)
 			}
-			continue
+			return
 		}
 
 		// Success. Two different facts are now true and they need two different
@@ -463,7 +559,6 @@ func (service *WebhookNotifyService) processOwner(
 		}
 		report.Sent++
 	}
-	return false
 }
 
 // watermarkForReminderType returns the incoming watermark of the kind a reminder

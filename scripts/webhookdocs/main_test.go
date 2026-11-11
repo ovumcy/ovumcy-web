@@ -203,6 +203,11 @@ var claimAnchors = []claimAnchor{
 		why:  "an operator advisory in the boot log; the mirror states the gate's default and that an explicit value wins, not the log line beside it",
 	},
 	{
+		name:   "a cycle-day reminder label leaves only on its opt-in",
+		row:    "label leaves the instance only for a rule whose owner opted in",
+		mirror: []string{"label leaves the instance only for a rule whose owner opted in"},
+	},
+	{
 		name:   "the webhook client sets no proxy",
 		row:    "sets no proxy",
 		mirror: []string{"sets no proxy"},

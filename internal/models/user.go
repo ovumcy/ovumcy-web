@@ -146,6 +146,9 @@ type User struct {
 	// Nil until the first send. Stored as UTC-midnight DATE like LastPeriodStart.
 	WebhookPeriodLastSentCycleStart    *time.Time `gorm:"column:webhook_period_last_sent_cycle_start;type:date"`
 	WebhookOvulationLastSentCycleStart *time.Time `gorm:"column:webhook_ovulation_last_sent_cycle_start;type:date"`
+	// WebhookCycleDayHoldSentStart is the cycle start the single neutral
+	// "cycle-day reminders paused" notice was last claimed for (migration 045).
+	WebhookCycleDayHoldSentStart *time.Time `gorm:"column:webhook_cycle_day_hold_sent_start;type:date"`
 	// WebhookLastDeliveredAt is the only column in this block that records a
 	// DELIVERY (migration 039). The two watermarks above do not and cannot: each
 	// is claimed BEFORE the POST, holds a cycle anchor rather than a clock

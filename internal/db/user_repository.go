@@ -540,6 +540,26 @@ func (repo *UserRepository) UpdateInterfaceLanguage(ctx context.Context, userID 
 // can set the lead window to zero, where that cost is worst: read it there before
 // changing anything here. Regression:
 // TestUpdateReminderLeadDaysAdvancesTheRevocationEpoch.
+// advanceWebhookConfigVersionTx advances the owner's delivery-configuration
+// epoch inside a caller's transaction. Its writer is the cycle-day reminder
+// rule set (CycleDayReminderRepository): a rule decides whether a delivery
+// happens, so a pass that read the rules before an edit must lose its claim.
+// An absent owner row is refused rather than reported as success.
+func advanceWebhookConfigVersionTx(tx *gorm.DB, userID uint) error {
+	query, err := scopedUserUpdateTx(tx, userID)
+	if err != nil {
+		return err
+	}
+	result := query.Update("webhook_config_version", gorm.Expr("webhook_config_version + 1"))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserOwnerRequired
+	}
+	return nil
+}
+
 func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error {
 	query, err := repo.scopedUserUpdate(ctx, userID)
 	if err != nil {
@@ -776,6 +796,7 @@ func (repo *UserRepository) ListAllForNotify(ctx context.Context) ([]models.Webh
 			"webhook_config_version",
 			"webhook_period_last_sent_cycle_start",
 			"webhook_ovulation_last_sent_cycle_start",
+			"webhook_cycle_day_hold_sent_start",
 		).
 		Order("id ASC").
 		Find(&records).Error; err != nil {
@@ -840,6 +861,12 @@ var webhookWatermarkColumns = map[string]webhookKindColumns{
 	models.WebhookReminderTypeOvulation: {
 		watermark: "webhook_ovulation_last_sent_cycle_start",
 		optIn:     "webhook_notify_ovulation",
+	},
+	// The held notice has no opt-in of its own: it exists because cycle-day rules
+	// do, and the master switch is the flag that must still be on.
+	models.WebhookReminderTypeCycleDayHeld: {
+		watermark: "webhook_cycle_day_hold_sent_start",
+		optIn:     "webhook_enabled",
 	},
 }
 
@@ -2178,6 +2205,7 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"webhook_notify_ovulation":                true,
 			"webhook_period_last_sent_cycle_start":    nil,
 			"webhook_ovulation_last_sent_cycle_start": nil,
+			"webhook_cycle_day_hold_sent_start":       nil,
 			// The delivery mark (migration 039) goes with them, and
 			// unconditionally: this statement erases the endpoint, so a mark
 			// saying a delivery there was accepted would outlive the only thing
@@ -2223,6 +2251,10 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			return err
 		}
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
+			return err
+		}
+		// A rule's label may name a medication: the wipe takes the rules too.
+		if err := tx.Where("user_id = ?", userID).Delete(&models.CycleDayReminder{}).Error; err != nil {
 			return err
 		}
 		return tx.Where("user_id = ? AND is_builtin = ?", userID, false).Delete(&models.SymptomType{}).Error
@@ -2293,6 +2325,9 @@ func deleteAccountChildRowsTx(tx *gorm.DB, userID uint) error {
 		return err
 	}
 	if err := tx.Where("user_id = ?", userID).Delete(&models.SymptomType{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("user_id = ?", userID).Delete(&models.CycleDayReminder{}).Error; err != nil {
 		return err
 	}
 	// register_pickup_tokens carries no foreign key, and oidc_identities

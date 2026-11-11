@@ -22,6 +22,7 @@ var clearDataCopyGroups = map[string][]string{
 		"webhook_enabled", "webhook_url", "webhook_notify_period", "webhook_notify_ovulation",
 		"webhook_period_last_sent_cycle_start", "webhook_ovulation_last_sent_cycle_start",
 		"webhook_last_delivered_at", "webhook_config_version", "reminder_lead_days",
+		"webhook_cycle_day_hold_sent_start", "delete:cycle_day_reminders",
 	},
 	"records": {"delete:daily_logs", "delete:symptom_types"},
 	"cycle": {

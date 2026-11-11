@@ -11,6 +11,12 @@ const (
 	// value, and the persisted watermark key can never drift.
 	WebhookReminderTypePeriod    = "period-soon"
 	WebhookReminderTypeOvulation = "ovulation-soon"
+	// WebhookReminderTypeCycleDay is an owner-defined reminder on a fixed cycle
+	// day (WEB-383). WebhookReminderTypeCycleDayHeld is the one neutral notice
+	// sent when such a reminder is held because the cycle ran past its usual
+	// length.
+	WebhookReminderTypeCycleDay     = "cycle-day"
+	WebhookReminderTypeCycleDayHeld = "cycle-day-held"
 )
 
 // WebhookSettingsColumns is the transport-free narrow payload written by the
@@ -109,4 +115,5 @@ type WebhookNotifyRecord struct {
 	// Per-kind watermarks (cycle-start anchor a reminder was last sent for).
 	WebhookPeriodLastSentCycleStart    *time.Time `gorm:"column:webhook_period_last_sent_cycle_start;type:date"`
 	WebhookOvulationLastSentCycleStart *time.Time `gorm:"column:webhook_ovulation_last_sent_cycle_start;type:date"`
+	WebhookCycleDayHoldSentStart       *time.Time `gorm:"column:webhook_cycle_day_hold_sent_start;type:date"`
 }
