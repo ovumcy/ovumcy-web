@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -206,6 +207,52 @@ func assertCookieParity(t *testing.T, name string, want, got *http.Cookie) {
 	}
 	if want.SameSite != got.SameSite {
 		t.Fatalf("cookie %q SameSite mismatch", name)
+	}
+}
+
+// TestRegisterPickupDecoyPayloadHasTheShapeOfTheRealOne pins the cookie-shape
+// half of the new-versus-duplicate parity on its own, below the status check
+// the parity test above makes first: a decoy whose payload differs in shape
+// would seal to a cookie value of another length, yet a decoy that fails its
+// own payload validation turns the response into a 500 before any cookie is
+// compared. Both payloads are built by the production constructors and
+// serialized the way setRegisterPickupCookie does; the cookie's other
+// attributes come from one shared spec for both branches.
+func TestRegisterPickupDecoyPayloadHasTheShapeOfTheRealOne(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.May, 13, 10, 0, 0, 0, time.UTC)
+	realPayload, err := newRegisterPickupPayload(now, "OVUM-ABCD-EF01-2345")
+	if err != nil {
+		t.Fatalf("build real payload: %v", err)
+	}
+	decoy, err := newRegisterPickupDecoyPayload(now)
+	if err != nil {
+		t.Fatalf("build decoy payload: %v", err)
+	}
+
+	for field, lengths := range map[string][2]int{
+		"nonce": {len(realPayload.Nonce), len(decoy.Nonce)},
+		"rc":    {len(realPayload.RC), len(decoy.RC)},
+		"exp":   {len(realPayload.EXP), len(decoy.EXP)},
+	} {
+		if lengths[0] != lengths[1] {
+			t.Fatalf("pickup payload field %q differs in length: real=%d decoy=%d", field, lengths[0], lengths[1])
+		}
+	}
+	realJSON, err := json.Marshal(realPayload)
+	if err != nil {
+		t.Fatalf("marshal real payload: %v", err)
+	}
+	decoyJSON, err := json.Marshal(decoy)
+	if err != nil {
+		t.Fatalf("marshal decoy payload: %v", err)
+	}
+	if len(realJSON) != len(decoyJSON) {
+		t.Fatalf("serialized pickup payload differs in length: real=%d decoy=%d", len(realJSON), len(decoyJSON))
+	}
+	if !validPickupRecoveryCodeShape(decoy.RC) {
+		t.Fatalf("decoy recovery code %q does not have the real code's shape", decoy.RC)
 	}
 }
 
