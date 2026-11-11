@@ -89,8 +89,8 @@ func assertClearDataPreconditionsRemain(t *testing.T, database *gorm.DB, user mo
 	if updatedUser.PeriodLength != 8 {
 		t.Fatalf("expected period length to stay 8, got %d", updatedUser.PeriodLength)
 	}
-	if updatedUser.AutoPeriodFill {
-		t.Fatalf("expected auto period fill to stay false")
+	if !updatedUser.AutoPeriodFill {
+		t.Fatalf("expected auto period fill to stay armed")
 	}
 	if updatedUser.LastPeriodStart == nil {
 		t.Fatalf("expected last period start to remain set")
