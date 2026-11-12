@@ -803,7 +803,7 @@
   "settings.calendar_feed.period_span.label": "Jede geschätzte Periode über die erwarteten Tage anzeigen",
   "settings.calendar_feed.period_span.warning": "Jede geschätzte Periode wird zu einem mehrtägigen Termin, sobald mindestens ein Zyklus abgeschlossen ist. Ihr Kalenderanbieter behält eine Kopie dessen, was er erhält, und diese Kopie lässt sich nicht zurückholen.",
   "settings.calendar_feed.fertile_window.label": "Das geschätzte fruchtbare Fenster hinzufügen",
-  "settings.calendar_feed.fertile_window.warning": "Fügt das geschätzte fruchtbare Fenster hinzu, sobald genug Zyklen erfasst sind. Es ist eine Schätzung, keine Verhütungsberatung: Eine Schwangerschaft ist an jedem Tag möglich. Ihr Kalenderanbieter behält eine Kopie dessen, was er erhält, und diese Kopie lässt sich nicht zurückholen.",
+  "settings.calendar_feed.fertile_window.warning": "Fügt das geschätzte fruchtbare Fenster hinzu, sobald genug Zyklen erfasst sind. Es ist eine Schätzung, keine Beratung zur Verhütung: Eine Schwangerschaft ist an jedem Tag möglich. Ihr Kalenderanbieter behält eine Kopie dessen, was er erhält, und diese Kopie lässt sich nicht zurückholen.",
   "settings.egress.payload.feed.summary_detailed_fertile_window": "Ein Terminname, der die Art der Schätzung nennt: Periode, Eisprung oder fruchtbares Fenster",
   "settings.egress.payload.feed.description_fertile_window": "Der medizinische Sicherheitshinweis und bei Terminen des fruchtbaren Fensters eine Zeile, dass eine Schwangerschaft an jedem Tag möglich ist",
   "settings.egress.payload.feed.period_span": "Geschätzte Perioden als mehrtägige Termine, vom geschätzten ersten bis zum geschätzten letzten Tag",

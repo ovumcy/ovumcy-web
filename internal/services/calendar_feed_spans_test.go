@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -347,6 +348,27 @@ func TestCalendarFeedFertileWindowSurvivesItsLastEveningWestOfUTC(t *testing.T) 
 		}
 	}
 	t.Fatalf("the window %s..%s left the feed on its own last local evening", feedEventDay(running), feedEventEnd(running))
+}
+
+// ResolveFeed resolves the fertile-window notice in the owner's language only
+// for a link that opted in, and the served body carries it.
+func TestResolveFeedCarriesTheFertileWindowNoticeOfAnOptedInLink(t *testing.T) {
+	user, token := armedFeedUser(t, 42, "2026-03-02")
+	user.CalendarFeedFertileWindow = true
+	copyProvider := &recordingFeedCopy{titles: map[string]string{calendarFeedFertileWindowNoticeKey: spanTestNotice}}
+	svc := NewCalendarFeedService(
+		&stubFeedUserStore{selector: user.CalendarFeedSelector, user: user},
+		&stubFeedDayReader{logs: predictableFeedLogs(t)},
+		copyProvider,
+		[]byte(calendarFeedTestSecretKey),
+	)
+	body, ok, err := svc.ResolveFeed(context.Background(), token, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
+	if err != nil || !ok {
+		t.Fatalf("ResolveFeed: ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(strings.ReplaceAll(string(body), "\r\n ", ""), escapeICSText("\n"+spanTestNotice)) {
+		t.Fatalf("the served fertile-window events carry no notice:\n%s", body)
+	}
 }
 
 // TestCalendarFeedSpansMatchTheGridDays pins the feed to the calendar grid: the

@@ -440,12 +440,9 @@ func appendFertileWindows(user *models.User, logs []models.DailyLog, stats Cycle
 	currentStats, _ := ResolveConfirmedCycleStats(user, logs, stats, today, location)
 	appendWindow(currentStats.FertilityWindowStart, currentStats.FertilityWindowEnd)
 
-	fertileCycles := chainedFertilityCycles(user, stats)
-	if suppression.ProjectionChainSuppressed {
-		fertileCycles = 0
-	}
-	if stats.NextPeriodStart.IsZero() {
-		return
+	fertileCycles := 0
+	if !suppression.ProjectionChainSuppressed && !stats.NextPeriodStart.IsZero() {
+		fertileCycles = chainedFertilityCycles(user, stats)
 	}
 	step := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
 	// codecov:ignore:start -- defensive: a published NextPeriodStart always
