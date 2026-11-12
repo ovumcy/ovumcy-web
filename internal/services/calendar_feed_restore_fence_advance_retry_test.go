@@ -1,8 +1,11 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"strings"
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -66,6 +69,34 @@ func TestAdvanceOrRefuseRefusesAPersistentFileFailure(t *testing.T) {
 	}
 	if anchor.value != fenceTestToken || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != fenceTestToken {
 		t.Fatalf("a refused advance must write neither half: file %q, database %q", anchor.value, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
+	}
+}
+
+// TestAFenceRefusalNamesItsCauseInTheServerLog pins #1321: the caller maps the
+// refusal to a generic save failure, so the server log is the one place the
+// fence-file error itself may surface. A write the retries absorbed logs nothing.
+func TestAFenceRefusalNamesItsCauseInTheServerLog(t *testing.T) {
+	var captured bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&captured)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	refused, _, _ := agreeingFenceForRetryTest(len(calendarFeedFenceWriteRetryDelays) + 1)
+	if err := refused.Advance(context.Background(), commitMarker(refused.appState)); !errors.Is(err, ErrCalendarFeedFenceWriteFailed) {
+		t.Fatalf("a persistent fence-file failure must refuse, got %v", err)
+	}
+	line := captured.String()
+	if !strings.Contains(line, "restore fence refused a write") || !strings.Contains(line, "no space left on device") {
+		t.Fatalf("the refusal must log the fence-file cause, got %q", line)
+	}
+
+	captured.Reset()
+	absorbed, _, _ := agreeingFenceForRetryTest(len(calendarFeedFenceWriteRetryDelays))
+	if err := absorbed.Advance(context.Background(), commitMarker(absorbed.appState)); err != nil {
+		t.Fatalf("a transient fence-file failure must be retried away, got %v", err)
+	}
+	if captured.Len() != 0 {
+		t.Fatalf("a write the retries absorbed must log nothing, got %q", captured.String())
 	}
 }
 
