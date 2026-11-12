@@ -170,11 +170,12 @@ func TestCalendarFeedRestoreFenceFirstBootArmsWithoutDisarming(t *testing.T) {
 	}
 }
 
-// TestCalendarFeedRestoreFenceAgreementIsANoOp pins the routine restart: the
-// halves agree, so nothing is disarmed and no token is re-minted. Re-minting on
-// every boot would be harmless but would hide a real mismatch behind churn. The
-// same token is written back, so an unwritable fence is found at boot (#1321).
-func TestCalendarFeedRestoreFenceAgreementIsANoOp(t *testing.T) {
+// TestCalendarFeedRestoreFenceAgreementWritesTheSameTokenBack pins the routine
+// restart: the halves agree, so nothing is disarmed and no token is re-minted.
+// Re-minting on every boot would be harmless but would hide a real mismatch
+// behind churn. The same token is written back, so an unwritable fence is found
+// at boot (#1321).
+func TestCalendarFeedRestoreFenceAgreementWritesTheSameTokenBack(t *testing.T) {
 	appState := &stubFenceAppState{values: map[string]string{
 		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
 	}}
@@ -193,6 +194,29 @@ func TestCalendarFeedRestoreFenceAgreementIsANoOp(t *testing.T) {
 	}
 	if anchor.written != fenceTestToken {
 		t.Fatalf("a matching fence must be written back with the same token, got %q", anchor.written)
+	}
+}
+
+// TestCalendarFeedRestoreFenceOptOutAgreementSurvivesAnUnwritableFile pins the
+// opt-out arm of the boot write-back: a file that will not take the same token
+// must not disarm feeds or drop the database half, or one transient failure
+// becomes the next fenced boot's full revocation.
+func TestCalendarFeedRestoreFenceOptOutAgreementSurvivesAnUnwritableFile(t *testing.T) {
+	appState := &stubFenceAppState{values: map[string]string{
+		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
+	}}
+	users := &stubFenceUserStore{disarmed: 7}
+	anchor := &stubFenceAnchor{value: fenceTestToken, found: true, writeErr: errors.New("no space left on device")}
+
+	outcome, err := NewCalendarFeedRestoreFence(appState, users, anchor).Enforce(context.Background())
+	if err != nil || outcome != (CalendarFeedRestoreFenceOutcome{}) {
+		t.Fatalf("an opt-out agreeing boot must proceed untouched, got %+v, %v", outcome, err)
+	}
+	if users.callCount != 0 || appState.values[models.AppStateKeyCalendarFeedRestoreFence] != fenceTestToken {
+		t.Fatalf("nothing may be disarmed or dropped (disarm=%d, db=%q)", users.callCount, appState.values[models.AppStateKeyCalendarFeedRestoreFence])
+	}
+	if _, stamped := appState.values[models.AppStateKeyCalendarFeedFenceUnanchored]; stamped {
+		t.Fatal("an opt-out agreeing boot must not stamp the unanchored marker")
 	}
 }
 

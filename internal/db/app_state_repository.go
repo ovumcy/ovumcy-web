@@ -49,7 +49,8 @@ func (repo *AppStateRepository) Get(ctx context.Context, key string) (string, bo
 // Set upserts value for key, stamping updated_at. The ON CONFLICT (key) update
 // makes a repeated write for the same key overwrite in place, so each marker is
 // a single evolving row rather than an append. Every key has exactly one
-// writer (scheduler goroutine or boot sentinel), never two concurrently.
+// writer (scheduler goroutine or boot sentinel), never two concurrently;
+// ProbeWritable's key is upserted only inside a transaction it rolls back.
 func (repo *AppStateRepository) Set(ctx context.Context, key string, value string) error {
 	return setAppStateTx(repo.database.WithContext(ctx), key, value)
 }
