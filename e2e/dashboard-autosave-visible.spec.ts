@@ -1,5 +1,18 @@
-import { expect, test } from './support/fixtures';
+import { expect, test, type Page } from './support/fixtures';
 import { registerAndOnboardWithStartDaysAgo } from './support/stats-helpers';
+
+// One day save took 5.09s on a CI runner (WEB-532) and 4ms on retry: a disk
+// stall on commit, past Playwright's 5s default. The wait stays bound to the
+// PATCH itself; only its budget is widened.
+const daySaveTimeout = 20_000;
+
+function daySaved(page: Page) {
+  return page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' && new URL(response.url()).pathname.startsWith('/api/v1/days/'),
+    { timeout: daySaveTimeout },
+  );
+}
 
 /**
  * WEB-276: on a phone the autosave outcome used to render after every form
@@ -13,7 +26,9 @@ test('the autosave confirmation stays on screen above the tab bar on a phone', a
 
   const mood = page.locator('label[data-mood-option]').first();
   await mood.scrollIntoViewIfNeeded();
+  const saved = daySaved(page);
   await mood.click();
+  expect((await saved).ok(), 'the day save succeeds').toBe(true);
 
   const indicator = page.locator('[data-dashboard-autosave-indicator]');
   await expect(indicator).toHaveAttribute('data-autosave-state', 'saved');
@@ -43,7 +58,9 @@ test('a long saved outcome keeps its safety sentence above the tab bar on a phon
       if (d.querySelector('input[name="pregnancy_test"]')) d.open = true;
     });
   });
+  const saved = daySaved(page);
   await page.locator('[data-pregnancy-test-option="positive"]').click();
+  expect((await saved).ok(), 'the day save succeeds').toBe(true);
 
   const indicator = page.locator('[data-dashboard-autosave-indicator]');
   await expect(indicator).toHaveAttribute('data-autosave-state', 'saved');
