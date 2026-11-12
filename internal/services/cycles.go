@@ -145,7 +145,7 @@ func buildCycleStats(logs []models.DailyLog, today time.Time, ctx BoundaryContex
 			stats.AveragePeriodLength = float64(rule.periodLength)
 		}
 	}
-	stats.PeriodLengthObserved = periodLengthObservedIn(tailCycles(averagedCycles, cyclePredictionWindow), sorted, rule.periodLength)
+	stats.PeriodLengthObserved = periodLengthObservedIn(tailCycles(averagedCycles, cyclePredictionWindow), sorted)
 	stats.LastPeriodStart = starts[len(starts)-1]
 	stats.LutealPhase = defaultLutealPhaseDays
 	applyPredictedCycleStats(&stats)
@@ -339,27 +339,20 @@ func runningPeriodHasEnded(cycles []detectedCycle, rule runningPeriodRule) bool 
 	return CalendarDaysBetween(running.Start, rule.today) >= rule.periodLength
 }
 
-// periodLengthObservedIn reports whether one of these periods has a length the
-// owner set rather than the period fills: onboarding and the period top-up write
-// auto-filled days up to the configured length, and a ticked start alone is
-// then all the owner recorded. A period counts when its length differs from the
-// configured one (the owner trimmed or extended the fill) or when a day past its
-// start was marked by hand. With no configured length (the bare path, no owner)
-// any recorded period counts.
-func periodLengthObservedIn(cycles []detectedCycle, logs []models.DailyLog, configuredLength int) bool {
+// periodLengthObservedIn reports whether one of these periods carries positive
+// evidence that the owner, not a period fill, set its length: a day past its
+// start explicitly marked as not auto-filled. Onboarding and the period top-up
+// write auto-filled days up to the configured length behind a ticked start, so
+// neither the length itself (a later settings change makes it differ) nor a
+// missing mark (rows older than migration 042 carry none) is evidence.
+func periodLengthObservedIn(cycles []detectedCycle, logs []models.DailyLog) bool {
 	handMarked := make(map[time.Time]bool, len(logs))
 	for _, log := range logs {
-		if log.IsPeriod && (log.AutoFilled == nil || !*log.AutoFilled) {
+		if log.IsPeriod && log.AutoFilled != nil && !*log.AutoFilled {
 			handMarked[dateOnly(log.Date)] = true
 		}
 	}
 	for _, cycle := range cycles {
-		if cycle.PeriodLength <= 0 {
-			continue
-		}
-		if configuredLength <= 0 || cycle.PeriodLength != configuredLength {
-			return true
-		}
 		for offset := 1; offset < cycle.PeriodLength; offset++ {
 			if handMarked[dateOnly(cycle.Start.AddDate(0, 0, offset))] {
 				return true
