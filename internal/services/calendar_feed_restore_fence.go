@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -453,6 +454,10 @@ func (fence *CalendarFeedRestoreFence) advanceLocked(ctx context.Context, diverg
 		if !diverge {
 			waived, record := fence.refusalWaiver(ctx, fence.confirmContinuity(ctx))
 			if !waived {
+				// The refusal reaches the owner as a generic save failure and the
+				// audit line as that failure's reason; this line is the only place
+				// an operator learns the fence volume is what refused (#1321).
+				log.Printf("calendar feed restore fence refused a write: %v", writeErr)
 				return &CalendarFeedFenceStepError{Sentinel: ErrCalendarFeedFenceWriteFailed, Cause: writeErr}
 			}
 			if !record {
