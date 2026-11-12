@@ -411,3 +411,33 @@ func TestCalendarFeedSpansMatchTheGridDays(t *testing.T) {
 		})
 	}
 }
+
+// A confirmed shift moves the running cycle's window onto the confirmed day,
+// as on the grid: the projected window still ahead of today is not sent.
+func TestCalendarFeedFertileWindowFollowsTheConfirmedShift(t *testing.T) {
+	sendsToday := func(withShift bool) bool {
+		user, logs, today := outboundConfirmedFixture(t, withShift)
+		user.CalendarFeedFertileWindow = true
+		events := calendarFeedEvents(CalendarFeedICSInput{
+			User:                user,
+			Logs:                logs,
+			Now:                 today,
+			Location:            time.UTC,
+			Disclaimer:          "Predictions are estimates, not medical advice or a method of contraception.",
+			SecretKey:           []byte(calendarFeedTestSecretKey),
+			FertileWindowNotice: spanTestNotice,
+		})
+		for _, event := range feedEventsOfKind(events, calendarFeedKindFertileWindow) {
+			if calendarDayWithin(today, event.date, event.end) {
+				return true
+			}
+		}
+		return false
+	}
+	if !sendsToday(false) {
+		t.Fatal("fixture: without a shift the projected window must cover today, so the check below measures nothing")
+	}
+	if sendsToday(true) {
+		t.Fatal("the feed sent the projected window over today although a confirmed shift closed it")
+	}
+}
