@@ -4,13 +4,13 @@
      label is owner-only: it leaves the server only for a rule whose opt-in is
      ticked, and the warning beside that opt-in names the destination host. */}}
 {{define "settings_cycle_day_reminders"}}
-<div class="space-y-3" data-egress-cycle-day>
+<div class="space-y-3">
   <h4 class="field-label"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.cycle_day_reminders.title"}}</h4>
   <p class="journal-muted text-sm">{{t .Messages "settings.cycle_day_reminders.subtitle"}}</p>
-  <p class="journal-muted text-sm" data-egress-cycle-day-hold-hint>{{t .Messages "settings.cycle_day_reminders.hold_hint"}}</p>
+  <p class="journal-muted text-sm">{{t .Messages "settings.cycle_day_reminders.hold_hint"}}</p>
 
   {{if not .Egress.CycleDay.Readable}}
-  <p class="journal-muted text-sm" data-egress-cycle-day-unreadable>{{t .Messages "settings.cycle_day_reminders.unreadable"}}</p>
+  <p class="journal-muted text-sm">{{t .Messages "settings.cycle_day_reminders.unreadable"}}</p>
   {{end}}
 
   {{range .Egress.CycleDay.Rules}}
@@ -96,11 +96,11 @@
   <input type="text" id="{{.ID}}-label" name="label" class="input-field" maxlength="{{.View.MaxLabel}}" autocomplete="off" value="{{.Label}}" aria-describedby="{{.ID}}-label-hint">
   <p id="{{.ID}}-label-hint" class="journal-muted text-sm">{{t .Messages "settings.cycle_day_reminders.label_hint"}}</p>
 </div>
-<div class="space-y-1" data-egress-cycle-day-send-label>
+<div class="space-y-1">
   <label class="inline-flex items-center gap-2 text-sm" for="{{.ID}}-send-label">
     <input type="checkbox" id="{{.ID}}-send-label" name="send_label" value="true" aria-describedby="{{.ID}}-send-label-warning" {{if .SendLabel}}checked{{end}}>
     {{t .Messages "settings.cycle_day_reminders.send_label"}}
   </label>
-  <p id="{{.ID}}-send-label-warning" class="journal-muted text-sm" data-egress-cycle-day-send-label-warning>{{t .Messages "settings.cycle_day_reminders.send_label_warning"}}{{if .View.LabelHost}} {{t .Messages "settings.egress.host_label"}} <span data-egress-cycle-day-label-host>{{.View.LabelHost}}</span>{{end}}</p>
+  <p id="{{.ID}}-send-label-warning" class="journal-muted text-sm">{{t .Messages "settings.cycle_day_reminders.send_label_warning"}}{{if .View.LabelHost}} {{t .Messages "settings.egress.host_label"}} <span data-egress-cycle-day-label-host>{{.View.LabelHost}}</span>{{end}}</p>
 </div>
 {{end}}

@@ -149,6 +149,38 @@ func symptomCase(database *gorm.DB, userID uint, route, shape string, archived b
 	return write
 }
 
+// cycleDayReminderState fingerprints the account's cycle-day reminder rules,
+// which the account fingerprint does not read.
+func cycleDayReminderState(t *testing.T, database *gorm.DB, userID uint) string {
+	t.Helper()
+	var rules []models.CycleDayReminder
+	if err := database.Where("user_id = ?", userID).Order("id").Find(&rules).Error; err != nil {
+		t.Fatalf("load cycle-day reminders of user %d: %v", userID, err)
+	}
+	return fmt.Sprint(rules)
+}
+
+// cycleDayReminderCase drives a cycle-day reminder write (WEB-383). A rule id
+// in the route resolves to the account's first rule at the moment the request
+// is built: the table order creates one, edits it and removes it.
+func cycleDayReminderCase(database *gorm.DB, userID uint, route, shape string, form func(seq int) url.Values) settingsWriteCase {
+	method, pattern, _ := strings.Cut(route, " ")
+	write := formCase(route, shape, form)
+	write.request = func(t *testing.T, cookie, binding string, page bool, seq int) *http.Request {
+		path := pattern
+		if strings.Contains(pattern, ":id") {
+			var rule models.CycleDayReminder
+			if err := database.Where("user_id = ?", userID).Order("id").First(&rule).Error; err != nil {
+				t.Fatalf("find a cycle-day reminder of user %d: %v", userID, err)
+			}
+			path = strings.ReplaceAll(pattern, ":id", fmt.Sprint(rule.ID))
+		}
+		return boundFormRequest(method, path, form(seq), cookie, binding, page)
+	}
+	write.state = cycleDayReminderState
+	return write
+}
+
 func settingsWriteCases(fixture dayFormAccountFixture) []settingsWriteCase {
 	user := fixture.second
 	database := fixture.database
@@ -258,6 +290,15 @@ func settingsWriteCases(fixture dayFormAccountFixture) []settingsWriteCase {
 			return url.Values{}
 		}),
 		formCase("DELETE /api/v1/users/current/calendar-feed", "the calendar feed revocation", func(int) url.Values {
+			return url.Values{}
+		}),
+		cycleDayReminderCase(database, user.ID, "POST /api/v1/users/current/cycle-day-reminders", "the cycle-day reminder add form", func(seq int) url.Values {
+			return url.Values{"cycle_day": {fmt.Sprint(1 + seq%models.CycleDayReminderMaxDay)}, "remind_at_hour": {"9"}}
+		}),
+		cycleDayReminderCase(database, user.ID, "PATCH /api/v1/users/current/cycle-day-reminders/:id", "the cycle-day reminder edit form", func(seq int) url.Values {
+			return url.Values{"cycle_day": {fmt.Sprint(1 + seq%models.CycleDayReminderMaxDay)}, "remind_at_hour": {fmt.Sprint(seq % 24)}, "label": {fmt.Sprintf("Edited %d", seq)}}
+		}),
+		cycleDayReminderCase(database, user.ID, "DELETE /api/v1/users/current/cycle-day-reminders/:id", "the cycle-day reminder remove control", func(int) url.Values {
 			return url.Values{}
 		}),
 		formCase("POST /api/v1/symptoms", "the new symptom form", func(seq int) url.Values {
@@ -698,13 +739,15 @@ func TestEveryRenderedSettingsWriteCarriesTheAccountBinding(t *testing.T) {
 		patterns[route] = routePatternExpression(path)
 	}
 
-	// A state with a webhook, a feed and both kinds of symptom, reached through
-	// the account's own JSON writes.
+	// A state with a webhook, a cycle-day reminder rule (its edit and remove
+	// forms render only beside a stored rule), a feed and both kinds of symptom,
+	// reached through the account's own JSON writes.
 	for _, write := range []struct {
 		method, path string
 		form         url.Values
 	}{
 		{http.MethodPost, "/api/v1/users/current/webhook", url.Values{"webhook_url": {"https://ntfy.example.test/markup"}, "webhook_enabled": {"true"}, "webhook_notify_period": {"true"}}},
+		{http.MethodPost, "/api/v1/users/current/cycle-day-reminders", url.Values{"cycle_day": {"14"}, "remind_at_hour": {"9"}}},
 		{http.MethodPost, "/api/v1/symptoms", url.Values{"name": {"Markup active"}, "icon": {"✨"}}},
 		{http.MethodPost, "/api/v1/symptoms", url.Values{"name": {"Markup archived"}, "icon": {"✨"}}},
 	} {

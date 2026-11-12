@@ -193,6 +193,22 @@ func (owner schemaGuardOwner) seedSymptom(t *testing.T) uint {
 	return created.ID
 }
 
+// schemaGuardCycleDayReminder is a valid cycle-day reminder rule body.
+var schemaGuardCycleDayReminder = map[string]any{"cycle_day": 14, "remind_at_hour": 9, "label": "Schema guard", "send_label": false}
+
+// seedCycleDayReminder creates one cycle-day reminder rule through the API and
+// returns its id, read back from the store: the JSON answer carries none.
+func (owner schemaGuardOwner) seedCycleDayReminder(t *testing.T) uint {
+	t.Helper()
+	status, body := owner.send(t, http.MethodPost, "/api/v1/users/current/cycle-day-reminders", schemaGuardCycleDayReminder)
+	requireSchemaGuardStatus(t, "seed POST /api/v1/users/current/cycle-day-reminders", status, body, http.StatusOK)
+	var rule models.CycleDayReminder
+	if err := owner.database.Where("user_id = ?", owner.user.ID).Order("id").First(&rule).Error; err != nil {
+		t.Fatalf("seed POST /api/v1/users/current/cycle-day-reminders stored no rule: %v", err)
+	}
+	return rule.ID
+}
+
 func openAPIResponseSchemaGuardTable() []openAPIResponseSchemaGuardEntry {
 	return []openAPIResponseSchemaGuardEntry{
 		{operation: "GET /healthz", drive: func(t *testing.T) (int, []byte) {
@@ -491,6 +507,21 @@ func openAPIResponseSchemaGuardTable() []openAPIResponseSchemaGuardEntry {
 			status, body := owner.send(t, http.MethodPost, "/api/v1/users/current/webhook", schemaGuardWebhookSave)
 			requireSchemaGuardStatus(t, "seed POST /api/v1/users/current/webhook", status, body, http.StatusOK)
 			return owner.send(t, http.MethodDelete, "/api/v1/users/current/webhook", nil)
+		}},
+		{operation: "POST /api/v1/users/current/cycle-day-reminders", drive: func(t *testing.T) (int, []byte) {
+			return newSchemaGuardOwner(t).send(t, http.MethodPost, "/api/v1/users/current/cycle-day-reminders", schemaGuardCycleDayReminder)
+		}},
+		{operation: "PATCH /api/v1/users/current/cycle-day-reminders/{id}", drive: func(t *testing.T) (int, []byte) {
+			owner := newSchemaGuardOwner(t)
+			id := owner.seedCycleDayReminder(t)
+			return owner.send(t, http.MethodPatch, "/api/v1/users/current/cycle-day-reminders/"+strconv.FormatUint(uint64(id), 10), map[string]any{
+				"cycle_day": 21, "remind_at_hour": 20, "label": "Schema guard edited", "send_label": true,
+			})
+		}},
+		{operation: "DELETE /api/v1/users/current/cycle-day-reminders/{id}", drive: func(t *testing.T) (int, []byte) {
+			owner := newSchemaGuardOwner(t)
+			id := owner.seedCycleDayReminder(t)
+			return owner.send(t, http.MethodDelete, "/api/v1/users/current/cycle-day-reminders/"+strconv.FormatUint(uint64(id), 10), nil)
 		}},
 		{operation: "POST /api/v1/users/current/calendar-feed", drive: func(t *testing.T) (int, []byte) {
 			return newSchemaGuardOwner(t).send(t, http.MethodPost, "/api/v1/users/current/calendar-feed", nil)

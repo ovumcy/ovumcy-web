@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"strconv"
 	"strings"
 
@@ -116,24 +115,4 @@ func (handler *Handler) DeleteCycleDayReminder(c fiber.Ctx) error {
 	}
 	handler.logMutationSuccess(c, cycleDayReminderDeleteMutation)
 	return handler.respondEgressMutation(c, user, egressResultCycleDay, services.SettingsCycleDayReminderRemovedStatus)
-}
-
-// mapCycleDayReminderError maps a service sentinel to its spec. Another owner's
-// id and a never-existing id are the same not-found answer.
-func mapCycleDayReminderError(err error) APIErrorSpec {
-	switch {
-	case errors.Is(err, services.ErrCycleDayReminderInvalidDay):
-		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle day reminder day")
-	case errors.Is(err, services.ErrCycleDayReminderInvalidHour):
-		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle day reminder hour")
-	case errors.Is(err, services.ErrCycleDayReminderInvalidLabel):
-		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle day reminder label")
-	case errors.Is(err, services.ErrCycleDayReminderDuplicate):
-		return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "duplicate cycle day reminder")
-	case errors.Is(err, services.ErrCycleDayReminderLimit):
-		return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "cycle day reminder limit reached")
-	case errors.Is(err, services.ErrCycleDayReminderNotFound):
-		return settingsFormErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "cycle day reminder not found")
-	}
-	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update cycle day reminders")
 }

@@ -173,6 +173,17 @@ components:
         type: integer
         format: uint64
         minimum: 1
+    CycleDayReminderId:
+      name: id
+      in: path
+      required: true
+      description: |
+        Cycle-day reminder rule identifier. An id that is not one of the session owner's own rules
+        answers exactly as one that never existed (`404`).
+      schema:
+        type: integer
+        format: uint64
+        minimum: 1
 
   responses:
     Unauthorized:
@@ -554,6 +565,68 @@ components:
           type: string
           enum: [webhook_removed]
       additionalProperties: false
+
+    CycleDayReminderAdded:
+      type: object
+      required: [ok, status]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [cycle_day_reminder_added]
+      additionalProperties: false
+
+    CycleDayReminderSaved:
+      type: object
+      required: [ok, status]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [cycle_day_reminder_saved]
+      additionalProperties: false
+
+    CycleDayReminderRemoved:
+      type: object
+      required: [ok, status]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          enum: [cycle_day_reminder_removed]
+      additionalProperties: false
+
+    CycleDayReminderPayload:
+      type: object
+      description: |
+        One cycle-day reminder rule. The label is owner-entered and leaves the server only when
+        `send_label` is true; otherwise the webhook carries no owner-entered text. The form
+        encoding sends `send_label` as `true`/`on`/`1` when ticked and omits it otherwise.
+      required: [cycle_day, remind_at_hour]
+      properties:
+        cycle_day:
+          type: integer
+          minimum: 1
+          maximum: 90
+          description: Day of the cycle the reminder fires on (cycle start is day 1).
+        remind_at_hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+          description: Hour of the day, in the owner's timezone, the reminder is due.
+        label:
+          type: string
+          maxLength: 64
+          description: Optional owner-entered label, at most 64 characters.
+        send_label:
+          type: boolean
+          description: Opt-in to include the label in the webhook payload.
 
     CalendarFeedRevoked:
       type: object
@@ -3494,6 +3567,246 @@ paths:
                 error: "failed to update webhook settings"
                 error_detail: { key: "failed to update webhook settings", category: "internal", target: "global" }
         '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/users/current/cycle-day-reminders:
+    post:
+      tags: [settings]
+      summary: Add a cycle-day reminder rule (owner only).
+      description: |
+        Adds a rule that delivers a reminder through the owner's webhook on a fixed day of every
+        cycle, at a chosen hour of the owner's timezone. An owner holds at most 10 rules, and one
+        day-and-hour pair at most once. The webhook payload never carries the label unless the
+        rule's `send_label` opt-in is set. Does NOT bump `auth_session_version`.
+
+        A JSON caller gets `{ok, status}`. An htmx caller gets the egress card re-rendered from a
+        read taken after the write, an owner-fault refusal included (under `200`, with the refusal
+        inside the card). A browser form submitted without JavaScript is redirected `303` to
+        `/settings` with the outcome in a flash message.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CycleDayReminderPayload' }
+          application/x-www-form-urlencoded:
+            schema: { $ref: '#/components/schemas/CycleDayReminderPayload' }
+      responses:
+        '200':
+          description: Rule added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CycleDayReminderAdded' }
+        '303':
+          description: Browser redirect to `/settings` when the caller asks for neither JSON nor htmx.
+        '400':
+          description: |
+            `invalid cycle day reminder day` (outside 1–90 or not a number),
+            `invalid cycle day reminder hour` (outside 0–23 or not a number), or
+            `invalid cycle day reminder label` (longer than 64 characters after trimming, or carrying a control character).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "invalid cycle day reminder day"
+                error_detail: { key: "invalid cycle day reminder day", category: "validation", target: "settings_form" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the `csrf_refused` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript, with an `Accept` that names `text/html`, gets the shared localized status
+            fragment as `text/html` instead, ending with a link back to `/settings`. The link is
+            fixed by the route, and no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
+        '409':
+          description: |
+            `duplicate cycle day reminder` (the owner already holds a rule for this day and hour),
+            `cycle day reminder limit reached` (the owner already holds 10 rules), or
+            `settings form account changed` (the page that sent the form was rendered for another
+            account). Nothing was written.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "duplicate cycle day reminder"
+                error_detail: { key: "duplicate cycle day reminder", category: "conflict", target: "settings_form" }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500':
+          description: |
+            `failed to update cycle day reminders` - persistence failed and nothing was saved.
+            `failed to load settings` - the write COMMITTED and only the read-back that builds the
+            htmx answer failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "failed to update cycle day reminders"
+                error_detail: { key: "failed to update cycle day reminders", category: "internal", target: "global" }
+
+  /api/v1/users/current/cycle-day-reminders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/CycleDayReminderId'
+    patch:
+      tags: [settings]
+      summary: Rewrite one cycle-day reminder rule (owner only).
+      description: |
+        Replaces the day, hour, label and label opt-in of one of the owner's rules. Another
+        owner's id and an id that never existed answer the same `404`. Does NOT bump
+        `auth_session_version`.
+
+        Answers like `POST /api/v1/users/current/cycle-day-reminders`. A browser form submitted
+        without JavaScript arrives as PATCH through the form's hidden `_method` field.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CycleDayReminderPayload' }
+          application/x-www-form-urlencoded:
+            schema: { $ref: '#/components/schemas/CycleDayReminderPayload' }
+      responses:
+        '200':
+          description: Rule saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CycleDayReminderSaved' }
+        '303':
+          description: Browser redirect to `/settings` when the caller asks for neither JSON nor htmx.
+        '400':
+          description: |
+            `invalid cycle day reminder day`, `invalid cycle day reminder hour` or
+            `invalid cycle day reminder label`, as for the add.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "invalid cycle day reminder hour"
+                error_detail: { key: "invalid cycle day reminder hour", category: "validation", target: "settings_form" }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the `csrf_refused` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript — a `POST` carrying the hidden `_method=PATCH` field, with an `Accept`
+            that names `text/html` — gets the shared localized status fragment as `text/html`
+            instead, ending with a link back to `/settings`. The link is fixed by the route, and
+            no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
+        '404':
+          description: |
+            `cycle day reminder not found`: the id is not one of the session owner's rules.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "cycle day reminder not found"
+                error_detail: { key: "cycle day reminder not found", category: "not_found", target: "settings_form" }
+        '409':
+          description: |
+            `duplicate cycle day reminder` (another of the owner's rules already holds this day and
+            hour) or `settings form account changed` (the page that sent the form was rendered for
+            another account). Nothing was written.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "duplicate cycle day reminder"
+                error_detail: { key: "duplicate cycle day reminder", category: "conflict", target: "settings_form" }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500':
+          description: |
+            `failed to update cycle day reminders` - persistence failed and nothing was saved.
+            `failed to load settings` - the write COMMITTED and only the read-back that builds the
+            htmx answer failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "failed to update cycle day reminders"
+                error_detail: { key: "failed to update cycle day reminders", category: "internal", target: "global" }
+    delete:
+      tags: [settings]
+      summary: Remove one cycle-day reminder rule (owner only).
+      description: |
+        Deletes one of the owner's rules. Another owner's id and an id that never existed answer
+        the same `404`. Does NOT bump `auth_session_version`.
+
+        Answers like `POST /api/v1/users/current/cycle-day-reminders`. A browser form submitted
+        without JavaScript arrives as DELETE through the form's hidden `_method` field.
+      responses:
+        '200':
+          description: Rule removed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CycleDayReminderRemoved' }
+        '303':
+          description: Browser redirect to `/settings` when the caller asks for neither JSON nor htmx.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            The caller is not the owner, or the request was refused before the handler runs
+            (CSRF) with the `csrf_refused` key.
+
+            A caller that asks for JSON gets the JSON envelope. A browser form submitted without
+            JavaScript — a `POST` carrying the hidden `_method=DELETE` field, with an `Accept`
+            that names `text/html` — gets the shared localized status fragment as `text/html`
+            instead, ending with a link back to `/settings`. The link is fixed by the route, and
+            no cookie, flash included, is set.
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "csrf_refused"
+                error_detail: { key: "csrf_refused", category: "forbidden", target: "global" }
+        '404':
+          description: |
+            `cycle day reminder not found`: the id is not one of the session owner's rules.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "cycle day reminder not found"
+                error_detail: { key: "cycle day reminder not found", category: "not_found", target: "settings_form" }
+        '409':
+          description: |
+            `settings form account changed`: the page that sent the form was rendered for another
+            account. Nothing was removed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "settings form account changed"
+                error_detail: { key: "settings form account changed", category: "conflict", target: "global" }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500':
+          description: |
+            `failed to update cycle day reminders` - persistence failed and nothing was removed.
+            `failed to load settings` - the write COMMITTED and only the read-back that builds the
+            htmx answer failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "failed to update cycle day reminders"
+                error_detail: { key: "failed to update cycle day reminders", category: "internal", target: "global" }
 
   /api/v1/users/current/calendar-feed:
     post:

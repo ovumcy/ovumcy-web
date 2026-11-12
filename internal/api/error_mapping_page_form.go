@@ -168,6 +168,7 @@ func settingsFormBackPath(path string) (string, bool) {
 		"/api/v1/users/current/webhook",
 		"/api/v1/users/current/calendar-feed",
 		"/api/v1/users/current/calendar-feed/rotate",
+		"/api/v1/users/current/cycle-day-reminders",
 		"/api/v1/users/current/reminders",
 		"/api/v1/users/current/interface",
 		"/api/v1/users/current/tracking",
@@ -191,6 +192,15 @@ func settingsFormBackPath(path string) (string, bool) {
 		// The unlink form of one linked identity: every identity's form sits on
 		// the same page. A bare collection path never gets here: the routing
 		// normalization trims its trailing slash, so the prefix no longer matches.
+		if id == "" || strings.Contains(id, "/") {
+			return "", false
+		}
+		return "/settings", true
+	}
+	if id, ok := strings.CutPrefix(path, "/api/v1/users/current/cycle-day-reminders/"); ok {
+		// The update and remove forms of one cycle-day reminder rule, in the
+		// egress card on settings. The id is one path segment and never reaches
+		// the href.
 		if id == "" || strings.Contains(id, "/") {
 			return "", false
 		}
