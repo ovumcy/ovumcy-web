@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 *New entries accumulate as per-pull-request fragments in [changelog.d/](changelog.d/) and are assembled here at release.*
 
+## [2.2.1] - 2026-11-12
+
+### Fixed
+
+- **The app now refuses to start over storage it can read but not write.** A database or `/app/fence`
+  directory that the app user cannot write to used to start without complaint. After that, every webhook,
+  calendar-feed, sign-out and password save failed with a generic error. A database that took no writes
+  could also leave the fence out of step, and the next start then signed everyone out. Startup now makes
+  a test write to both and stops with the path named. The self-hosting guide has a new section on volume
+  permissions under Podman and SELinux.
+
+- **A save refused by the restore fence now says why in the server log.** When the file on the
+  `/app/fence` volume cannot be written, settings saves that depend on it (webhook, calendar-feed
+  link, sign-out, password and second-factor changes) fail on purpose. Until now the log showed only
+  a generic save failure. It now adds a `calendar feed restore fence refused a write` line with the
+  file error, such as a permission denial on a host directory mounted without the SELinux label.
+
 ## [2.2.0] - 2026-11-12
 
 ### Added
@@ -8702,7 +8719,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/ovumcy/ovumcy-web/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/ovumcy/ovumcy-web/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/ovumcy/ovumcy-web/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.2...v2.0.0
