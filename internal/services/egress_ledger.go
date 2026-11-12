@@ -223,9 +223,14 @@ type EgressFeedLedger struct {
 	LastPolledOn *time.Time
 	// DetailedTitles reports the stored link's title choice (WEB-379). It is
 	// false whenever no link is stored: there is no feed for it to describe.
+	// It is the CHOICE, not the rendered body: BuildCalendarFeedICS still sends
+	// the neutral title when a required localized title resolves blank. The
+	// ledger may name more than leaves the instance, never less (WEB-529).
 	DetailedTitles bool
 	// PeriodSpan and FertileWindow report the stored link's span choices
-	// (WEB-381), false whenever no link is stored, like DetailedTitles.
+	// (WEB-381), false whenever no link is stored, like DetailedTitles. They
+	// too describe the choice: a gate that withholds a span today does not
+	// clear them.
 	PeriodSpan    bool
 	FertileWindow bool
 	PayloadFields []EgressPayloadField

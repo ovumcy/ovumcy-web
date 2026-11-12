@@ -262,14 +262,11 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	// recorded start (WEB-385). Otherwise the periods run to the grid's horizon
 	// while the fertility half stops at chainedFertilityCycles (WEB-388).
 	projectedCycles := maxProjectedCyclesInGrid
-	fertileCycles := 0
-	if !fertilitySuppressed {
-		fertileCycles = chainedFertilityCycles(user, stats)
-	}
-	if ProjectionChainSuppressed(user, stats) {
+	chainSuppressed := ProjectionChainSuppressed(user, stats)
+	if chainSuppressed {
 		projectedCycles = 1
-		fertileCycles = 0
 	}
+	fertileCycles := fertileChainCycles(user, stats, fertilitySuppressed, chainSuppressed)
 	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, fertileCycles, projectedCycles)
 	appendPredictedStartRange(maps.predictedStartRange, user, stats, DateAtLocation(now, location), location)
 	appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, BoundaryContextFor(user, DateAtLocation(now, location)), location)
@@ -492,11 +489,56 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	cycleStart := CalendarDay(stats.NextPeriodStart, location)
 	for cycles := 0; cycles < min(maxCycles, maxProjectedCyclesInGrid) && CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycles++ {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
-		if cycles < fertileCycles {
-			appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase, location)
-		}
 		cycleStart = AddCalendarDays(cycleStart, predictedCycleLength, location)
 	}
+	for _, cycle := range projectedFertileWindows(stats, min(fertileCycles, maxCycles, maxProjectedCyclesInGrid), location) {
+		if CalendarDaysBetween(cycle.start, gridEnd) < 0 {
+			break
+		}
+		appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycle, predictedPeriodLength, location)
+	}
+}
+
+// projectedFertileCycle is one projected cycle that carries a fertile window.
+type projectedFertileCycle struct {
+	start  time.Time
+	window CycleWindowPrediction
+}
+
+// fertileChainCycles is how many projected cycles, chained from
+// NextPeriodStart, carry a fertile window: none under the fertility gate or a
+// suppressed chain, else chainedFertilityCycles (WEB-388). The grid and the
+// .ics feed both read it, so the feed cannot send a window the grid omits.
+func fertileChainCycles(user *models.User, stats CycleStats, fertilitySuppressed bool, chainSuppressed bool) int {
+	if fertilitySuppressed || chainSuppressed {
+		return 0
+	}
+	return chainedFertilityCycles(user, stats)
+}
+
+// projectedFertileWindows places the windows of the first cycles projected
+// cycles chained from NextPeriodStart, skipping a cycle projectedCycleWindow
+// places none in. The grid and the .ics feed both read it (WEB-529).
+func projectedFertileWindows(stats CycleStats, cycles int, location *time.Location) []projectedFertileCycle {
+	if cycles <= 0 || stats.NextPeriodStart.IsZero() {
+		return nil
+	}
+	step := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
+	// codecov:ignore:start -- defensive: a published NextPeriodStart always
+	// comes with a positive length, the guard appendPredictedCycles keeps.
+	if step <= 0 {
+		return nil
+	}
+	// codecov:ignore:end
+	windows := make([]projectedFertileCycle, 0, min(cycles, 4))
+	cycleStart := CalendarDay(stats.NextPeriodStart, location)
+	for range cycles {
+		if window, ok := projectedCycleWindow(cycleStart, step, stats.LutealPhase); ok {
+			windows = append(windows, projectedFertileCycle{start: cycleStart, window: window})
+		}
+		cycleStart = AddCalendarDays(cycleStart, step, location)
+	}
+	return windows
 }
 
 // appendHistoricalCycles paints fertile-window, ovulation, and pre-fertile
@@ -548,11 +590,8 @@ func appendPredictedPeriod(predictedPeriodMap map[string]bool, cycleStart time.T
 	})
 }
 
-func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, cycleStart time.Time, predictedCycleLength int, predictedPeriodLength int, lutealPhase int, location *time.Location) {
-	window, ok := projectedCycleWindow(cycleStart, predictedCycleLength, lutealPhase)
-	if !ok {
-		return
-	}
+func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, cycle projectedFertileCycle, predictedPeriodLength int, location *time.Location) {
+	cycleStart, window := cycle.start, cycle.window
 
 	// cycleStart arrives from appendPredictedCycles as a REQUEST-ZONE midnight,
 	// so this step needs the same treatment as its siblings; location is
