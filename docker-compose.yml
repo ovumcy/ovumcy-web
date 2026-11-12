@@ -1,6 +1,6 @@
 services:
   ovumcy:
-    image: ${OVUMCY_IMAGE:-ghcr.io/ovumcy/ovumcy-web:v2.2.0}
+    image: ${OVUMCY_IMAGE:-ghcr.io/ovumcy/ovumcy-web:v2.2.1}
     pull_policy: always
     container_name: ovumcy
     env_file:
