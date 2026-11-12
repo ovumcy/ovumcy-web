@@ -50,6 +50,61 @@ func TestLoadRefusesAnUnisolatedTestUnderRace(t *testing.T) {
 	}
 }
 
+// TestForcedIsolationRunsTheBodyInASerialisedChild drives the re-run path in
+// every build, the coverage lanes' included: the body must run only in a child
+// marked serialised and holding GOMAXPROCS=1, where load accepts a race build.
+func TestForcedIsolationRunsTheBodyInASerialisedChild(t *testing.T) {
+	if isolate(t, true) {
+		return
+	}
+	if os.Getenv(serialChildEnv) != "1" {
+		t.Fatal("the body ran in the parent process")
+	}
+	if procs := runtime.GOMAXPROCS(0); procs != 1 {
+		t.Fatalf("the child runs with GOMAXPROCS=%d, want 1", procs)
+	}
+	if _, err := load(true, &packages.Config{Mode: packages.NeedName}, "."); err != nil {
+		t.Fatalf("load in the serialised child: %v", err)
+	}
+}
+
+// TestForcedIsolationCarriesTheChildsSkip: a guard that skips in the child is
+// reported as skipped, not passed.
+func TestForcedIsolationCarriesTheChildsSkip(t *testing.T) {
+	if isolate(t, true) {
+		t.Fatal("isolate returned after the child skipped")
+	}
+	t.Skip("skipped inside the serialised child")
+}
+
+// TestLoadRefusesOutsideASerialisedChild pins both refusals of a race build:
+// no Isolate at all, and a child whose GOMAXPROCS did not take.
+func TestLoadRefusesOutsideASerialisedChild(t *testing.T) {
+	if os.Getenv(serialChildEnv) == "1" {
+		t.Skip("asserts the parent-process refusals")
+	}
+	if _, err := load(true, &packages.Config{Mode: packages.NeedName}, "."); !errors.Is(err, ErrNotIsolated) {
+		t.Fatalf("load outside a child: err = %v, want ErrNotIsolated", err)
+	}
+	previous := runtime.GOMAXPROCS(2)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previous) })
+	t.Setenv(serialChildEnv, "1")
+	if _, err := load(true, &packages.Config{Mode: packages.NeedName}, "."); err == nil || !strings.Contains(err.Error(), "GOMAXPROCS=2") {
+		t.Fatalf("load in a child with GOMAXPROCS=2: err = %v, want the GOMAXPROCS refusal", err)
+	}
+}
+
+func TestChildArgsSelectExactlyTheTestAndCarryShortAndFailfast(t *testing.T) {
+	got := strings.Join(childArgs("TestA/sub.case", true, true), " ")
+	want := `-test.run=^TestA$/^sub\.case$ -test.count=1 -test.v -test.short -test.failfast`
+	if got != want {
+		t.Fatalf("childArgs = %q, want %q", got, want)
+	}
+	if got := strings.Join(childArgs("TestB", false, false), " "); got != "-test.run=^TestB$ -test.count=1 -test.v" {
+		t.Fatalf("childArgs without flags = %q", got)
+	}
+}
+
 // usesGoPackagesLoad reports whether a file reaches go/packages' Load under
 // any import name: a call, a method value, or a dot import.
 func usesGoPackagesLoad(file *ast.File) bool {
