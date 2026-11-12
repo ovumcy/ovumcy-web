@@ -16,7 +16,7 @@ const (
 )
 
 // CycleDayReminder is one owner-defined webhook reminder on a fixed cycle day
-// (migration 045). Label is owner-only text: it reaches a webhook payload only
+// (migration 046). Label is owner-only text: it reaches a webhook payload only
 // when SendLabel is true.
 type CycleDayReminder struct {
 	ID           uint       `gorm:"primaryKey"`

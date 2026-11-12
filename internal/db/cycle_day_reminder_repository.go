@@ -19,7 +19,7 @@ var (
 const cycleDayReminderUniqueConstraint = "cycle_day_reminders(user_id, cycle_day, remind_at_hour)"
 
 // CycleDayReminderRepository persists the owner's cycle-day reminder rules
-// (migration 045). Every query is scoped by user_id. A rule write does not
+// (migration 046). Every query is scoped by user_id. A rule write does not
 // advance users.webhook_config_version: that would void the period/ovulation
 // claims of a pass running at the time. Instead ClaimSend pins the rule as the
 // pass read it, so a pass that read a rule before it was edited or removed

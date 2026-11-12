@@ -9,5 +9,5 @@
   The label stays on the server unless the owner opts in per reminder. Payloads add the `cycle-day`
   and `cycle-day-held` types and a `cycle_day` field; the built-in scheduler gains an hourly
   cycle-day pass, and an operator running `ovumcy notify` from cron should run it hourly.
-  Migration 045 adds the `cycle_day_reminders` table and one `users` column; clear-data and account
+  Migration 046 adds the `cycle_day_reminders` table and one `users` column; clear-data and account
   deletion remove the reminders.
