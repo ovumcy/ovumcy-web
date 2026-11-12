@@ -784,6 +784,27 @@ Typical failure split:
   the last log line naming the key and the rejected value.
 - Proxy issue: `ovumcy` is healthy, but public requests fail, loop, or lose the real client IP.
 
+### Volume permissions, Podman and SELinux
+
+The app runs as uid `10001` and must be able to **write** both `/app/data` and `/app/fence`. Reading alone is not
+enough. At startup the app makes a test write to the database and writes the fence file back. If either write fails,
+it refuses to start and names the path. Older releases started anyway, and then every webhook, calendar-feed,
+sign-out and password save failed with a generic error.
+
+- **Named volumes** (the bundled compose files) take their owner from the image and need nothing extra.
+- **Host directories** (bind mounts) must be owned by the container's uid `10001`. Under rootless Podman,
+  `:U` sets that ownership for you. On an SELinux host such as Fedora or RHEL, the directory also needs a
+  container label (`:Z`):
+
+  ```bash
+  podman run ... -v ./data:/app/data:Z,U -v ./fence:/app/fence:Z,U ...
+  ```
+
+- **Mount `/app/fence` as a directory, never as a single file.** The fence is replaced with a rename inside
+  that directory, and a file bind-mounted over itself cannot be renamed.
+- **A backup restored as root** leaves files the app can read but not write. Give them back to uid `10001`
+  before you start the app (`podman unshare chown -R 10001:10001 <dir>` under rootless Podman).
+
 ### `431 Request Header Fields Too Large`
 
 This is per-browser, not per-deployment: the same page loads normally in one browser and is rejected

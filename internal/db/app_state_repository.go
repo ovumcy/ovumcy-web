@@ -54,6 +54,27 @@ func (repo *AppStateRepository) Set(ctx context.Context, key string, value strin
 	return setAppStateTx(repo.database.WithContext(ctx), key, value)
 }
 
+// errWriteProbeRollback rolls ProbeWritable's transaction back on success.
+var errWriteProbeRollback = errors.New("app_state: write probe rollback")
+
+// ProbeWritable proves the database accepts a write, then rolls it back. SQLite
+// opens a file it may not write read-only and serves every read, so a store
+// restored or re-owned out of the app user's reach boots clean and fails each
+// write later -- after the restore fence's file half has already moved, which
+// the next boot reads as a restore (#1321). Nothing is committed.
+func (repo *AppStateRepository) ProbeWritable(ctx context.Context) error {
+	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := setAppStateTx(tx, models.AppStateKeyWriteProbe, "probe"); err != nil {
+			return err
+		}
+		return errWriteProbeRollback
+	})
+	if errors.Is(err, errWriteProbeRollback) {
+		return nil
+	}
+	return err
+}
+
 // setAppStateTx is Set on a caller's handle — in practice a transaction: the
 // restore fence's database half commits inside the transaction of the write it
 // protects (runFencedWrite), never in a commit of its own.
