@@ -246,8 +246,19 @@ func settingsWebhookConflictErrorSpec() APIErrorSpec {
 // mapCycleDayReminderError maps a cycle-day reminder service sentinel (WEB-383)
 // to its spec. Another owner's id and a never-existing id are the same
 // not-found answer.
+// mapCycleDayReminderDeleteError maps a removal, which reads no body: only
+// not-found or an internal failure can come back.
+func mapCycleDayReminderDeleteError(err error) APIErrorSpec {
+	if errors.Is(err, services.ErrCycleDayReminderNotFound) {
+		return settingsFormErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "cycle day reminder not found")
+	}
+	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update cycle day reminders")
+}
+
 func mapCycleDayReminderError(err error) APIErrorSpec {
 	switch {
+	case errors.Is(err, errCycleDayReminderMalformedBody):
+		return settingsInvalidInputErrorSpec()
 	case errors.Is(err, services.ErrCycleDayReminderInvalidDay):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle day reminder day")
 	case errors.Is(err, services.ErrCycleDayReminderInvalidHour):

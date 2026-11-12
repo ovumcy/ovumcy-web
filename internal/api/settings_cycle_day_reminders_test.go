@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"gorm.io/gorm"
 )
 
 const cycleDayRemindersPath = "/api/v1/users/current/cycle-day-reminders"
@@ -237,4 +239,132 @@ func TestCycleDayReminderRoutesRequireCSRFAndAnOwner(t *testing.T) {
 	if len(rules) != 1 || rules[0].CycleDay != 3 {
 		t.Fatalf("refused requests must write nothing, got %+v", rules)
 	}
+}
+
+// newCycleDayReminderHandlerApp mounts the three handlers without the routed
+// middleware, as mutation_error_branch_coverage_test.go does: the handler-level
+// currentUser guard and every parse/map branch are reached directly.
+// withUser=false mounts no current user.
+func newCycleDayReminderHandlerApp(t *testing.T, withUser bool) (*fiber.App, *gorm.DB, models.User) {
+	t.Helper()
+	handler, database := newDataAccessTestHandler(t)
+	user := createOnboardingTestUser(t, database, "cdr-handler@example.com", "StrongPass1", true)
+	app := fiber.New()
+	if withUser {
+		app.Use(func(c fiber.Ctx) error {
+			current := user
+			c.Locals(contextUserKey, &current)
+			return c.Next()
+		})
+	}
+	app.Post(cycleDayRemindersPath, handler.CreateCycleDayReminder)
+	app.Patch(cycleDayRemindersPath+"/:id", handler.UpdateCycleDayReminder)
+	app.Delete(cycleDayRemindersPath+"/:id", handler.DeleteCycleDayReminder)
+	return app, database, user
+}
+
+func TestCycleDayReminderHandlersRejectAMissingUserAtHandlerLevel(t *testing.T) {
+	app, database, _ := newCycleDayReminderHandlerApp(t, false)
+	for _, call := range []struct{ method, path string }{
+		{http.MethodPost, cycleDayRemindersPath},
+		{http.MethodPatch, cycleDayRemindersPath + "/1"},
+		{http.MethodDelete, cycleDayRemindersPath + "/1"},
+	} {
+		response := mutationBranchRequest(t, app, call.method, call.path, "cycle_day=5&remind_at_hour=9", "application/x-www-form-urlencoded")
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("%s %s without user: expected 401, got %d", call.method, call.path, response.StatusCode)
+		}
+	}
+	var count int64
+	if err := database.Model(&models.CycleDayReminder{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("a refused request must write nothing, count=%d err=%v", count, err)
+	}
+}
+
+func TestCycleDayReminderHandlersMapEachRefusal(t *testing.T) {
+	app, database, user := newCycleDayReminderHandlerApp(t, true)
+	const form = "application/x-www-form-urlencoded"
+	const jsonType = "application/json"
+
+	send := func(method, path, body, contentType string) int {
+		t.Helper()
+		response := mutationBranchRequest(t, app, method, path, body, contentType)
+		_ = response.Body.Close()
+		return response.StatusCode
+	}
+
+	if status := send(http.MethodPost, cycleDayRemindersPath, `{"cycle_day":5,"remind_at_hour":9,"label":"iron","send_label":true}`, jsonType); status != http.StatusOK {
+		t.Fatalf("a JSON create: expected 200, got %d", status)
+	}
+	stored := []models.CycleDayReminder{}
+	if err := database.Where("user_id = ?", user.ID).Find(&stored).Error; err != nil || len(stored) != 1 ||
+		stored[0].CycleDay != 5 || stored[0].RemindAtHour != 9 || stored[0].Label != "iron" || !stored[0].SendLabel {
+		t.Fatalf("the JSON body must be stored as sent, got %+v err=%v", stored, err)
+	}
+	ruleID := stored[0].ID
+	rulePath := fmt.Sprintf("%s/%d", cycleDayRemindersPath, ruleID)
+
+	cases := []struct {
+		name        string
+		method      string
+		path        string
+		body        string
+		contentType string
+		want        int
+	}{
+		{"create non-numeric day", http.MethodPost, cycleDayRemindersPath, "cycle_day=five&remind_at_hour=9", form, http.StatusBadRequest},
+		{"create non-numeric hour", http.MethodPost, cycleDayRemindersPath, "cycle_day=5&remind_at_hour=nine", form, http.StatusBadRequest},
+		{"create hour out of range", http.MethodPost, cycleDayRemindersPath, "cycle_day=5&remind_at_hour=24", form, http.StatusBadRequest},
+		{"create label too long", http.MethodPost, cycleDayRemindersPath, "cycle_day=6&remind_at_hour=9&label=" + strings.Repeat("a", models.CycleDayReminderLabelMaxRunes+1), form, http.StatusBadRequest},
+		{"create duplicate day and hour", http.MethodPost, cycleDayRemindersPath, "cycle_day=5&remind_at_hour=9", form, http.StatusConflict},
+		{"update non-numeric id", http.MethodPatch, cycleDayRemindersPath + "/garbage", "cycle_day=5&remind_at_hour=9", form, http.StatusNotFound},
+		{"update invalid day", http.MethodPatch, rulePath, "cycle_day=0&remind_at_hour=9", form, http.StatusBadRequest},
+		{"delete non-numeric id", http.MethodDelete, cycleDayRemindersPath + "/garbage", "", "", http.StatusNotFound},
+		{"delete never-existing id", http.MethodDelete, fmt.Sprintf("%s/%d", cycleDayRemindersPath, ruleID+1000), "", "", http.StatusNotFound},
+	}
+	for _, testCase := range cases {
+		if status := send(testCase.method, testCase.path, testCase.body, testCase.contentType); status != testCase.want {
+			t.Fatalf("%s: expected %d, got %d", testCase.name, testCase.want, status)
+		}
+	}
+
+	// A body that is not a rule is the caller's fault: 400, never a 500.
+	if status := send(http.MethodPost, cycleDayRemindersPath, "{", jsonType); status != http.StatusBadRequest {
+		t.Fatalf("a malformed JSON body must be refused as invalid input, got %d", status)
+	}
+
+	if status := send(http.MethodPatch, rulePath, "cycle_day=6&remind_at_hour=10&label=zinc&send_label=on", form); status != http.StatusOK {
+		t.Fatalf("an update of the owner's rule: expected 200, got %d", status)
+	}
+	for day := 20; len(listCycleDayRulesForHandlerTest(t, database, user.ID)) < models.CycleDayReminderMaxPerOwner; day++ {
+		if err := database.Create(&models.CycleDayReminder{UserID: user.ID, CycleDay: day, RemindAtHour: 9}).Error; err != nil {
+			t.Fatalf("seed rule: %v", err)
+		}
+	}
+	if status := send(http.MethodPost, cycleDayRemindersPath, "cycle_day=80&remind_at_hour=9", form); status != http.StatusConflict {
+		t.Fatalf("a create past the cap: expected 409, got %d", status)
+	}
+	if status := send(http.MethodDelete, rulePath, "", ""); status != http.StatusOK {
+		t.Fatalf("a delete of the owner's rule: expected 200, got %d", status)
+	}
+
+	remaining := listCycleDayRulesForHandlerTest(t, database, user.ID)
+	if len(remaining) != models.CycleDayReminderMaxPerOwner-1 {
+		t.Fatalf("expected the cap minus the deleted rule, got %d", len(remaining))
+	}
+	for _, rule := range remaining {
+		if rule.ID == ruleID {
+			t.Fatalf("the deleted rule is still stored: %+v", rule)
+		}
+	}
+}
+
+func listCycleDayRulesForHandlerTest(t *testing.T, database *gorm.DB, userID uint) []models.CycleDayReminder {
+	t.Helper()
+	var rules []models.CycleDayReminder
+	if err := database.Where("user_id = ?", userID).Order("id ASC").Find(&rules).Error; err != nil {
+		t.Fatalf("list rules: %v", err)
+	}
+	return rules
 }

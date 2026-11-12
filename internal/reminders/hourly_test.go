@@ -2,6 +2,7 @@ package reminders
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -169,5 +170,49 @@ func TestUntilNextHourIsTheGapToTheNextWholeHour(t *testing.T) {
 		if got := untilNextHour(testCase.now); got != testCase.want {
 			t.Fatalf("%s: untilNextHour(%v) = %v, want %v", testCase.name, testCase.now, got, testCase.want)
 		}
+	}
+}
+
+// cancelledWithoutSignal reports cancellation through Err but never closes
+// Done, so a fired timer is the only case the loop's select can take: the
+// cancellation is then seen only by the check after the timer.
+type cancelledWithoutSignal struct{ context.Context }
+
+func (cancelledWithoutSignal) Done() <-chan struct{} { return nil }
+func (cancelledWithoutSignal) Err() error            { return context.Canceled }
+
+// failingCycleDayRunner returns an error from every cycle-day pass.
+type failingCycleDayRunner struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (r *failingCycleDayRunner) RunCycleDayOnce(context.Context, time.Time, *time.Location, bool) (services.NotifyReport, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls++
+	return services.NotifyReport{}, errors.New("cycle-day pass failed")
+}
+
+func TestRunHourlyLogsAFailedPassAndStopsWhenCancelledAcrossTheWait(t *testing.T) {
+	fixed := time.Date(2026, time.March, 7, 10, 20, 0, 0, time.UTC)
+	runner := &failingCycleDayRunner{}
+	scheduler := newTestScheduler(newFakeRunner(), newFakeMarker(), 23, time.UTC, func() time.Time { return fixed }, fireOnceTimerFactory())
+
+	finished := make(chan struct{})
+	go func() {
+		scheduler.RunHourly(cancelledWithoutSignal{context.Background()}, runner)
+		close(finished)
+	}()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunHourly must return when ctx is cancelled by the time the timer fires")
+	}
+
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if runner.calls != 1 {
+		t.Fatalf("a failed pass is logged and only the immediate pass may run before the cancelled wait, got %d", runner.calls)
 	}
 }

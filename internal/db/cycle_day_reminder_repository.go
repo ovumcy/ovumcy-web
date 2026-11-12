@@ -80,8 +80,8 @@ func (repo *CycleDayReminderRepository) Create(ctx context.Context, userID uint,
 // absent owner row is refused.
 func lockCycleDayReminderOwnerTx(tx *gorm.DB, userID uint) error {
 	owner, err := scopedUserUpdateTx(tx, userID)
-	if err != nil {
-		return err
+	if err != nil { // codecov:ignore -- Create's requireUserOwnerID already refused the one id scopedUserUpdateTx rejects
+		return err // codecov:ignore -- see above
 	}
 	var locked []models.User
 	if err := owner.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).Select("id").Find(&locked).Error; err != nil {

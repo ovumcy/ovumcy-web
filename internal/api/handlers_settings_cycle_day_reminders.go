@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -27,11 +28,15 @@ type cycleDayReminderInput struct {
 	SendLabel    bool   `json:"send_label" form:"send_label"`
 }
 
+// errCycleDayReminderMalformedBody marks a JSON body that does not bind: the
+// caller's fault, answered as invalid input rather than an internal error.
+var errCycleDayReminderMalformedBody = errors.New("malformed cycle-day reminder body")
+
 func parseCycleDayReminderInput(c fiber.Ctx) (models.CycleDayReminderInput, error) {
 	input := cycleDayReminderInput{}
 	if hasJSONBody(c) {
 		if err := c.Bind().Body(&input); err != nil {
-			return models.CycleDayReminderInput{}, err
+			return models.CycleDayReminderInput{}, errCycleDayReminderMalformedBody
 		}
 	} else {
 		day, err := strconv.Atoi(strings.TrimSpace(c.FormValue("cycle_day")))
@@ -111,7 +116,7 @@ func (handler *Handler) DeleteCycleDayReminder(c fiber.Ctx) error {
 		err = handler.cycleDayReminderSvc.Delete(c.Context(), user.ID, ruleID)
 	}
 	if err != nil {
-		return handler.failEgressMutation(c, cycleDayReminderDeleteMutation, user, mapCycleDayReminderError(err), egressResultCycleDay, "")
+		return handler.failEgressMutation(c, cycleDayReminderDeleteMutation, user, mapCycleDayReminderDeleteError(err), egressResultCycleDay, "")
 	}
 	handler.logMutationSuccess(c, cycleDayReminderDeleteMutation)
 	return handler.respondEgressMutation(c, user, egressResultCycleDay, services.SettingsCycleDayReminderRemovedStatus)
