@@ -313,12 +313,6 @@ func mustEnforceCalendarFeedKeyRotation(repositories *db.Repositories, secretKey
 	}
 }
 
-// mustRenormalizeAuthEmails runs the one-shot boot pass that rewrites auth
-// emails stored by the pre-strict normalizer (whole display-name-decorated
-// inputs) down to their bare parsed address, so those accounts keep signing in
-// under the strict addr-spec rule. The decision logic lives (tested) in
-// services.AuthEmailRenormalizer; this wrapper wires repositories, fails the
-// boot hard on a storage error, and prints the operator-facing line.
 // mustProbeDatabaseWritable refuses a boot over a database that reads but does
 // not write. It runs before the restore fence, whose file half would otherwise
 // advance ahead of a row write that then fails.
@@ -326,10 +320,16 @@ func mustProbeDatabaseWritable(repositories *db.Repositories) {
 	ctx, cancel := bootPassContext()
 	defer cancel()
 	if err := repositories.AppState.ProbeWritable(ctx); err != nil {
-		log.Fatalf("the database is readable but refused a write; check that the data volume is writable by the app user (uid 10001) and, under SELinux, labelled for the container: %v", err)
+		log.Fatalf("the database is readable but refused a write; check that the data volume is writable by the app user (uid 10001) and, under SELinux, labelled for the container: %v", err) // codecov:ignore -- log.Fatalf exits the process; the refusal itself is TestAppStateProbeWritableCommitsNothingAndRefusesAReadOnlyStore
 	}
 }
 
+// mustRenormalizeAuthEmails runs the one-shot boot pass that rewrites auth
+// emails stored by the pre-strict normalizer (whole display-name-decorated
+// inputs) down to their bare parsed address, so those accounts keep signing in
+// under the strict addr-spec rule. The decision logic lives (tested) in
+// services.AuthEmailRenormalizer; this wrapper wires repositories, fails the
+// boot hard on a storage error, and prints the operator-facing line.
 func mustRenormalizeAuthEmails(repositories *db.Repositories) {
 	ctx, cancel := bootPassContext()
 	defer cancel()
