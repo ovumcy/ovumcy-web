@@ -41,25 +41,23 @@ var ErrNotIsolated = errors.New("testpackages.Load under -race outside a seriali
 // returns at once; the parent then passes, skips or fails as the child did.
 func Isolate(t *testing.T) bool {
 	t.Helper()
-	if !raceEnabled || os.Getenv(serialChildEnv) == "1" {
+	return isolate(t, raceEnabled)
+}
+
+// isolate takes the race verdict as an argument so the coverage lanes, which
+// build without -race, exercise the re-run path too.
+func isolate(t *testing.T, race bool) bool {
+	t.Helper()
+	if !race || os.Getenv(serialChildEnv) == "1" {
 		return false
 	}
 
-	segments := strings.Split(t.Name(), "/")
-	for i, segment := range segments {
-		segments[i] = "^" + regexp.QuoteMeta(segment) + "$"
-	}
-	args := []string{"-test.run=" + strings.Join(segments, "/"), "-test.count=1", "-test.v"}
-	if testing.Short() {
-		args = append(args, "-test.short")
-	}
-	if failfast := flag.Lookup("test.failfast"); failfast != nil && failfast.Value.String() == "true" {
-		args = append(args, "-test.failfast")
-	}
+	failfast := flag.Lookup("test.failfast")
+	args := childArgs(t.Name(), testing.Short(), failfast != nil && failfast.Value.String() == "true")
 	if deadline, ok := t.Deadline(); ok {
 		args = append(args, "-test.timeout="+max(time.Until(deadline), time.Second).String())
 	}
-	child := exec.Command(os.Args[0], args...) // #nosec G204 -- test-only (imported solely by _test.go callers); the binary is this test binary itself, and the arguments are the running test's own name, regexp-quoted, and its deadline, never external input.
+	child := exec.Command(os.Args[0], args...) // #nosec G204 G702 -- test-only (imported solely by _test.go callers); the binary is this test binary itself, and the arguments are the running test's own name, regexp-quoted, and its deadline, never external input.
 	child.Env = append(os.Environ(), serialChildEnv+"=1", "GOMAXPROCS=1")
 	output, err := child.CombinedOutput()
 
@@ -68,20 +66,41 @@ func Isolate(t *testing.T) bool {
 	}
 	switch {
 	case err != nil:
-		t.Fatalf("serialised run of %s failed: %v\n%s", t.Name(), err, output)
+		t.Fatalf("serialised run of %s failed: %v\n%s", t.Name(), err, output) // codecov:ignore -- a failing guard, which a passing suite never has
 	case verdict("PASS"):
 	case verdict("SKIP"):
 		t.Skipf("serialised run of %s skipped:\n%s", t.Name(), output)
 	default:
-		t.Fatalf("serialised run of %s did not run the test:\n%s", t.Name(), output)
+		t.Fatalf("serialised run of %s did not run the test:\n%s", t.Name(), output) // codecov:ignore -- reached only if -test.run stopped matching the test's own name
 	}
 	return true
+}
+
+// childArgs is the child's command line: exactly the calling test, once,
+// verbose so its verdict can be read, with the parent's -short and -failfast.
+func childArgs(name string, short, failfast bool) []string {
+	segments := strings.Split(name, "/")
+	for i, segment := range segments {
+		segments[i] = "^" + regexp.QuoteMeta(segment) + "$"
+	}
+	args := []string{"-test.run=" + strings.Join(segments, "/"), "-test.count=1", "-test.v"}
+	if short {
+		args = append(args, "-test.short")
+	}
+	if failfast {
+		args = append(args, "-test.failfast")
+	}
+	return args
 }
 
 // Load is packages.Load, refused under -race unless the calling test went
 // through Isolate.
 func Load(config *packages.Config, patterns ...string) ([]*packages.Package, error) {
-	if raceEnabled {
+	return load(raceEnabled, config, patterns...)
+}
+
+func load(race bool, config *packages.Config, patterns ...string) ([]*packages.Package, error) {
+	if race {
 		if os.Getenv(serialChildEnv) != "1" {
 			return nil, ErrNotIsolated
 		}
