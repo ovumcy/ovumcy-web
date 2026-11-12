@@ -195,8 +195,8 @@ func TestCycleDayDecisionHoldsPastTheReferenceLength(t *testing.T) {
 	if watermarked.Hold != nil || len(watermarked.Due) != 0 {
 		t.Fatalf("a hold watermark equal to the start owes no second notice, got %+v", watermarked)
 	}
-	if watermarked.Watermarked != 1 {
-		t.Fatalf("the covered hold counts as one idempotent skip, got %d", watermarked.Watermarked)
+	if watermarked.Watermarked != 0 {
+		t.Fatalf("re-checking a covered hold is not an idempotent skip, got %d", watermarked.Watermarked)
 	}
 
 	older := DecideDueCycleDayReminders(cycleDayTestUser(), []models.CycleDayReminder{label}, timePointer(cycleDayTestStart.AddDate(0, 0, -28)), logs, now, time.UTC)
@@ -217,6 +217,14 @@ func TestCycleDayDecisionSendsOncePerCycle(t *testing.T) {
 	decision := DecideDueCycleDayReminders(cycleDayTestUser(), []models.CycleDayReminder{sentInCycle}, nil, logs, now, time.UTC)
 	if len(decision.Due) != 0 || decision.Watermarked != 1 {
 		t.Fatalf("a send dated inside the running cycle must withhold the rule, got %+v", decision)
+	}
+
+	// A rule sent today is withheld on every hourly re-pass without counting as
+	// an idempotent skip.
+	sentToday := cycleDayTestRule(4, 5, 9)
+	sentToday.LastSentOn = timePointer(time.Date(2026, time.March, 4, 0, 0, 0, 0, time.UTC))
+	if got := DecideDueCycleDayReminders(cycleDayTestUser(), []models.CycleDayReminder{sentToday}, nil, logs, now, time.UTC); len(got.Due) != 0 || got.Watermarked != 0 {
+		t.Fatalf("a rule sent today must be withheld and not counted watermarked, got %+v", got)
 	}
 
 	sentOnStart := cycleDayTestRule(2, 5, 9)
@@ -313,10 +321,10 @@ func (stub *stubCycleDayStore) ListByUser(_ context.Context, userID uint) ([]mod
 	return stub.rules[userID], nil
 }
 
-func (stub *stubCycleDayStore) ClaimSend(_ context.Context, userID uint, ruleID uint, day time.Time, previous *time.Time, configVersion int) (bool, error) {
+func (stub *stubCycleDayStore) ClaimSend(_ context.Context, userID uint, rule models.CycleDayReminder, day time.Time, previous *time.Time, configVersion int) (bool, error) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
-	stub.claims = append(stub.claims, cycleDayStoreCall{userID: userID, ruleID: ruleID, day: day, previous: previous, configVersion: configVersion})
+	stub.claims = append(stub.claims, cycleDayStoreCall{userID: userID, ruleID: rule.ID, day: day, previous: previous, configVersion: configVersion})
 	return !stub.claimLost, nil
 }
 
@@ -531,6 +539,57 @@ func TestCycleDayReminderLostClaimSkipsWithoutDelivering(t *testing.T) {
 	}
 	if report.SkippedIdempotent != 1 || report.Sent != 0 || len(deliverer.deliveries()) != 0 || len(store.releases) != 0 {
 		t.Fatalf("a lost claim is a skip with no delivery and no release, report=%+v", report)
+	}
+}
+
+// countingNotifyDecryptor and countingNotifyLogReader record whether the pass
+// reached the endpoint decrypt or the log read.
+type countingNotifyDecryptor struct{ calls *int }
+
+func (stub countingNotifyDecryptor) DecryptWebhookURL(_ uint, encryptedURL string) (string, error) {
+	*stub.calls++
+	return encryptedURL, nil
+}
+
+type countingNotifyLogReader struct {
+	calls *int
+	logs  []models.DailyLog
+}
+
+func (stub countingNotifyLogReader) ListByUser(context.Context, uint) ([]models.DailyLog, error) {
+	*stub.calls++
+	return stub.logs, nil
+}
+
+func TestRunCycleDayOnceDecryptsAndReadsNothingWhenNoRuleCouldBeDue(t *testing.T) {
+	ctx := context.Background()
+	sentToday := cycleDayTestRule(5, 10, 9)
+	sentToday.LastSentOn = timePointer(time.Date(2026, time.March, 7, 0, 0, 0, 0, time.UTC))
+	laterHour := cycleDayTestRule(6, 10, 13)
+	record := cycleDayNotifyRecord("https://hook.example/a")
+	decrypts, logReads := 0, 0
+	store := &stubCycleDayStore{rules: map[uint][]models.CycleDayReminder{record.ID: {sentToday, laterHour}}}
+	service := NewWebhookNotifyService(&stubNotifyRepo{records: []models.WebhookNotifyRecord{record}},
+		countingNotifyLogReader{calls: &logReads, logs: cycleDayHistory(cycleDayTestStart)},
+		countingNotifyDecryptor{calls: &decrypts}, &stubDeliverer{}, cycleDayTestCopy).WithCycleDayReminders(store)
+
+	report, err := service.RunCycleDayOnce(ctx, cycleDayInstant(cycleDayTestStart, 10, 12), time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunCycleDayOnce: %v", err)
+	}
+	if decrypts != 0 || logReads != 0 {
+		t.Fatalf("a rule sent today and one before its hour must not decrypt or read logs: decrypts=%d logReads=%d", decrypts, logReads)
+	}
+	if report.Due != 0 || report.SkippedIdempotent != 0 || len(store.claims) != 0 {
+		t.Fatalf("nothing is due or skipped, report=%+v claims=%+v", report, store.claims)
+	}
+
+	// Control: at the later rule's hour the pass decrypts, reads and claims it.
+	if _, err := service.RunCycleDayOnce(ctx, cycleDayInstant(cycleDayTestStart, 10, 13), time.UTC, false); err != nil {
+		t.Fatalf("RunCycleDayOnce at 13:00: %v", err)
+	}
+	if decrypts != 1 || logReads != 1 || len(store.claims) != 1 || store.claims[0].ruleID != 6 {
+		t.Fatalf("control: expected one decrypt, one log read and a claim on rule 6, decrypts=%d logReads=%d claims=%+v", decrypts, logReads, store.claims)
 	}
 }
 

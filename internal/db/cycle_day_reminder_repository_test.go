@@ -25,7 +25,12 @@ func createCycleDayRuleForTest(t *testing.T, rules *CycleDayReminderRepository, 
 	if err := rules.Create(ctx, userID, cycleDayReminderInputForTest(day, hour)); err != nil {
 		t.Fatalf("create rule day=%d hour=%d: %v", day, hour, err)
 	}
-	listed, err := rules.ListByUser(ctx, userID)
+	return findCycleDayRuleForTest(t, rules, userID, day, hour)
+}
+
+func findCycleDayRuleForTest(t *testing.T, rules *CycleDayReminderRepository, userID uint, day int, hour int) models.CycleDayReminder {
+	t.Helper()
+	listed, err := rules.ListByUser(context.Background(), userID)
 	if err != nil {
 		t.Fatalf("list rules: %v", err)
 	}
@@ -34,14 +39,13 @@ func createCycleDayRuleForTest(t *testing.T, rules *CycleDayReminderRepository, 
 			return rule
 		}
 	}
-	t.Fatalf("created rule day=%d hour=%d not listed", day, hour)
+	t.Fatalf("rule day=%d hour=%d not listed", day, hour)
 	return models.CycleDayReminder{}
 }
 
 func enableWebhookForCycleDayTest(t *testing.T, users *UserRepository, userID uint) int {
 	t.Helper()
-	// The pinned save is refused once a rule write moved the epoch, so delivery is
-	// switched on directly: the claim only reads the flag and the epoch.
+	// Delivery is switched on directly: the claim only reads the flag and the epoch.
 	if err := users.database.Model(&models.User{}).Where("id = ?", userID).
 		Updates(map[string]any{"webhook_enabled": true, "webhook_url": "sealed-endpoint"}).Error; err != nil {
 		t.Fatalf("enable webhook: %v", err)
@@ -49,32 +53,53 @@ func enableWebhookForCycleDayTest(t *testing.T, users *UserRepository, userID ui
 	return reloadUserForWebhook(t, users, userID).WebhookConfigVersion
 }
 
-func TestCycleDayReminderWritesAdvanceTheWebhookConfigVersion(t *testing.T) {
+func TestCycleDayReminderWritesDoNotAdvanceTheWebhookConfigVersion(t *testing.T) {
 	users, rules := openCycleDayReminderReposForTest(t)
 	user := createUserForTimezoneTest(t, users, "cdr-epoch@example.com")
 	ctx := context.Background()
 
 	before := reloadUserForWebhook(t, users, user.ID).WebhookConfigVersion
 	rule := createCycleDayRuleForTest(t, rules, user.ID, 5, 9)
-	afterCreate := reloadUserForWebhook(t, users, user.ID).WebhookConfigVersion
-	if afterCreate <= before {
-		t.Fatalf("Create must advance webhook_config_version: %d -> %d", before, afterCreate)
-	}
-
 	if err := rules.Update(ctx, user.ID, rule.ID, cycleDayReminderInputForTest(6, 10)); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	afterUpdate := reloadUserForWebhook(t, users, user.ID).WebhookConfigVersion
-	if afterUpdate <= afterCreate {
-		t.Fatalf("Update must advance webhook_config_version: %d -> %d", afterCreate, afterUpdate)
-	}
-
 	if err := rules.Delete(ctx, user.ID, rule.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	afterDelete := reloadUserForWebhook(t, users, user.ID).WebhookConfigVersion
-	if afterDelete <= afterUpdate {
-		t.Fatalf("Delete must advance webhook_config_version: %d -> %d", afterUpdate, afterDelete)
+	// A rule write moving the epoch would void a running pass's period and
+	// ovulation claims; the rule's own claim is pinned to the rule instead.
+	if after := reloadUserForWebhook(t, users, user.ID).WebhookConfigVersion; after != before {
+		t.Fatalf("rule writes must not advance webhook_config_version: %d -> %d", before, after)
+	}
+}
+
+func TestCycleDayReminderUpdateResetsLastSentOnOnlyWhenTheDayMoves(t *testing.T) {
+	users, rules := openCycleDayReminderReposForTest(t)
+	user := createUserForTimezoneTest(t, users, "cdr-reset@example.com")
+	ctx := context.Background()
+	rule := createCycleDayRuleForTest(t, rules, user.ID, 10, 9)
+	version := enableWebhookForCycleDayTest(t, users, user.ID)
+	day := time.Date(2026, time.March, 7, 0, 0, 0, 0, time.UTC)
+	if won, err := rules.ClaimSend(ctx, user.ID, rule, day, nil, version); err != nil || !won {
+		t.Fatalf("claim: won=%t err=%v", won, err)
+	}
+
+	// Hour, label and opt-in edits keep the send: today's edit must not re-arm it.
+	sameDay := models.CycleDayReminderInput{CycleDay: 10, RemindAtHour: 20, Label: "iron", SendLabel: true}
+	if err := rules.Update(ctx, user.ID, rule.ID, sameDay); err != nil {
+		t.Fatalf("Update on the same day: %v", err)
+	}
+	kept := findCycleDayRuleForTest(t, rules, user.ID, 10, 20)
+	if kept.LastSentOn == nil || kept.LastSentOn.Format("2006-01-02") != "2026-03-07" {
+		t.Fatalf("an edit that keeps the cycle day must keep last_sent_on, got %+v", kept)
+	}
+
+	// A rule moved to another day is reset, or the old day's send silences it.
+	if err := rules.Update(ctx, user.ID, rule.ID, cycleDayReminderInputForTest(12, 20)); err != nil {
+		t.Fatalf("Update to another day: %v", err)
+	}
+	if moved := findCycleDayRuleForTest(t, rules, user.ID, 12, 20); moved.LastSentOn != nil {
+		t.Fatalf("a rule moved to another cycle day must reset last_sent_on, got %+v", moved)
 	}
 }
 
@@ -124,11 +149,18 @@ func TestCycleDayReminderRefusesAZeroOwner(t *testing.T) {
 	if err := rules.Delete(ctx, 0, 1); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("Delete(0): %v", err)
 	}
-	if _, err := rules.ClaimSend(ctx, 0, 1, day, nil, 0); !errors.Is(err, ErrUserOwnerRequired) {
+	if _, err := rules.ClaimSend(ctx, 0, models.CycleDayReminder{ID: 1}, day, nil, 0); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("ClaimSend(0): %v", err)
 	}
 	if err := rules.ReleaseSend(ctx, 0, 1, day, nil); !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("ReleaseSend(0): %v", err)
+	}
+}
+
+func TestCycleDayReminderCreateRefusesAnAbsentOwner(t *testing.T) {
+	_, rules := openCycleDayReminderReposForTest(t)
+	if err := rules.Create(context.Background(), 999999, cycleDayReminderInputForTest(5, 9)); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("Create for an absent owner row: want ErrUserOwnerRequired, got %v", err)
 	}
 }
 
@@ -168,11 +200,11 @@ func TestCycleDayReminderClaimSendIsACompareAndSet(t *testing.T) {
 	version := enableWebhookForCycleDayTest(t, users, user.ID)
 	day := time.Date(2026, time.March, 7, 0, 0, 0, 0, time.UTC)
 
-	won, err := rules.ClaimSend(ctx, user.ID, rule.ID, day, nil, version)
+	won, err := rules.ClaimSend(ctx, user.ID, rule, day, nil, version)
 	if err != nil || !won {
 		t.Fatalf("the first claim must win, won=%t err=%v", won, err)
 	}
-	again, err := rules.ClaimSend(ctx, user.ID, rule.ID, day, nil, version)
+	again, err := rules.ClaimSend(ctx, user.ID, rule, day, nil, version)
 	if err != nil || again {
 		t.Fatalf("a second claim against the same previous must lose, won=%t err=%v", again, err)
 	}
@@ -187,11 +219,11 @@ func TestCycleDayReminderClaimSendIsACompareAndSet(t *testing.T) {
 	}
 
 	// A non-NULL previous: claim day1, then claim day2 against day1, release back.
-	if won, err := rules.ClaimSend(ctx, user.ID, rule.ID, day, nil, version); err != nil || !won {
+	if won, err := rules.ClaimSend(ctx, user.ID, rule, day, nil, version); err != nil || !won {
 		t.Fatalf("re-claim after release: won=%t err=%v", won, err)
 	}
 	next := day.AddDate(0, 0, 28)
-	if won, err := rules.ClaimSend(ctx, user.ID, rule.ID, next, &day, version); err != nil || !won {
+	if won, err := rules.ClaimSend(ctx, user.ID, rule, next, &day, version); err != nil || !won {
 		t.Fatalf("a claim against the stored previous must win: won=%t err=%v", won, err)
 	}
 	if err := rules.ReleaseSend(ctx, user.ID, rule.ID, next, &day); err != nil {
@@ -211,14 +243,41 @@ func TestCycleDayReminderClaimSendLosesAfterTheConfigurationMoved(t *testing.T) 
 	version := enableWebhookForCycleDayTest(t, users, user.ID)
 	day := time.Date(2026, time.March, 7, 0, 0, 0, 0, time.UTC)
 
-	// Another rule created after the pass read the configuration moves the epoch.
-	createCycleDayRuleForTest(t, rules, user.ID, 11, 9)
-	if won, err := rules.ClaimSend(ctx, user.ID, rule.ID, day, nil, version); err != nil || won {
-		t.Fatalf("a claim pinned to the pre-create epoch must lose, won=%t err=%v", won, err)
+	// The rule edited after the pass read it: the stale snapshot loses.
+	edited := models.CycleDayReminderInput{CycleDay: 10, RemindAtHour: 9, Label: "vitamin", SendLabel: true}
+	if err := rules.Update(ctx, user.ID, rule.ID, edited); err != nil {
+		t.Fatalf("Update: %v", err)
 	}
-	current := reloadUserForWebhook(t, users, user.ID).WebhookConfigVersion
-	if won, err := rules.ClaimSend(ctx, user.ID, rule.ID, day, nil, current); err != nil || !won {
-		t.Fatalf("control: a claim pinned to the current epoch wins, won=%t err=%v", won, err)
+	if won, err := rules.ClaimSend(ctx, user.ID, rule, day, nil, version); err != nil || won {
+		t.Fatalf("a claim pinned to the pre-edit rule must lose, won=%t err=%v", won, err)
+	}
+
+	// An unrelated rule created meanwhile voids nothing: the fresh snapshot wins
+	// at the same epoch.
+	createCycleDayRuleForTest(t, rules, user.ID, 11, 9)
+	current := findCycleDayRuleForTest(t, rules, user.ID, 10, 9)
+	if won, err := rules.ClaimSend(ctx, user.ID, current, day, nil, version); err != nil || !won {
+		t.Fatalf("an unrelated create must not void the claim, won=%t err=%v", won, err)
+	}
+	if err := rules.ReleaseSend(ctx, user.ID, current.ID, day, nil); err != nil {
+		t.Fatalf("ReleaseSend: %v", err)
+	}
+
+	// A delivery-settings write advances the epoch: the claim pinned before it loses.
+	if err := users.UpdateReminderLeadDays(ctx, user.ID, 0); err != nil {
+		t.Fatalf("UpdateReminderLeadDays: %v", err)
+	}
+	if won, err := rules.ClaimSend(ctx, user.ID, current, day, nil, version); err != nil || won {
+		t.Fatalf("a claim pinned to the pre-settings-write epoch must lose, won=%t err=%v", won, err)
+	}
+	advanced := reloadUserForWebhook(t, users, user.ID).WebhookConfigVersion
+
+	// A removed rule matches no row.
+	if err := rules.Delete(ctx, user.ID, current.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if won, err := rules.ClaimSend(ctx, user.ID, current, day, nil, advanced); err != nil || won {
+		t.Fatalf("a claim on a removed rule must lose, won=%t err=%v", won, err)
 	}
 
 	// Delivery disabled: the claim loses even at the stored epoch.
@@ -228,12 +287,12 @@ func TestCycleDayReminderClaimSendLosesAfterTheConfigurationMoved(t *testing.T) 
 	if reloadUserForWebhook(t, users, disabled.ID).WebhookEnabled {
 		t.Fatal("precondition: a fresh owner has webhook_enabled=false")
 	}
-	if won, err := rules.ClaimSend(ctx, disabled.ID, disabledRule.ID, day, nil, disabledVersion); err != nil || won {
+	if won, err := rules.ClaimSend(ctx, disabled.ID, disabledRule, day, nil, disabledVersion); err != nil || won {
 		t.Fatalf("a claim with delivery disabled must lose, won=%t err=%v", won, err)
 	}
 
 	// Another owner's rule cannot be claimed under this owner's id.
-	if won, err := rules.ClaimSend(ctx, user.ID, disabledRule.ID, day, nil, current); err != nil || won {
+	if won, err := rules.ClaimSend(ctx, user.ID, disabledRule, day, nil, advanced); err != nil || won {
 		t.Fatalf("a claim on another owner's rule must lose, won=%t err=%v", won, err)
 	}
 }

@@ -106,7 +106,9 @@ func NormalizeCycleDayReminderInput(input models.CycleDayReminderInput) (models.
 		return models.CycleDayReminderInput{}, ErrCycleDayReminderInvalidLabel
 	}
 	for _, r := range label {
-		if unicode.IsControl(r) {
+		// Format characters (Cf) are invisible and can reorder what the owner
+		// reads back, e.g. U+202E right-to-left override.
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return models.CycleDayReminderInput{}, ErrCycleDayReminderInvalidLabel
 		}
 	}

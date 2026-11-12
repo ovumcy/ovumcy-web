@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"crypto/subtle"
+	"log"
 	"strings"
 	"time"
 
@@ -276,6 +277,7 @@ func (service *EgressLedgerService) buildCycleDayLedger(ctx context.Context, use
 	}
 	rules, err := service.cycleDay.ListByUser(ctx, userID)
 	if err != nil {
+		log.Printf("egress ledger: load cycle-day reminders failed, owner id=%d", userID)
 		return EgressCycleDayLedger{}
 	}
 	ledger := EgressCycleDayLedger{Readable: true, Rules: make([]EgressCycleDayRule, 0, len(rules))}

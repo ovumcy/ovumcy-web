@@ -344,7 +344,7 @@ func (service *WebhookNotifyService) processOwner(
 		if err != nil {
 			log.Printf("webhook notify: load cycle-day reminders failed, owner id=%d", record.ID)
 		}
-		rules = listed
+		rules = cycleDayRulesThatCouldBeDue(listed, now, ownerLocation)
 	}
 	if !scope.predictions && len(rules) == 0 {
 		return false
@@ -424,7 +424,7 @@ func (service *WebhookNotifyService) processOwner(
 		previousSent := reminder.Rule.LastSentOn
 		service.deliverOne(ctx, target, now, report, service.buildCycleDayPayload(reminder, record.InterfaceLanguage, disclaimer),
 			func() (bool, error) {
-				return service.cycleDayRules.ClaimSend(ctx, record.ID, reminder.Rule.ID, reminder.Day, previousSent, record.WebhookConfigVersion)
+				return service.cycleDayRules.ClaimSend(ctx, record.ID, reminder.Rule, reminder.Day, previousSent, record.WebhookConfigVersion)
 			},
 			func() error {
 				return service.cycleDayRules.ReleaseSend(ctx, record.ID, reminder.Rule.ID, reminder.Day, previousSent)
@@ -462,103 +462,100 @@ func (service *WebhookNotifyService) deliverOne(
 	claim func() (bool, error),
 	release func() error,
 ) {
-	record, decryptedURL, host := target.record, target.url, target.host
-	{
-		report.Due++
+	report.Due++
 
-		if target.dryRun {
-			// Compute-only: no outbound request, no watermark. Record what WOULD be
-			// sent (type + date + destination HOST only) so the CLI can print an
-			// auditable preview without leaking the URL or token.
-			report.DryRunPreview = append(report.DryRunPreview, NotifyPreviewLine{
-				OwnerID:   record.ID,
-				Type:      payload.Type,
-				EventDate: previewEventDate(payload),
-				Host:      host,
-			})
-			return
-		}
-
-		// Claim the send BEFORE the request leaves. The claim compares against the
-		// watermark this pass's snapshot carried — so a pass whose snapshot has
-		// been overtaken loses rather than writing the column backwards — and that
-		// value is what a failed delivery restores.
-		//
-		// record.WebhookConfigVersion is pinned alongside it, and it is the SAME
-		// snapshot's value on purpose: everything this pass is about to send was
-		// decided from that snapshot — the enabled flag, the per-kind opt-in, the
-		// cycle-day rules, the decrypted URL above — so the claim has to ask
-		// whether THAT configuration is still the owner's, not whether some
-		// configuration is. Re-reading the row here to get a fresher epoch would
-		// defeat the check by agreeing with whatever the revocation just wrote.
-		claimed, err := claim()
-		if err != nil {
-			// Owner id only: the reminder type is a health specific, and this line
-			// lands in whatever log the pass was started from. Nothing was delivered
-			// and no watermark moved, so the reminder is still pending — counted as
-			// failed so an operator sees it, and retried by the next pass.
-			log.Printf("webhook notify: watermark claim failed, owner id=%d", record.ID)
-			report.Failed++
-			report.OwnerIDsFailed = appendUniqueID(report.OwnerIDsFailed, record.ID)
-			return
-		}
-		if !claimed {
-			// Either a concurrent pass owns this send — the reminder is being
-			// delivered, just not by us — or the owner revoked the configuration this
-			// pass read, and there is nothing left to deliver to. Both are a skip
-			// rather than a failure, and in both cases sending anyway is exactly the
-			// egress the claim exists to prevent: a duplicate in the first case, a
-			// POST to a revoked endpoint in the second. The pass deliberately does not
-			// distinguish them, because the log line it could write would have to name
-			// the owner whose endpoint was revoked, and the correct action is
-			// identical.
-			report.SkippedIdempotent++
-			return
-		}
-
-		if err := service.deliverer.Deliver(ctx, decryptedURL, payload); err != nil {
-			// Delivery already logged host-only inside Deliver. Give the claim back so
-			// the watermark is left where this pass found it and the next pass retries;
-			// a claim kept after a failed POST would read exactly like a successful send
-			// and suppress the reminder for good.
-			report.Failed++
-			report.OwnerIDsFailed = appendUniqueID(report.OwnerIDsFailed, record.ID)
-			if releaseErr := release(); releaseErr != nil {
-				log.Printf("webhook notify: watermark release failed after a failed delivery, owner id=%d", record.ID)
-			}
-			return
-		}
-
-		// Success. Two different facts are now true and they need two different
-		// columns. The claim stands as the watermark for this kind, so a re-run
-		// skips the reminder — that is idempotency, and it was already written,
-		// before the request left, against a cycle anchor. It is NOT a record that
-		// anything arrived: the same value stands for a send that failed until the
-		// release above puts it back, and it holds an anchor rather than a clock
-		// reading. Reading it as a delivery time is the misreading the second
-		// write below exists to make unnecessary.
-		//
-		// So this is where — and the only place where — an accepted delivery is
-		// recorded, after a 2xx and never at the claim. It pins the SAME epoch the
-		// claim did, so a configuration the owner revoked while the request was on
-		// the wire is not credited with a delivery, and it deliberately does not
-		// advance that epoch: doing so would lose this very pass's ovulation claim
-		// a few lines from now (migration 039 corrects migration 038 on the point).
-		//
-		// now is the pass's injected clock, not a fresh reading — this service
-		// holds no clock on purpose. The mark is therefore "the pass that accepted
-		// this delivery began at", accurate to the length of a pass, and it is a
-		// record of acceptance rather than a latency measurement.
-		//
-		// A failed mark is not a failed delivery. The POST was accepted, so the
-		// reminder counts as sent and the report is left alone; the cost is one
-		// missing ledger entry. Counting it as failed would be the expensive
-		// mistake, because nothing would then stop the next pass re-sending it.
-		if err := service.users.MarkWebhookDelivered(ctx, record.ID, now, record.WebhookConfigVersion); err != nil {
-			log.Printf("webhook notify: delivery mark write failed after an accepted delivery, owner id=%d", record.ID)
-		}
-		report.Sent++
+	if target.dryRun {
+		// Compute-only: no outbound request, no watermark. Record what WOULD be
+		// sent (type + date + destination HOST only) so the CLI can print an
+		// auditable preview without leaking the URL or token.
+		report.DryRunPreview = append(report.DryRunPreview, NotifyPreviewLine{
+			OwnerID:   target.record.ID,
+			Type:      payload.Type,
+			EventDate: previewEventDate(payload),
+			Host:      target.host,
+		})
+		return
 	}
+
+	// Claim the send BEFORE the request leaves. The claim compares against the
+	// watermark this pass's snapshot carried — so a pass whose snapshot has
+	// been overtaken loses rather than writing the column backwards — and that
+	// value is what a failed delivery restores.
+	//
+	// record.WebhookConfigVersion is pinned alongside it, and it is the SAME
+	// snapshot's value on purpose: everything this pass is about to send was
+	// decided from that snapshot — the enabled flag, the per-kind opt-in, the
+	// cycle-day rules, the decrypted URL above — so the claim has to ask
+	// whether THAT configuration is still the owner's, not whether some
+	// configuration is. Re-reading the row here to get a fresher epoch would
+	// defeat the check by agreeing with whatever the revocation just wrote.
+	claimed, err := claim()
+	if err != nil {
+		// Owner id only: the reminder type is a health specific, and this line
+		// lands in whatever log the pass was started from. Nothing was delivered
+		// and no watermark moved, so the reminder is still pending — counted as
+		// failed so an operator sees it, and retried by the next pass.
+		log.Printf("webhook notify: watermark claim failed, owner id=%d", target.record.ID)
+		report.Failed++
+		report.OwnerIDsFailed = appendUniqueID(report.OwnerIDsFailed, target.record.ID)
+		return
+	}
+	if !claimed {
+		// Either a concurrent pass owns this send — the reminder is being
+		// delivered, just not by us — or the owner revoked the configuration this
+		// pass read, and there is nothing left to deliver to. Both are a skip
+		// rather than a failure, and in both cases sending anyway is exactly the
+		// egress the claim exists to prevent: a duplicate in the first case, a
+		// POST to a revoked endpoint in the second. The pass deliberately does not
+		// distinguish them, because the log line it could write would have to name
+		// the owner whose endpoint was revoked, and the correct action is
+		// identical.
+		report.SkippedIdempotent++
+		return
+	}
+
+	if err := service.deliverer.Deliver(ctx, target.url, payload); err != nil {
+		// Delivery already logged host-only inside Deliver. Give the claim back so
+		// the watermark is left where this pass found it and the next pass retries;
+		// a claim kept after a failed POST would read exactly like a successful send
+		// and suppress the reminder for good.
+		report.Failed++
+		report.OwnerIDsFailed = appendUniqueID(report.OwnerIDsFailed, target.record.ID)
+		if releaseErr := release(); releaseErr != nil {
+			log.Printf("webhook notify: watermark release failed after a failed delivery, owner id=%d", target.record.ID)
+		}
+		return
+	}
+
+	// Success. Two different facts are now true and they need two different
+	// columns. The claim stands as the watermark for this kind, so a re-run
+	// skips the reminder — that is idempotency, and it was already written,
+	// before the request left, against a cycle anchor. It is NOT a record that
+	// anything arrived: the same value stands for a send that failed until the
+	// release above puts it back, and it holds an anchor rather than a clock
+	// reading. Reading it as a delivery time is the misreading the second
+	// write below exists to make unnecessary.
+	//
+	// So this is where — and the only place where — an accepted delivery is
+	// recorded, after a 2xx and never at the claim. It pins the SAME epoch the
+	// claim did, so a configuration the owner revoked while the request was on
+	// the wire is not credited with a delivery, and it deliberately does not
+	// advance that epoch: doing so would lose this very pass's ovulation claim
+	// a few lines from now (migration 039 corrects migration 038 on the point).
+	//
+	// now is the pass's injected clock, not a fresh reading — this service
+	// holds no clock on purpose. The mark is therefore "the pass that accepted
+	// this delivery began at", accurate to the length of a pass, and it is a
+	// record of acceptance rather than a latency measurement.
+	//
+	// A failed mark is not a failed delivery. The POST was accepted, so the
+	// reminder counts as sent and the report is left alone; the cost is one
+	// missing ledger entry. Counting it as failed would be the expensive
+	// mistake, because nothing would then stop the next pass re-sending it.
+	if err := service.users.MarkWebhookDelivered(ctx, target.record.ID, now, target.record.WebhookConfigVersion); err != nil {
+		log.Printf("webhook notify: delivery mark write failed after an accepted delivery, owner id=%d", target.record.ID)
+	}
+	report.Sent++
 }
 
 // watermarkForReminderType returns the incoming watermark of the kind a reminder
