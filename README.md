@@ -46,7 +46,7 @@ Ovumcy is a menstrual cycle tracker you run on your own server. If the thought o
 
 > ⭐ **If Ovumcy is useful to you, star the repository.** Ovumcy is under active development, and stars are how people looking for a private cycle tracker find it. More ways to help: [Support the Project](#support-the-project).
 
-This README describes the current `main` branch. The latest tagged release is `v2.1.0`.
+This README describes the current `main` branch. The latest tagged release is `v2.2.0`.
 
 ## Contents
 
@@ -73,10 +73,10 @@ docker compose up -d
 
 Then open `http://127.0.0.1:8080`.
 
-The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v2.1.0`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. Tagged releases from `v0.7.1` onward publish under these names. `:latest` names the newest stable release (a pre-release tag never moves it); `:main` is the moving pre-release channel built from the tip of `main`, signed the same way but not a release, so pin a release tag for anything you rely on. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
+The compose file pulls the latest tagged release, `ghcr.io/ovumcy/ovumcy-web:v2.2.0`, from GHCR; no GitHub login is needed, and `pull_policy: always` keeps the tag fresh on every restart. The same image is mirrored to Docker Hub as `docker.io/ovumcy/ovumcy-web` under the same tags and at the same digest. Tagged releases from `v0.7.1` onward publish under these names. `:latest` names the newest stable release (a pre-release tag never moves it); `:main` is the moving pre-release channel built from the tip of `main`, signed the same way but not a release, so pin a release tag for anything you rely on. To run a different tag, set `OVUMCY_IMAGE` in `.env` or on the command line:
 
 ```bash
-OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v2.1.0 docker compose up -d
+OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v2.2.0 docker compose up -d
 ```
 
 The base compose file binds to loopback. For a deliberate LAN or private-network bind, set `HOST_BIND_ADDRESS` in `.env` to a specific private IP you control; only compose reads it. Inside the container the server listens on `PORT` on every IPv4 interface, which the port publish needs, so leave `LISTEN_ADDRESS` unset under compose.
@@ -102,7 +102,7 @@ Running the image with plain `docker run` (Portainer, Watchtower and Kubernetes 
 docker run -d --name ovumcy --read-only --tmpfs /tmp \
   -p 127.0.0.1:8080:8080 -e SECRET_KEY="$(openssl rand -hex 32)" \
   -v ovumcy_fence:/app/fence -v ovumcy_data:/app/data \
-  ghcr.io/ovumcy/ovumcy-web:v2.1.0
+  ghcr.io/ovumcy/ovumcy-web:v2.2.0
 ```
 
 Keep the `SECRET_KEY` you generate: a recreated container needs the same one. Without a volume at `/app/fence` the fence would sit on the container's writable layer, which every recreation throws away, and the next start would read the database as a restored backup and revoke every local password. From 2.1.0 the image refuses that start instead, naming `CALENDAR_FEED_FENCE_PATH` — see [Calendar Feed Restore Fence](docs/self-hosted.md#calendar-feed-restore-fence).
@@ -118,22 +118,22 @@ Every published image is Cosign-signed (keyless, via GitHub Actions OIDC — no 
 cosign verify \
   --certificate-identity-regexp '^https://github\.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/ovumcy/ovumcy-web:v2.1.0
+  ghcr.io/ovumcy/ovumcy-web:v2.2.0
 
 # 2. SLSA build provenance (GitHub attestation)
-gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v2.1.0 --repo ovumcy/ovumcy-web
+gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v2.2.0 --repo ovumcy/ovumcy-web
 
 # 3. SBOM attached at build time
-docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v2.1.0 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v2.2.0 --format '{{ json .SBOM }}'
 ```
 
 The Docker Hub mirror answers to the same checks: substitute `docker.io/ovumcy/ovumcy-web` for the GHCR name. The mirror is a copy of the signed manifest, not a second build; it is signed on Docker Hub itself by the same workflow identity over the same digest, and the release workflow refuses to report the mirror published until it has run the signature check above against Docker Hub. Details: [SECURITY.md](SECURITY.md#verifying-release-authenticity).
 
-The `v2.1.0` tag is mutable and `pull_policy: always` re-pulls it on every restart, so a one-time check does not by itself guarantee later restarts run the same bytes. To pin the exact image you verified, set `OVUMCY_IMAGE` to its digest instead of the tag:
+The `v2.2.0` tag is mutable and `pull_policy: always` re-pulls it on every restart, so a one-time check does not by itself guarantee later restarts run the same bytes. To pin the exact image you verified, set `OVUMCY_IMAGE` to its digest instead of the tag:
 
 ```bash
 # Resolve the digest of the tag you just verified, then pin it in .env:
-docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v2.1.0 --format '{{ .Manifest.Digest }}'
+docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v2.2.0 --format '{{ .Manifest.Digest }}'
 # .env → OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web@sha256:<digest>
 ```
 
@@ -500,7 +500,7 @@ Want to support Ovumcy with a donation? Crypto options (Bitcoin, Monero, USDT, E
 <a id="roadmap" name="roadmap"></a>
 ## Releases
 
-- Latest tagged release: `v2.1.0`.
+- Latest tagged release: `v2.2.0`.
 - Release notes are published via GitHub Releases and [CHANGELOG.md](CHANGELOG.md).
 - Product planning lives in GitHub Issues and the `Ovumcy Roadmap` project board. This README describes functionality that exists today, not roadmap items.
 
