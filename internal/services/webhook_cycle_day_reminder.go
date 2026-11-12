@@ -84,8 +84,8 @@ func DecideDueCycleDayReminders(user *models.User, rules []models.CycleDayRemind
 	}
 	start := CalendarDay(stats.LastPeriodStart, location)
 	cycleDay := CalendarDaysBetween(start, today) + 1
-	if cycleDay <= 0 {
-		return CycleDayDecision{}
+	if cycleDay <= 0 { // codecov:ignore -- the stats derive start from logs filtered to on-or-before today by calendar date, so cycleDay is at least 1
+		return CycleDayDecision{} // codecov:ignore -- see above
 	}
 	held := DashboardCycleDayLooksStale(cycleDay, DashboardCycleReferenceLength(user, stats))
 	settled := cycleDay > 2 || cycleStartIsSettled(user, logs, today, start)

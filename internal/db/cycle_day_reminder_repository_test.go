@@ -316,3 +316,88 @@ func TestClearAllDataDeletesTheCycleDayReminders(t *testing.T) {
 		t.Fatalf("clear-data must leave the other owner's rule, got %+v err=%v", listed, err)
 	}
 }
+
+func TestCycleDayReminderRefusesAZeroRuleID(t *testing.T) {
+	users, rules := openCycleDayReminderReposForTest(t)
+	user := createUserForTimezoneTest(t, users, "cdr-zero-rule@example.com")
+	ctx := context.Background()
+	day := time.Date(2026, time.March, 7, 0, 0, 0, 0, time.UTC)
+
+	if err := rules.Update(ctx, user.ID, 0, cycleDayReminderInputForTest(5, 9)); !errors.Is(err, models.ErrCycleDayReminderNotFound) {
+		t.Fatalf("Update(rule 0): want ErrCycleDayReminderNotFound, got %v", err)
+	}
+	if err := rules.Delete(ctx, user.ID, 0); !errors.Is(err, models.ErrCycleDayReminderNotFound) {
+		t.Fatalf("Delete(rule 0): want ErrCycleDayReminderNotFound, got %v", err)
+	}
+	if won, err := rules.ClaimSend(ctx, user.ID, models.CycleDayReminder{}, day, nil, 0); won || !errors.Is(err, models.ErrCycleDayReminderNotFound) {
+		t.Fatalf("ClaimSend(rule 0): want a lost claim with ErrCycleDayReminderNotFound, got won=%t err=%v", won, err)
+	}
+}
+
+// refuseCycleDayReminderStatement makes every event (UPDATE or DELETE) on a
+// cycle_day_reminders row fail, so a statement error is not mistaken for a
+// zero-row outcome.
+func refuseCycleDayReminderStatement(t *testing.T, users *UserRepository, event string) {
+	t.Helper()
+	if err := users.database.Exec(`CREATE TRIGGER refuse_cycle_day_reminder_` + event + ` BEFORE ` + event +
+		` ON cycle_day_reminders BEGIN SELECT RAISE(ABORT, 'cycle-day reminder ` + event + ` refused'); END`).Error; err != nil {
+		t.Fatalf("create the %s trigger: %v", event, err)
+	}
+}
+
+func TestCycleDayReminderWritesReturnStatementErrors(t *testing.T) {
+	users, rules := openCycleDayReminderReposForTest(t)
+	user := createUserForTimezoneTest(t, users, "cdr-statement-errors@example.com")
+	ctx := context.Background()
+	rule := createCycleDayRuleForTest(t, rules, user.ID, 5, 9)
+	version := enableWebhookForCycleDayTest(t, users, user.ID)
+	day := time.Date(2026, time.March, 7, 0, 0, 0, 0, time.UTC)
+
+	refuseCycleDayReminderStatement(t, users, "UPDATE")
+	err := rules.Update(ctx, user.ID, rule.ID, cycleDayReminderInputForTest(6, 9))
+	var unique *UniqueConstraintError
+	if err == nil || errors.As(err, &unique) || errors.Is(err, models.ErrCycleDayReminderNotFound) {
+		t.Fatalf("a refused UPDATE must surface as the statement error, got %v", err)
+	}
+	if won, err := rules.ClaimSend(ctx, user.ID, rule, day, nil, version); won || err == nil {
+		t.Fatalf("a refused claim UPDATE must surface as an error, got won=%t err=%v", won, err)
+	}
+
+	refuseCycleDayReminderStatement(t, users, "DELETE")
+	if err := rules.Delete(ctx, user.ID, rule.ID); err == nil || errors.Is(err, models.ErrCycleDayReminderNotFound) {
+		t.Fatalf("a refused DELETE must surface as the statement error, got %v", err)
+	}
+	if err := users.ClearAllDataAndResetSettings(ctx, user.ID, storedSessionVersionForTest(t, users, user.ID)); err == nil {
+		t.Fatal("clear-data must fail when the rules cannot be deleted")
+	}
+	if err := users.DeleteAccountAndRelatedData(ctx, user.ID); err == nil {
+		t.Fatal("account erasure must fail when the rules cannot be deleted")
+	}
+	if listed := findCycleDayRuleForTest(t, rules, user.ID, 5, 9); listed.ID != rule.ID {
+		t.Fatalf("every refused write must leave the rule in place, got %+v", listed)
+	}
+}
+
+func TestCycleDayReminderReadsReturnQueryErrors(t *testing.T) {
+	users, rules := openCycleDayReminderReposForTest(t)
+	user := createUserForTimezoneTest(t, users, "cdr-query-errors@example.com")
+	ctx := context.Background()
+
+	if err := users.database.Exec(`ALTER TABLE cycle_day_reminders RENAME TO cycle_day_reminders_gone`).Error; err != nil {
+		t.Fatalf("rename the rules table: %v", err)
+	}
+	if listed, err := rules.ListByUser(ctx, user.ID); err == nil || listed != nil {
+		t.Fatalf("ListByUser over a missing table must fail, got %+v err=%v", listed, err)
+	}
+	// The owner lock passes; the per-owner count is the statement that fails.
+	if err := rules.Create(ctx, user.ID, cycleDayReminderInputForTest(5, 9)); err == nil || errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("Create must surface the count error, got %v", err)
+	}
+
+	if err := users.database.Exec(`ALTER TABLE users RENAME TO users_gone`).Error; err != nil {
+		t.Fatalf("rename the users table: %v", err)
+	}
+	if err := rules.Create(ctx, user.ID, cycleDayReminderInputForTest(5, 9)); err == nil || errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("Create must surface the owner-lock error, got %v", err)
+	}
+}

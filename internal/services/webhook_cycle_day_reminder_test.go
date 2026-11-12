@@ -627,3 +627,99 @@ func TestRunCycleDayOnceSendsNoPredictionReminder(t *testing.T) {
 		t.Fatalf("control: RunOnce must send the period and the cycle-day reminder, got %v", types)
 	}
 }
+
+// failingCycleDayRuleList is a rule store whose list read fails.
+type failingCycleDayRuleList struct{ *stubCycleDayStore }
+
+func (failingCycleDayRuleList) ListByUser(context.Context, uint) ([]models.CycleDayReminder, error) {
+	return nil, fmt.Errorf("rules unavailable")
+}
+
+func TestRunCycleDayOnceSendsNothingWhenTheRulesCannotBeRead(t *testing.T) {
+	deliverer := &stubDeliverer{}
+	record := cycleDayNotifyRecord("https://hook.example/a")
+	store := &stubCycleDayStore{}
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	service := NewWebhookNotifyService(repo, stubLogReader{byUser: map[uint][]models.DailyLog{record.ID: cycleDayHistory(cycleDayTestStart)}}, stubDecryptor{}, deliverer, cycleDayTestCopy).
+		WithCycleDayReminders(failingCycleDayRuleList{store})
+
+	report, err := service.RunCycleDayOnce(context.Background(), cycleDayInstant(cycleDayTestStart, 10, 12), time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunCycleDayOnce: %v", err)
+	}
+	if report.Sent != 0 || report.Due != 0 || len(deliverer.deliveries()) != 0 || len(store.claims) != 0 || len(repo.writes()) != 0 {
+		t.Fatalf("an unreadable rule list must send and claim nothing, report=%+v deliveries=%d claims=%+v", report, len(deliverer.deliveries()), store.claims)
+	}
+}
+
+// cycleDayBlankMessageCopy answers no copy for either cycle-day sentence.
+type cycleDayBlankMessageCopy struct{ cycleDayCopy }
+
+func (stub cycleDayBlankMessageCopy) Message(language string, key string) string {
+	if key == reminderCycleDayMessageKey || key == reminderCycleDayLabelMessageKey {
+		return ""
+	}
+	return stub.cycleDayCopy.Message(language, key)
+}
+
+func TestCycleDayReminderPayloadSendsNoMessageForAnUnansweredKey(t *testing.T) {
+	plain := cycleDayTestRule(5, 10, 9)
+	labelled := models.CycleDayReminder{ID: 6, UserID: 1, CycleDay: 10, RemindAtHour: 10, Label: cycleDayLabelSentinel, SendLabel: true}
+	deliverer := &stubDeliverer{}
+	service, _, _ := newCycleDayNotifyService(cycleDayNotifyRecord("https://hook.example/a"), cycleDayHistory(cycleDayTestStart),
+		[]models.CycleDayReminder{plain, labelled}, deliverer, cycleDayBlankMessageCopy{cycleDayTestCopy})
+
+	report, err := service.RunCycleDayOnce(context.Background(), cycleDayInstant(cycleDayTestStart, 10, 12), time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunCycleDayOnce: %v", err)
+	}
+	deliveries := deliverer.deliveries()
+	if report.Sent != 2 || len(deliveries) != 2 {
+		t.Fatalf("expected both rules delivered, report=%+v deliveries=%d", report, len(deliveries))
+	}
+	for _, delivery := range deliveries {
+		encoded, _ := json.Marshal(delivery.payload)
+		if delivery.payload.Message != "" || strings.Contains(string(encoded), "%!") || strings.Contains(string(encoded), cycleDayLabelSentinel) {
+			t.Fatalf("an unanswered message key must send no message, not verb residue or the label: %s", encoded)
+		}
+	}
+}
+
+func TestCycleDayHoldFailedDeliveryReleasesTheHoldWatermark(t *testing.T) {
+	previous := cycleDayTestStart.AddDate(0, 0, -28)
+	record := cycleDayNotifyRecord("https://hook.example/a")
+	record.WebhookCycleDayHoldSentStart = &previous
+	deliverer := &stubDeliverer{failEvery: true}
+	service, repo, _ := newCycleDayNotifyService(record, cycleDayHistory(cycleDayTestStart), []models.CycleDayReminder{cycleDayTestRule(5, 30, 9)}, deliverer, cycleDayTestCopy)
+
+	report, err := service.RunCycleDayOnce(context.Background(), cycleDayInstant(cycleDayTestStart, 30, 12), time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunCycleDayOnce: %v", err)
+	}
+	if report.Failed != 1 || report.Sent != 0 {
+		t.Fatalf("expected the hold notice to fail once, got %+v", report)
+	}
+	if len(repo.releases) != 1 || repo.releases[0].reminderType != "cycle-day-held" || !repo.releases[0].anchor.Equal(cycleDayTestStart) {
+		t.Fatalf("a failed hold notice must release its watermark claim, got %+v", repo.releases)
+	}
+	if len(repo.releaseRestored) != 1 || repo.releaseRestored[0] == nil || !repo.releaseRestored[0].Equal(previous) {
+		t.Fatalf("the release must restore the snapshot's hold watermark, got %v", repo.releaseRestored)
+	}
+}
+
+func TestCycleDayHoldAcceptedDeliveryCountsAsSentWhenTheMarkFails(t *testing.T) {
+	deliverer := &stubDeliverer{}
+	service, repo, _ := newCycleDayNotifyService(cycleDayNotifyRecord("https://hook.example/a"), cycleDayHistory(cycleDayTestStart), []models.CycleDayReminder{cycleDayTestRule(5, 30, 9)}, deliverer, cycleDayTestCopy)
+	repo.markErr = fmt.Errorf("mark refused")
+
+	report, err := service.RunCycleDayOnce(context.Background(), cycleDayInstant(cycleDayTestStart, 30, 12), time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunCycleDayOnce: %v", err)
+	}
+	if report.Sent != 1 || report.Failed != 0 || len(deliverer.deliveries()) != 1 {
+		t.Fatalf("an accepted delivery whose mark fails still counts as sent, got %+v", report)
+	}
+	if len(repo.deliveryMarks) != 1 || len(repo.releases) != 0 {
+		t.Fatalf("the mark must be attempted once and the claim kept, marks=%+v releases=%+v", repo.deliveryMarks, repo.releases)
+	}
+}
