@@ -17,14 +17,16 @@ import (
 const spanTestNotice = "Pregnancy is possible on any day, including outside these dates."
 
 // spanFeedLogs records cycle starts 28 days apart ending 2026-03-02, each with
-// five logged period days, so the observed period length is five.
+// five period days the owner marked by hand (AutoFilled explicitly false), so
+// the observed period length is five.
 func spanFeedLogs(t *testing.T, starts ...string) []models.DailyLog {
 	t.Helper()
 	logs := make([]models.DailyLog, 0, len(starts)*5)
 	for _, start := range starts {
 		day := mustParseDashboardDay(t, start)
 		for offset := range 5 {
-			logs = append(logs, models.DailyLog{Date: day.AddDate(0, 0, offset), IsPeriod: true, CycleStart: offset == 0})
+			manual := false
+			logs = append(logs, models.DailyLog{Date: day.AddDate(0, 0, offset), IsPeriod: true, CycleStart: offset == 0, AutoFilled: &manual})
 		}
 	}
 	return logs
@@ -32,9 +34,12 @@ func spanFeedLogs(t *testing.T, starts ...string) []models.DailyLog {
 
 var spanFeedThreeCycles = []string{"2025-12-08", "2026-01-05", "2026-02-02", "2026-03-02"}
 
+// spanFeedInput builds an owner, so the stats run under the owner's configured
+// period length (ownerRunningPeriodRule) as they do in production.
 func spanFeedInput(t *testing.T, today string, periodSpan, fertileWindow bool, starts ...string) CalendarFeedICSInput {
 	t.Helper()
 	user := predictableFeedUser(t, starts[len(starts)-1])
+	user.Role = models.RoleOwner
 	user.CalendarFeedPeriodSpan = periodSpan
 	user.CalendarFeedFertileWindow = fertileWindow
 	return CalendarFeedICSInput{
@@ -247,45 +252,35 @@ func TestPeriodLengthObservedNeedsALoggedLengthNotJustACompletedCycle(t *testing
 		t.Fatal("five logged period days per cycle must mark the length observed")
 	}
 
-	// The period fills write the configured length as auto-filled days behind a
-	// ticked start: that length is configuration, so no span goes out.
-	// The configured length is the owner's (ownerRunningPeriodRule), so these
-	// fixtures are owners.
-	filled := spanFeedInput(t, "2026-03-05", true, false, spanFeedThreeCycles...)
-	filled.User.Role = models.RoleOwner
+	// Only a day past the start explicitly marked as not auto-filled is evidence.
+	// Each case below rewrites the non-start period days and must send no span:
+	// the period fills' auto-filled days, rows older than migration 042 (no mark),
+	// and a fill whose configured length changed afterwards.
 	autoFilled := true
-	for i := range filled.Logs {
-		if !filled.Logs[i].CycleStart {
-			filled.Logs[i].AutoFilled = &autoFilled
-		}
-	}
-	if BuildCycleStatsFromLogs(filled.User, filled.Logs, filled.Now, time.UTC).PeriodLengthObserved {
-		t.Fatal("auto-filled days up to the configured length must not mark the length observed")
-	}
-	events := calendarFeedEvents(filled)
-	if spans := feedEventsOfKind(events, calendarFeedKindPeriodSpan); len(spans) != 0 {
-		t.Fatalf("a span drawn from the fill's configured length went out: %v", spans)
-	}
-	if len(feedEventsOfKind(events, calendarFeedKindPeriod)) == 0 {
-		t.Fatal("the single start day must still go out")
-	}
-
-	// A fill the owner trimmed to four days is the owner's length.
-	trimmed := spanFeedInput(t, "2026-03-05", true, false, spanFeedThreeCycles...)
-	trimmed.User.Role = models.RoleOwner
-	kept := trimmed.Logs[:0]
-	for _, log := range trimmed.Logs {
-		if !log.CycleStart {
+	for name, rewrite := range map[string]func(input *CalendarFeedICSInput, log *models.DailyLog){
+		"auto-filled days":    func(_ *CalendarFeedICSInput, log *models.DailyLog) { log.AutoFilled = &autoFilled },
+		"rows older than 042": func(_ *CalendarFeedICSInput, log *models.DailyLog) { log.AutoFilled = nil },
+		"fill, then a length change": func(input *CalendarFeedICSInput, log *models.DailyLog) {
 			log.AutoFilled = &autoFilled
+			input.User.PeriodLength = 6
+		},
+	} {
+		input := spanFeedInput(t, "2026-03-05", true, false, spanFeedThreeCycles...)
+		for i := range input.Logs {
+			if !input.Logs[i].CycleStart {
+				rewrite(&input, &input.Logs[i])
+			}
 		}
-		if log.Date.Equal(mustParseDashboardDay(t, "2026-02-06")) {
-			continue
+		if BuildCycleStatsFromLogs(input.User, input.Logs, input.Now, time.UTC).PeriodLengthObserved {
+			t.Errorf("%s: marked the length observed", name)
 		}
-		kept = append(kept, log)
-	}
-	trimmed.Logs = kept
-	if !BuildCycleStatsFromLogs(trimmed.User, trimmed.Logs, trimmed.Now, time.UTC).PeriodLengthObserved {
-		t.Fatal("a fill trimmed below the configured length must mark the length observed")
+		events := calendarFeedEvents(input)
+		if spans := feedEventsOfKind(events, calendarFeedKindPeriodSpan); len(spans) != 0 {
+			t.Errorf("%s: a span drawn from configuration went out: %v", name, spans)
+		}
+		if len(feedEventsOfKind(events, calendarFeedKindPeriod)) == 0 {
+			t.Errorf("%s: the single start day must still go out", name)
+		}
 	}
 }
 
@@ -298,7 +293,8 @@ func TestCalendarFeedPeriodSpanYieldsToTheStartWindow(t *testing.T) {
 	var logs []models.DailyLog
 	for _, offset := range []int{0, 28, 56, 84, 112, 172} {
 		for day := range 5 {
-			logs = append(logs, models.DailyLog{Date: base.AddDate(0, 0, offset+day), IsPeriod: true, CycleStart: day == 0})
+			manual := false
+			logs = append(logs, models.DailyLog{Date: base.AddDate(0, 0, offset+day), IsPeriod: true, CycleStart: day == 0, AutoFilled: &manual})
 		}
 	}
 	user := regularWebhookUser()

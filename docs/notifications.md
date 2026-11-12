@@ -555,9 +555,9 @@ are off by default:
 - **Period as a span.** Each estimated period goes out as the days it is
   expected to last, the days the in-app calendar shades, instead of its first
   day alone. It starts once at least one cycle is complete and a period length
-  is your own: a period you marked past its first day, or an automatic fill you
-  shortened or extended. Before that the length would come only from your
-  settings, and the feed keeps sending the first day. Where the feed sends a
+  is your own: a period day past the first that you marked or saved yourself.
+  Days the automatic fill wrote do not count. Before that the length would come
+  only from your settings, and the feed keeps sending the first day. Where the feed sends a
   start window, that cycle gets the window and no span.
 - **Fertile window.** The estimated fertile window the in-app calendar shades,
   under the same rules: none before three completed cycles, none in a
