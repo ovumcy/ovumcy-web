@@ -414,7 +414,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	}
 
 	if user.CalendarFeedFertileWindow && !suppression.FertilitySuppressed && strings.TrimSpace(input.FertileWindowNotice) != "" {
-		appendFertileWindows(user, input.Logs, stats, suppression, today, input.Location, appendSpan)
+		appendFertileWindows(user, input.Logs, stats, suppression, confirmed, hasConfirmed, today, input.Location, appendSpan)
 	}
 	return events
 }
@@ -422,14 +422,14 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 // appendFertileWindows sends, under the link's fertile-window opt-in (WEB-381),
 // the windows the calendar grid shades, decided exactly as
 // buildCalendarPredictionMaps decides them: the running cycle's window from the
-// stats the grid resolves (ResolveConfirmedCycleStats, so a confirmed shift
-// moves it, and irregular mode widens it, as on the grid), then the chained
-// cycles' windows (projectedCycleWindow) up to chainedFertilityCycles, none once
-// the chain is suppressed. The caller has already applied the grid's fertility
-// gate. A window whose last day is behind today is not sent. FertilityWindow*
-// are UTC-midnight date-only values, so every comparison here is by calendar
-// day (issue #48 class).
-func appendFertileWindows(user *models.User, logs []models.DailyLog, stats CycleStats, suppression PredictionSuppression, today time.Time, location *time.Location, appendSpan func(kind string, date time.Time, end time.Time)) {
+// stats the grid resolves (ResolveConfirmedCycleStats, applied here to the
+// confirmed day the caller already resolved, so a confirmed shift moves it, and
+// irregular mode widens it, as on the grid), then the chained cycles' windows
+// from projectedFertileWindows, the grid's own helper. The caller has already
+// applied the grid's fertility gate. A window whose last day is behind today is
+// not sent. FertilityWindow* are UTC-midnight date-only values, so every
+// comparison here is by calendar day (issue #48 class).
+func appendFertileWindows(user *models.User, logs []models.DailyLog, stats CycleStats, suppression PredictionSuppression, confirmed time.Time, hasConfirmed bool, today time.Time, location *time.Location, appendSpan func(kind string, date time.Time, end time.Time)) {
 	appendWindow := func(start time.Time, end time.Time) {
 		if start.IsZero() || end.IsZero() || CalendarDaysBetween(start, end) < 0 || CalendarDaysBetween(today, end) < 0 {
 			return
@@ -437,26 +437,15 @@ func appendFertileWindows(user *models.User, logs []models.DailyLog, stats Cycle
 		appendSpan(calendarFeedKindFertileWindow, CalendarDay(start, location), CalendarDay(end, location))
 	}
 
-	currentStats, _ := ResolveConfirmedCycleStats(user, logs, stats, today, location)
+	currentStats := stats
+	if hasConfirmed {
+		currentStats = statsWithConfirmedOvulation(logs, stats, confirmed, today, location)
+	}
 	appendWindow(currentStats.FertilityWindowStart, currentStats.FertilityWindowEnd)
 
-	fertileCycles := 0
-	if !suppression.ProjectionChainSuppressed && !stats.NextPeriodStart.IsZero() {
-		fertileCycles = chainedFertilityCycles(user, stats)
-	}
-	step := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
-	// codecov:ignore:start -- defensive: a published NextPeriodStart always
-	// comes with a positive length, the same guard appendPredictedCycles keeps.
-	if step <= 0 {
-		return
-	}
-	// codecov:ignore:end
-	cycleStart := CalendarDay(stats.NextPeriodStart, location)
-	for range fertileCycles {
-		if window, ok := projectedCycleWindow(cycleStart, step, stats.LutealPhase); ok {
-			appendWindow(window.FertilityWindowStart, window.FertilityWindowEnd)
-		}
-		cycleStart = AddCalendarDays(cycleStart, step, location)
+	fertileCycles := fertileChainCycles(user, stats, suppression.FertilitySuppressed, suppression.ProjectionChainSuppressed)
+	for _, cycle := range projectedFertileWindows(stats, fertileCycles, location) {
+		appendWindow(cycle.window.FertilityWindowStart, cycle.window.FertilityWindowEnd)
 	}
 }
 

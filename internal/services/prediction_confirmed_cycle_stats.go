@@ -65,7 +65,13 @@ func ResolveConfirmedCycleStats(user *models.User, logs []models.DailyLog, stats
 	if !ok {
 		return stats, false
 	}
+	return statsWithConfirmedOvulation(logs, stats, confirmedDay, today, location), true
+}
 
+// statsWithConfirmedOvulation is ResolveConfirmedCycleStats for a caller that
+// already holds ConfirmedCurrentCycleOvulation's answer: confirmedDay must be a
+// day it returned for the same stats, today and location.
+func statsWithConfirmedOvulation(logs []models.DailyLog, stats CycleStats, confirmedDay time.Time, today time.Time, location *time.Location) CycleStats {
 	if location == nil {
 		location = time.UTC
 	}
@@ -101,5 +107,5 @@ func ResolveConfirmedCycleStats(user *models.User, logs []models.DailyLog, stats
 	// day a confirmed shift just named.
 	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
 	setFertilityStatus(&stats, today, FertilityBasisConfirmed)
-	return stats, true
+	return stats
 }
