@@ -172,7 +172,8 @@ func TestCalendarFeedRestoreFenceFirstBootArmsWithoutDisarming(t *testing.T) {
 
 // TestCalendarFeedRestoreFenceAgreementIsANoOp pins the routine restart: the
 // halves agree, so nothing is disarmed and no token is re-minted. Re-minting on
-// every boot would be harmless but would hide a real mismatch behind churn.
+// every boot would be harmless but would hide a real mismatch behind churn. The
+// same token is written back, so an unwritable fence is found at boot (#1321).
 func TestCalendarFeedRestoreFenceAgreementIsANoOp(t *testing.T) {
 	appState := &stubFenceAppState{values: map[string]string{
 		models.AppStateKeyCalendarFeedRestoreFence: fenceTestToken,
@@ -190,8 +191,8 @@ func TestCalendarFeedRestoreFenceAgreementIsANoOp(t *testing.T) {
 	if users.callCount != 0 {
 		t.Fatalf("a matching fence must not disarm; disarm ran %d time(s)", users.callCount)
 	}
-	if anchor.written != "" {
-		t.Fatalf("a matching fence must not be rewritten, got %q", anchor.written)
+	if anchor.written != fenceTestToken {
+		t.Fatalf("a matching fence must be written back with the same token, got %q", anchor.written)
 	}
 }
 

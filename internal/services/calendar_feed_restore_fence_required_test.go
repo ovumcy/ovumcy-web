@@ -24,6 +24,7 @@ func TestCalendarFeedRestoreFenceEnforceRequiredWritesNothingOnAnAnchorFailure(t
 		{name: "unreadable anchor", anchor: &stubFenceAnchor{readErr: broken}, values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: "token"}},
 		{name: "first boot, unwritable anchor", anchor: &stubFenceAnchor{writeErr: broken}, values: map[string]string{}},
 		{name: "unanchored history, unwritable anchor", anchor: &stubFenceAnchor{writeErr: broken}, values: map[string]string{models.AppStateKeyCalendarFeedFenceUnanchored: "stamp"}},
+		{name: "agreeing halves, unwritable anchor", anchor: &stubFenceAnchor{value: "token", found: true, writeErr: broken}, values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: "token"}},
 		{name: "disagreeing halves, unwritable anchor", anchor: &stubFenceAnchor{value: "file", found: true, writeErr: broken}, values: map[string]string{models.AppStateKeyCalendarFeedRestoreFence: "row"}},
 	}
 	for _, testCase := range testCases {

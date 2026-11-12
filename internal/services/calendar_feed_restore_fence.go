@@ -266,6 +266,14 @@ func (fence *CalendarFeedRestoreFence) enforce(ctx context.Context, refuseUnanch
 	// database carrying no token at all is a database this fence never wrote,
 	// which is what restoring a pre-fence backup looks like.
 	if continuityHolds(anchorFound, storedFound, anchored, stored) {
+		// A readable fence is not a writable one: a volume restored or re-owned
+		// read-only for the app user boots clean and then refuses every webhook,
+		// feed, sign-out and credential write (#1321). Writing the same token back
+		// proves the file half at boot, where the refusal names its cause, without
+		// minting a new token.
+		if err := fence.writeAnchorRetrying(ctx, anchored); err != nil {
+			return fence.disarmUnanchored(ctx, err, refuseUnanchored)
+		}
 		return CalendarFeedRestoreFenceOutcome{}, nil
 	}
 	return fence.revokeRestored(ctx, CalendarFeedRestoreFenceOutcome{ContinuityBroken: true}, refuseUnanchored)

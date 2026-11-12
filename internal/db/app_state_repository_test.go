@@ -5,8 +5,48 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"gorm.io/gorm"
 )
+
+// TestAppStateProbeWritableCommitsNothingAndRefusesAReadOnlyStore pins #1321:
+// the probe passes on a writable store without leaving its row behind, and
+// refuses a store SQLite opened read-only -- what an unwritable file becomes.
+func TestAppStateProbeWritableCommitsNothingAndRefusesAReadOnlyStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "probe.db")
+	database, err := OpenDatabase(migratedSQLiteConfig(t, path))
+	if err != nil {
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, dbErr := database.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	repo := NewAppStateRepository(database)
+	ctx := context.Background()
+
+	if err := repo.ProbeWritable(ctx); err != nil {
+		t.Fatalf("a writable store must pass the probe, got %v", err)
+	}
+	if _, ok, err := repo.Get(ctx, models.AppStateKeyWriteProbe); err != nil || ok {
+		t.Fatalf("the probe must commit nothing, got ok=%v err=%v", ok, err)
+	}
+
+	readOnly, err := gorm.Open(sqlite.Open("file:"+filepath.ToSlash(path)+"?mode=ro"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, dbErr := readOnly.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if err := NewAppStateRepository(readOnly).ProbeWritable(ctx); err == nil {
+		t.Fatal("a read-only store must fail the probe")
+	}
+}
 
 // TestAppStateRepositoryRoundTripAndUpsert covers the full contract the reminder
 // scheduler relies on: a missing key reads as (", false), a Set then Get returns

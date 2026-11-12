@@ -64,6 +64,7 @@ func main() {
 	// Of the passes that write, the restore fence runs first because its disarm
 	// is the wider one: it answers "is this even the database that holds my
 	// revocations", which the key-rotation sentinel behind it assumes.
+	mustProbeDatabaseWritable(repositories)
 	mustEnforceCalendarFeedRestoreFence(calendarFeedFence, config.CalendarFeedFenceOptOut)
 	mustEnforceCalendarFeedKeyRotation(repositories, []byte(config.SecretKey))
 	mustRenormalizeAuthEmails(repositories)
@@ -318,6 +319,17 @@ func mustEnforceCalendarFeedKeyRotation(repositories *db.Repositories, secretKey
 // under the strict addr-spec rule. The decision logic lives (tested) in
 // services.AuthEmailRenormalizer; this wrapper wires repositories, fails the
 // boot hard on a storage error, and prints the operator-facing line.
+// mustProbeDatabaseWritable refuses a boot over a database that reads but does
+// not write. It runs before the restore fence, whose file half would otherwise
+// advance ahead of a row write that then fails.
+func mustProbeDatabaseWritable(repositories *db.Repositories) {
+	ctx, cancel := bootPassContext()
+	defer cancel()
+	if err := repositories.AppState.ProbeWritable(ctx); err != nil {
+		log.Fatalf("the database is readable but refused a write; check that the data volume is writable by the app user (uid 10001) and, under SELinux, labelled for the container: %v", err)
+	}
+}
+
 func mustRenormalizeAuthEmails(repositories *db.Repositories) {
 	ctx, cancel := bootPassContext()
 	defer cancel()

@@ -48,6 +48,10 @@ const AppStateKeyCalendarFeedRestoreFence = "calendar_feed_restore_fence"
 // token in both halves — the same pass that answers for it.
 const AppStateKeyCalendarFeedFenceUnanchored = "calendar_feed_fence_unanchored"
 
+// AppStateKeyWriteProbe is the row the boot-time write probe upserts inside a
+// transaction it always rolls back; it is never committed.
+const AppStateKeyWriteProbe = "boot_write_probe"
+
 // AppStateKeyAuthEmailRenormalizeV1 marks the one-shot boot pass that rewrote
 // auth emails stored by the pre-strict normalizer (which kept a whole
 // display-name-decorated input verbatim) down to the bare parsed address, so
