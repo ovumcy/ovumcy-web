@@ -9,6 +9,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 *New entries accumulate as per-pull-request fragments in [changelog.d/](changelog.d/) and are assembled here at release.*
 
+## [2.2.0] - 2026-11-12
+
+### Added
+
+- **Calendar feed: two more choices per link, both off by default.** When you generate or rotate a
+  calendar feed link you can now ask it to show each estimated period as the days it is expected to
+  last, instead of the start day alone, and to add the estimated fertile window. A period appears
+  as several days only once at least one cycle is complete and a period length is your own (a day
+  past the first that you marked or saved yourself, not one the automatic fill wrote); before that
+  the feed keeps sending the start day. The fertile window follows the same rules as the calendar
+  page: it needs three completed cycles, covers the running cycle and the next one only, and is
+  left out whenever the app withholds fertility estimates. Each fertile-window event says, under
+  the medical-safety sentence, that pregnancy is possible on any day, including outside those
+  dates. Like the detailed-titles choice, both belong to the link: turning the feed off, rotating
+  it under other choices, a password reset or clearing your data resets them. Database migration
+  045 adds the two columns; a link created before it sends single days as before.
+
+- **Name and logo policy, and a third-party hosting note.** `TRADEMARKS.md` states when the Ovumcy
+  name and logo may be used without asking: hosting an unmodified official release, labelled
+  unofficial, linked to the source repository, naming its release and kept within 30 days of the
+  latest one. The self-hosted guide gains a Third-Party and Managed Hosting section: the provider
+  can read the data, its template may install an older release, and a password typed into its
+  panel should be changed.
+
+- **Cycle-day reminders (#1071).** Settings → Data leaving this instance now lets an owner add up to 10
+  webhook reminders on a fixed cycle day (1–90), each with its own time of day and an optional
+  private label — for example a medication on cycle days 15 and 25. A reminder is sent once per
+  cycle, on its day, from the chosen owner-local hour; it is held while no cycle start is logged,
+  during pregnancy mode, for day 1 or 2 counted from an unconfirmed single bleeding day, and once
+  the cycle runs past its usual length, when one neutral `cycle-day-held` notice is sent instead.
+  The label stays on the server unless the owner opts in per reminder. Payloads add the `cycle-day`
+  and `cycle-day-held` types and a `cycle_day` field; the built-in scheduler gains an hourly
+  cycle-day pass, and an operator running `ovumcy notify` from cron should run it hourly.
+  Migration 046 adds the `cycle_day_reminders` table and one `users` column; clear-data and account
+  deletion remove the reminders.
+
+- **Where your data lives.** The sign-in screen now says which host you are on and that this is a
+  self-hosted instance the Ovumcy project does not run, with a link to a short panel stating where
+  the data lives and who can read it. The panel also appears on the registration page and the
+  privacy page. The text is fixed in every language; nothing in it is operator-configurable and the
+  notice makes no network request.
+
+### Changed
+
+- **Calendar feed warnings say what the fertile window reveals.** The fertile-window choice now
+  warns that its events stay recognisable under the neutral title, by their extra note and their
+  length, and the detailed-titles warning names the fertile window beside period and ovulation.
+
+### Fixed
+
+- **Locale terminology canon.** Eight Russian values used a lowercase «вы»/«ваш» where the catalogue
+  writes «Вы», and nine used «учётная запись» where the catalogue says «аккаунт»; seven German
+  OIDC-link and language-hint values addressed the reader with «du» where the catalogue uses «Sie».
+  Wording is otherwise unchanged.
+
+- **Docs: what a `SECRET_KEY` rotation does to 2FA accounts.** Several documents said a 2FA
+  challenge answers HTTP 500 after the key changes, and that recovery needs the password plus the
+  recovery code. Neither is true any more. After the correct password, sign-in sends such an
+  account to the forced password reset; the owner then re-enrols TOTP from Settings. The operator
+  CLI is needed only when the password is forgotten, or with `--full` for an OIDC-only account
+  that has TOTP. Updated: `docs/security/cryptography.md`, `docs/self-hosted.md`, `docs/gdpr.md`,
+  `docs/security/known-disclosures.md`.
+
+- **OpenAPI: logout rate limit and GET security declarations.** `docs/openapi.yaml` stated the
+  `DELETE /api/v1/sessions/current` per-account limit as 60 / 15 min; the per-account default is
+  20 / 15 min and 60 / 15 min is the per-IP default, and the description now names both. The
+  `GET` operations that need a session (days, symptoms, stats overview, the three exports and the
+  current user) no longer declare a CSRF token, which the server never validates on a safe method;
+  they require only the session cookie. State-changing operations are unchanged.
+
+- **Operator documentation matches the shipped binary.** The README and architecture overview now
+  list every operator subcommand (`link-oidc-identity`, `healthcheck`, `readycheck` were missing),
+  the GDPR guide describes email rectification through `ovumcy users set-email` and names every
+  field encrypted at rest, the cookie table lists the OIDC step-up continuation and identity-link
+  confirmation cookies, and the Postgres and reverse-proxy-Postgres example `.env.example` files
+  carry every variable their compose files pass through.
+
+### Security
+
+- **Go toolchain bumped to 1.27.4.** The module's `go` line (`go.mod`) and the runtime image's
+  builder stage (`golang:1.27.4-alpine3.24` in the `Dockerfile`) both move, which clears
+  GO-2026-6859 in `net/http`, reported by govulncheck. The final runtime stage is unchanged.
+
+### Internal
+
+- **Tests: three documented security claims now have a test each.** The logout cookie test also
+  checks that signing out clears `ovumcy_oidc_link_confirm`. A test compares the Sealed column of
+  the cookie table in `docs/security/cryptography.md` with the cookies the code actually seals.
+  Two more tests check that raw day values (notes, temperature, cervical mucus, sexual activity,
+  pregnancy test, flow, cycle factors) never reach the `.ics` calendar feed or a webhook payload.
+
+- **Docs: the logout row names `ovumcy_oidc_link_confirm`.** SECURITY.md and
+  docs/SECURITY_INVARIANTS.md now list the pending identity-link confirmation among the cookies a
+  sign-out retracts and among those a refused session retracts; the refused-session test checks it.
+
+- **Docs: `OIDC_CA_FILE`, `OIDC_POST_LOGOUT_REDIRECT_URL` and `REMINDER_SCHEDULER_*` have rows in
+  SECURITY.md and docs/SECURITY_INVARIANTS.md.** A new test checks that a post-logout redirect off
+  the callback origin, over plain http, or carrying a query or fragment fails startup validation.
+
+- **Docs: the declared exceptions to "no usable secret in transport" read the same in SECURITY.md
+  and docs/SECURITY_INVARIANTS.md.** Two exceptions (calendar-feed token, TOTP enrollment seed);
+  a query-mode OIDC code is inert, not an exception. Each names its pinning test; the seed is
+  described as minted fresh per visit, not "shown once".
+
 ## [2.1.0] - 2026-11-09
 
 ### Added
@@ -8598,7 +8702,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/ovumcy/ovumcy-web/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/ovumcy/ovumcy-web/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.2...v2.0.0
 [1.9.2]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.1...v1.9.2
