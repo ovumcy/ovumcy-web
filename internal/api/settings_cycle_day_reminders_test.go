@@ -81,8 +81,61 @@ func TestCycleDayReminderCreateRendersTheEgressCardWithTheRule(t *testing.T) {
 	if !strings.Contains(body, `value="Vitamin D"`) {
 		t.Fatalf("the card must show the rule's label: %s", body)
 	}
+	// The stored rule carries its own edit and remove forms, and below the cap
+	// the add form is still offered.
+	for _, hook := range []string{"data-egress-cycle-day-update", "data-egress-cycle-day-remove", "data-egress-cycle-day-add"} {
+		if !strings.Contains(body, hook) {
+			t.Fatalf("the card must render %s: %s", hook, body)
+		}
+	}
+	if strings.Contains(body, "data-egress-cycle-day-limit") {
+		t.Fatalf("one rule is below the cap; the card must not announce the limit: %s", body)
+	}
 	if added := messages["settings.success.cycle_day_reminder_added"]; added == "" || !strings.Contains(body, added) {
 		t.Fatalf("the card must carry the added status %q", added)
+	}
+}
+
+func TestCycleDayReminderCardWithdrawsTheAddFormAtTheCap(t *testing.T) {
+	owner := newSettingsSecurityTestContext(t, "cdr-api-cap@example.com")
+	for day := 1; day < models.CycleDayReminderMaxPerOwner; day++ {
+		rule := models.CycleDayReminder{UserID: owner.user.ID, CycleDay: day, RemindAtHour: 9}
+		if err := owner.database.Create(&rule).Error; err != nil {
+			t.Fatalf("seed rule %d: %v", day, err)
+		}
+	}
+
+	status, body := sendCycleDayReminderForm(t, owner, http.MethodPost, cycleDayRemindersPath, fmt.Sprintf("cycle_day=%d&remind_at_hour=9", models.CycleDayReminderMaxPerOwner), true)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", status, body)
+	}
+	if rules := listCycleDayRulesForTest(t, owner, owner.user.ID); len(rules) != models.CycleDayReminderMaxPerOwner {
+		t.Fatalf("expected %d stored rules, got %d", models.CycleDayReminderMaxPerOwner, len(rules))
+	}
+	if strings.Contains(body, "data-egress-cycle-day-add") {
+		t.Fatalf("at the cap the card must not offer the add form: %s", body)
+	}
+	if !strings.Contains(body, "data-egress-cycle-day-limit") {
+		t.Fatalf("at the cap the card must say the limit is reached: %s", body)
+	}
+}
+
+// The label leaves the server only for an opted-in rule, and the warning
+// beside that opt-in names where it would go: the configured webhook's host.
+func TestCycleDayReminderLabelWarningNamesTheWebhookHost(t *testing.T) {
+	owner := newSettingsSecurityTestContext(t, "cdr-api-host@example.com")
+
+	status, body := sendCycleDayReminderForm(t, owner, http.MethodPost, "/api/v1/users/current/webhook", "webhook_url="+url.QueryEscape("https://ntfy.example.test/cycle-day")+"&webhook_enabled=true&webhook_notify_period=true", true)
+	if status != http.StatusOK {
+		t.Fatalf("configure the webhook: expected 200, got %d: %s", status, body)
+	}
+	status, body = sendCycleDayReminderForm(t, owner, http.MethodPost, cycleDayRemindersPath, "cycle_day=14&remind_at_hour=9&label=Check-in", true)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", status, body)
+	}
+	hostPattern := regexp.MustCompile(`<span data-egress-cycle-day-label-host>\s*ntfy\.example\.test\s*</span>`)
+	if got := len(hostPattern.FindAllString(body, -1)); got < 2 {
+		t.Fatalf("both the rule's warning and the add form's warning must name the webhook host, found %d: %s", got, body)
 	}
 }
 

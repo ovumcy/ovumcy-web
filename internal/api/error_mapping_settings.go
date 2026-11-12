@@ -243,6 +243,27 @@ func settingsWebhookConflictErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "webhook settings changed elsewhere")
 }
 
+// mapCycleDayReminderError maps a cycle-day reminder service sentinel (WEB-383)
+// to its spec. Another owner's id and a never-existing id are the same
+// not-found answer.
+func mapCycleDayReminderError(err error) APIErrorSpec {
+	switch {
+	case errors.Is(err, services.ErrCycleDayReminderInvalidDay):
+		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle day reminder day")
+	case errors.Is(err, services.ErrCycleDayReminderInvalidHour):
+		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle day reminder hour")
+	case errors.Is(err, services.ErrCycleDayReminderInvalidLabel):
+		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle day reminder label")
+	case errors.Is(err, services.ErrCycleDayReminderDuplicate):
+		return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "duplicate cycle day reminder")
+	case errors.Is(err, services.ErrCycleDayReminderLimit):
+		return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "cycle day reminder limit reached")
+	case errors.Is(err, services.ErrCycleDayReminderNotFound):
+		return settingsFormErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "cycle day reminder not found")
+	}
+	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update cycle day reminders")
+}
+
 // settingsCalendarFeedUpdateErrorSpec is the internal-failure spec for the .ics
 // feed lifecycle (generate/rotate/revoke). Token generation and persistence are
 // server-side concerns — there is no owner-fault input on these endpoints, so
