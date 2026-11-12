@@ -540,26 +540,6 @@ func (repo *UserRepository) UpdateInterfaceLanguage(ctx context.Context, userID 
 // can set the lead window to zero, where that cost is worst: read it there before
 // changing anything here. Regression:
 // TestUpdateReminderLeadDaysAdvancesTheRevocationEpoch.
-// advanceWebhookConfigVersionTx advances the owner's delivery-configuration
-// epoch inside a caller's transaction. Its writer is the cycle-day reminder
-// rule set (CycleDayReminderRepository): a rule decides whether a delivery
-// happens, so a pass that read the rules before an edit must lose its claim.
-// An absent owner row is refused rather than reported as success.
-func advanceWebhookConfigVersionTx(tx *gorm.DB, userID uint) error {
-	query, err := scopedUserUpdateTx(tx, userID)
-	if err != nil {
-		return err
-	}
-	result := query.Update("webhook_config_version", gorm.Expr("webhook_config_version + 1"))
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return ErrUserOwnerRequired
-	}
-	return nil
-}
-
 func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error {
 	query, err := repo.scopedUserUpdate(ctx, userID)
 	if err != nil {

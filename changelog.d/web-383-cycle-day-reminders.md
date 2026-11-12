@@ -1,6 +1,6 @@
 ### Added
 
-- **Cycle-day reminders (#1071).** Settings → Outbound data now lets an owner add up to 10
+- **Cycle-day reminders (#1071).** Settings → Data leaving this instance now lets an owner add up to 10
   webhook reminders on a fixed cycle day (1–90), each with its own time of day and an optional
   private label — for example a medication on cycle days 15 and 25. A reminder is sent once per
   cycle, on its day, from the chosen owner-local hour; it is held while no cycle start is logged,

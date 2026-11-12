@@ -284,7 +284,7 @@ webhook as part of an install script that also runs `ovumcy users create`).
 
 ### Cycle-day reminders
 
-Under **Settings → Outbound data → Cycle-day reminders** an owner can add up
+Under **Settings → Data leaving this instance → Cycle-day reminders** an owner can add up
 to 10 reminders on a fixed cycle day (1–90), each with an owner-local time of
 day and an optional private label — for example a medication taken on cycle
 days 15 and 25. Day 1 is the first day of the last cycle start the app
@@ -296,7 +296,8 @@ through the same webhook, only while webhook reminders are on.
   (instance down) catches up later the same day, never on the next day: a
   prompt to take something on day N is wrong on any other day.
 - **Once per cycle.** A reminder sent in the current cycle is not sent again
-  in it, even if the cycle start is corrected afterwards.
+  in it, even if the cycle start is corrected afterwards. Moving a reminder to
+  another cycle day re-arms it for that day.
 - **Held when the count is unreliable.** Nothing is sent while no cycle start
   is logged, during pregnancy mode, for a day 1 or 2 counted from a single
   bleeding day not yet confirmed, and once the cycle runs past the owner's

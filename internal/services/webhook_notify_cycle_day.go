@@ -13,9 +13,10 @@ import (
 type NotifyCycleDayReminderStore interface {
 	ListByUser(ctx context.Context, userID uint) ([]models.CycleDayReminder, error)
 	// ClaimSend sets last_sent_on to day by compare-and-set against previous,
-	// pinned to the configuration epoch the pass read; false means another pass
-	// owns the send or the owner's configuration moved on.
-	ClaimSend(ctx context.Context, userID uint, ruleID uint, day time.Time, previous *time.Time, configVersion int) (bool, error)
+	// pinned to the rule as the pass read it (rule) and to the configuration
+	// epoch the pass read; false means another pass owns the send, the rule was
+	// edited or removed, or the owner's configuration moved on.
+	ClaimSend(ctx context.Context, userID uint, rule models.CycleDayReminder, day time.Time, previous *time.Time, configVersion int) (bool, error)
 	// ReleaseSend restores previous after a failed delivery.
 	ReleaseSend(ctx context.Context, userID uint, ruleID uint, day time.Time, previous *time.Time) error
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -18,10 +19,11 @@ var (
 const cycleDayReminderUniqueConstraint = "cycle_day_reminders(user_id, cycle_day, remind_at_hour)"
 
 // CycleDayReminderRepository persists the owner's cycle-day reminder rules
-// (migration 045). Every query is scoped by user_id, and every write to a rule
-// advances users.webhook_config_version in the same transaction: a rule decides
-// whether a delivery happens, so a notify pass that read the rule set before an
-// edit must lose its claim.
+// (migration 045). Every query is scoped by user_id. A rule write does not
+// advance users.webhook_config_version: that would void the period/ovulation
+// claims of a pass running at the time. Instead ClaimSend pins the rule as the
+// pass read it, so a pass that read a rule before it was edited or removed
+// loses that rule's claim and nothing else.
 type CycleDayReminderRepository struct {
 	database *gorm.DB
 }
@@ -51,9 +53,7 @@ func (repo *CycleDayReminderRepository) Create(ctx context.Context, userID uint,
 		return err
 	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// The epoch bump runs first: it locks the owner row on Postgres, so two
-		// concurrent creates cannot both pass the count below.
-		if err := advanceWebhookConfigVersionTx(tx, userID); err != nil {
+		if err := lockCycleDayReminderOwnerTx(tx, userID); err != nil {
 			return err
 		}
 		var count int64
@@ -74,8 +74,29 @@ func (repo *CycleDayReminderRepository) Create(ctx context.Context, userID uint,
 	})
 }
 
-// Update rewrites a rule's editable fields in place. last_sent_on is kept: an
-// edit made after today's send must not re-arm the rule within the same cycle.
+// lockCycleDayReminderOwnerTx locks the owner row so two concurrent creates
+// cannot both pass the per-owner count. PostgreSQL takes FOR UPDATE; SQLite
+// drops the clause and needs none (BEGIN IMMEDIATE serializes writers). An
+// absent owner row is refused.
+func lockCycleDayReminderOwnerTx(tx *gorm.DB, userID uint) error {
+	owner, err := scopedUserUpdateTx(tx, userID)
+	if err != nil {
+		return err
+	}
+	var locked []models.User
+	if err := owner.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).Select("id").Find(&locked).Error; err != nil {
+		return err
+	}
+	if len(locked) == 0 {
+		return ErrUserOwnerRequired
+	}
+	return nil
+}
+
+// Update rewrites a rule's editable fields in place. last_sent_on is kept when
+// the cycle day is unchanged, so an edit made after today's send does not
+// re-arm the rule within the same cycle; a rule moved to another day is reset,
+// or the send on its old day would silence it for the rest of the cycle.
 func (repo *CycleDayReminderRepository) Update(ctx context.Context, userID uint, ruleID uint, input models.CycleDayReminderInput) error {
 	if err := requireUserOwnerID(userID); err != nil {
 		return err
@@ -83,26 +104,24 @@ func (repo *CycleDayReminderRepository) Update(ctx context.Context, userID uint,
 	if ruleID == 0 {
 		return ErrCycleDayReminderNotFound
 	}
-	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := advanceWebhookConfigVersionTx(tx, userID); err != nil {
-			return err
-		}
-		result := tx.Model(&models.CycleDayReminder{}).
-			Where("id = ? AND user_id = ?", ruleID, userID).
-			Updates(map[string]any{
-				"cycle_day":      input.CycleDay,
-				"remind_at_hour": input.RemindAtHour,
-				"label":          input.Label,
-				"send_label":     input.SendLabel,
-			})
-		if err := classifyUniqueConstraintError(result.Error, cycleDayReminderUniqueConstraint); err != nil {
-			return err
-		}
-		if result.RowsAffected == 0 {
-			return ErrCycleDayReminderNotFound
-		}
-		return nil
-	})
+	// The CASE reads the stored cycle_day: SET expressions see the row as it was
+	// before the update.
+	result := repo.database.WithContext(ctx).Model(&models.CycleDayReminder{}).
+		Where("id = ? AND user_id = ?", ruleID, userID).
+		Updates(map[string]any{
+			"cycle_day":      input.CycleDay,
+			"remind_at_hour": input.RemindAtHour,
+			"label":          input.Label,
+			"send_label":     input.SendLabel,
+			"last_sent_on":   gorm.Expr("CASE WHEN cycle_day = ? THEN last_sent_on ELSE NULL END", input.CycleDay),
+		})
+	if err := classifyUniqueConstraintError(result.Error, cycleDayReminderUniqueConstraint); err != nil {
+		return err
+	}
+	if result.RowsAffected == 0 {
+		return ErrCycleDayReminderNotFound
+	}
+	return nil
 }
 
 // Delete removes one of the owner's rules.
@@ -113,36 +132,33 @@ func (repo *CycleDayReminderRepository) Delete(ctx context.Context, userID uint,
 	if ruleID == 0 {
 		return ErrCycleDayReminderNotFound
 	}
-	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := advanceWebhookConfigVersionTx(tx, userID); err != nil {
-			return err
-		}
-		result := tx.Where("id = ? AND user_id = ?", ruleID, userID).Delete(&models.CycleDayReminder{})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return ErrCycleDayReminderNotFound
-		}
-		return nil
-	})
+	result := repo.database.WithContext(ctx).Where("id = ? AND user_id = ?", ruleID, userID).Delete(&models.CycleDayReminder{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrCycleDayReminderNotFound
+	}
+	return nil
 }
 
 // ClaimSend takes an exclusive claim on one rule's send for day (the owner-local
 // calendar day), by compare-and-set on last_sent_on against previous — the value
-// the caller's snapshot carried. The claim is lost when the rule moved since that
-// snapshot, when the owner's delivery configuration epoch is no longer
-// configVersion (a rule edit, an endpoint change, disabling delivery, clear-data),
-// or when delivery is disabled. A zero-row outcome is returned as false.
-func (repo *CycleDayReminderRepository) ClaimSend(ctx context.Context, userID uint, ruleID uint, day time.Time, previous *time.Time, configVersion int) (bool, error) {
+// the caller's snapshot carried. rule is that snapshot: the claim is lost when
+// the rule was edited (cycle day, hour, label or its opt-in) or removed since,
+// when last_sent_on moved, when the owner's delivery configuration epoch is no
+// longer configVersion (an endpoint change, disabling delivery, clear-data), or
+// when delivery is disabled. A zero-row outcome is returned as false.
+func (repo *CycleDayReminderRepository) ClaimSend(ctx context.Context, userID uint, rule models.CycleDayReminder, day time.Time, previous *time.Time, configVersion int) (bool, error) {
 	if err := requireUserOwnerID(userID); err != nil {
 		return false, err
 	}
-	if ruleID == 0 {
+	if rule.ID == 0 {
 		return false, ErrCycleDayReminderNotFound
 	}
 	claim := repo.database.WithContext(ctx).Model(&models.CycleDayReminder{}).
-		Where("id = ? AND user_id = ?", ruleID, userID).
+		Where("id = ? AND user_id = ?", rule.ID, userID).
+		Where("cycle_day = ? AND remind_at_hour = ? AND label = ? AND send_label = ?", rule.CycleDay, rule.RemindAtHour, rule.Label, rule.SendLabel).
 		Where("EXISTS (SELECT 1 FROM users WHERE users.id = cycle_day_reminders.user_id AND users.webhook_config_version = ? AND users.webhook_enabled = ?)", configVersion, true)
 	if previous == nil || previous.IsZero() {
 		claim = claim.Where("last_sent_on IS NULL")

@@ -59,8 +59,8 @@ type CycleDayHoldNotice struct {
 }
 
 // CycleDayDecision is the result of DecideDueCycleDayReminders. Watermarked
-// counts the rules a watermark already covered (the notify pass reports them
-// as idempotent skips).
+// counts the rules a send from an earlier day of this cycle already covered
+// (the notify pass reports them as idempotent skips).
 type CycleDayDecision struct {
 	Due         []DueCycleDayReminder
 	Hold        *CycleDayHoldNotice
@@ -99,8 +99,12 @@ func DecideDueCycleDayReminders(user *models.User, rules []models.CycleDayRemind
 		if !settled {
 			continue
 		}
-		if sentWithinCycle(rule.LastSentOn, start) {
-			decision.Watermarked++
+		if sentOnOrAfter(rule.LastSentOn, start) {
+			// Every hourly pass re-checks a rule sent today; only a send from an
+			// earlier day is an idempotent skip.
+			if !sentOnOrAfter(rule.LastSentOn, today) {
+				decision.Watermarked++
+			}
 			continue
 		}
 		if held {
@@ -114,14 +118,27 @@ func DecideDueCycleDayReminders(user *models.User, rules []models.CycleDayRemind
 			CycleStart: start,
 		})
 	}
-	if holdOwed {
-		if watermarkCoversAnchor(holdWatermark, start) {
-			decision.Watermarked++
-		} else {
-			decision.Hold = &CycleDayHoldNotice{Day: today, CycleStart: start}
-		}
+	if holdOwed && !watermarkCoversAnchor(holdWatermark, start) {
+		decision.Hold = &CycleDayHoldNotice{Day: today, CycleStart: start}
 	}
 	return decision
+}
+
+// cycleDayRulesThatCouldBeDue keeps the rules whose owner-local hour has been
+// reached and that were not already sent today: the pass's pre-filter before it
+// decrypts the endpoint or loads logs. DecideDueCycleDayReminders still enforces
+// every condition itself.
+func cycleDayRulesThatCouldBeDue(rules []models.CycleDayReminder, now time.Time, location *time.Location) []models.CycleDayReminder {
+	today := DateAtLocation(now, location)
+	hour := now.In(location).Hour()
+	candidates := make([]models.CycleDayReminder, 0, len(rules))
+	for _, rule := range rules {
+		if hour < rule.RemindAtHour || sentOnOrAfter(rule.LastSentOn, today) {
+			continue
+		}
+		candidates = append(candidates, rule)
+	}
+	return candidates
 }
 
 // cycleStartIsSettled reports whether start is a cycle boundary without the
@@ -137,10 +154,11 @@ func cycleStartIsSettled(user *models.User, logs []models.DailyLog, today time.T
 	return false
 }
 
-// sentWithinCycle reports a send dated on or after the running cycle's start.
-func sentWithinCycle(lastSentOn *time.Time, start time.Time) bool {
+// sentOnOrAfter reports a send dated on or after day (the running cycle's
+// start, or today).
+func sentOnOrAfter(lastSentOn *time.Time, day time.Time) bool {
 	if lastSentOn == nil || lastSentOn.IsZero() {
 		return false
 	}
-	return CalendarDaysBetween(start, *lastSentOn) >= 0
+	return CalendarDaysBetween(day, *lastSentOn) >= 0
 }
