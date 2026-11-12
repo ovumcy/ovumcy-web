@@ -270,9 +270,15 @@ func (fence *CalendarFeedRestoreFence) enforce(ctx context.Context, refuseUnanch
 		// read-only for the app user boots clean and then refuses every webhook,
 		// feed, sign-out and credential write (#1321). Writing the same token back
 		// proves the file half at boot, where the refusal names its cause, without
-		// minting a new token.
+		// minting a new token. Under the opt-out the boot proceeds as before:
+		// the unanchored path there disarms every feed and drops the database
+		// half, which turns one transient write failure into the next fenced
+		// boot's full revocation.
 		if err := fence.writeAnchorRetrying(ctx, anchored); err != nil {
-			return fence.disarmUnanchored(ctx, err, refuseUnanchored)
+			if refuseUnanchored {
+				return fence.disarmUnanchored(ctx, err, true)
+			}
+			log.Printf("calendar feed restore fence could not be written at boot: %v", err)
 		}
 		return CalendarFeedRestoreFenceOutcome{}, nil
 	}
