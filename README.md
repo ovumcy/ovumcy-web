@@ -31,6 +31,11 @@
 </p>
 
 <p align="center">
+  <a href="https://install-app.yunohost.org/?app=ovumcy"><img src="https://install-app.yunohost.org/install-with-yunohost.svg" alt="Install with YunoHost" height="20"></a>
+  <a href="https://apps.truenas.com/catalog/ovumcy/"><img src="https://img.shields.io/badge/TrueNAS-community%20app-0095D5?logo=truenas&logoColor=white" alt="TrueNAS community app"></a>
+</p>
+
+<p align="center">
   <a href="#quick-start">Quick Start</a> ·
   <a href="#features">Features</a> ·
   <a href="#demo-and-screenshots">Screenshots</a> ·
