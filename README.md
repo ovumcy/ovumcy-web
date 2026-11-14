@@ -33,6 +33,7 @@
 <p align="center">
   <a href="https://install-app.yunohost.org/?app=ovumcy"><img src="https://install-app.yunohost.org/install-with-yunohost.svg" alt="Install with YunoHost" height="20"></a>
   <a href="https://apps.truenas.com/catalog/ovumcy/"><img src="https://img.shields.io/badge/TrueNAS-community%20app-0095D5?logo=truenas&logoColor=white" alt="TrueNAS community app"></a>
+  <a href="https://github.com/Start9-Community/ovumcy-startos"><img src="https://img.shields.io/badge/StartOS-community%20package-2E3440" alt="StartOS community package"></a>
 </p>
 
 <p align="center">
