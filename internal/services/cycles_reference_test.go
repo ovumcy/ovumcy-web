@@ -18,19 +18,17 @@ import (
 //
 // The per-vector prediction cases (TestCyclePrediction_GoldenVectors) are driven
 // by a golden-vector fixture, testdata/cycle-prediction-golden-vectors.json.
-// The fixture originated with ovumcy-app's
-// src/services/__fixtures__/cycle-prediction-golden-vectors.json (ovumcy-app
-// PR #75), but the two copies are NOT currently byte-identical and nothing in
-// CI enforces that they match: lockstep with the app is not established. The Go
-// (cycles.go) and TypeScript (cycle-prediction-policy.ts) prediction
-// implementations are hand-parallel ports; once the copies are brought back in
-// sync, a shared file would make any divergence fail CI on both sides. If the
-// prediction math changes, update the fixture, docs/cycle-prediction.md, and
-// both reference tests (this file and ovumcy-app's
-// cycle-prediction-reference.test.ts) in the same change.
+// ovumcy-app vendors this fixture byte-identical as
+// src/services/__fixtures__/cycle-prediction-golden-vectors.json, and its
+// cross-repo contract check fails on any byte difference; this copy is
+// authoritative. The Go (cycles.go) and TypeScript (cycle-prediction-policy.ts)
+// prediction implementations are hand-parallel ports. If the prediction math
+// changes, update the fixture, docs/cycle-prediction.md, and both reference
+// tests (this file and ovumcy-app's cycle-prediction-reference.test.ts) in the
+// same change.
 
-// goldenVectorsFile is this repository's golden-vector fixture, originally
-// taken from ovumcy-app (see the package comment above).
+// goldenVectorsFile is this repository's golden-vector fixture, the
+// authoritative copy ovumcy-app vendors (see the package comment above).
 const goldenVectorsFile = "cycle-prediction-golden-vectors.json"
 
 // goldenVectorFixture is the parsed shape of the shared fixture. Field names

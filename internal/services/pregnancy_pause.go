@@ -26,8 +26,8 @@ import (
 // a day and then stop again. Only a marked start or a two-day run lifts the
 // pause. Today still drops an onboarding start dated after it.
 //
-// The ovumcy-app resolvePregnancyPause still reads the raw flag; the two need
-// the same rule for parity.
+// The cycleBoundaries golden vectors pin this rule beside the anchor, shared
+// with ovumcy-app's resolvePregnancyPause.
 func ResolvePregnancyPause(logs []models.DailyLog, ctx BoundaryContext) (time.Time, bool) {
 	var latestPositive time.Time
 	for _, logEntry := range logs {
