@@ -58,23 +58,7 @@ interface EngineBrowserError extends AllowedBrowserError {
 }
 
 /** Errors one engine emits on pages the other engines render cleanly. */
-export const ALLOWED_PER_BROWSER: Readonly<Record<string, readonly EngineBrowserError[]>> = {
-  webkit: [
-    {
-      pattern:
-        /^console\.error: Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy\.$/,
-      reason:
-        'WebKit 27.2 (Playwright 1.64) reports its own user-agent stylesheet for <select> as ' +
-        "refused under style-src 'self': a page holding a <select> logs this line once per " +
-        'load however many it holds, while an <input type=number> or plain markup logs ' +
-        'nothing. The select renders identically with the CSP bypassed, the page carries no ' +
-        'inline style, and the CSP stays as it is. Chromium runs the whole suite and reports ' +
-        'an inline <style> or style attribute of ours in its own wording, which this pattern ' +
-        'does not match.',
-      reproducer: '<select aria-label="probe"><option>probe</option></select>',
-    },
-  ],
-};
+export const ALLOWED_PER_BROWSER: Readonly<Record<string, readonly EngineBrowserError[]>> = {};
 
 /** Collects what the browser reported, and judges it at the end of the test. */
 export class BrowserErrorWatcher {
