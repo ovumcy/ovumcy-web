@@ -326,7 +326,7 @@
   "settings.delete_account.title": "Konto löschen",
   "settings.delete_account.password": "Mit Passwort bestätigen",
   "settings.delete_account.submit": "Konto löschen",
-  "settings.confirm_regenerate_recovery_code": "Ihren Wiederherstellungscode neu generieren? Der bisherige Code funktioniert dann nicht mehr.",
+  "settings.confirm_regenerate_recovery_code": "Ihren Wiederherstellungscode neu generieren? Der bisherige Code funktioniert dann nicht mehr, ebenso wenig der Link eines aktiven Kalender-Feeds.",
   "settings.confirm_clear_data": "Kalender-Feed widerrufen, Webhook entfernen, alle Kalendereinträge und eigenen Symptome löschen, alle Einstellungen zurücksetzen und andere Geräte abmelden? Dies kann nicht rückgängig gemacht werden.",
   "settings.clear_data.confirm_accept": "Ja, alles löschen",
   "settings.clear_data.stepup_hint": "Dieses Konto meldet sich über Ihren Identitätsanbieter an. Das Löschen der Gesundheitsdaten wird deshalb dort bestätigt, nicht mit einem Passwort. Sie müssen sich erneut anmelden, bevor etwas gelöscht wird.",
