@@ -112,7 +112,9 @@ func TestFiberCIPUnderForwardedForCanReturnAClientEntry(t *testing.T) {
 		want      string
 	}{
 		{"client then trusted proxy", "198.51.100.1, 203.0.113.7", "198.51.100.1"},
-		{"a port-suffixed hop is stepped over", "198.51.100.1, 192.0.2.55:5678", "198.51.100.1"},
+		// Fiber 3.6 stepped over this hop and returned the client entry; 3.7
+		// ends the walk at the socket peer.
+		{"a port-suffixed hop ends the walk at the peer", "198.51.100.1, 192.0.2.55:5678", "0.0.0.0"},
 		{"every hop trusted yields the leftmost", "10.1.1.1, 203.0.113.7, 10.2.2.2", "10.1.1.1"},
 	}
 	for _, tc := range cases {
