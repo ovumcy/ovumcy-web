@@ -31,10 +31,10 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 | `github.com/glebarez/sqlite` | MIT | [license text](https://github.com/glebarez/sqlite/blob/v1.11.0/License) |
 | `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | [license text](https://github.com/go-jose/go-jose/blob/v4.1.6/json/LICENSE) |
 | `github.com/go-jose/go-jose/v4` | Apache-2.0 | [license text](https://github.com/go-jose/go-jose/blob/v4.1.6/LICENSE) |
-| `github.com/gofiber/fiber/v3` | MIT | [license text](https://github.com/gofiber/fiber/blob/v3.6.1/LICENSE) |
-| `github.com/gofiber/schema` | BSD-3-Clause | [license text](https://github.com/gofiber/schema/blob/v1.8.8/LICENSE) |
-| `github.com/gofiber/utils/v2/simd` | MIT | [license text](https://github.com/gofiber/utils/blob/v2.6.2/simd/LICENSE) |
-| `github.com/gofiber/utils/v2` | MIT | [license text](https://github.com/gofiber/utils/blob/v2.6.2/LICENSE) |
+| `github.com/gofiber/fiber/v3` | MIT | [license text](https://github.com/gofiber/fiber/blob/v3.7.0/LICENSE) |
+| `github.com/gofiber/schema` | BSD-3-Clause | [license text](https://github.com/gofiber/schema/blob/v1.9.3/LICENSE) |
+| `github.com/gofiber/utils/v2/simd` | MIT | [license text](https://github.com/gofiber/utils/blob/v2.6.4/simd/LICENSE) |
+| `github.com/gofiber/utils/v2` | MIT | [license text](https://github.com/gofiber/utils/blob/v2.6.4/LICENSE) |
 | `github.com/golang-jwt/jwt/v5` | MIT | [license text](https://github.com/golang-jwt/jwt/blob/v5.3.1/LICENSE) |
 | `github.com/google/uuid` | BSD-3-Clause | [license text](https://github.com/google/uuid/blob/v1.6.0/LICENSE) |
 | `github.com/jackc/pgpassfile` | MIT | [license text](https://github.com/jackc/pgpassfile/blob/v1.0.0/LICENSE) |
@@ -49,7 +49,7 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 | `github.com/mattn/go-colorable` | MIT | [license text](https://github.com/mattn/go-colorable/blob/v0.1.16/LICENSE) |
 | `github.com/mattn/go-isatty` | MIT | [license text](https://github.com/mattn/go-isatty/blob/v0.0.24/LICENSE) |
 | `github.com/molecule-man/go-brrr` | MIT | [license text](https://github.com/molecule-man/go-brrr/blob/v1.3.1/LICENSE) |
-| `github.com/philhofer/fwd` | MIT | [license text](https://github.com/philhofer/fwd/blob/v1.2.0/LICENSE.md) |
+| `github.com/philhofer/fwd` | MIT | [license text](https://github.com/philhofer/fwd/blob/v1.2.1/LICENSE.md) |
 | `github.com/pquerna/otp` | Apache-2.0 | [license text](https://github.com/pquerna/otp/blob/v1.5.0/LICENSE) |
 | `github.com/remyoudompheng/bigfft` | BSD-3-Clause | [license text](https://github.com/remyoudompheng/bigfft/blob/24d4a6f8daec/LICENSE) |
 | `github.com/tinylib/msgp/msgp` | MIT | [license text](https://github.com/tinylib/msgp/blob/v1.6.5/LICENSE) |
@@ -57,7 +57,7 @@ file, so a row can name a subpackage (`golang.org/x/net/idna`) or appear beside 
 | `github.com/valyala/fasthttp/reuseport` | MIT | [license text](https://github.com/valyala/fasthttp/blob/v1.78.0/reuseport/LICENSE) |
 | `github.com/valyala/fasthttp` | MIT | [license text](https://github.com/valyala/fasthttp/blob/v1.78.0/LICENSE) |
 | `golang.org/x/crypto` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/crypto/+/v0.59.0:LICENSE) |
-| `golang.org/x/net/idna` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/net/+/v0.62.0:LICENSE) |
+| `golang.org/x/net` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/net/+/v0.62.0:LICENSE) |
 | `golang.org/x/oauth2` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/oauth2/+/v0.38.0:LICENSE) |
 | `golang.org/x/sync/semaphore` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/sync/+/v0.25.0:LICENSE) |
 | `golang.org/x/sys` | BSD-3-Clause | [license text](https://cs.opensource.google/go/x/sys/+/v0.50.0:LICENSE) |

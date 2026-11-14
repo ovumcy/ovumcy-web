@@ -139,10 +139,11 @@ func headerSectionValues(header *fasthttp.RequestHeader, name []byte) []string {
 // rateLimitKeyGenerator builds the per-request key for fiber's rate limiters.
 //
 // Fiber's default key is c.IP(). With ProxyHeader=X-Forwarded-For and a trusted
-// peer, c.IP() walks the chain from the right but steps over a hop it cannot
-// validate (an ip:port hop, for one) and, when every valid hop is trusted,
-// returns the leftmost — either way it can return an entry the original client
-// wrote, so an attacker behind an appending proxy can rotate that entry to mint
+// peer, c.IP() walks the chain from the right and, when every hop is trusted,
+// returns the leftmost — an entry the original client wrote (since fiber 3.7 a
+// hop it cannot validate, an ip:port hop for one, ends the walk at the socket
+// peer instead of being stepped over), so an attacker behind an appending proxy
+// can rotate that entry to mint
 // a fresh rate-limit bucket per request and defeat the limit entirely. This is
 // the one code-side explanation of that fiber behaviour (docs: SECURITY_INVARIANTS.md);
 // TestFiberCIPUnderForwardedForCanReturnAClientEntry pins it on fiberConfig.
@@ -187,7 +188,7 @@ func rateLimitKeyGenerator(proxy proxySettings) func(fiber.Ctx) string {
 // client IP (for example X-Real-IP).
 func proxyHeaderRateLimitWarning(proxy proxySettings) string {
 	if proxy.Enabled && strings.EqualFold(strings.TrimSpace(proxy.Header), fiber.HeaderXForwardedFor) {
-		return "NOTE: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the rate limiters and the per-client auth-attempt buckets key on the rightmost untrusted X-Forwarded-For hop and are not spoofable, but fiber's c.IP() can still return a client-supplied entry: it steps over a hop it cannot validate, and returns the leftmost when every valid hop is trusted. Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP) for spoof-proof c.IP() values."
+		return "NOTE: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the rate limiters and the per-client auth-attempt buckets key on the rightmost untrusted X-Forwarded-For hop and are not spoofable, but fiber's c.IP() can still return a client-supplied entry: it returns the leftmost hop when every hop is trusted. Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP) for spoof-proof c.IP() values."
 	}
 	return ""
 }
