@@ -326,7 +326,7 @@
   "settings.delete_account.title": "Delete account",
   "settings.delete_account.password": "Confirm with password",
   "settings.delete_account.submit": "Delete account",
-  "settings.confirm_regenerate_recovery_code": "Regenerate your recovery code? The previous code will no longer work.",
+  "settings.confirm_regenerate_recovery_code": "Regenerate your recovery code? The previous code will no longer work, and neither will the link of an active calendar feed.",
   "settings.confirm_clear_data": "Revoke your calendar feed, remove your webhook, delete all calendar records and custom symptoms, reset every setting and sign out other devices? This cannot be undone.",
   "settings.clear_data.confirm_accept": "Yes, delete everything",
   "settings.clear_data.stepup_hint": "This account signs in through your identity provider, so clearing health data is confirmed there instead of with a password. You will be asked to sign in again before anything is erased.",

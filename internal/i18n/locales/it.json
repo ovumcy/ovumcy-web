@@ -326,7 +326,7 @@
   "settings.delete_account.title": "Elimina account",
   "settings.delete_account.password": "Conferma con password",
   "settings.delete_account.submit": "Elimina account",
-  "settings.confirm_regenerate_recovery_code": "Rigenerare il codice di recupero? Il codice precedente non funzionerà più.",
+  "settings.confirm_regenerate_recovery_code": "Rigenerare il codice di recupero? Il codice precedente non funzionerà più, e nemmeno il link di un feed del calendario attivo.",
   "settings.confirm_clear_data": "Revocare il feed del calendario, rimuovere il webhook, eliminare tutti i record del calendario e i sintomi personalizzati, reimpostare tutte le impostazioni e disconnettere gli altri dispositivi? Questa operazione non può essere annullata.",
   "settings.clear_data.confirm_accept": "Sì, elimina tutto",
   "settings.clear_data.stepup_hint": "Questo account accede tramite il tuo provider di identità, quindi la cancellazione dei dati sulla salute si conferma lì e non con una password. Ti verrà chiesto di accedere di nuovo prima di cancellare qualsiasi cosa.",
