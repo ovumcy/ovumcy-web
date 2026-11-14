@@ -193,8 +193,17 @@ export async function loadDOMWithScript(scriptSource, { html, url, beforeRun } =
     true
   );
 
-  // Eval the script in the jsdom realm so it sees jsdom's document/window.
-  dom.window.eval(scriptSource);
+  // jsdom 31 returns the document already "interactive", so onDocumentReady
+  // would run initialisers inline and register no DOMContentLoaded listener
+  // for a test's re-dispatch (a modelled reload) to reach. The bundle is
+  // evaluated as a parser-inserted script runs: while the document is loading.
+  Object.defineProperty(dom.window.document, "readyState", { configurable: true, get: () => "loading" });
+  try {
+    // Eval the script in the jsdom realm so it sees jsdom's document/window.
+    dom.window.eval(scriptSource);
+  } finally {
+    delete dom.window.document.readyState;
+  }
 
   // Fire DOMContentLoaded synchronously — many bundle pieces gate their
   // initialisation on it.
