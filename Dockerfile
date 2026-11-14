@@ -30,7 +30,7 @@ ARG BUILD_REVISION=""
 ENV CGO_ENABLED=0 GOOS=linux
 RUN go build -trimpath -ldflags="-s -w -X main.buildVersion=${BUILD_REVISION}" -o /out/ovumcy ./cmd/ovumcy
 
-FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS runtime-assets
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runtime-assets
 WORKDIR /app
 
 # The two packages are pinned to the revision the v3.24 main repository carried
