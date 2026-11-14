@@ -145,7 +145,7 @@ func TestSettingsAnchorTargetsClearTheStickyChrome(t *testing.T) {
 
 // settingsRedirectFragments collects the #settings-* fragments the transport's
 // non-test sources append to a /settings destination. A literal passed as an
-// htmx header value (HX-Retarget) is a CSS selector for a swap, not a scroll
+// HX-Retarget or HX-Reselect value is a CSS selector for a swap, not a scroll
 // target, and is skipped.
 func settingsRedirectFragments(t *testing.T) []string {
 	t.Helper()
@@ -167,7 +167,8 @@ func settingsRedirectFragments(t *testing.T) []string {
 		headerValues := map[*ast.BasicLit]bool{}
 		ast.Inspect(file, func(node ast.Node) bool {
 			if call, ok := node.(*ast.CallExpr); ok && len(call.Args) == 2 {
-				if header, ok := call.Args[0].(*ast.BasicLit); ok && strings.HasPrefix(header.Value, `"HX-`) {
+				// HX-Redirect and HX-Location navigate and scroll, so they stay in.
+				if header, ok := call.Args[0].(*ast.BasicLit); ok && (header.Value == `"HX-Retarget"` || header.Value == `"HX-Reselect"`) {
 					if value, ok := call.Args[1].(*ast.BasicLit); ok {
 						headerValues[value] = true
 					}
