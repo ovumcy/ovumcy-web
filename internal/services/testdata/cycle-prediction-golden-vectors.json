@@ -173,5 +173,191 @@
         "expected": { "withheld": true, "windowStart": null, "windowEnd": null }
       }
     ]
+  },
+  "cycleBoundaries": {
+    "$comment": "Cycle-boundary rule (web CycleBoundaries; app collectCycleStartDates) and its two readers that must agree: the running-cycle anchor (latest boundary on or before `today`, with the running-period rule that lets a lone non-spotting day dated today or yesterday open a cycle) and the pregnancy pause (the same clusters without that today rule; a boundary on the positive test's own day does not lift it). Spotting never opens a cycle, even when marked; an uncertain mark counts as no mark; a cluster without an explicit non-spotting mark or two consecutive non-spotting days opens none. `storedStart` is a row-less stored onboarding start: it joins the grouping as an explicit non-spotting day. A day omits `period`/`cycleStart`/`uncertain`/`spottingSymptom` when false, `flow` when none, `pregnancyTest` when not positive. Invariant pinned by every case: when `pausedSince` is null after a positive test, `anchor` is strictly after that test. V1-V6 straddle a positive test with a flagged first day; S1-S7 cover the today rule, unqualified clusters, the tie, and the stored start. Consumers: internal/services/cycle_boundaries_reference_test.go (ovumcy-web) and src/services/cycle-boundaries-reference.test.ts (ovumcy-app).",
+    "schemaVersion": 1,
+    "cases": [
+      {
+        "name": "V1 spotting on the positive-test day, run from the next day: boundary after the test, pause lifts on it",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "period": true, "flow": "spotting", "pregnancyTest": "positive" },
+          { "date": "2026-06-11", "period": true, "flow": "medium" },
+          { "date": "2026-06-12", "period": true, "flow": "medium" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-11"], "anchor": "2026-06-11", "pausedSince": null }
+      },
+      {
+        "name": "V2 spotting (symptom-only and flow) before the test, run after it: spotting days are not the start",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-08", "period": true, "spottingSymptom": true },
+          { "date": "2026-06-09", "period": true, "flow": "spotting" },
+          { "date": "2026-06-10", "pregnancyTest": "positive" },
+          { "date": "2026-06-11", "period": true, "flow": "medium" },
+          { "date": "2026-06-12", "period": true, "flow": "medium" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-11"], "anchor": "2026-06-11", "pausedSince": null }
+      },
+      {
+        "name": "V3 lone unmarked day before the test, run after it: the lone day does not open the cluster",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-09", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "pregnancyTest": "positive" },
+          { "date": "2026-06-11", "period": true, "flow": "light", "spottingSymptom": true },
+          { "date": "2026-06-12", "period": true, "flow": "medium" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-11"], "anchor": "2026-06-11", "pausedSince": null }
+      },
+      {
+        "name": "V4 uncertain mark before the test, run after it: the mark counts as no mark, the run opens the cycle",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-09", "period": true, "flow": "medium", "cycleStart": true, "uncertain": true },
+          { "date": "2026-06-10", "pregnancyTest": "positive" },
+          { "date": "2026-06-11", "period": true, "flow": "medium" },
+          { "date": "2026-06-12", "period": true, "flow": "medium" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-11"], "anchor": "2026-06-11", "pausedSince": null }
+      },
+      {
+        "name": "V5 marked spotting on the test day, run after it: a marked spotting day never opens a cycle",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "period": true, "flow": "spotting", "cycleStart": true, "pregnancyTest": "positive" },
+          { "date": "2026-06-11", "period": true, "flow": "medium" },
+          { "date": "2026-06-12", "period": true, "flow": "medium" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-11"], "anchor": "2026-06-11", "pausedSince": null }
+      },
+      {
+        "name": "V6 unflagged run straddling the test: boundary before it, the pause holds",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-09", "period": true, "flow": "medium" },
+          { "date": "2026-06-10", "period": true, "flow": "medium", "pregnancyTest": "positive" },
+          { "date": "2026-06-11", "period": true, "flow": "light" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-09"], "anchor": "2026-06-09", "pausedSince": "2026-06-10" }
+      },
+      {
+        "name": "S1 lone day dated today after the test: opens the running cycle, never lifts the pause",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "pregnancyTest": "positive" },
+          { "date": "2026-06-20", "period": true, "flow": "medium" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-20"], "anchor": "2026-06-20", "pausedSince": "2026-06-10" }
+      },
+      {
+        "name": "S2 lone day older than yesterday after the test: opens nothing",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "pregnancyTest": "positive" },
+          { "date": "2026-06-15", "period": true, "flow": "medium" }
+        ],
+        "expected": { "boundaries": ["2026-05-01"], "anchor": "2026-05-01", "pausedSince": "2026-06-10" }
+      },
+      {
+        "name": "S3 lone spotting day dated yesterday: the running-period rule skips spotting",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "pregnancyTest": "positive" },
+          { "date": "2026-06-19", "period": true, "flow": "spotting" }
+        ],
+        "expected": { "boundaries": ["2026-05-01"], "anchor": "2026-05-01", "pausedSince": "2026-06-10" }
+      },
+      {
+        "name": "S4 two consecutive spotting days after the test: opens nothing",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "pregnancyTest": "positive" },
+          { "date": "2026-06-13", "period": true, "flow": "spotting" },
+          { "date": "2026-06-14", "period": true, "flow": "spotting" }
+        ],
+        "expected": { "boundaries": ["2026-05-01"], "anchor": "2026-05-01", "pausedSince": "2026-06-10" }
+      },
+      {
+        "name": "S5 marked start on the positive-test day: the positive result wins the tie",
+        "today": "2026-06-20",
+        "storedStart": null,
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "period": true, "flow": "medium", "cycleStart": true, "pregnancyTest": "positive" },
+          { "date": "2026-06-11", "period": true, "flow": "medium" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-10"], "anchor": "2026-06-10", "pausedSince": "2026-06-10" }
+      },
+      {
+        "name": "S6 row-less stored start after the test: a boundary of its own, the pause lifts on it",
+        "today": "2026-06-20",
+        "storedStart": "2026-06-13",
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "pregnancyTest": "positive" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-13"], "anchor": "2026-06-13", "pausedSince": null }
+      },
+      {
+        "name": "S7 row-less stored start before the test adjoining a run after it: one cluster opened by the stored start, the pause holds",
+        "today": "2026-06-20",
+        "storedStart": "2026-06-09",
+        "days": [
+          { "date": "2026-05-01", "period": true, "flow": "medium" },
+          { "date": "2026-05-02", "period": true, "flow": "medium" },
+          { "date": "2026-05-03", "period": true, "flow": "light" },
+          { "date": "2026-06-10", "pregnancyTest": "positive" },
+          { "date": "2026-06-11", "period": true, "flow": "medium" },
+          { "date": "2026-06-12", "period": true, "flow": "medium" }
+        ],
+        "expected": { "boundaries": ["2026-05-01", "2026-06-09"], "anchor": "2026-06-09", "pausedSince": "2026-06-10" }
+      }
+    ]
   }
 }

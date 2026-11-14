@@ -581,23 +581,34 @@ and related tests in `internal/services/cycles_reference_test.go`. Property-base
 tests (`cycles_property_test.go`) additionally assert the invariants for
 thousands of generated inputs.
 
-### Golden-vector fixture (shared with ovumcy-app in origin, not yet in lockstep)
+### Golden-vector fixture (shared with ovumcy-app, this copy authoritative)
 
 The worked examples above are pinned to the code by a **golden-vector
 fixture**, [`internal/services/testdata/cycle-prediction-golden-vectors.json`](../internal/services/testdata/cycle-prediction-golden-vectors.json),
-consumed by `TestCyclePrediction_GoldenVectors`. The fixture originated with
-ovumcy-app's `src/services/__fixtures__/cycle-prediction-golden-vectors.json`
-(ovumcy-app PR #75), where it is consumed by
-`src/services/cycle-prediction-reference.test.ts`. The two copies are **not**
-currently byte-identical and nothing enforces that they match, so lockstep with
-the app is not established.
+consumed by `TestCyclePrediction_GoldenVectors`. ovumcy-app vendors it
+byte-identical as `src/services/__fixtures__/cycle-prediction-golden-vectors.json`,
+consumed by its reference tests; the app's cross-repo contract check fails on
+any byte difference, and this copy is the authoritative one.
 
 The Go source of truth here (`internal/services/cycles.go`) and ovumcy-app's
 TypeScript port (`src/services/cycle-prediction-policy.ts`) are hand-parallel
-implementations; only once the two fixture copies are brought back in sync
-would a divergence between them fail CI on both sides. If you change the
-prediction math, update the fixture, both docs (this file and ovumcy-app's
-`docs/cycle-prediction.md`), and both reference tests in the same change.
+implementations. If you change the prediction math, update the fixture here
+first, both docs (this file and ovumcy-app's `docs/cycle-prediction.md`), and
+both reference tests, then re-vendor the fixture into the app.
+
+#### Cycle-boundary section
+
+The `cycleBoundaries` key pins `CycleBoundaries` and its two readers that must
+agree on the same history: the running-cycle anchor
+(`LatestCycleStartAnchorBeforeOrOn`) and the pregnancy pause
+(`ResolvePregnancyPause`), consumed by `TestCycleBoundaries_GoldenVectors`. Each
+case lists logged days, today and an optional row-less stored start, and expects
+the boundaries, the anchor and the pause date. The cases straddle a positive
+test with a spotting, lone, uncertain or marked-spotting first day (V1–V6) and
+cover the running-period today rule, unqualified clusters, the same-day tie and
+the stored start (S1–S7). Every case also asserts that a lifted pause leaves the
+anchor strictly after the positive test: a pause lifted on a boundary the anchor
+does not read would resume predictions anchored before the pregnancy.
 
 #### Projection / anchor section
 
