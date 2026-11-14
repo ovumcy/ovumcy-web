@@ -1,9 +1,14 @@
 package api
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
+	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -74,14 +79,25 @@ func TestSettingsAnchorTargetsClearTheStickyChrome(t *testing.T) {
 	}
 	targets = append(targets, deepLinks...)
 
+	// A no-script redirect back to /settings lands on its fragment the same way.
+	redirects := settingsRedirectFragments(t)
+	// Anti-vacuity, by declaration: the Interface card's redirect is the site
+	// the status-anchor targets were added for.
+	if !slices.Contains(redirects, strings.TrimPrefix(interfaceCardFragment, "#")) {
+		t.Fatalf("the handler scan did not find interfaceCardFragment (found %v); the scan itself is broken", redirects)
+	}
+	targets = append(targets, redirects...)
+
 	for _, id := range targets {
 		target := htmlElementByID(document, id)
 		if target == nil {
 			t.Errorf("a settings link points at #%s, which the settings page does not render", id)
 			continue
 		}
-		if !htmlHasClass(target, "settings-section") {
-			t.Errorf("#%s is an anchor target without the settings-section class, so a jump to it lands its title under the sticky header and section index", id)
+		// A status island is a valid target too: settings-status-anchor gives it
+		// the same chrome clearance as a whole card.
+		if !htmlHasClass(target, "settings-section") && !htmlHasClass(target, "settings-status-anchor") {
+			t.Errorf("#%s is an anchor target with neither settings-section nor settings-status-anchor, so a jump to it lands under the sticky header and section index", id)
 		}
 	}
 
@@ -98,6 +114,14 @@ func TestSettingsAnchorTargetsClearTheStickyChrome(t *testing.T) {
 		{
 			".settings-section{scroll-margin-top:calc(var(--sticky-header-clearance) + var(--settings-section-nav-height) + .75rem)}",
 			"a wide jump must clear the header and the sticky section index",
+		},
+		{
+			".settings-status-anchor{scroll-margin-top:calc(var(--sticky-header-clearance) + .75rem)}",
+			"a phone-width jump to a status island must clear the sticky header",
+		},
+		{
+			".settings-status-anchor{scroll-margin-top:calc(var(--sticky-header-clearance) + var(--settings-section-nav-height) + .75rem)}",
+			"a wide jump to a status island must clear the header and the sticky section index",
 		},
 		{
 			"top:var(--sticky-header-clearance)",
@@ -117,4 +141,55 @@ func TestSettingsAnchorTargetsClearTheStickyChrome(t *testing.T) {
 			t.Errorf("the settings stack rule declares no %s default: %s", strings.TrimSuffix(variable, ":"), stackRule)
 		}
 	}
+}
+
+// settingsRedirectFragments collects the #settings-* fragments the transport's
+// non-test sources append to a /settings destination. A literal passed as an
+// htmx header value (HX-Retarget) is a CSS selector for a swap, not a scroll
+// target, and is skipped.
+func settingsRedirectFragments(t *testing.T) []string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("list the api sources: %v", err)
+	}
+	fset := token.NewFileSet()
+	var found []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, parseErr := parser.ParseFile(fset, name, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", name, parseErr)
+		}
+		headerValues := map[*ast.BasicLit]bool{}
+		ast.Inspect(file, func(node ast.Node) bool {
+			if call, ok := node.(*ast.CallExpr); ok && len(call.Args) == 2 {
+				if header, ok := call.Args[0].(*ast.BasicLit); ok && strings.HasPrefix(header.Value, `"HX-`) {
+					if value, ok := call.Args[1].(*ast.BasicLit); ok {
+						headerValues[value] = true
+					}
+				}
+			}
+			return true
+		})
+		ast.Inspect(file, func(node ast.Node) bool {
+			lit, ok := node.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING || headerValues[lit] {
+				return true
+			}
+			value, unquoteErr := strconv.Unquote(lit.Value)
+			if unquoteErr != nil {
+				return true
+			}
+			prefix, fragment, hasFragment := strings.Cut(value, "#")
+			if hasFragment && (prefix == "" || prefix == "/settings") && strings.HasPrefix(fragment, "settings-") {
+				found = append(found, fragment)
+			}
+			return true
+		})
+	}
+	return found
 }
