@@ -26,8 +26,8 @@ import (
 // a day and then stop again. Only a marked start or a two-day run lifts the
 // pause. Today still drops an onboarding start dated after it.
 //
-// The ovumcy-app resolvePregnancyPause still reads the raw flag; the two need
-// the same rule for parity.
+// The ovumcy-app resolvePregnancyPause implements the same rule; a change here
+// needs the same change there for parity.
 func ResolvePregnancyPause(logs []models.DailyLog, ctx BoundaryContext) (time.Time, bool) {
 	var latestPositive time.Time
 	for _, logEntry := range logs {
