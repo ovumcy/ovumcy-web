@@ -140,11 +140,11 @@ func headerSectionValues(header *fasthttp.RequestHeader, name []byte) []string {
 //
 // Fiber's default key is c.IP(). With ProxyHeader=X-Forwarded-For and a trusted
 // peer, c.IP() walks the chain from the right and, when every hop is trusted,
-// returns the leftmost — an entry the original client wrote (since fiber 3.7 a
-// hop it cannot validate, an ip:port hop for one, ends the walk at the socket
-// peer instead of being stepped over), so an attacker behind an appending proxy
-// can rotate that entry to mint
-// a fresh rate-limit bucket per request and defeat the limit entirely. This is
+// returns the leftmost — an entry the original client wrote, so a client whose
+// own address falls inside TRUSTED_PROXIES can rotate it to mint a fresh
+// rate-limit bucket per request. (Fiber 3.6 also stepped over a hop it could not
+// validate, an ip:port hop for one, which handed any client that rotation; since
+// 3.7 such a hop ends the walk at the socket peer.) This is
 // the one code-side explanation of that fiber behaviour (docs: SECURITY_INVARIANTS.md);
 // TestFiberCIPUnderForwardedForCanReturnAClientEntry pins it on fiberConfig.
 // These edge limiters key on IP alone (unlike the per-identity auth limiters in
