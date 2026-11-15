@@ -449,8 +449,8 @@ func declaredMembers(t *testing.T, evidence *sourceEvidence, family keyFamily, n
 //
 // Test files are excluded on purpose: this measures what the APPLICATION can
 // reach, and a key only a test names is exactly the finding. Dot-directories go
-// with them, which is also what keeps agent worktrees under .claude out of a
-// sweep that would otherwise read several copies of the repository.
+// with them, which is also what keeps worktrees checked out under a dot-directory
+// out of a sweep that would otherwise read several copies of the repository.
 func collectFromGoTree(root string, evidence *sourceEvidence) error {
 	skipped := map[string]bool{"node_modules": true, "testdata": true, "e2e": true, "web": true}
 	fileSet := token.NewFileSet()

@@ -73,8 +73,7 @@ func definedTestFuncs(t *testing.T, root string) []string {
 			return err
 		}
 		if entry.IsDir() {
-			switch entry.Name() {
-			case ".git", "node_modules", ".tmp", ".claude":
+			if path != root && (entry.Name() == "node_modules" || strings.HasPrefix(entry.Name(), ".")) {
 				return filepath.SkipDir
 			}
 			return nil
