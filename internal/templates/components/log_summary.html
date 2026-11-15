@@ -1,20 +1,3 @@
-{{define "readonly_log_summary"}}
-<div class="card-quiet space-y-3 text-sm">
-  <p><span class="journal-muted">{{t .Messages "dashboard.period_day"}}{{t .Messages "common.colon"}}</span> {{if .Log.IsPeriod}}{{t .Messages "common.yes"}}{{else}}{{t .Messages "common.no"}}{{end}}</p>
-  {{if .Log.IsPeriod}}
-  <p><span class="journal-muted">{{t .Messages "dashboard.flow"}}{{t .Messages "common.colon"}}</span> {{if eq .Log.Flow "none"}}{{t .Messages "dashboard.flow.unspecified"}}{{else}}{{flowLabel .Messages .Log.Flow}}{{end}}</p>
-  {{end}}
-  <p><span class="journal-muted">{{t .Messages "dashboard.mood"}}{{t .Messages "common.colon"}}</span> {{if gt .Log.Mood 0}}<span aria-hidden="true">{{moodEmoji .Log.Mood}}</span> <span data-mood-name-key="{{moodLabelKey .Log.Mood}}">{{moodLabel .Messages .Log.Mood}}</span>{{else}}{{.NoDataLabel}}{{end}}</p>
-  <div>
-    <p class="journal-muted">{{t .Messages "dashboard.symptoms"}}</p>
-    <p class="mt-1">{{if gt (len .Log.SymptomIDs) 0}}{{t .Messages "dashboard.owner_only_details"}}{{else}}{{.NoDataLabel}}{{end}}</p>
-  </div>
-  <div {{if eq .Log.Notes ""}}hidden{{end}}>
-    <p class="journal-muted">{{t .Messages "dashboard.notes"}}</p>
-    <p class="mt-1 whitespace-pre-wrap wrap-anywhere">{{.Log.Notes}}</p>
-  </div>
-</div>
-{{end}}
 {{define "owner_log_summary"}}
 <div class="card-quiet space-y-4 text-sm">
   <div class="grid gap-3 sm:grid-cols-2">
