@@ -41,13 +41,14 @@ func NewHandler(secret string, location *time.Location, i18nManager *i18n.Manage
 	}
 
 	handler := &Handler{
-		secretKey:    []byte(secret),
-		location:     location,
-		cookieSecure: cookieSecure,
-		i18n:         i18nManager,
-		templates:    templates,
-		partials:     partials,
-		components:   components,
+		secretKey:     []byte(secret),
+		location:      location,
+		cookieSecure:  cookieSecure,
+		i18n:          i18nManager,
+		templates:     templates,
+		partials:      partials,
+		components:    components,
+		rememberMeTTL: rememberAuthTokenTTL,
 	}
 	return handler.withDependencies(dependencies), nil
 }

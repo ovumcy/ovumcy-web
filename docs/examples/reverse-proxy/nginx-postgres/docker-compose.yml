@@ -73,6 +73,7 @@ services:
       WEBHOOK_BLOCK_PRIVATE_ADDRESSES: ${WEBHOOK_BLOCK_PRIVATE_ADDRESSES:-}
       REMINDER_SCHEDULER_ENABLED: ${REMINDER_SCHEDULER_ENABLED:-}
       REMINDER_SCHEDULER_HOUR: ${REMINDER_SCHEDULER_HOUR:-}
+      REMEMBER_ME_TTL_DAYS: ${REMEMBER_ME_TTL_DAYS:-}
       TRUST_PROXY_ENABLED: "true"
       # Read the real client IP from X-Real-IP, which nginx sets to $remote_addr
       # (unspoofable). The edge rate limiters are spoof-resistant on

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -30,6 +31,9 @@ type runtimeConfig struct {
 	RateLimits       rateLimitSettings
 	Proxy            proxySettings
 	AuditLogEnabled  bool
+	// RememberMeTTLDays is REMEMBER_ME_TTL_DAYS: how long a remember-me sign-in
+	// lasts. Out-of-range input falls back to the default (logged at boot).
+	RememberMeTTLDays int
 	// CalendarFeedFencePath is CALENDAR_FEED_FENCE_PATH: the file the boot-time
 	// restore fence keeps its non-rollbackable half in. It has to live OUTSIDE
 	// whatever a database backup captures — that is the whole mechanism — so it
@@ -378,6 +382,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		},
 		Proxy:               proxy,
 		AuditLogEnabled:     auditLogEnabled,
+		RememberMeTTLDays:   getEnvIntInRange("REMEMBER_ME_TTL_DAYS", api.RememberMeTTLDaysDefault, api.RememberMeTTLDaysMin, api.RememberMeTTLDaysMax),
 		WebhookBlockPrivate: webhookBlockPrivate,
 		ReminderScheduler: reminderSchedulerSettings{
 			Enabled: getEnvBool("REMINDER_SCHEDULER_ENABLED", false),
