@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -32,6 +33,9 @@ func logStartup(config runtimeConfig) {
 	}
 	if config.ReminderScheduler.Enabled {
 		log.Printf("NOTE: REMINDER_SCHEDULER_ENABLED=true — the built-in daily reminder scheduler is ON and will make outbound webhook calls once per day at local hour %02d:00 (%s) from this process. This is an always-on component; disable it instantly with REMINDER_SCHEDULER_ENABLED=false (delivery also still requires each owner's webhook to be configured and enabled).", config.ReminderScheduler.Hour, config.Location.String())
+	}
+	if config.RememberMeTTLDays != api.RememberMeTTLDaysDefault {
+		log.Printf("NOTE: REMEMBER_ME_TTL_DAYS=%d — a sign-in with \"Remember me\" ticked lasts %d days instead of %d. A session cookie taken from a device stays usable that long; a password change, a 2FA change or regenerating recovery codes still signs out every other device at once.", config.RememberMeTTLDays, config.RememberMeTTLDays, api.RememberMeTTLDaysDefault)
 	}
 	if config.Proxy.Enabled {
 		log.Printf("trusted proxy config: header=%s trusted_proxy_count=%d", config.Proxy.Header, len(config.Proxy.TrustedProxies))

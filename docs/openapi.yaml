@@ -737,7 +737,9 @@ components:
             Chooses the lifetime of the `ovumcy_auth` cookie this sign-in
             issues. When true, the cookie is persistent: its `Expires` is set
             30 days after the cookie is issued, and the session token sealed
-            inside it expires at the same time. When false or absent, the
+            inside it expires at the same time. The 30 days are the default:
+            the instance's operator can set this lifetime from 8 to 365 days
+            with `REMEMBER_ME_TTL_DAYS`. When false or absent, the
             cookie carries neither `Expires` nor `Max-Age`, so it lasts for the
             browser session; the session token inside still expires 7 days
             after the cookie is issued, so a browser session that runs longer

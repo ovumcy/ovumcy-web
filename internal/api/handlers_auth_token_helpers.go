@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -30,7 +31,7 @@ type preparedSession struct {
 func (handler *Handler) prepareAuthCookie(user *models.User, rememberMe bool) (preparedSession, error) {
 	tokenTTL := defaultAuthTokenTTL
 	if rememberMe {
-		tokenTTL = rememberAuthTokenTTL
+		tokenTTL = handler.rememberMeLifetime()
 	}
 
 	token, sessionID, err := handler.buildTokenWithSessionID(user, tokenTTL)
@@ -48,6 +49,28 @@ func (handler *Handler) prepareAuthCookie(user *models.User, rememberMe bool) (p
 		return preparedSession{}, err
 	}
 	return preparedSession{cookie: cookie, sessionID: sessionID}, nil
+}
+
+// SetRememberMeTTLDays sets the lifetime of a remember-me sign-in for sessions
+// issued from now on; a session already issued keeps the expiry sealed into it.
+// A value outside [RememberMeTTLDaysMin, RememberMeTTLDaysMax] is refused, not
+// clamped.
+func (handler *Handler) SetRememberMeTTLDays(days int) error {
+	if days < RememberMeTTLDaysMin || days > RememberMeTTLDaysMax {
+		return fmt.Errorf("remember-me lifetime of %d days is outside [%d, %d]", days, RememberMeTTLDaysMin, RememberMeTTLDaysMax)
+	}
+	handler.rememberMeTTL = time.Duration(days) * 24 * time.Hour
+	return nil
+}
+
+// rememberMeLifetime falls back to the default for a Handler built without
+// NewHandler, where the field is zero and would otherwise mint a cookie that
+// expires on issue.
+func (handler *Handler) rememberMeLifetime() time.Duration {
+	if handler.rememberMeTTL <= 0 {
+		return rememberAuthTokenTTL
+	}
+	return handler.rememberMeTTL
 }
 
 func (handler *Handler) writeAuthCookie(c fiber.Ctx, user *models.User, session preparedSession) string {

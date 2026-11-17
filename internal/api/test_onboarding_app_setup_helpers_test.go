@@ -44,6 +44,9 @@ type onboardingTestAppOptions struct {
 	oidcService      OIDCWorkflowService
 	auditLogEnabled  bool
 	assetVersion     string
+	// rememberMeTTLDays, when non-zero, is passed to SetRememberMeTTLDays as
+	// REMEMBER_ME_TTL_DAYS would be at boot.
+	rememberMeTTLDays int
 	// envelopeTransportErrors routes a *fiber.Error the app returns (a CSRF
 	// refusal) through RespondTransportError, as the production error handler
 	// does; without it the bare test app answers fiber's default text/plain.
@@ -140,6 +143,11 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 	}
 	if options.assetVersion != "" {
 		handler.SetAssetVersion(options.assetVersion)
+	}
+	if options.rememberMeTTLDays != 0 {
+		if err := handler.SetRememberMeTTLDays(options.rememberMeTTLDays); err != nil {
+			t.Fatalf("set remember-me lifetime: %v", err)
+		}
 	}
 	handler.sessionIssuanceFault = options.sessionIssuanceFault
 	handler.recoveryCodeIssuanceFault = options.recoveryCodeIssuanceFault

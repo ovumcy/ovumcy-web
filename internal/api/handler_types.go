@@ -60,6 +60,7 @@ type Handler struct {
 	registerPickupTokens RegisterPickupTokenStore
 	auditLogEnabled      bool
 	assetVersion         string
+	rememberMeTTL        time.Duration
 	// sessionIssuanceFault is nil in production. A test sets it to fail session
 	// minting the way no request can (a crypto or codec failure), to prove a
 	// recovery-code rotation rolls back when its delivery cannot be sealed.
@@ -133,5 +134,15 @@ type FlashPayload struct {
 
 const (
 	defaultAuthTokenTTL  = 7 * 24 * time.Hour
-	rememberAuthTokenTTL = 30 * 24 * time.Hour
+	rememberAuthTokenTTL = RememberMeTTLDaysDefault * 24 * time.Hour
+)
+
+// Bounds of REMEMBER_ME_TTL_DAYS. The floor stays above defaultAuthTokenTTL:
+// sessionWasRemembered tells a remembered session from an ordinary one by a
+// lifetime longer than the default, so a remember-me TTL at or below it would
+// demote every remembered device to a session cookie on its next re-issue.
+const (
+	RememberMeTTLDaysDefault = 30
+	RememberMeTTLDaysMin     = 8
+	RememberMeTTLDaysMax     = 365
 )
