@@ -75,6 +75,11 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 			return nil, err
 		}
 	}
+	if !handler.sessionLifetimeWithinPolicy(claims) {
+		handler.clearRejectedSessionCookies(c)
+		handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "lifetime over policy"))
+		return nil, errors.New("token expired")
+	}
 
 	c.Locals(contextAuthSessionKey, claims)
 	// Publish the actor for the whole request, not only on routes that reach

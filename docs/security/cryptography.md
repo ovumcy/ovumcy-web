@@ -14,7 +14,7 @@ Ovumcy uses only first-party cookies. Cookies marked **Sealed** are encrypted wi
 
 | Name | Purpose | TTL | Path | HttpOnly | SameSite | Secure | Sealed |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ovumcy_auth` | Session token carrying user id, role, and `auth_session_version` | 30 days (persistent; `REMEMBER_ME_TTL_DAYS`, 8–365) with remember-me, otherwise a browser-session cookie (underlying token TTL 7 days) | `/` | yes | Lax | `COOKIE_SECURE` | yes |
+| `ovumcy_auth` | Session token carrying user id, role, and `auth_session_version` | 30 days by default (persistent; `REMEMBER_ME_TTL_DAYS`, 8–365) with remember-me, otherwise a browser-session cookie (underlying token TTL 7 days) | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_csrf` | CSRF double-submit token matched against the `csrf_token` form field on every state-changing request | 1 hour (persistent; refreshed on every response — the `IdleTimeout` pin deliberately preserves the Fiber v2 `Expiration=1h` lifetime) | `/` | yes | Lax | `COOKIE_SECURE` | no |
 | `ovumcy_lang` | User-selected UI language code. Not the only carrier since migration 034: an explicit choice in `Settings` is also stored on the account (`users.interface_language`), and every sign-in re-issues this cookie from that column | 1 year | `/` | no (JS-readable for i18n) | Lax | `COOKIE_SECURE` | no |
 | `ovumcy_tz` | Client IANA timezone for server-side calendar math | 1 year | `/` | no (JS-writable, server-validated) | Lax | `COOKIE_SECURE` | no |
