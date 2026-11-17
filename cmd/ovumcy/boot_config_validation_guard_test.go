@@ -13,10 +13,10 @@ import (
 // Boot-time refusal guards for the runtime-config values an operator can
 // mistype into a silently degraded security posture.
 //
-// Deliberately narrow: only TRUSTED_PROXIES, CALENDAR_FEED_FENCE_PATH and the
-// six security-relevant booleans (COOKIE_SECURE, HSTS_ENABLED,
-// TRUST_PROXY_ENABLED, WEBHOOK_BLOCK_PRIVATE_ADDRESSES, AUDIT_LOG_ENABLED,
-// OIDC_ENABLED) refuse the boot. The
+// Deliberately narrow: only TRUSTED_PROXIES, CALENDAR_FEED_FENCE_PATH,
+// REMEMBER_ME_TTL_DAYS and the six security-relevant booleans (COOKIE_SECURE,
+// HSTS_ENABLED, TRUST_PROXY_ENABLED, WEBHOOK_BLOCK_PRIVATE_ADDRESSES,
+// AUDIT_LOG_ENABLED, OIDC_ENABLED) refuse the boot. The
 // lenient getEnvBool / getEnvInt / getEnvDurationInRange fallback still governs every
 // other key, so nothing here may be read as "every invalid env value stops the
 // process".

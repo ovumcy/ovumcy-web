@@ -105,6 +105,8 @@ func (handler *Handler) ShowLoginPage(c fiber.Ctx) error {
 	// is: Fiber honours X-Forwarded-Host only from a trusted proxy. The template
 	// escapes it; nothing here is operator-configured.
 	data["InstanceHost"] = c.Host()
+	// The label states the lifetime the box actually grants, REMEMBER_ME_TTL_DAYS included.
+	data["RememberMeDays"] = int(handler.rememberMeLifetime() / (24 * time.Hour))
 	return handler.render(c, "login", data)
 }
 

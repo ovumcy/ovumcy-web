@@ -32,7 +32,7 @@ type runtimeConfig struct {
 	Proxy            proxySettings
 	AuditLogEnabled  bool
 	// RememberMeTTLDays is REMEMBER_ME_TTL_DAYS: how long a remember-me sign-in
-	// lasts. Out-of-range input falls back to the default (logged at boot).
+	// lasts. A set value that is not a day count in range refuses the boot.
 	RememberMeTTLDays int
 	// CalendarFeedFencePath is CALENDAR_FEED_FENCE_PATH: the file the boot-time
 	// restore fence keeps its non-rollbackable half in. It has to live OUTSIDE
@@ -301,6 +301,12 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	if err != nil {
 		return runtimeConfig{}, err
 	}
+	// Strict as well: a fallback would hand an operator who mistyped a shorter
+	// lifetime (REMEMBER_ME_TTL_DAYS=7, =14d) the 30-day default instead.
+	rememberMeTTLDays, err := getEnvIntInRangeStrict("REMEMBER_ME_TTL_DAYS", api.RememberMeTTLDaysDefault, api.RememberMeTTLDaysMin, api.RememberMeTTLDaysMax)
+	if err != nil {
+		return runtimeConfig{}, err
+	}
 	oidcConfig, err := resolveOIDCConfig(cookieSecure, registrationMode)
 	if err != nil {
 		return runtimeConfig{}, err
@@ -382,7 +388,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		},
 		Proxy:               proxy,
 		AuditLogEnabled:     auditLogEnabled,
-		RememberMeTTLDays:   getEnvIntInRange("REMEMBER_ME_TTL_DAYS", api.RememberMeTTLDaysDefault, api.RememberMeTTLDaysMin, api.RememberMeTTLDaysMax),
+		RememberMeTTLDays:   rememberMeTTLDays,
 		WebhookBlockPrivate: webhookBlockPrivate,
 		ReminderScheduler: reminderSchedulerSettings{
 			Enabled: getEnvBool("REMINDER_SCHEDULER_ENABLED", false),

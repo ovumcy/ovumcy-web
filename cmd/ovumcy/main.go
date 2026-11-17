@@ -457,20 +457,24 @@ func mustNewI18nManager(defaultLanguage string) *i18n.Manager {
 	return i18nManager
 }
 
-// applyRuntimeSessionSettings hands the handler the session settings the runtime
-// config resolved. It is split out of mustNewHandler so a test can prove the
-// env value reaches the handler instead of being dropped on the way.
-func applyRuntimeSessionSettings(handler *api.Handler, config runtimeConfig) error {
-	return handler.SetRememberMeTTLDays(config.RememberMeTTLDays)
+// newHandlerFromConfig builds the handler and hands it every setting the runtime
+// config resolved for it. It is split out of mustNewHandler so a test drives the
+// same constructor the binary does and can prove no setting is dropped on the way.
+func newHandlerFromConfig(config runtimeConfig, i18nManager *i18n.Manager, dependencies api.Dependencies) (*api.Handler, error) {
+	handler, err := api.NewHandler(config.SecretKey, config.Location, i18nManager, config.CookieSecure, dependencies)
+	if err != nil {
+		return nil, err
+	}
+	if err := handler.SetRememberMeTTLDays(config.RememberMeTTLDays); err != nil {
+		return nil, err
+	}
+	return handler, nil
 }
 
 func mustNewHandler(config runtimeConfig, i18nManager *i18n.Manager, dependencies api.Dependencies) *api.Handler {
-	handler, err := api.NewHandler(config.SecretKey, config.Location, i18nManager, config.CookieSecure, dependencies) // codecov:ignore -- main() composition-root wiring; runs only in the binary (exercised by e2e).
+	handler, err := newHandlerFromConfig(config, i18nManager, dependencies) // codecov:ignore -- main() composition-root wiring; runs only in the binary (exercised by e2e).
 	if err != nil {
 		log.Fatalf("handler init failed: %v", err)
-	}
-	if err := applyRuntimeSessionSettings(handler, config); err != nil {
-		log.Fatalf("handler init failed: %v", err) // codecov:ignore -- main() composition-root wiring; loadRuntimeConfig keeps the value in range.
 	}
 	// Cache-bust versioned static asset URLs (?v=<token>) so a new build
 	// invalidates stale JS/CSS without operator action; resolveAssetVersion

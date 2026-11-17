@@ -49,6 +49,23 @@ func getEnvIntInRange(key string, fallback, minValue, maxValue int) int {
 	return parsed
 }
 
+// getEnvIntInRangeStrict reads an integer env var like getEnvIntInRange but
+// refuses a set value that is not an integer within [min, max] instead of
+// falling back, for the settings where the fallback is a posture the operator
+// did not choose. Unset is still the documented default.
+func getEnvIntInRangeStrict(key string, fallback, minValue, maxValue int) (int, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < minValue || parsed > maxValue {
+		return 0, fmt.Errorf("invalid %s=%q: expected a whole number from %d to %d", key, value, minValue, maxValue)
+	}
+	return parsed, nil
+}
+
 // getEnvDurationInRange parses a duration env var and accepts it only within the
 // inclusive [min, max] range, falling back otherwise — the duration twin of
 // getEnvIntInRange. Every duration setting has an upper bound that is part of

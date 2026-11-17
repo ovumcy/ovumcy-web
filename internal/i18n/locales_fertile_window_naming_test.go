@@ -118,7 +118,7 @@ func TestItalianDirectAddressIsNotGendered(t *testing.T) {
 	if len(messages) == 0 {
 		t.Fatal("the Italian catalogue loaded no messages")
 	}
-	for _, key := range []string{"confirm.delete_entry", "auth.remember_me"} {
+	for _, key := range []string{"confirm.delete_entry", "auth.remember_me.one", "auth.remember_me.other"} {
 		if strings.TrimSpace(messages[key]) == "" {
 			t.Errorf("it %s is missing or empty", key)
 		}

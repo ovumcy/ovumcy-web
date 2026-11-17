@@ -250,6 +250,18 @@ func sessionWasRemembered(c fiber.Ctx) bool {
 	return session.ExpiresAt.Sub(session.IssuedAt.Time) > defaultAuthTokenTTL
 }
 
+// sessionLifetimeWithinPolicy refuses a token sealed with a longer lifetime than
+// this instance issues now, so lowering REMEMBER_ME_TTL_DAYS also ends the
+// longer sessions minted before the restart instead of leaving them to run out.
+// A token missing either date is refused: every token minted here carries both,
+// and a missing expiry would otherwise mean a session that never ends.
+func (handler *Handler) sessionLifetimeWithinPolicy(claims *services.AuthSessionClaims) bool {
+	if claims == nil || claims.IssuedAt == nil || claims.ExpiresAt == nil {
+		return false
+	}
+	return claims.ExpiresAt.Sub(claims.IssuedAt.Time) <= handler.rememberMeLifetime()
+}
+
 func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Duration) (string, string, error) {
 	if user == nil {
 		return "", "", errors.New("user is required")

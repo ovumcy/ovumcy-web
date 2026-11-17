@@ -41,7 +41,7 @@
       <label class="remember-option" for="login-remember-me">
         <input id="login-remember-me" type="checkbox" name="remember_me" value="1" class="remember-checkbox" />
         <span class="remember-copy">
-          <span class="remember-title">{{t .Messages "auth.remember_me"}}</span>
+          <span class="remember-title">{{printf (tn .Messages .Lang "auth.remember_me" .RememberMeDays) .RememberMeDays}}</span>
           <span class="remember-hint">{{t .Messages "auth.remember_me_hint"}}</span>
         </span>
       </label>
