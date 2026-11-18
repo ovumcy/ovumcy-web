@@ -36,14 +36,9 @@ func getEnvInt(key string, fallback int) int {
 // rejects anything below 1), it admits 0, which is required for
 // REMINDER_SCHEDULER_HOUR where 0 is a valid midnight run hour.
 func getEnvIntInRange(key string, fallback, minValue, maxValue int) int {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed < minValue || parsed > maxValue {
-		log.Printf("invalid %s=%q, using fallback %d", key, value, fallback) // #nosec G706 -- same operator-managed-startup-configuration boundary as getEnvInt above: value is read once at boot from the operator's own env, never from a request.
+	parsed, err := getEnvIntInRangeStrict(key, fallback, minValue, maxValue)
+	if err != nil {
+		log.Printf("%v, using fallback %d", err, fallback) // #nosec G706 -- same operator-managed-startup-configuration boundary as getEnvInt above: value is read once at boot from the operator's own env, never from a request.
 		return fallback
 	}
 	return parsed
