@@ -1,0 +1,21 @@
+# Trivy filesystem-scan GATE exceptions — read only by the `trivy-fs` job's gate step
+# in .github/workflows/security.yml (`--ignorefile`). The SARIF scan that feeds the
+# Security tab never reads this file, so every entry here stays visible as an open
+# alert. Not named `.trivyignore`: Trivy loads that name from the working directory by
+# default, which would hide the finding from the tab and from the image scans too.
+#
+# Only for a finding with no fixed release that cannot reach the shipped runtime image.
+# Each entry is bounded by `expired_at`: on that date the gate fails again and the
+# entry must be re-judged, not silently renewed.
+
+vulnerabilities:
+  - id: CVE-2026-112366
+    paths:
+      - package-lock.json
+    expired_at: 2027-02-18
+    statement: >-
+      picomatch <= 4.0.7 ReDoS (GHSA-fc5q-39xc-vjpf), no patched release. Dev-only:
+      pulled by @tailwindcss/cli (@parcel/watcher) and typescript-eslint (tinyglobby)
+      for the CSS build and lint, with glob patterns from repository config. The
+      runtime image is a Go binary plus built assets and carries no node_modules;
+      trivy-image stays green.
