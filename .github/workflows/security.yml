@@ -179,6 +179,8 @@ jobs:
               [ -n "$go_changes" ] && run_go=true
               [ -n "$trivyfs_changes" ] && run_trivyfs=true
               [ -n "$binary_changes" ] && run_trivyfs=true
+              # The gate's waiver file changes trivy-fs's verdict on its own.
+              printf '%s\n' "$files" | grep -qxF '.trivyignore.fs-gate.yaml' && run_trivyfs=true
               [ -n "$trivyimage_changes" ] && run_trivyimage=true
               if [ -n "$pull_retry_changed" ]; then
                 run_trivyfs=true
@@ -371,10 +373,17 @@ jobs:
           image: ${{ env.TRIVY_IMAGE }}
 
       - name: Run Trivy filesystem scan
-        # No --ignore-unfixed: this SARIF is also what the Security tab shows
-        # (upload step below), so a CRITICAL with no upstream fix yet must
-        # stay visible in both the gate and the tab, not disappear from each.
-        run: docker run --rm -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --include-dev-deps --skip-dirs .tmp --skip-dirs web/static --format sarif --output .tmp/security/trivy-fs.sarif --exit-code 1 .
+        # No --ignore-unfixed and no ignore file: this SARIF is what the
+        # Security tab shows (upload step below), so a finding with no
+        # upstream fix stays visible there even while the gate below waives
+        # it. The verdict is the gate's; this step fails only on a scan error.
+        run: docker run --rm -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --include-dev-deps --skip-dirs .tmp --skip-dirs web/static --format sarif --output .tmp/security/trivy-fs.sarif --exit-code 0 .
+
+      - name: Gate on the Trivy filesystem scan
+        # Same scan and threshold, plus the dated waivers in
+        # .trivyignore.fs-gate.yaml; an entry past its `expired_at` fails here
+        # again. Still no --ignore-unfixed.
+        run: docker run --rm -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --include-dev-deps --skip-dirs .tmp --skip-dirs web/static --ignorefile .trivyignore.fs-gate.yaml --format table --exit-code 1 .
 
       - name: Upload Trivy filesystem SARIF
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
