@@ -377,13 +377,14 @@ jobs:
         # Security tab shows (upload step below), so a finding with no
         # upstream fix stays visible there even while the gate below waives
         # it. The verdict is the gate's; this step fails only on a scan error.
-        run: docker run --rm -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --include-dev-deps --skip-dirs .tmp --skip-dirs web/static --format sarif --output .tmp/security/trivy-fs.sarif --exit-code 0 .
+        run: docker run --rm -v "${{ github.workspace }}:/work" -v "${{ runner.temp }}/trivy-fs-cache:/cache" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --cache-dir /cache --severity HIGH,CRITICAL --include-dev-deps --skip-dirs .tmp --skip-dirs web/static --format sarif --output .tmp/security/trivy-fs.sarif --exit-code 0 .
 
       - name: Gate on the Trivy filesystem scan
         # Same scan and threshold, plus the dated waivers in
         # .trivyignore.fs-gate.yaml; an entry past its `expired_at` fails here
-        # again. Still no --ignore-unfixed.
-        run: docker run --rm -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --include-dev-deps --skip-dirs .tmp --skip-dirs web/static --ignorefile .trivyignore.fs-gate.yaml --format table --exit-code 1 .
+        # again. Still no --ignore-unfixed. Reuses the scan step's DB cache:
+        # a failed second download would red the gate with no finding behind it.
+        run: docker run --rm -v "${{ github.workspace }}:/work" -v "${{ runner.temp }}/trivy-fs-cache:/cache" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --cache-dir /cache --severity HIGH,CRITICAL --include-dev-deps --skip-dirs .tmp --skip-dirs web/static --ignorefile .trivyignore.fs-gate.yaml --format table --exit-code 1 .
 
       - name: Upload Trivy filesystem SARIF
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
