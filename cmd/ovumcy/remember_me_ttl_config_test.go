@@ -81,4 +81,9 @@ func TestNewHandlerFromConfigHandsTheLifetimeToTheHandler(t *testing.T) {
 	if _, err := newHandlerFromConfig(config, i18nManager, dependencies); err == nil {
 		t.Fatal("an out-of-range lifetime was accepted: the value is not reaching SetRememberMeTTLDays")
 	}
+	config.RememberMeTTLDays = api.RememberMeTTLDaysDefault
+	config.SecretKey = ""
+	if _, err := newHandlerFromConfig(config, i18nManager, dependencies); err == nil {
+		t.Fatal("a handler without a secret key was built: api.NewHandler's refusal is not passed on")
+	}
 }

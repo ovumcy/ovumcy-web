@@ -106,13 +106,30 @@ const passwordHashCost = 12
 type AuthService struct {
 	users               AuthUserRepository
 	logoutAttemptPolicy *AuthAttemptPolicy
+	maxSessionLifetime  time.Duration
 }
 
 func NewAuthService(users AuthUserRepository) *AuthService {
 	return &AuthService{
 		users:               users,
 		logoutAttemptPolicy: NewAuthAttemptPolicy("logout", nil, DefaultLogoutAttemptsLimit, DefaultLogoutAttemptsWindow),
+		maxSessionLifetime:  DefaultMaxAuthSessionLifetime,
 	}
+}
+
+// ConfigureMaxSessionLifetime sets the longest token lifetime ResolveAuthSession
+// accepts: the remember-me lifetime the instance issues.
+func (service *AuthService) ConfigureMaxSessionLifetime(lifetime time.Duration) {
+	service.maxSessionLifetime = lifetime
+}
+
+// sessionLifetimeCeiling falls back to the default for a service built without
+// NewAuthService, so a zero field never refuses every session or none.
+func (service *AuthService) sessionLifetimeCeiling() time.Duration {
+	if service.maxSessionLifetime <= 0 {
+		return DefaultMaxAuthSessionLifetime
+	}
+	return service.maxSessionLifetime
 }
 
 func (service *AuthService) ConfigureLogoutAttemptLimits(attempts int, window time.Duration) {
@@ -547,6 +564,9 @@ func (service *AuthService) ResolveAuthSession(ctx context.Context, secretKey []
 	claims, err := ParseAuthSessionToken(secretKey, rawToken, now)
 	if err != nil {
 		return nil, nil, err
+	}
+	if !authSessionLifetimeWithinPolicy(claims, service.sessionLifetimeCeiling()) {
+		return nil, nil, ErrAuthSessionLifetimeOverPolicy
 	}
 
 	user, found, err := service.users.FindByIDOptional(ctx, claims.UserID)

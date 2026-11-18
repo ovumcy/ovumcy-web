@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +22,28 @@ var (
 	// token: it says nothing about the session, so the caller must not treat it
 	// as a refusal that ends one.
 	ErrAuthSessionLookupFailed = errors.New("auth session lookup failed")
+	// ErrAuthSessionLifetimeOverPolicy is a token sealed with a longer lifetime
+	// than the instance issues now. It is an expiry, so errors.Is matches both.
+	ErrAuthSessionLifetimeOverPolicy = fmt.Errorf("%w: lifetime over policy", ErrAuthSessionTokenExpired)
 )
+
+// DefaultMaxAuthSessionLifetime is the longest session lifetime an AuthService
+// accepts until ConfigureMaxSessionLifetime says otherwise: the default
+// remember-me lifetime.
+const DefaultMaxAuthSessionLifetime = 30 * 24 * time.Hour
+
+// authSessionLifetimeWithinPolicy is a filter, not a revocation: it judges the
+// token against the ceiling in force now, so a token refused under a lowered
+// ceiling resolves again if the ceiling is raised back. Revoking takes an
+// AuthSessionVersion bump. A token missing either date is refused: every token
+// minted here carries both, and a missing expiry would mean a session that
+// never ends.
+func authSessionLifetimeWithinPolicy(claims *AuthSessionClaims, ceiling time.Duration) bool {
+	if claims == nil || claims.IssuedAt == nil || claims.ExpiresAt == nil {
+		return false
+	}
+	return claims.ExpiresAt.Sub(claims.IssuedAt.Time) <= ceiling
+}
 
 type AuthSessionClaims struct {
 	UserID         uint   `json:"uid"`

@@ -56,6 +56,10 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "missing auth cookie"))
 			return nil, errors.New("missing auth cookie")
 		// codecov:ignore:end
+		case errors.Is(err, services.ErrAuthSessionLifetimeOverPolicy):
+			handler.clearRejectedSessionCookies(c)
+			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "lifetime over policy"))
+			return nil, errors.New("token expired")
 		case errors.Is(err, services.ErrAuthSessionTokenExpired):
 			handler.clearRejectedSessionCookies(c)
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "token expired"))
@@ -74,11 +78,6 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 			handler.logSecurityEvent(c, "auth.session", "failure", securityEventField("reason", "token resolve failed"))
 			return nil, err
 		}
-	}
-	if !handler.sessionLifetimeWithinPolicy(claims) {
-		handler.clearRejectedSessionCookies(c)
-		handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "lifetime over policy"))
-		return nil, errors.New("token expired")
 	}
 
 	c.Locals(contextAuthSessionKey, claims)

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -100,18 +99,12 @@ func TestLoginRememberMeLabelStatesTheConfiguredLifetime(t *testing.T) {
 	}
 }
 
-func TestSessionLifetimePolicyRefusesATokenMissingADate(t *testing.T) {
-	handler := &Handler{}
-	now := jwt.NewNumericDate(time.Now())
-	for name, claims := range map[string]*services.AuthSessionClaims{
-		"nil claims":   nil,
-		"no issued-at": {RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: now}},
-		"no expiry":    {RegisteredClaims: jwt.RegisteredClaims{IssuedAt: now}},
-		"neither date": {},
-	} {
-		if handler.sessionLifetimeWithinPolicy(claims) {
-			t.Errorf("%s: accepted", name)
-		}
+// The session service's default ceiling and the default remember-me lifetime
+// are one number: a drift would refuse every default remembered session, or
+// admit longer ones.
+func TestDefaultSessionCeilingMatchesTheDefaultRememberMeLifetime(t *testing.T) {
+	if rememberAuthTokenTTL != services.DefaultMaxAuthSessionLifetime {
+		t.Fatalf("rememberAuthTokenTTL %s != services.DefaultMaxAuthSessionLifetime %s", rememberAuthTokenTTL, services.DefaultMaxAuthSessionLifetime)
 	}
 }
 

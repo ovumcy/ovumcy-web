@@ -51,15 +51,19 @@ func (handler *Handler) prepareAuthCookie(user *models.User, rememberMe bool) (p
 	return preparedSession{cookie: cookie, sessionID: sessionID}, nil
 }
 
-// SetRememberMeTTLDays sets the lifetime of a remember-me sign-in for sessions
-// issued from now on; a session already issued keeps the expiry sealed into it.
-// A value outside [RememberMeTTLDaysMin, RememberMeTTLDaysMax] is refused, not
-// clamped.
+// SetRememberMeTTLDays sets the lifetime of a remember-me sign-in, and the
+// session service's ceiling with it: while the value stays lowered, a session
+// issued under a longer one is refused on its next request (a filter, not a
+// revocation — raising the value back admits it again). A value outside
+// [RememberMeTTLDaysMin, RememberMeTTLDaysMax] is refused, not clamped.
 func (handler *Handler) SetRememberMeTTLDays(days int) error {
 	if days < RememberMeTTLDaysMin || days > RememberMeTTLDaysMax {
 		return fmt.Errorf("remember-me lifetime of %d days is outside [%d, %d]", days, RememberMeTTLDaysMin, RememberMeTTLDaysMax)
 	}
 	handler.rememberMeTTL = time.Duration(days) * 24 * time.Hour
+	if handler.authService != nil {
+		handler.authService.ConfigureMaxSessionLifetime(handler.rememberMeTTL)
+	}
 	return nil
 }
 
@@ -248,18 +252,6 @@ func sessionWasRemembered(c fiber.Ctx) bool {
 		return false
 	}
 	return session.ExpiresAt.Sub(session.IssuedAt.Time) > defaultAuthTokenTTL
-}
-
-// sessionLifetimeWithinPolicy refuses a token sealed with a longer lifetime than
-// this instance issues now, so lowering REMEMBER_ME_TTL_DAYS also ends the
-// longer sessions minted before the restart instead of leaving them to run out.
-// A token missing either date is refused: every token minted here carries both,
-// and a missing expiry would otherwise mean a session that never ends.
-func (handler *Handler) sessionLifetimeWithinPolicy(claims *services.AuthSessionClaims) bool {
-	if claims == nil || claims.IssuedAt == nil || claims.ExpiresAt == nil {
-		return false
-	}
-	return claims.ExpiresAt.Sub(claims.IssuedAt.Time) <= handler.rememberMeLifetime()
 }
 
 func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Duration) (string, string, error) {
