@@ -28,6 +28,32 @@ func authServiceUnderStoredEpoch(t *testing.T, repositories *Repositories) *serv
 	return auth
 }
 
+// bootedAuthServiceAfterRestore is the service the boot over a restore builds.
+// It asserts the precondition every refusal below rests on: the epoch was
+// already stored (not freshly created by this load) and the fence pass rotated
+// it away from the one the pre-restore service minted under. Without that, a
+// refusal could come from a brand-new epoch and say nothing about the rotation.
+func bootedAuthServiceAfterRestore(t *testing.T, repositories *Repositories, preRestore *services.AuthService) *services.AuthService {
+	t.Helper()
+	before, err := preRestore.SessionEpoch()
+	if err != nil {
+		t.Fatalf("pre-restore epoch: %v", err)
+	}
+	epoch, created, err := services.LoadAuthSessionEpoch(context.Background(), repositories.AppState)
+	if err != nil {
+		t.Fatalf("load session epoch: %v", err)
+	}
+	if created {
+		t.Fatal("the restore boot must find the rotated epoch stored, not create one")
+	}
+	if epoch == before {
+		t.Fatal("the restore boot must rotate the session epoch away from the pre-restore one")
+	}
+	booted := services.NewAuthService(repositories.Users)
+	booted.ConfigureSessionEpoch(epoch)
+	return booted
+}
+
 // restoreCounterTo puts the users id counter back to maxID the way a restore
 // of a dump does: sqlite_sequence under AUTOINCREMENT, setval on Postgres.
 func restoreUsersCounterTo(t *testing.T, database *gorm.DB, maxID uint) {
@@ -114,7 +140,7 @@ func TestARestoreRefusesASessionMintedAfterTheBackupAcrossTwoVersionBumps(t *tes
 				t.Fatalf("negative control: under the pre-restore epoch the version alone revives the revoked cookie, got %v", err)
 			}
 
-			booted := authServiceUnderStoredEpoch(t, repositories)
+			booted := bootedAuthServiceAfterRestore(t, repositories, auth)
 			if _, _, err := booted.ResolveAuthSession(ctx, restoreSessionEpochSecret, cookie, now); !errors.Is(err, services.ErrAuthSessionTokenRevoked) {
 				t.Fatalf("the cookie minted at V+1 must not resolve after the restore boot, got %v", err)
 			}
@@ -169,7 +195,7 @@ func TestARestoreRefusesACookieFromAnAccountThatSharesItsIdWithANewSignup(t *tes
 				t.Fatalf("the boot over the restore must read it, got %+v, %v", outcome, err)
 			}
 
-			booted := authServiceUnderStoredEpoch(t, repositories)
+			booted := bootedAuthServiceAfterRestore(t, repositories, auth)
 			reused := createUserForTimezoneTest(t, repositories.Users, "reuses-the-id@example.com")
 			if reused.ID != late.ID {
 				t.Fatalf("fixture: the new signup must reuse id %d, got %d", late.ID, reused.ID)

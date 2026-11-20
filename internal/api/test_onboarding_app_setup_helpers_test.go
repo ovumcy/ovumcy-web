@@ -192,6 +192,10 @@ const testAppSecretKey = "test-secret-key"
 // under, and the one a test mints a hand-built token with.
 const testAuthSessionEpoch = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
+// otherTestAuthSessionEpoch is a well-formed epoch the test apps do not hold:
+// what a payload minted before a restore rotated the stored one carries.
+const otherTestAuthSessionEpoch = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+
 // sealCookieForTestApp seals an arbitrary payload under the shared test app's
 // secret, producing a cookie value the app will genuinely open. Use it to hand
 // the app a well-sealed but adversarially SHAPED payload — one no production

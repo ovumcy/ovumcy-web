@@ -179,7 +179,7 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 // signature, or an unrecognised/legacy purpose — also answers false. That is
 // deliberate: such a token is invalid on its own terms, and the caller must
 // let the ordinary invalid-token path (ResolveUserByResetToken/CompleteReset,
-// or IsResetPasswordTokenValid on the page) say so. Collapsing every parse
+// or the page's own grant parse) say so. Collapsing every parse
 // failure into "the instance toggle refused this" mislabels routine expiry —
 // the default outcome of every forced-from-OIDC reset a user takes longer
 // than the 30-minute TTL to complete — as an operator-configuration refusal,
@@ -188,8 +188,11 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 // the two refusal paths answers: a token that fails to parse here still
 // fails to parse in CompleteReset, so redemption is refused either way — only
 // the message and the logged reason change.
-func PasswordResetTokenRefusedByLocalAuthGate(secretKey []byte, rawToken string, now time.Time) bool {
-	claims, err := ParsePasswordResetToken(secretKey, rawToken, now)
+//
+// A grant the session epoch no longer covers is one such token: the gate reads
+// it through ParsePasswordResetGrant like every other reader.
+func (service *AuthService) PasswordResetTokenRefusedByLocalAuthGate(secretKey []byte, rawToken string, now time.Time) bool {
+	claims, err := service.ParsePasswordResetGrant(secretKey, rawToken, now)
 	if err != nil {
 		return false
 	}

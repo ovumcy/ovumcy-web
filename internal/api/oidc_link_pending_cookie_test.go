@@ -55,6 +55,7 @@ func TestOIDCLinkPendingCookieReaderRefusesAPayloadMissingItsVersionOrIdentity(t
 	base := oidcLinkPendingCookiePayload{
 		UserID:         sealedExpirySweepUserID,
 		SessionVersion: 1,
+		Epoch:          testAuthSessionEpoch,
 		Issuer:         "https://id.example.com",
 		Subject:        "sub",
 		ExpiresAt:      time.Now().Add(time.Minute),
@@ -63,6 +64,8 @@ func TestOIDCLinkPendingCookieReaderRefusesAPayloadMissingItsVersionOrIdentity(t
 		"no session version": func(p *oidcLinkPendingCookiePayload) { p.SessionVersion = 0 },
 		"no issuer":          func(p *oidcLinkPendingCookiePayload) { p.Issuer = "" },
 		"no subject":         func(p *oidcLinkPendingCookiePayload) { p.Subject = " " },
+		"missing epoch":      func(p *oidcLinkPendingCookiePayload) { p.Epoch = "" },
+		"other epoch":        func(p *oidcLinkPendingCookiePayload) { p.Epoch = otherTestAuthSessionEpoch },
 	} {
 		payload := base
 		mutate(&payload)

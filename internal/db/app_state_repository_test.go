@@ -10,6 +10,35 @@ import (
 	"gorm.io/gorm"
 )
 
+// SetIfAbsent writes the first value and leaves it alone afterwards, so a
+// second first boot cannot replace what the first one is already serving.
+func TestAppStateSetIfAbsentKeepsTheFirstWriter(t *testing.T) {
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "set-if-absent.db")))
+	if err != nil {
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, dbErr := database.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	repo := NewAppStateRepository(database)
+	ctx := context.Background()
+
+	if wrote, err := repo.SetIfAbsent(ctx, "set_if_absent_key", "first"); err != nil || !wrote {
+		t.Fatalf("an absent key must be written, got wrote=%v err=%v", wrote, err)
+	}
+	if wrote, err := repo.SetIfAbsent(ctx, "set_if_absent_key", "second"); err != nil || wrote {
+		t.Fatalf("a present key must not be written, got wrote=%v err=%v", wrote, err)
+	}
+	if value, ok, err := repo.Get(ctx, "set_if_absent_key"); err != nil || !ok || value != "first" {
+		t.Fatalf("the first writer must stay stored, got %q ok=%v err=%v", value, ok, err)
+	}
+	if _, err := repo.SetIfAbsent(ctx, "  ", "x"); err == nil {
+		t.Fatal("a blank key must be refused")
+	}
+}
+
 // TestAppStateProbeWritableCommitsNothingAndRefusesAReadOnlyStore pins #1321:
 // the probe passes on a writable store without leaving its row behind, and
 // refuses a store SQLite opened read-only -- what an unwritable file becomes.

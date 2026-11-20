@@ -102,6 +102,7 @@ func sealExpiredTOTPPendingCookieForTest(t *testing.T, secretKey []byte, userID 
 		UserID:         userID,
 		ExpiresAt:      time.Now().Add(-1 * time.Minute), // already expired
 		SessionVersion: 1,
+		Epoch:          testAuthSessionEpoch,
 	}
 	serialized, err := json.Marshal(payload)
 	if err != nil {
@@ -315,6 +316,7 @@ func TestVerifyTOTPLogin_StaleSessionVersion_RefusesAndClearsCookie(t *testing.T
 		UserID:         user.ID,
 		ExpiresAt:      time.Now().Add(5 * time.Minute),
 		SessionVersion: 1,
+		Epoch:          testAuthSessionEpoch,
 	})
 
 	response := doTOTPChallengeRequest(t, app, joinCookieHeader(stalePending, csrfCookieHeader), "123456", csrfToken)
@@ -793,11 +795,13 @@ func TestVerifyTOTPLogin_ARefusalWithoutACompareKeepsNoSlot(t *testing.T) {
 		UserID:         enrolled.ID,
 		ExpiresAt:      time.Now().Add(5 * time.Minute),
 		SessionVersion: 1,
+		Epoch:          testAuthSessionEpoch,
 	})
 	unknownAccount := totpPendingCookieName + "=" + sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
 		UserID:         enrolled.ID + 1000,
 		ExpiresAt:      time.Now().Add(5 * time.Minute),
 		SessionVersion: 1,
+		Epoch:          testAuthSessionEpoch,
 	})
 	noSecondFactor := sealTOTPPendingCookieForTest(t, secretKey, plain.ID, false)
 

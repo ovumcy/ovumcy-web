@@ -221,7 +221,7 @@ func (handler *Handler) ShowResetPasswordPage(c fiber.Ctx) error {
 	// configuration pays nothing.
 	if !handler.localPublicAuthEnabled() {
 		token := handler.readResetPasswordCookie(c)
-		if token == "" || services.PasswordResetTokenRefusedByLocalAuthGate(handler.secretKey, token, time.Now()) {
+		if token == "" || handler.authService.PasswordResetTokenRefusedByLocalAuthGate(handler.secretKey, token, time.Now()) {
 			// Only a cookie that was actually presented is retracted. An absent
 			// one has nothing to retract, and a value that would not open was
 			// already cleared by the reader — the same rule the TOTP readers

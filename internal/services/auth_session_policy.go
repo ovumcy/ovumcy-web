@@ -133,6 +133,9 @@ func ParseAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*A
 	if claims.SessionVersion < 1 {
 		return nil, ErrAuthSessionTokenInvalid
 	}
+	if claims.Epoch == "" {
+		return nil, ErrAuthSessionTokenInvalid
+	}
 	claims.SessionID = strings.TrimSpace(claims.SessionID)
 	if claims.SessionID == "" {
 		return nil, ErrAuthSessionTokenInvalid

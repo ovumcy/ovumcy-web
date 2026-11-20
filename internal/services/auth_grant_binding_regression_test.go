@@ -228,6 +228,7 @@ func TestAuthSessionTokenRefusesCorrectKeyWrongDomainClaim(t *testing.T) {
 			Role:           models.RoleOwner,
 			SessionVersion: 1,
 			SessionID:      "regression-session-id",
+			Epoch:          testSessionEpoch,
 			RegisteredClaims: jwt.RegisteredClaims{
 				Subject:   "7",
 				Audience:  audience,
