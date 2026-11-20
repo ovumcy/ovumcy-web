@@ -26,8 +26,8 @@ const (
 	maxWaiverHorizon = 183 * 24 * time.Hour
 )
 
-// stepRunLine returns a step's single-line `run:` command. A step-level env
-// could hand one step a TRIVY_* setting the other never sees, so one is refused.
+// stepRunLine returns a step's single-line `run:` command. A step-level env or
+// shell could change how one step runs the same line, so either is refused.
 func stepRunLine(step string) (string, error) {
 	var run []string
 	for line := range strings.SplitSeq(step, "\n") {
@@ -35,8 +35,8 @@ func stepRunLine(step string) (string, error) {
 		switch {
 		case strings.HasPrefix(trimmed, "run:"):
 			run = append(run, strings.TrimSpace(strings.TrimPrefix(trimmed, "run:")))
-		case strings.HasPrefix(trimmed, "env:"):
-			return "", fmt.Errorf("the step declares a step-level env, which can configure Trivy for this step alone")
+		case strings.HasPrefix(trimmed, "env:"), strings.HasPrefix(trimmed, "shell:"):
+			return "", fmt.Errorf("the step declares %q, which can change how this step alone runs Trivy", trimmed)
 		}
 	}
 	if len(run) != 1 || run[0] == "" || strings.ContainsAny(run[0][:1], "|>") {
@@ -83,6 +83,11 @@ func withoutFlags(args []string, flags map[string]string) ([]string, error) {
 // and image included. The gate alone reads the waiver file and fails on a
 // finding; the scan alone writes SARIF and never fails on one.
 func TrivyFSStepsScanAlike(scan, gate string) error {
+	for name, line := range map[string]string{"SARIF scan": scan, "gate": gate} {
+		if err := singleTrivyCommand(strings.Fields(line)); err != nil {
+			return fmt.Errorf("the %s: %w", name, err)
+		}
+	}
 	s, err := withoutFlags(strings.Fields(scan), map[string]string{"--format": "sarif", "--output": "", "--exit-code": "0"})
 	if err != nil {
 		return fmt.Errorf("the SARIF scan: %w", err)
@@ -93,6 +98,21 @@ func TrivyFSStepsScanAlike(scan, gate string) error {
 	}
 	if !slices.Equal(s, g) {
 		return fmt.Errorf("the SARIF scan and the gate scan differently, so the Security tab and the gate can disagree:\n  scan: %s\n  gate: %s", strings.Join(s, " "), strings.Join(g, " "))
+	}
+	return nil
+}
+
+// singleTrivyCommand refuses a run line that is more than one `docker run`
+// of the tree: shell control such as `|| true` on both lines keeps them alike
+// while the gate can no longer fail.
+func singleTrivyCommand(args []string) error {
+	if len(args) < 2 || args[0] != "docker" || args[1] != "run" || args[len(args)-1] != "." {
+		return fmt.Errorf("the run line is not one `docker run ... .` command")
+	}
+	for _, a := range args {
+		if strings.ContainsAny(a, "|;&`<>") || strings.Contains(a, "$(") {
+			return fmt.Errorf("the run line carries shell control %q", a)
+		}
 	}
 	return nil
 }
@@ -152,6 +172,8 @@ func TestTrivyFSStepsScanAlikeRefusesDrift(t *testing.T) {
 		"scan reads the waiver":   {strings.Replace(scan, " --format", " --ignorefile "+fsGateWaiverFile+" --format", 1), gate},
 		"gate reads another file": {scan, strings.Replace(gate, fsGateWaiverFile, ".trivyignore", 1)},
 		"scan can fail":           {strings.Replace(scan, "--exit-code 0", "--exit-code 1", 1), gate},
+		"or-true on both":         {scan + " || true", gate + " || true"},
+		"true-or prefix on both":  {"true || " + scan, "true || " + gate},
 	} {
 		if err := TrivyFSStepsScanAlike(pair[0], pair[1]); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -160,9 +182,10 @@ func TestTrivyFSStepsScanAlikeRefusesDrift(t *testing.T) {
 }
 
 func TestStepRunLineRefusesAStepLevelEnv(t *testing.T) {
-	step := "        env:\n          TRIVY_SEVERITY: CRITICAL\n        run: trivy fs .\n"
-	if _, err := stepRunLine(step); err == nil {
-		t.Fatal("a step-level env was accepted")
+	for _, key := range []string{"env:\n          TRIVY_SEVERITY: CRITICAL", "shell: sh"} {
+		if _, err := stepRunLine("        " + key + "\n        run: trivy fs .\n"); err == nil {
+			t.Errorf("a step-level %q was accepted", key)
+		}
 	}
 }
 
@@ -261,7 +284,8 @@ func parseFSGateWaivers(text string) ([]fsGateWaiver, error) {
 				return nil, err
 			}
 		case indent == 6 && cur != nil && lastKey == "paths" && strings.HasPrefix(trimmed, "- "):
-			cur.paths = append(cur.paths, strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+			item, _, _ := strings.Cut(strings.TrimPrefix(trimmed, "- "), " #")
+			cur.paths = append(cur.paths, strings.Trim(strings.TrimSpace(item), `"'`))
 		default:
 			return nil, fmt.Errorf("line %d: %q is outside the shape this guard reads", n, trimmed)
 		}
@@ -347,6 +371,7 @@ func TestFSGateWaiversAreBoundedRefusesAnUnboundedEntry(t *testing.T) {
 		"no statement":       strings.Replace(valid, "    statement: >-\n      no fix,\n      dev-only.\n", "", 1),
 		"no paths":           strings.Replace(valid, "    paths:\n      - package-lock.json\n", "", 1),
 		"flow paths":         strings.Replace(valid, "    paths:\n      - package-lock.json\n", "    paths: [\"**\"]\n", 1),
+		"quoted empty path":  strings.Replace(valid, "      - package-lock.json\n", "      - \"\"\n", 1),
 		"glob path":          strings.Replace(valid, "      - package-lock.json\n", "      - \"**\"\n", 1),
 		"commented far date": strings.Replace(valid, "2027-02-18", "2099-01-01 # renew", 1),
 		"unknown key":        strings.Replace(valid, "    paths:", "    purls:\n      - pkg:npm/x\n    paths:", 1),
@@ -388,7 +413,8 @@ func TestOnlyTheTrivyFSGateReadsAnIgnoreFile(t *testing.T) {
 	for _, wf := range files {
 		for line := range strings.SplitSeq(workflowfile.Read(t, wf), "\n") {
 			// A Trivy config file can name an ignore file too.
-			trivyConfig := strings.Contains(line, "--config") && strings.Contains(strings.ToLower(line), "trivy")
+			// Fail closed: a continuation line split from its `trivy` call still counts.
+			trivyConfig := strings.Contains(line, "--config") && !strings.Contains(line, "gitleaks")
 			if !strings.Contains(line, "--ignorefile") && !strings.Contains(line, "TRIVY_IGNOREFILE") &&
 				!trivyConfig && !strings.Contains(line, "TRIVY_CONFIG") {
 				continue
