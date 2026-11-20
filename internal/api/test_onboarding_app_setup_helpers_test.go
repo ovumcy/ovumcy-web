@@ -188,6 +188,10 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 // test just stored.
 const testAppSecretKey = "test-secret-key"
 
+// testAuthSessionEpoch is the well-formed session epoch every test app is built
+// under, and the one a test mints a hand-built token with.
+const testAuthSessionEpoch = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
 // sealCookieForTestApp seals an arbitrary payload under the shared test app's
 // secret, producing a cookie value the app will genuinely open. Use it to hand
 // the app a well-sealed but adversarially SHAPED payload — one no production
@@ -228,6 +232,7 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	// which is the state in which a stored row must NOT produce a hop.
 	repositories := db.NewRepositories(database)
 	dependencies := bootstrap.BuildDependencies(repositories, []byte(testAppSecretKey), i18nManager, bootstrap.Options{
+		AuthSessionEpoch: testAuthSessionEpoch,
 		RegistrationMode: registrationMode,
 		OIDCConfig: security.OIDCConfig{
 			Enabled:               appOptions.oidcEnabled,

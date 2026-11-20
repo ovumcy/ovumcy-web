@@ -22,11 +22,11 @@ func TestSessionAndResetTokensDoNotCrossDomains(t *testing.T) {
 	secret := []byte("test-secret-token-domains")
 	now := time.Date(2026, time.September, 21, 10, 0, 0, 0, time.UTC)
 
-	sessionToken, _, err := BuildAuthSessionTokenWithVersionAndSessionID(secret, 7, models.RoleOwner, 1, time.Hour, now)
+	sessionToken, _, err := BuildAuthSessionTokenWithVersionAndSessionID(secret, 7, models.RoleOwner, 1, testSessionEpoch, time.Hour, now)
 	if err != nil {
 		t.Fatalf("build session token: %v", err)
 	}
-	resetToken, err := BuildPasswordResetToken(secret, 7, "$2a$10$storedhashstoredhashstoredhashstoredhashstoredhash", 1, PasswordResetTokenPurposeRecovery, time.Hour, now)
+	resetToken, err := BuildPasswordResetToken(secret, 7, "$2a$10$storedhashstoredhashstoredhashstoredhashstoredhash", 1, testSessionEpoch, PasswordResetTokenPurposeRecovery, time.Hour, now)
 	if err != nil {
 		t.Fatalf("build reset token: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestTokenDomainParseRefusesEmptySecretKey(t *testing.T) {
 	now := time.Date(2026, time.September, 22, 9, 0, 0, 0, time.UTC)
 	secret := []byte("test-secret-empty-key-domain")
 
-	resetToken, err := BuildPasswordResetToken(secret, 7, "$2a$10$storedhashstoredhashstoredhashstoredhashstoredhash", 1, PasswordResetTokenPurposeRecovery, time.Hour, now)
+	resetToken, err := BuildPasswordResetToken(secret, 7, "$2a$10$storedhashstoredhashstoredhashstoredhashstoredhash", 1, testSessionEpoch, PasswordResetTokenPurposeRecovery, time.Hour, now)
 	if err != nil {
 		t.Fatalf("build reset token: %v", err)
 	}
@@ -125,8 +125,9 @@ func TestResetGrantDiesWithTheSessionVersionItWasMintedAt(t *testing.T) {
 		Role:               models.RoleOwner,
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
-	staleGrant, err := BuildPasswordResetToken(secret, 9, string(hash), 1, PasswordResetTokenPurposeRecovery, time.Hour, now)
+	staleGrant, err := BuildPasswordResetToken(secret, 9, string(hash), 1, testSessionEpoch, PasswordResetTokenPurposeRecovery, time.Hour, now)
 	if err != nil {
 		t.Fatalf("build stale grant: %v", err)
 	}
@@ -145,7 +146,7 @@ func TestResetGrantDiesWithTheSessionVersionItWasMintedAt(t *testing.T) {
 	if _, err := service.ResolveUserByResetToken(context.Background(), secret, staleGrant, now); !errors.Is(err, ErrInvalidResetToken) {
 		t.Fatalf("a grant minted before the recovery-code rotation must be refused, got %v", err)
 	}
-	freshGrant, err := BuildPasswordResetToken(secret, 9, string(hash), repo.user.AuthSessionVersion, PasswordResetTokenPurposeRecovery, time.Hour, now)
+	freshGrant, err := BuildPasswordResetToken(secret, 9, string(hash), repo.user.AuthSessionVersion, testSessionEpoch, PasswordResetTokenPurposeRecovery, time.Hour, now)
 	if err != nil {
 		t.Fatalf("build fresh grant: %v", err)
 	}
@@ -291,6 +292,7 @@ func TestPasswordResetTokenRefusesCorrectKeyWrongDomainClaim(t *testing.T) {
 			Purpose:        PasswordResetTokenPurposeRecovery,
 			PasswordState:  PasswordStateFingerprint(storedHash),
 			SessionVersion: 1,
+			Epoch:          testSessionEpoch,
 			RegisteredClaims: jwt.RegisteredClaims{
 				Subject:   "7",
 				Audience:  audience,

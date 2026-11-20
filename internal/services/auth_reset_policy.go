@@ -72,6 +72,10 @@ type PasswordResetClaims struct {
 	// recovery-code rotation: a grant proven with the old code would otherwise
 	// still rewrite the password after the owner had rotated it away.
 	SessionVersion int `json:"sv"`
+	// Epoch is the session epoch the grant was minted under; a grant without
+	// one, or with one the server no longer holds, is refused
+	// (AuthService.ParsePasswordResetGrant).
+	Epoch string `json:"ep"`
 	jwt.RegisteredClaims
 }
 
@@ -82,9 +86,12 @@ type PasswordResetClaims struct {
 // be one of the three PasswordResetTokenPurpose* constants — it is what
 // ParsePasswordResetToken's redeem-time allow-list decides on, not any
 // out-of-band signal such as a cookie-carried bool.
-func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, sessionVersion int, purpose string, ttl time.Duration, now time.Time) (string, error) {
+func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, sessionVersion int, epoch string, purpose string, ttl time.Duration, now time.Time) (string, error) {
 	if !passwordResetTokenAllowedPurposes[purpose] {
 		return "", ErrPasswordResetTokenInvalidPurpose
+	}
+	if epoch == "" {
+		return "", ErrAuthSessionEpochUnavailable
 	}
 	if ttl <= 0 {
 		ttl = 30 * time.Minute
@@ -103,6 +110,7 @@ func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, s
 		Purpose:        purpose,
 		PasswordState:  passwordState,
 		SessionVersion: NormalizeAuthSessionVersion(sessionVersion),
+		Epoch:          epoch,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatUint(uint64(userID), 10),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
@@ -149,6 +157,9 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 	// A grant with no epoch is refused, never normalized to 1: that would bind
 	// it to every account still at version 1.
 	if claims.SessionVersion < 1 {
+		return nil, ErrPasswordResetTokenInvalidSessionEpoch
+	}
+	if claims.Epoch == "" {
 		return nil, ErrPasswordResetTokenInvalidSessionEpoch
 	}
 	return claims, nil

@@ -25,11 +25,14 @@ type oidcLinkPendingCookiePayload struct {
 	UserID uint `json:"user_id"`
 	// SessionVersion is the version the step-up's factors were verified
 	// against; the link is written only from it.
-	SessionVersion int       `json:"sv"`
-	Issuer         string    `json:"iss"`
-	Subject        string    `json:"sub"`
-	Email          string    `json:"email,omitempty"`
-	ExpiresAt      time.Time `json:"expires_at"`
+	SessionVersion int `json:"sv"`
+	// Epoch is the session epoch the step-up ran under; a payload without the
+	// epoch in force is refused, as the session token itself is.
+	Epoch     string    `json:"ep"`
+	Issuer    string    `json:"iss"`
+	Subject   string    `json:"sub"`
+	Email     string    `json:"email,omitempty"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 func (payload oidcLinkPendingCookiePayload) claims() security.OIDCClaims {
@@ -50,9 +53,15 @@ func (handler *Handler) setOIDCLinkPendingCookie(c fiber.Ctx, userID uint, sessi
 		handler.clearOIDCLinkPendingCookie(c)
 		return errors.New("oidc link pending cookie requires an identity")
 	}
+	epoch, err := handler.sessionEpoch()
+	if err != nil {
+		handler.clearOIDCLinkPendingCookie(c)
+		return err
+	}
 	payload := oidcLinkPendingCookiePayload{
 		UserID:         userID,
 		SessionVersion: services.NormalizeAuthSessionVersion(sessionVersion),
+		Epoch:          epoch,
 		Issuer:         claims.Issuer,
 		Subject:        claims.Subject,
 		Email:          verifiedEmail(claims),
@@ -109,6 +118,10 @@ func (handler *Handler) parseOIDCLinkPendingCookie(c fiber.Ctx, sessionUserID ui
 	if payload.SessionVersion < 1 {
 		handler.clearOIDCLinkPendingCookie(c)
 		return oidcLinkPendingCookiePayload{}, errors.New("oidc link pending cookie missing session version")
+	}
+	if !handler.sessionEpochCurrent(payload.Epoch) {
+		handler.clearOIDCLinkPendingCookie(c)
+		return oidcLinkPendingCookiePayload{}, errors.New("oidc link pending cookie from another session epoch")
 	}
 	if strings.TrimSpace(payload.Issuer) == "" || strings.TrimSpace(payload.Subject) == "" {
 		handler.clearOIDCLinkPendingCookie(c)

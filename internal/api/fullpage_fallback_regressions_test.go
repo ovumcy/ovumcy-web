@@ -392,7 +392,7 @@ func TestFullPageFallbackStepupRedirects(t *testing.T) {
 		if err != nil {
 			t.Fatalf("init secure cookie codec: %v", err)
 		}
-		token, _, err := services.BuildAuthSessionTokenWithVersionAndSessionID([]byte("test-secret-key"), oidcOnly.ID, oidcOnly.Role, 0, time.Hour, time.Now())
+		token, _, err := services.BuildAuthSessionTokenWithVersionAndSessionID([]byte("test-secret-key"), oidcOnly.ID, oidcOnly.Role, 0, testAuthSessionEpoch, time.Hour, time.Now())
 		if err != nil {
 			t.Fatalf("build session token: %v", err)
 		}

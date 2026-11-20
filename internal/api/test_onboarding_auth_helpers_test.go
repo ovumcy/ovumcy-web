@@ -180,10 +180,19 @@ func loginAndExtractAuthCookieWithCSRF(t *testing.T, app *fiber.App, email strin
 	return ""
 }
 
+// authServiceUnderTestEpoch is a repository-less service that mints and checks
+// under the epoch every test app carries, for handlers built by hand.
+func authServiceUnderTestEpoch() *services.AuthService {
+	service := &services.AuthService{}
+	service.ConfigureSessionEpoch(testAuthSessionEpoch)
+	return service
+}
+
 func issueAuthCookieForUser(t *testing.T, user models.User) string {
 	t.Helper()
 
 	service := services.NewAuthService(nil)
+	service.ConfigureSessionEpoch(testAuthSessionEpoch)
 	// The services builder mints for any role on purpose: this helper exists to
 	// hand an unsupported-role account a well-formed cookie, so the owner-only
 	// route matrix can prove the request is refused at the gate rather than at

@@ -66,6 +66,7 @@ func TestNewHandlerFromConfigHandsTheLifetimeToTheHandler(t *testing.T) {
 	}
 	i18nManager := newRateLimitTestI18nManager(t)
 	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(rateLimitTestSecretKey), i18nManager, bootstrap.Options{
+		AuthSessionEpoch: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		RegistrationMode: services.RegistrationModeOpen,
 		LoginAttempts:    bootstrap.AttemptLimit{Max: 8, Window: 15 * time.Minute},
 		RecoveryAttempts: bootstrap.AttemptLimit{Max: 8, Window: time.Hour},

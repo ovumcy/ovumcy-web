@@ -182,7 +182,7 @@ func TestRecoveryCodeDeliveryStampsIssuingUser(t *testing.T) {
 		secretKey:    []byte(recoveryCookieMutationSecret),
 		cookieSecure: true,
 		location:     time.UTC,
-		authService:  &services.AuthService{},
+		authService:  authServiceUnderTestEpoch(),
 	}
 
 	const issuingOwner = uint(303)

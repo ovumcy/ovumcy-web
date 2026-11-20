@@ -90,6 +90,8 @@ type stubFenceUserStore struct {
 	revokeErr         error
 	revokeCalls       int
 	revokeAfterDisarm bool
+	// revokeEpochs records the session epoch each revocation was handed.
+	revokeEpochs []string
 }
 
 func (s *stubFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) (int64, error) {
@@ -103,8 +105,9 @@ func (s *stubFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) (int
 	return s.disarmed, nil
 }
 
-func (s *stubFenceUserStore) RevokeRestoredAccess(_ context.Context) (models.RestoreRevocationCounts, error) {
+func (s *stubFenceUserStore) RevokeRestoredAccess(_ context.Context, newSessionEpoch string) (models.RestoreRevocationCounts, error) {
 	s.revokeCalls++
+	s.revokeEpochs = append(s.revokeEpochs, newSessionEpoch)
 	s.revokeAfterDisarm = s.callCount > 0
 	if s.revokeErr != nil {
 		return models.RestoreRevocationCounts{}, s.revokeErr
@@ -936,7 +939,7 @@ func (s *countingFenceUserStore) DisarmAllCalendarFeedTokens(_ context.Context) 
 	return count, nil
 }
 
-func (s *countingFenceUserStore) RevokeRestoredAccess(_ context.Context) (models.RestoreRevocationCounts, error) {
+func (s *countingFenceUserStore) RevokeRestoredAccess(_ context.Context, _ string) (models.RestoreRevocationCounts, error) {
 	return models.RestoreRevocationCounts{}, nil
 }
 

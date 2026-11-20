@@ -158,7 +158,7 @@ func (fakeConfirmFenceUsers) DisarmAllCalendarFeedTokens(_ context.Context) (int
 	return 0, nil
 }
 
-func (fakeConfirmFenceUsers) RevokeRestoredAccess(_ context.Context) (models.RestoreRevocationCounts, error) {
+func (fakeConfirmFenceUsers) RevokeRestoredAccess(_ context.Context, _ string) (models.RestoreRevocationCounts, error) {
 	return models.RestoreRevocationCounts{}, nil
 }
 

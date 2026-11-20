@@ -177,7 +177,7 @@ func TestRecoveryCodeDeliveryFailuresMapToTheirOwnRefusal(t *testing.T) {
 	// handler with no key at all would fail earlier, on the signature, and never
 	// reach the seal this case is about.
 	codecRefused := errors.New("cookie codec unavailable")
-	noCodec := &Handler{location: time.UTC, secretKey: []byte(testHandlerSecretKey), authService: &services.AuthService{}}
+	noCodec := &Handler{location: time.UTC, secretKey: []byte(testHandlerSecretKey), authService: authServiceUnderTestEpoch()}
 	noCodec.cookieCodecOnce.Do(func() { noCodec.cookieCodecErr = codecRefused })
 	deliver, delivery := noCodec.newRecoveryCodeDelivery(false, services.PostLoginRedirectPath, recoveryCodeSurfaceDedicated)
 	if err := deliver(user, "ABCD-1234"); !errors.Is(err, codecRefused) || !errors.Is(delivery.failure, codecRefused) {
@@ -190,7 +190,7 @@ func TestRecoveryCodeDeliveryFailuresMapToTheirOwnRefusal(t *testing.T) {
 		t.Fatal("a failed delivery must fill nothing a handler could write")
 	}
 
-	sealing := &Handler{location: time.UTC, secretKey: []byte(testHandlerSecretKey), authService: &services.AuthService{}}
+	sealing := &Handler{location: time.UTC, secretKey: []byte(testHandlerSecretKey), authService: authServiceUnderTestEpoch()}
 	deliver, delivery = sealing.newRecoveryCodeDelivery(false, services.PostLoginRedirectPath, recoveryCodeSurfaceDedicated)
 	if err := deliver(user, "  "); err == nil || !errors.Is(delivery.failure, errRecoveryCodeRevealSeal) {
 		t.Fatalf("a reveal the sealer refuses must fail as a reveal failure, got %v", delivery.failure)

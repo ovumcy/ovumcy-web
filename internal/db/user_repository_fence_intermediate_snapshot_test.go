@@ -61,7 +61,7 @@ func TestALiveBackupTakenMidRevocationIsReadAsARestore(t *testing.T) {
 			if outcome, err := fence.EnforceRequired(ctx); err != nil || !outcome.FirstBoot {
 				t.Fatalf("first boot: %+v, %v", outcome, err)
 			}
-			auth := services.NewAuthService(repositories.Users)
+			auth := authServiceUnderStoredEpoch(t, repositories)
 			now := time.Now()
 			cookie, _, err := auth.BuildAuthSessionTokenWithSessionID(restoreAcrossRevocationSecret, user.ID, user.Role, user.AuthSessionVersion, time.Hour, now)
 			if err != nil {

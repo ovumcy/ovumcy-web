@@ -48,7 +48,9 @@ func TestSessionRejectionRetractsSessionOnlyHandoffsButKeepsPreSessionOnes(t *te
 			authCookie: func(t *testing.T, database *gorm.DB) string {
 				t.Helper()
 				user := createOnboardingTestUser(t, database, "reject-retract-expired@example.com", "StrongPass1", true)
-				token, _, err := services.NewAuthService(nil).BuildAuthSessionTokenWithSessionID([]byte(testAppSecretKey), user.ID, user.Role, user.AuthSessionVersion, time.Hour, time.Now().Add(-2*time.Hour))
+				authService := services.NewAuthService(nil)
+				authService.ConfigureSessionEpoch(testAuthSessionEpoch)
+				token, _, err := authService.BuildAuthSessionTokenWithSessionID([]byte(testAppSecretKey), user.ID, user.Role, user.AuthSessionVersion, time.Hour, time.Now().Add(-2*time.Hour))
 				if err != nil {
 					t.Fatalf("build expired auth session token: %v", err)
 				}

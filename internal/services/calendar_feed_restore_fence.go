@@ -29,7 +29,7 @@ type calendarFeedRestoreFenceAppState interface {
 // boot that sees a restore (ContinuityBroken).
 type calendarFeedRestoreFenceUserStore interface {
 	DisarmAllCalendarFeedTokens(ctx context.Context) (int64, error)
-	RevokeRestoredAccess(ctx context.Context) (models.RestoreRevocationCounts, error)
+	RevokeRestoredAccess(ctx context.Context, newSessionEpoch string) (models.RestoreRevocationCounts, error)
 }
 
 // calendarFeedRestoreFenceAnchor is the half of the fence that lives outside
@@ -312,6 +312,12 @@ func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outco
 	if err != nil {
 		return outcome, err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
+	// The session epoch is minted before anything is written, so an entropy
+	// fault refuses the boot with both halves untouched.
+	epoch, err := security.NewAuthSessionEpoch()
+	if err != nil {
+		return outcome, err // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
+	}
 	if err := fence.anchor.Write(token); err != nil {
 		return fence.disarmUnanchored(ctx, err, refuseUnanchored)
 	}
@@ -320,7 +326,11 @@ func (fence *CalendarFeedRestoreFence) revokeRestored(ctx context.Context, outco
 		return outcome, err
 	}
 	outcome.DisarmedFeeds = disarmed
-	revoked, err := fence.users.RevokeRestoredAccess(ctx)
+	// RevokeRestoredAccess replaces the stored session epoch in the transaction
+	// that revokes the accounts, so no boot can see the revocation without the
+	// rotation. An error here fails the boot before the database half of the
+	// token is recorded, and the next boot re-runs the whole pass.
+	revoked, err := fence.users.RevokeRestoredAccess(ctx, epoch)
 	if err != nil {
 		return outcome, err
 	}

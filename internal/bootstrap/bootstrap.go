@@ -34,6 +34,10 @@ type Options struct {
 	// OIDCServiceOverride, when non-nil, replaces the built OIDC login service.
 	// Tests inject a stub through it; production leaves it nil.
 	OIDCServiceOverride apideps.OIDCWorkflowService
+	// AuthSessionEpoch is the session epoch the boot loaded after the restore
+	// fence (services.LoadAuthSessionEpoch). Left empty, the auth service mints
+	// nothing and resolves nothing: an unset epoch fails closed.
+	AuthSessionEpoch string
 	// LoginAttempts and RecoveryAttempts configure the login and
 	// password-recovery attempt limiters. Both are always applied.
 	LoginAttempts    AttemptLimit
@@ -116,6 +120,7 @@ func BuildNotifyService(repositories *db.Repositories, secretKey []byte, i18nMan
 // internal/api test helpers call it so their wiring stays identical.
 func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nManager *i18n.Manager, opts Options) apideps.Dependencies {
 	authService := services.NewAuthService(repositories.Users)
+	authService.ConfigureSessionEpoch(opts.AuthSessionEpoch)
 	if opts.LogoutAttempts != nil {
 		authService.ConfigureLogoutAttemptLimits(opts.LogoutAttempts.Max, opts.LogoutAttempts.Window)
 	}

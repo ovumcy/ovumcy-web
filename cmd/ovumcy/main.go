@@ -69,7 +69,12 @@ func main() {
 	mustEnforceCalendarFeedKeyRotation(repositories, []byte(config.SecretKey))
 	mustRenormalizeAuthEmails(repositories)
 	recomputeDerivedLutealPhases(repositories, location)
-	dependencies := bootstrap.BuildDependencies(repositories, []byte(config.SecretKey), i18nManager, bootstrapOptions(config))
+	// The session epoch is loaded AFTER the restore fence: a boot that saw a
+	// restore has already replaced it inside the revocation's transaction, so
+	// the value held in memory from here on is the rotated one. A failure ends
+	// the boot; nothing serves under an epoch this pass did not read.
+	authSessionEpoch := mustLoadAuthSessionEpoch(repositories)
+	dependencies := bootstrap.BuildDependencies(repositories, []byte(config.SecretKey), i18nManager, bootstrapOptionsUnderEpoch(config, authSessionEpoch))
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
 	served := make(chan struct{})
@@ -313,6 +318,43 @@ func mustEnforceCalendarFeedKeyRotation(repositories *db.Repositories, secretKey
 	}
 }
 
+// mustLoadAuthSessionEpoch returns the session epoch the server mints and
+// checks every auth token under, creating it on the first boot that finds none
+// (an upgrade: every session minted before the claim existed ends once). It
+// must run after the restore fence pass. The decision logic lives (tested) in
+// loadAuthSessionEpoch.
+func mustLoadAuthSessionEpoch(repositories *db.Repositories) string {
+	ctx, cancel := bootPassContext()
+	defer cancel()
+	epoch, message, err := loadAuthSessionEpoch(ctx, repositories.AppState)
+	if err != nil {
+		log.Fatal(err) // codecov:ignore -- log.Fatal exits the test binary; the refusal is tested through loadAuthSessionEpoch
+	}
+	if message != "" {
+		log.Print(message)
+	}
+	return epoch
+}
+
+// loadAuthSessionEpoch is mustLoadAuthSessionEpoch without the exit. The epoch
+// is never empty on a nil error.
+func loadAuthSessionEpoch(ctx context.Context, store interface {
+	Get(ctx context.Context, key string) (string, bool, error)
+	Set(ctx context.Context, key string, value string) error
+}) (string, string, error) {
+	epoch, created, err := services.LoadAuthSessionEpoch(ctx, store)
+	if err != nil {
+		return "", "", fmt.Errorf("auth session epoch failed: %w", err)
+	}
+	if epoch == "" {
+		return "", "", errors.New("auth session epoch failed: empty epoch")
+	}
+	if created {
+		return epoch, "auth session epoch created: sessions issued before it are signed out once", nil
+	}
+	return epoch, "", nil
+}
+
 // mustProbeDatabaseWritable refuses a boot over a database that reads but does
 // not write. It runs before the restore fence, whose file half would otherwise
 // advance ahead of a row write that then fails.
@@ -550,6 +592,14 @@ func retryShutdownFunc(shutdown func(context.Context) error, ctx context.Context
 		case <-ticker.C:
 		}
 	}
+}
+
+// bootstrapOptionsUnderEpoch is bootstrapOptions plus the session epoch the boot
+// loaded after the restore fence pass.
+func bootstrapOptionsUnderEpoch(config runtimeConfig, authSessionEpoch string) bootstrap.Options {
+	options := bootstrapOptions(config)
+	options.AuthSessionEpoch = authSessionEpoch
+	return options
 }
 
 // bootstrapOptions maps the runtime configuration onto the dependency-build

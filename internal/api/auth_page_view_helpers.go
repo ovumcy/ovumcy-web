@@ -61,7 +61,7 @@ func (handler *Handler) buildResetPasswordPageData(c fiber.Ctx, messages map[str
 		// cookie bool the display used to trust (PRIV-4). Any purpose other
 		// than recovery renders the forced-reset copy; an unparsable token is
 		// invalid regardless of what it claims to be.
-		claims, err := services.ParsePasswordResetToken(handler.secretKey, token, time.Now())
+		claims, err := handler.authService.ParsePasswordResetGrant(handler.secretKey, token, time.Now())
 		if err != nil {
 			invalidToken = true
 			handler.clearResetPasswordCookie(c)

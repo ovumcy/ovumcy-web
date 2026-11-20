@@ -43,7 +43,18 @@ func TestRestoreFenceRefusesAPreRestoreCookieAndClearsWebhooks(t *testing.T) {
 		t.Fatalf("FindByID: %v", err)
 	}
 
-	auth := services.NewAuthService(repositories.Users)
+	// The order the boot runs in: the fence pass, then the epoch load.
+	authAfterBoot := func() *services.AuthService {
+		epoch, _, err := services.LoadAuthSessionEpoch(ctx, repositories.AppState)
+		if err != nil {
+			t.Fatalf("LoadAuthSessionEpoch: %v", err)
+		}
+		service := services.NewAuthService(repositories.Users)
+		service.ConfigureSessionEpoch(epoch)
+		return service
+	}
+	mustEnforceCalendarFeedRestoreFence(fence, false)
+	auth := authAfterBoot()
 	now := time.Now()
 	cookie, _, err := auth.BuildAuthSessionTokenWithSessionID(secret, user.ID, stored.Role, stored.AuthSessionVersion, time.Hour, now)
 	if err != nil {
@@ -51,7 +62,7 @@ func TestRestoreFenceRefusesAPreRestoreCookieAndClearsWebhooks(t *testing.T) {
 	}
 
 	mustEnforceCalendarFeedRestoreFence(fence, false)
-	mustEnforceCalendarFeedRestoreFence(fence, false)
+	auth = authAfterBoot()
 	if _, _, err := auth.ResolveAuthSession(ctx, secret, cookie, now); err != nil {
 		t.Fatalf("an ordinary restart must keep the session: %v", err)
 	}
@@ -65,6 +76,7 @@ func TestRestoreFenceRefusesAPreRestoreCookieAndClearsWebhooks(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	mustEnforceCalendarFeedRestoreFence(fence, false)
+	auth = authAfterBoot()
 
 	if _, _, err := auth.ResolveAuthSession(ctx, secret, cookie, now); !errors.Is(err, services.ErrAuthSessionTokenRevoked) {
 		t.Fatalf("a cookie minted before the restore must be refused, got %v", err)

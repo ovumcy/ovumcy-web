@@ -19,7 +19,7 @@ func TestAuthSessionPolicyBuildDefaultsNonPositiveTTL(t *testing.T) {
 	// kills a `<= 0` → `< 0` boundary mutation (which would leave ttl=0 and make
 	// the token expire immediately).
 	for _, ttl := range []time.Duration{0, -time.Hour} {
-		token, sessionID, err := BuildAuthSessionTokenWithVersionAndSessionID(secret, 42, "owner", 1, ttl, now)
+		token, sessionID, err := BuildAuthSessionTokenWithVersionAndSessionID(secret, 42, "owner", 1, testSessionEpoch, ttl, now)
 		if err != nil {
 			t.Fatalf("BuildAuthSessionTokenWithVersionAndSessionID(ttl=%v) unexpected error: %v", ttl, err)
 		}

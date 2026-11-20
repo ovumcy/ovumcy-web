@@ -107,6 +107,9 @@ type AuthService struct {
 	users               AuthUserRepository
 	logoutAttemptPolicy *AuthAttemptPolicy
 	maxSessionLifetime  time.Duration
+	// sessionEpoch is the boot-loaded epoch (see ConfigureSessionEpoch). Empty
+	// means unconfigured, which refuses every mint and every resolve.
+	sessionEpoch string
 }
 
 func NewAuthService(users AuthUserRepository) *AuthService {
@@ -548,11 +551,19 @@ func (service *AuthService) VerifyStoredRecoveryCode(hash string, code string) b
 // sessionVersion is the same row's auth_session_version, the epoch the grant
 // is bound to. purpose must be one of the PasswordResetTokenPurpose* constants.
 func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, sessionVersion int, purpose string, ttl time.Duration, now time.Time) (string, error) {
-	return BuildPasswordResetToken(secretKey, userID, storedHash, sessionVersion, purpose, ttl, now)
+	epoch, err := service.SessionEpoch()
+	if err != nil {
+		return "", err
+	}
+	return BuildPasswordResetToken(secretKey, userID, storedHash, sessionVersion, epoch, purpose, ttl, now)
 }
 
 func (service *AuthService) BuildAuthSessionTokenWithSessionID(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, string, error) {
-	return BuildAuthSessionTokenWithVersionAndSessionID(secretKey, userID, role, sessionVersion, ttl, now)
+	epoch, err := service.SessionEpoch()
+	if err != nil {
+		return "", "", err
+	}
+	return BuildAuthSessionTokenWithVersionAndSessionID(secretKey, userID, role, sessionVersion, epoch, ttl, now)
 }
 
 func (service *AuthService) ResolveUserByAuthSessionToken(ctx context.Context, secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
@@ -567,6 +578,13 @@ func (service *AuthService) ResolveAuthSession(ctx context.Context, secretKey []
 	}
 	if !authSessionLifetimeWithinPolicy(claims, service.sessionLifetimeCeiling()) {
 		return nil, nil, ErrAuthSessionLifetimeOverPolicy
+	}
+	// The epoch outranks the user row: a restore rolls back the version and the
+	// id counter, so a token from before it can name a row that exists, at the
+	// version it carries, for a different owner. Absent, empty and mismatched
+	// all refuse; an unconfigured service refuses everything.
+	if !service.SessionEpochCurrent(claims.Epoch) {
+		return nil, nil, ErrAuthSessionTokenRevoked
 	}
 
 	user, found, err := service.users.FindByIDOptional(ctx, claims.UserID)
@@ -588,8 +606,24 @@ func (service *AuthService) ResolveAuthSession(ctx context.Context, secretKey []
 	return &user, claims, nil
 }
 
-func (service *AuthService) ResolveUserByResetToken(ctx context.Context, secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
+// ParsePasswordResetGrant is ParsePasswordResetToken plus the session-epoch
+// check: a grant minted before a restore, or without the claim, is refused
+// like any other invalid one. Every reader that acts on a grant's contents —
+// the redeem and the page that decides whether to show the form — goes through
+// it, so none of them can honour one the epoch no longer covers.
+func (service *AuthService) ParsePasswordResetGrant(secretKey []byte, rawToken string, now time.Time) (*PasswordResetClaims, error) {
 	claims, err := ParsePasswordResetToken(secretKey, rawToken, now)
+	if err != nil {
+		return nil, err
+	}
+	if !service.SessionEpochCurrent(claims.Epoch) {
+		return nil, ErrPasswordResetTokenInvalidSessionEpoch
+	}
+	return claims, nil
+}
+
+func (service *AuthService) ResolveUserByResetToken(ctx context.Context, secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
+	claims, err := service.ParsePasswordResetGrant(secretKey, rawToken, now)
 	if err != nil {
 		return nil, ErrInvalidResetToken
 	}

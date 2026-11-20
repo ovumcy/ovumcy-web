@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -1329,11 +1330,25 @@ func (repo *UserRepository) DisarmAllCalendarFeedTokens(ctx context.Context) (in
 // password and outranks TOTP. The account signs in again through a linked
 // OIDC identity or once an operator runs `ovumcy reset-password`.
 //
+// The +1 above is not what keeps a pre-restore cookie out: a cookie minted at a
+// later version than the backup holds, or for an id the restore frees for a new
+// account, can still match a row the bump leaves at the same number. The
+// session epoch does (models.AppStateKeyAuthSessionEpoch): newEpoch replaces
+// the stored one in the same transaction, so a restore boot that revoked
+// accounts cannot have left the old epoch in force. A blank newEpoch is refused
+// before anything is written.
+//
 // All statements run in one transaction, so a failure leaves none of them and
 // the boot retries.
-func (repo *UserRepository) RevokeRestoredAccess(ctx context.Context) (models.RestoreRevocationCounts, error) {
+func (repo *UserRepository) RevokeRestoredAccess(ctx context.Context, newEpoch string) (models.RestoreRevocationCounts, error) {
+	if strings.TrimSpace(newEpoch) == "" {
+		return models.RestoreRevocationCounts{}, errors.New("revoke restored access: a session epoch is required")
+	}
 	var counts models.RestoreRevocationCounts
 	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := setAppStateTx(tx, models.AppStateKeyAuthSessionEpoch, newEpoch); err != nil {
+			return err
+		}
 		// Accounts without a local password first: once the statement below
 		// has run, every account matches this predicate and would be bumped
 		// twice.

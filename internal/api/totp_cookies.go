@@ -34,6 +34,10 @@ type totpPendingCookiePayload struct {
 	// must not outlive the credential that earned it. A payload without one is
 	// refused, never read as version 1.
 	SessionVersion int `json:"sv"`
+	// Epoch is the session epoch the first factor passed under
+	// (models.AppStateKeyAuthSessionEpoch). A payload without the epoch in
+	// force is refused, never read as current.
+	Epoch string `json:"ep"`
 }
 
 type totpSetupCookiePayload struct {
@@ -50,7 +54,12 @@ var (
 )
 
 func (handler *Handler) setTOTPPendingCookie(c fiber.Ctx, userID uint, sessionVersion int, rememberMe bool, oidcLogoutStateID string) error {
+	epoch, err := handler.sessionEpoch()
+	if err != nil {
+		return err
+	}
 	payload := totpPendingCookiePayload{
+		Epoch:             epoch,
 		UserID:            userID,
 		RememberMe:        rememberMe,
 		ExpiresAt:         time.Now().Add(totpPendingCookieTTL),
@@ -112,6 +121,10 @@ func (handler *Handler) parseTOTPPendingCookie(c fiber.Ctx) (totpPendingCookiePa
 	if payload.SessionVersion < 1 {
 		handler.clearTOTPPendingCookie(c)
 		return totpPendingCookiePayload{}, errors.New("totp pending cookie missing session version")
+	}
+	if !handler.sessionEpochCurrent(payload.Epoch) {
+		handler.clearTOTPPendingCookie(c)
+		return totpPendingCookiePayload{}, errors.New("totp pending cookie from another session epoch")
 	}
 	if time.Now().After(payload.ExpiresAt) {
 		handler.clearTOTPPendingCookie(c)

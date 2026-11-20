@@ -28,7 +28,9 @@ func TestIssueResetTokenRejectsNilUser(t *testing.T) {
 
 func TestIssueResetTokenForValidUser(t *testing.T) {
 	// Line 45: a valid user yields a parseable reset token carrying that user id.
-	service := NewPasswordResetService(NewAuthService(nil), nil)
+	coverageAuth := NewAuthService(nil)
+	coverageAuth.ConfigureSessionEpoch(testSessionEpoch)
+	service := NewPasswordResetService(coverageAuth, nil)
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	secret := []byte("secret")
 	user := &models.User{ID: 7, PasswordHash: "$2a$10$testhashvaluefortokenclaims"}
