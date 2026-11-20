@@ -316,18 +316,12 @@ func runUsersCreate(service *services.OperatorUserService, fencePath string, fen
 		// (re-runs, upgrades): an existing email is not an error. It never
 		// updates the existing account — use reset-password to change a password.
 		if opts.skipIfExists && errors.Is(err, services.ErrOperatorUserEmailExists) {
-			if output == nil {
-				output = os.Stdout
-			}
 			_, _ = fmt.Fprintf(output, "Account %s already exists — skipping.\n", opts.email)
 			return nil
 		}
 		return mapUsersCreateError(err)
 	}
 
-	if output == nil {
-		output = os.Stdout
-	}
 	_, _ = fmt.Fprintf(output, "✅ Created owner account %s (id=%d).\n", summary.Email, summary.ID)
 	switch {
 	case !localSignIn:

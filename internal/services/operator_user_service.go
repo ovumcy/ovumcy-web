@@ -33,6 +33,7 @@ type OperatorUserRepository interface {
 	// FindAllByNormalizedEmail is read only through resolveUniqueUserByEmail.
 	FindAllByNormalizedEmail(ctx context.Context, email string) ([]models.User, error)
 	FindByIDOptional(ctx context.Context, userID uint) (models.User, bool, error)
+	ExistsByNormalizedEmail(ctx context.Context, email string) (bool, error)
 	ExistsByNormalizedEmailExcludingUser(ctx context.Context, email string, excludeUserID uint) (bool, error)
 	SetUserEmailByIDAndRevokeSessions(ctx context.Context, userID uint, fromEmail string, toEmail string) (bool, error)
 	DeleteAccountAndRelatedData(ctx context.Context, userID uint) error
@@ -240,9 +241,18 @@ func (service *OperatorUserService) CreateOwner(ctx context.Context, email strin
 		return models.OperatorUserSummary{}, "", fmt.Errorf("%w: %v", ErrOperatorUserCreateFailed, err)
 	}
 
-	// The unique email index is the authoritative guard: a duplicate address —
-	// from a retry or a concurrent create — is rejected here. Account count is
-	// intentionally not gated, so a household can hold several owners.
+	// An address already taken is answered before beforeWrite, so a
+	// --skip-if-exists re-run needs no fence and advances none. The unique email
+	// index stays the authoritative guard: a duplicate from a concurrent create
+	// is rejected by the insert. Account count is intentionally not gated, so a
+	// household can hold several owners.
+	exists, err := service.users.ExistsByNormalizedEmail(ctx, normalizedEmail)
+	if err != nil {
+		return models.OperatorUserSummary{}, "", fmt.Errorf("%w: %v", ErrOperatorUserCreateFailed, err)
+	}
+	if exists {
+		return models.OperatorUserSummary{}, "", ErrOperatorUserEmailExists
+	}
 	if beforeWrite != nil {
 		if err := beforeWrite(ctx); err != nil {
 			return models.OperatorUserSummary{}, "", err
@@ -252,7 +262,8 @@ func (service *OperatorUserService) CreateOwner(ctx context.Context, email strin
 		if isRegistrationUniqueConstraintError(err) {
 			return models.OperatorUserSummary{}, "", ErrOperatorUserEmailExists
 		}
-		return models.OperatorUserSummary{}, "", fmt.Errorf("%w: %v", ErrOperatorUserCreateFailed, err)
+		// %w on both: the CLI tells a half-advanced fence from a refusal by the chain.
+		return models.OperatorUserSummary{}, "", fmt.Errorf("%w: %w", ErrOperatorUserCreateFailed, err)
 	}
 
 	return operatorUserSummaryFromUser(user), recoveryCode, nil
