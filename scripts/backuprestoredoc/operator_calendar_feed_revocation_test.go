@@ -701,7 +701,7 @@ func pollRunbookFeed(t *testing.T, repos *db.Repositories, armed armedRunbookFee
 	}
 	handler, err := api.NewHandler(
 		runbookFeedSecretKey, time.UTC, i18nManager, false,
-		bootstrap.BuildDependencies(repos, []byte(runbookFeedSecretKey), i18nManager, bootstrap.Options{}),
+		bootstrap.BuildDependencies(repos, []byte(runbookFeedSecretKey), i18nManager, bootstrap.Options{AuthSessionEpoch: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}),
 	)
 	if err != nil {
 		t.Fatalf("build the http handler: %v", err)

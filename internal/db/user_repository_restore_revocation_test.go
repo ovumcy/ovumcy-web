@@ -41,9 +41,17 @@ func TestRevokeRestoredAccessReachesEveryAccount(t *testing.T) {
 			beforeHook := reloadUserForWebhookRevocationTest(t, repo, withHook.ID)
 			beforePlain := reloadUserForWebhookRevocationTest(t, repo, without.ID)
 
-			counts, err := repo.RevokeRestoredAccess(ctx)
+			appState := NewAppStateRepository(repo.database)
+			if err := appState.Set(ctx, models.AppStateKeyAuthSessionEpoch, "epoch-before-the-restore"); err != nil {
+				t.Fatalf("seed the epoch: %v", err)
+			}
+
+			counts, err := repo.RevokeRestoredAccess(ctx, "epoch-after-the-restore")
 			if err != nil {
 				t.Fatalf("RevokeRestoredAccess: %v", err)
+			}
+			if stored, found, err := appState.Get(ctx, models.AppStateKeyAuthSessionEpoch); err != nil || !found || stored != "epoch-after-the-restore" {
+				t.Fatalf("the revocation must rotate the stored session epoch, got %q (found %t, err %v)", stored, found, err)
 			}
 			if counts != (models.RestoreRevocationCounts{Sessions: 3, WebhookEndpoints: 1, LocalSignIns: 2}) {
 				t.Fatalf("expected 3 sessions, 1 endpoint and 2 passwords revoked, got %+v", counts)
@@ -102,9 +110,17 @@ func TestRevokeRestoredAccessWritesNothingWhenAnyStatementFails(t *testing.T) {
 				t.Fatalf("create the trigger: %v", err)
 			}
 
-			counts, err := repo.RevokeRestoredAccess(context.Background())
+			appState := NewAppStateRepository(repo.database)
+			if err := appState.Set(context.Background(), models.AppStateKeyAuthSessionEpoch, "epoch-before-the-restore"); err != nil {
+				t.Fatalf("seed the epoch: %v", err)
+			}
+
+			counts, err := repo.RevokeRestoredAccess(context.Background(), "epoch-after-the-restore")
 			if err == nil {
 				t.Fatal("a refused statement must surface as an error")
+			}
+			if stored, _, err := appState.Get(context.Background(), models.AppStateKeyAuthSessionEpoch); err != nil || stored != "epoch-before-the-restore" {
+				t.Fatalf("a failed revocation must leave the session epoch as it was, got %q (err %v)", stored, err)
 			}
 			if counts != (models.RestoreRevocationCounts{}) {
 				t.Fatalf("a failed revocation must report no counts, got %+v", counts)
@@ -115,6 +131,25 @@ func TestRevokeRestoredAccessWritesNothingWhenAnyStatementFails(t *testing.T) {
 				t.Fatalf("a failed revocation must leave the row as it was: before %+v, after %+v", before, after)
 			}
 		})
+	}
+}
+
+// TestRevokeRestoredAccessRefusesABlankSessionEpoch pins that the rotation
+// cannot be skipped by passing nothing: a blank epoch is refused before any
+// account is touched, so a restore boot never revokes without rotating.
+func TestRevokeRestoredAccessRefusesABlankSessionEpoch(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "restore-revoke-blank-epoch@example.com")
+	before := reloadUserForWebhookRevocationTest(t, repo, user.ID)
+
+	for _, blank := range []string{"", "  "} {
+		if _, err := repo.RevokeRestoredAccess(context.Background(), blank); err == nil {
+			t.Fatalf("a blank epoch %q must be refused", blank)
+		}
+	}
+	after := reloadUserForWebhookRevocationTest(t, repo, user.ID)
+	if after.AuthSessionVersion != before.AuthSessionVersion || after.PasswordHash != before.PasswordHash {
+		t.Fatalf("a refused revocation must write nothing: before %+v, after %+v", before, after)
 	}
 }
 

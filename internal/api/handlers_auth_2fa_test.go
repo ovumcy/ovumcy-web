@@ -79,6 +79,7 @@ func sealTOTPPendingCookieForTest(t *testing.T, secretKey []byte, userID uint, r
 		// which bumps auth_session_version from 1 to 2; the first factor of a
 		// sign-in that follows passes at that version.
 		SessionVersion: 2,
+		Epoch:          testAuthSessionEpoch,
 	}
 	serialized, err := json.Marshal(payload)
 	if err != nil {

@@ -50,6 +50,10 @@ type AuthSessionClaims struct {
 	Role           string `json:"role"`
 	SessionVersion int    `json:"sv"`
 	SessionID      string `json:"sid,omitempty"`
+	// Epoch is the session epoch the token was minted under
+	// (models.AppStateKeyAuthSessionEpoch). ResolveAuthSession refuses a token
+	// whose epoch is absent, empty or not the one in force.
+	Epoch string `json:"ep"`
 	jwt.RegisteredClaims
 }
 
@@ -62,9 +66,12 @@ type AuthSessionClaims struct {
 // a web session is decided by ValidateSupportedWebUser at the two places that
 // matter — where the api layer issues a cookie, and where ResolveAuthSession
 // admits one — so this stays a pure minting primitive.
-func BuildAuthSessionTokenWithVersionAndSessionID(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, string, error) {
+func BuildAuthSessionTokenWithVersionAndSessionID(secretKey []byte, userID uint, role string, sessionVersion int, epoch string, ttl time.Duration, now time.Time) (string, string, error) {
 	if userID == 0 {
 		return "", "", ErrAuthSessionTokenInvalidUserID
+	}
+	if epoch == "" {
+		return "", "", ErrAuthSessionEpochUnavailable
 	}
 	if ttl <= 0 {
 		ttl = 7 * 24 * time.Hour
@@ -82,6 +89,7 @@ func BuildAuthSessionTokenWithVersionAndSessionID(secretKey []byte, userID uint,
 		Role:           role,
 		SessionVersion: NormalizeAuthSessionVersion(sessionVersion),
 		SessionID:      sessionID,
+		Epoch:          epoch,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatUint(uint64(userID), 10),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),

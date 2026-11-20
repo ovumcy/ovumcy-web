@@ -35,6 +35,11 @@ func TestResetPasswordFullRecoversAnOIDCOnlyAccountWithUnverifiableTOTP(t *testi
 	}
 	defer closeDatabase()
 	authService := services.NewAuthService(repositories.Users)
+	epoch, _, err := services.LoadAuthSessionEpoch(context.Background(), repositories.AppState)
+	if err != nil {
+		t.Fatalf("load session epoch: %v", err)
+	}
+	authService.ConfigureSessionEpoch(epoch)
 	limiter := services.NewAttemptLimiter()
 	resetService := services.NewPasswordResetService(authService, limiter)
 

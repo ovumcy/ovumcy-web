@@ -584,6 +584,7 @@ func TestAuthServiceAuthenticateCredentials(t *testing.T) {
 		},
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	user, err := service.AuthenticateCredentials(context.Background(), "login@example.com", "StrongPass1")
 	if err != nil {
@@ -627,6 +628,7 @@ func TestAuthServiceFindUserByEmailRecoveryCodeAndPassword(t *testing.T) {
 		},
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	user, err := service.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "Owner@Example.com", recoveryCode, "StrongPass1")
 	if err != nil {
@@ -664,6 +666,7 @@ func TestAuthServiceFindUserByEmailRecoveryCodeAndPasswordRejectsWrongPassword(t
 		},
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	for name, password := range map[string]string{"wrong": "NotThePassword9", "empty": ""} {
 		if _, err := service.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "Owner@Example.com", recoveryCode, password); !errors.Is(err, ErrRecoveryCodeNotFound) {
@@ -690,6 +693,7 @@ func TestAuthServiceFindUserByEmailRecoveryCodeAndPasswordRejectsMismatch(t *tes
 		},
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	if _, err := service.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "other@example.com", recoveryCode, "StrongPass1"); !errors.Is(err, ErrRecoveryCodeNotFound) {
 		t.Fatalf("expected ErrRecoveryCodeNotFound for mismatched email, got %v", err)
@@ -721,6 +725,7 @@ func TestAuthServiceResolveUserByResetToken(t *testing.T) {
 		},
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	token, err := service.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
@@ -757,6 +762,7 @@ func TestAuthServiceResolveUserByResetTokenRejectsStateMismatch(t *testing.T) {
 		},
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 	token, err := service.BuildPasswordResetToken(secret, 42, string(originalHash), 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
@@ -770,6 +776,7 @@ func TestAuthServiceResolveUserByResetTokenRejectsStateMismatch(t *testing.T) {
 func TestAuthServiceRegenerateRecoveryCodeRefusedWithoutLocalSignIn(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	delivered := false
 	_, err := service.RegenerateRecoveryCode(context.Background(), &models.User{ID: 55}, false, func(*models.User, string) error {
@@ -787,6 +794,7 @@ func TestAuthServiceRegenerateRecoveryCodeRefusedWithoutLocalSignIn(t *testing.T
 func TestAuthServiceRegenerateRecoveryCode(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	user := &models.User{ID: 55}
 	recoveryCode, err := service.RegenerateRecoveryCode(context.Background(), user, true, noopRecoveryCodeDelivery)
@@ -820,6 +828,7 @@ func TestAuthServiceRegenerateRecoveryCode(t *testing.T) {
 func TestAuthServiceClaimRecoveryCodeRevealIsSingleUseAndOwnerBound(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 	now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
 
 	claimed, err := service.ClaimRecoveryCodeReveal(context.Background(), 42, now)
@@ -879,6 +888,7 @@ func TestAuthServiceResolveUserByAuthSessionToken(t *testing.T) {
 		},
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	token, _, err := service.BuildAuthSessionTokenWithSessionID(secret, 42, models.RoleOwner, 1, 30*time.Minute, now)
 	if err != nil {
@@ -907,6 +917,7 @@ func TestAuthServiceResolveUserByAuthSessionTokenRejectsRevokedSession(t *testin
 		},
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	token, _, err := service.BuildAuthSessionTokenWithSessionID(secret, 42, models.RoleOwner, 1, 30*time.Minute, now)
 	if err != nil {
@@ -926,6 +937,7 @@ func TestAuthServiceRevokeAuthSessions(t *testing.T) {
 		},
 	}
 	service := NewAuthService(repo)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 
 	if err := service.RevokeAuthSessions(context.Background(), 42); err != nil {
 		t.Fatalf("RevokeAuthSessions() unexpected error: %v", err)

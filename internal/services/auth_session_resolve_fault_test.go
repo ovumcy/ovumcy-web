@@ -30,6 +30,7 @@ func TestResolveAuthSessionTellsAStorageFaultFromAMissingAccount(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			service := NewAuthService(c.repo)
+			service.ConfigureSessionEpoch(testSessionEpoch)
 			token, _, err := service.BuildAuthSessionTokenWithSessionID(secret, 42, models.RoleOwner, 1, 30*time.Minute, now)
 			if err != nil {
 				t.Fatalf("BuildAuthSessionTokenWithSessionID() unexpected error: %v", err)

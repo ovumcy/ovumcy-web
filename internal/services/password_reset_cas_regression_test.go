@@ -144,6 +144,7 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	}
 
 	authSvc := NewAuthService(repo)
+	authSvc.ConfigureSessionEpoch(testSessionEpoch)
 	resetSvc := NewPasswordResetService(authSvc, nil)
 
 	token, err := authSvc.BuildPasswordResetToken(secret, 42, string(originalHash), 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)
@@ -218,6 +219,7 @@ func TestCompleteResetLosesToASessionVersionBumpBetweenResolveAndWrite(t *testin
 	}
 
 	authSvc := NewAuthService(repo)
+	authSvc.ConfigureSessionEpoch(testSessionEpoch)
 	resetSvc := NewPasswordResetService(authSvc, nil)
 
 	token, err := authSvc.BuildPasswordResetToken(secret, 42, string(originalHash), 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)

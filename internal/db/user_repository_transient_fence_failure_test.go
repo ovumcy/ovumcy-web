@@ -138,7 +138,7 @@ func newSignOutFenceFixture(t *testing.T, database *gorm.DB) signOutFenceFixture
 		t.Fatalf("first boot: %+v, %v", outcome, err)
 	}
 	user := createUserForTimezoneTest(t, repositories.Users, "sign-out-fence@example.com")
-	auth := services.NewAuthService(repositories.Users)
+	auth := authServiceUnderStoredEpoch(t, repositories)
 	now := time.Now()
 	cookie, _, err := auth.BuildAuthSessionTokenWithSessionID(signOutFenceSecret, user.ID, user.Role, user.AuthSessionVersion, time.Hour, now)
 	if err != nil {

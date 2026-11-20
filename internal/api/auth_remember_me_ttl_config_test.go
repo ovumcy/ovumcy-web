@@ -59,7 +59,9 @@ func TestSessionLongerThanTheConfiguredLifetimeIsRefused(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{rememberMeTTLDays: tc.configured})
 			user := createOnboardingTestUser(t, database, "remember-ttl-cap@example.com", "StrongPass1", true)
-			token, _, err := services.NewAuthService(nil).BuildAuthSessionTokenWithSessionID([]byte(testAppSecretKey), user.ID, user.Role, user.AuthSessionVersion, tc.tokenLifetime, time.Now())
+			authService := services.NewAuthService(nil)
+			authService.ConfigureSessionEpoch(testAuthSessionEpoch)
+			token, _, err := authService.BuildAuthSessionTokenWithSessionID([]byte(testAppSecretKey), user.ID, user.Role, user.AuthSessionVersion, tc.tokenLifetime, time.Now())
 			if err != nil {
 				t.Fatalf("build auth session token: %v", err)
 			}

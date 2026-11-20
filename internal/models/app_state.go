@@ -68,6 +68,19 @@ const AppStateKeyAuthEmailRenormalizeV1 = "auth_email_renormalize.v1"
 // the row forces one more pass.
 const AppStateKeyLutealPhaseRecomputeV1 = "luteal_phase_recompute.v1"
 
+// AppStateKeyAuthSessionEpoch is the app_state key under which the random
+// session epoch lives: 32 random bytes, base64url, never empty. Every auth
+// session token, and every pending cookie or grant that carries a session
+// version, embeds it as the claim "ep" and is refused when the claim is missing
+// or differs from the value the server loaded at boot. A backup restore rolls
+// back auth_session_version and the id counter, so a version alone cannot tell
+// a pre-restore cookie from a current one, nor one owner's reused id from
+// another's; the epoch is what a restore cannot roll back, because the boot
+// that sees a restore replaces it in the same transaction that revokes the
+// accounts. The first boot that finds the key absent generates it — for an
+// upgrade that ends every session minted before the claim existed, once.
+const AppStateKeyAuthSessionEpoch = "auth_session_epoch"
+
 // AppState is one row of the process-level key/value store (migration 028).
 // It holds runtime bookkeeping, NEVER special-category health data, and is not
 // scoped by user_id — it is deliberately outside the users table. Value is

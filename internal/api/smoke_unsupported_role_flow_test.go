@@ -73,7 +73,7 @@ func assertRoleRefusedResetRedeemWritesNothing(t *testing.T, purpose string) {
 		if err := database.First(&current, user.ID).Error; err != nil {
 			fail("load user before minting: %v", err)
 		}
-		token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), current.ID, current.PasswordHash, current.AuthSessionVersion, purpose, 30*time.Minute, time.Now())
+		token, err := services.BuildPasswordResetToken([]byte(testHandlerSecretKey), current.ID, current.PasswordHash, current.AuthSessionVersion, testAuthSessionEpoch, purpose, 30*time.Minute, time.Now())
 		if err != nil {
 			fail("BuildPasswordResetToken: %v", err)
 		}

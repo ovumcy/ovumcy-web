@@ -104,6 +104,7 @@ func newRateLimitTestHandlerAndDBAtLocation(t *testing.T, location *time.Locatio
 		i18nManager,
 		false,
 		bootstrap.BuildDependencies(db.NewRepositories(database), []byte(rateLimitTestSecretKey), i18nManager, bootstrap.Options{
+			AuthSessionEpoch: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 			RegistrationMode: services.RegistrationModeOpen,
 			OIDCConfig:       security.OIDCConfig{},
 			LoginAttempts:    bootstrap.AttemptLimit{Max: 8, Window: 15 * time.Minute},

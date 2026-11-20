@@ -67,6 +67,22 @@ func (handler *Handler) SetRememberMeTTLDays(days int) error {
 	return nil
 }
 
+// sessionEpoch is the epoch every sealed payload that carries a session version
+// is written under. It comes from the auth service, which refuses an empty one,
+// so a payload is never sealed without it.
+func (handler *Handler) sessionEpoch() (string, error) {
+	if handler.authService == nil {
+		return "", services.ErrAuthSessionEpochUnavailable
+	}
+	return handler.authService.SessionEpoch()
+}
+
+// sessionEpochCurrent reports whether a payload's epoch is the one in force.
+// A missing claim, an unconfigured service and a mismatch all answer false.
+func (handler *Handler) sessionEpochCurrent(claimed string) bool {
+	return handler.authService != nil && handler.authService.SessionEpochCurrent(claimed)
+}
+
 // rememberMeLifetime falls back to the default for a Handler built without
 // NewHandler, where the field is zero and would otherwise mint a cookie that
 // expires on issue.

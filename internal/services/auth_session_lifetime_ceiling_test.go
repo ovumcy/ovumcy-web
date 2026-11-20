@@ -49,6 +49,7 @@ func TestAuthSessionLifetimeCeilingIsAFilterNotARevocation(t *testing.T) {
 func TestResolveAuthSessionRefusesATokenOverTheCeilingBeforeTheLookup(t *testing.T) {
 	secret := []byte("ceiling-test-secret")
 	service := NewAuthService(nil)
+	service.ConfigureSessionEpoch(testSessionEpoch)
 	token, _, err := service.BuildAuthSessionTokenWithSessionID(secret, 7, models.RoleOwner, 1, 31*24*time.Hour, time.Now())
 	if err != nil {
 		t.Fatalf("build token: %v", err)

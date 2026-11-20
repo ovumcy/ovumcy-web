@@ -13,6 +13,7 @@ import (
 func TestPasswordResetServiceStartRecoveryRateLimited(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	authService := NewAuthService(repo)
+	authService.ConfigureSessionEpoch(testSessionEpoch)
 	limiter := NewAttemptLimiter()
 	service := NewPasswordResetService(authService, limiter)
 	secretKey := []byte("test-secret")
@@ -32,6 +33,7 @@ func TestPasswordResetServiceStartRecoveryRateLimited(t *testing.T) {
 func TestPasswordResetServiceStartRecoveryInvalidEmailAddsFailure(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	authService := NewAuthService(repo)
+	authService.ConfigureSessionEpoch(testSessionEpoch)
 	limiter := NewAttemptLimiter()
 	service := NewPasswordResetService(authService, limiter)
 	service.ConfigureRecoveryAttemptLimits(1, DefaultRecoveryAttemptsWindow)
@@ -52,6 +54,7 @@ func TestPasswordResetServiceStartRecoveryInvalidEmailAddsFailure(t *testing.T) 
 func TestPasswordResetServiceStartRecoveryInvalidCodeAddsFailure(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	authService := NewAuthService(repo)
+	authService.ConfigureSessionEpoch(testSessionEpoch)
 	limiter := NewAttemptLimiter()
 	service := NewPasswordResetService(authService, limiter)
 	service.ConfigureRecoveryAttemptLimits(1, DefaultRecoveryAttemptsWindow)
@@ -185,6 +188,7 @@ func TestPasswordResetServiceStartRecoveryAnswersAnUnknownAddressLikeAKnownOne(t
 func TestPasswordResetServiceStartRecoveryRateLimitsByIdentityAcrossIPs(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	authService := NewAuthService(repo)
+	authService.ConfigureSessionEpoch(testSessionEpoch)
 	service := NewPasswordResetService(authService, NewAttemptLimiter())
 	service.ConfigureRecoveryAttemptLimits(2, time.Hour)
 	secretKey := []byte("test-secret")
@@ -226,6 +230,7 @@ func TestPasswordResetServiceStartRecoverySuccessResetsLimiter(t *testing.T) {
 		emailMatches: []models.User{ownerUser},
 	}
 	authService := NewAuthService(repo)
+	authService.ConfigureSessionEpoch(testSessionEpoch)
 	limiter := NewAttemptLimiter()
 	service := NewPasswordResetService(authService, limiter)
 	service.ConfigureRecoveryAttemptLimits(2, DefaultRecoveryAttemptsWindow)
@@ -269,6 +274,7 @@ func TestPasswordResetServiceCompleteReset(t *testing.T) {
 		},
 	}
 	authService := NewAuthService(repo)
+	authService.ConfigureSessionEpoch(testSessionEpoch)
 	service := NewPasswordResetService(authService, nil)
 
 	token, err := authService.BuildPasswordResetToken(secret, 42, repo.user.PasswordHash, 1, PasswordResetTokenPurposeRecovery, 30*time.Minute, now)

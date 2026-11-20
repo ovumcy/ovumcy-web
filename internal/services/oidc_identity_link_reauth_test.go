@@ -203,7 +203,7 @@ func TestOIDCLinkRefusalForAClaimedIdentityTellsItsHolderNothingSignInWouldNot(t
 			// token the OIDC callback issues next (IssueResetTokenForUser).
 			result, signInStop := service.Authenticate(context.Background(), "code", "verifier", "nonce", now)
 			if signInStop == nil && result.RequiresPasswordReset {
-				_, signInStop = BuildPasswordResetToken([]byte("0123456789abcdef0123456789abcdef"), result.User.ID, result.User.PasswordHash, result.User.AuthSessionVersion, PasswordResetTokenPurposeForcedOIDC, time.Minute, now)
+				_, signInStop = BuildPasswordResetToken([]byte("0123456789abcdef0123456789abcdef"), result.User.ID, result.User.PasswordHash, result.User.AuthSessionVersion, testSessionEpoch, PasswordResetTokenPurposeForcedOIDC, time.Minute, now)
 			}
 			if tc.wantLink == ErrOIDCLinkFailed {
 				if signInStop != nil {

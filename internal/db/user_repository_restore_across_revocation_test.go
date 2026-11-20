@@ -165,13 +165,13 @@ func TestARestoreAcrossASessionOrCredentialRevocationRevokesOnTheNextBoot(t *tes
 			if outcome, err := fence.EnforceRequired(ctx); err != nil || !outcome.FirstBoot {
 				t.Fatalf("first boot: %+v, %v", outcome, err)
 			}
-			auth := services.NewAuthService(repositories.Users)
 			now := time.Now()
 
 			// Sequential on one database: each boot below leaves the halves
 			// agreeing again, which is the state the next case starts from.
 			for _, revocation := range revocations {
 				t.Run(revocation.name, func(t *testing.T) {
+					auth := authServiceUnderStoredEpoch(t, repositories)
 					user := createUserForTimezoneTest(t, repositories.Users, revocation.name+"@example.com")
 					f := fixture{repositories: repositories, user: user}
 					if revocation.setup != nil {
@@ -199,6 +199,7 @@ func TestARestoreAcrossASessionOrCredentialRevocationRevokesOnTheNextBoot(t *tes
 					if !outcome.ContinuityBroken || outcome.Revoked.LocalSignIns == 0 {
 						t.Fatalf("the boot over a restore across a %s must read the restore and revoke, got %+v", revocation.name, outcome)
 					}
+					auth = authServiceUnderStoredEpoch(t, repositories)
 					if _, _, err := auth.ResolveAuthSession(ctx, restoreAcrossRevocationSecret, cookie, now); !errors.Is(err, services.ErrAuthSessionTokenRevoked) {
 						t.Fatalf("the cookie the %s revoked must not resolve after the boot, got %v", revocation.name, err)
 					}
