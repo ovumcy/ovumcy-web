@@ -687,6 +687,9 @@ var detectCasesByWorkflow = map[string][]detectCase{
 			map[string]string{"run_trivyfs": "true"}},
 		{"pubspec.lock", "pull_request", []string{"mobile/pubspec.lock"},
 			map[string]string{"run_trivyfs": "true"}},
+		// A waiver-only diff changes the gate's verdict with no manifest touched.
+		{"the trivy-fs gate's waiver file", "pull_request", []string{fsGateWaiverFile},
+			map[string]string{"run_go": "false", "run_trivyfs": "true", "run_trivyimage": "false"}},
 		{"the pull-retry action", "pull_request", []string{".github/actions/docker-pull-retry/action.yml"},
 			map[string]string{"run_go": "false", "run_trivyfs": "true", "run_trivyimage": "true"}},
 		{"merge_group, docs only", "merge_group", []string{"docs/x.md"},
