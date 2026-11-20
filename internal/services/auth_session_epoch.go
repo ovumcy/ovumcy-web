@@ -19,6 +19,7 @@ var ErrAuthSessionEpochUnavailable = errors.New("auth session epoch unavailable"
 type authSessionEpochStore interface {
 	Get(ctx context.Context, key string) (string, bool, error)
 	Set(ctx context.Context, key string, value string) error
+	SetIfAbsent(ctx context.Context, key string, value string) (bool, error)
 }
 
 // LoadAuthSessionEpoch returns the session epoch this process serves under,
@@ -43,10 +44,28 @@ func LoadAuthSessionEpoch(ctx context.Context, store authSessionEpochStore) (str
 	if err != nil {
 		return "", false, fmt.Errorf("generate auth session epoch: %w", err) // codecov:ignore -- crypto/rand failure; unreachable without an OS-level entropy fault
 	}
-	if err := store.Set(ctx, models.AppStateKeyAuthSessionEpoch, epoch); err != nil {
+	// An absent key is inserted only if still absent, and the stored value is
+	// read back: two first boots racing here both end up serving the one that
+	// won, never each their own. A malformed stored value is overwritten (no
+	// writer produces one, so there is no race to arbitrate) and read back the
+	// same way.
+	created := true
+	if found {
+		err = store.Set(ctx, models.AppStateKeyAuthSessionEpoch, epoch)
+	} else {
+		created, err = store.SetIfAbsent(ctx, models.AppStateKeyAuthSessionEpoch, epoch)
+	}
+	if err != nil {
 		return "", false, fmt.Errorf("store auth session epoch: %w", err)
 	}
-	return epoch, true, nil
+	winner, found, err := store.Get(ctx, models.AppStateKeyAuthSessionEpoch)
+	if err != nil {
+		return "", false, fmt.Errorf("reload auth session epoch: %w", err)
+	}
+	if !found || !security.ValidAuthSessionEpoch(winner) {
+		return "", false, errors.New("reload auth session epoch: stored value is missing or malformed")
+	}
+	return winner, created, nil
 }
 
 // ConfigureSessionEpoch gives the service the epoch LoadAuthSessionEpoch

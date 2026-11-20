@@ -341,6 +341,7 @@ func mustLoadAuthSessionEpoch(repositories *db.Repositories) string {
 func loadAuthSessionEpoch(ctx context.Context, store interface {
 	Get(ctx context.Context, key string) (string, bool, error)
 	Set(ctx context.Context, key string, value string) error
+	SetIfAbsent(ctx context.Context, key string, value string) (bool, error)
 }) (string, string, error) {
 	epoch, created, err := services.LoadAuthSessionEpoch(ctx, store)
 	if err != nil {

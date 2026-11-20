@@ -42,11 +42,28 @@ type epochTestStore struct {
 	values map[string]string
 	getErr error
 	setErr error
+	racer  string
 }
 
 func (store *epochTestStore) Get(_ context.Context, key string) (string, bool, error) {
 	value, found := store.values[key]
 	return value, found, store.getErr
+}
+
+// SetIfAbsent models the repository's insert-if-absent. racer, when set, is a
+// value another process commits between this boot's read and its insert.
+func (store *epochTestStore) SetIfAbsent(_ context.Context, key string, value string) (bool, error) {
+	if store.setErr != nil {
+		return false, store.setErr
+	}
+	if store.racer != "" {
+		store.values[key] = store.racer
+	}
+	if _, exists := store.values[key]; exists {
+		return false, nil
+	}
+	store.values[key] = value
+	return true, nil
 }
 
 func (store *epochTestStore) Set(_ context.Context, key string, value string) error {
@@ -80,8 +97,8 @@ func TestResolveAuthSessionRefusesATokenWithoutTheEpochClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sign: %v", err)
 	}
-	if _, _, err := service.ResolveAuthSession(t.Context(), epochTestSecret, token, now); !errors.Is(err, ErrAuthSessionTokenRevoked) {
-		t.Fatalf("a token without the ep claim must be refused as revoked, got %v", err)
+	if _, _, err := service.ResolveAuthSession(t.Context(), epochTestSecret, token, now); !errors.Is(err, ErrAuthSessionTokenInvalid) {
+		t.Fatalf("a token without the ep claim must be refused at the parse as invalid, got %v", err)
 	}
 }
 
@@ -171,6 +188,19 @@ func TestLoadAuthSessionEpochCreatesTheKeyOnTheFirstBoot(t *testing.T) {
 	again, created, err := LoadAuthSessionEpoch(t.Context(), store)
 	if err != nil || created || again != epoch {
 		t.Fatalf("a later boot must keep the stored epoch, got %q created=%t err=%v", again, created, err)
+	}
+}
+
+// Two first boots converge on one stored value: the one that lost the insert
+// serves the winner's epoch, not the one it generated.
+func TestLoadAuthSessionEpochServesTheWinnerOfAFirstBootRace(t *testing.T) {
+	store := &epochTestStore{values: map[string]string{}, racer: otherSessionEpoch}
+	epoch, created, err := LoadAuthSessionEpoch(t.Context(), store)
+	if err != nil || created || epoch != otherSessionEpoch {
+		t.Fatalf("the losing boot must serve the stored winner, got %q created=%t err=%v", epoch, created, err)
+	}
+	if store.values[models.AppStateKeyAuthSessionEpoch] != otherSessionEpoch {
+		t.Fatalf("the winner must stay stored, got %q", store.values[models.AppStateKeyAuthSessionEpoch])
 	}
 }
 

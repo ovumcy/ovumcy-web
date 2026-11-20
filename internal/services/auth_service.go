@@ -609,8 +609,10 @@ func (service *AuthService) ResolveAuthSession(ctx context.Context, secretKey []
 // ParsePasswordResetGrant is ParsePasswordResetToken plus the session-epoch
 // check: a grant minted before a restore, or without the claim, is refused
 // like any other invalid one. Every reader that acts on a grant's contents —
-// the redeem and the page that decides whether to show the form — goes through
-// it, so none of them can honour one the epoch no longer covers.
+// the redeem (ResolveUserByResetToken), the page that decides whether to show
+// the form, and the local-sign-in gate (PasswordResetTokenRefusedByLocalAuthGate)
+// — goes through it, so none of them can honour one the epoch no longer
+// covers. The bare ParsePasswordResetToken has no production caller besides it.
 func (service *AuthService) ParsePasswordResetGrant(secretKey []byte, rawToken string, now time.Time) (*PasswordResetClaims, error) {
 	claims, err := ParsePasswordResetToken(secretKey, rawToken, now)
 	if err != nil {

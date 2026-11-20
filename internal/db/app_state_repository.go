@@ -55,6 +55,27 @@ func (repo *AppStateRepository) Set(ctx context.Context, key string, value strin
 	return setAppStateTx(repo.database.WithContext(ctx), key, value)
 }
 
+// SetIfAbsent inserts value for key only when no row exists, in one statement
+// (ON CONFLICT (key) DO NOTHING, which SQLite and Postgres both take), and
+// reports whether this call wrote it. Two first boots racing on the same key
+// cannot overwrite each other: the loser inserts nothing and reads the
+// winner's value.
+func (repo *AppStateRepository) SetIfAbsent(ctx context.Context, key string, value string) (bool, error) {
+	trimmed := strings.TrimSpace(key)
+	if trimmed == "" {
+		return false, errors.New("app_state: key is required")
+	}
+	row := &models.AppState{Key: trimmed, Value: value, UpdatedAt: time.Now().UTC()}
+	result := repo.database.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoNothing: true,
+	}).Create(row)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // errWriteProbeRollback rolls ProbeWritable's transaction back on success.
 var errWriteProbeRollback = errors.New("app_state: write probe rollback")
 

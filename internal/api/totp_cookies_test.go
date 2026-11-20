@@ -267,6 +267,26 @@ func TestTOTPPendingCookieUnusableValueIsClearedNotLeftRiding(t *testing.T) {
 				Epoch:     testAuthSessionEpoch,
 			}),
 		},
+		{
+			// Every other field is valid: only the missing epoch claim refuses it.
+			name: "payload_without_epoch",
+			value: sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
+				UserID:         42,
+				ExpiresAt:      time.Now().Add(5 * time.Minute),
+				SessionVersion: 1,
+			}),
+		},
+		{
+			// Every other field is valid: only an epoch the server does not hold
+			// (what a restore leaves a pre-restore cookie with) refuses it.
+			name: "payload_under_another_epoch",
+			value: sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
+				UserID:         42,
+				ExpiresAt:      time.Now().Add(5 * time.Minute),
+				SessionVersion: 1,
+				Epoch:          otherTestAuthSessionEpoch,
+			}),
+		},
 	}
 	for _, refusal := range unusable {
 		t.Run(refusal.name, func(t *testing.T) {

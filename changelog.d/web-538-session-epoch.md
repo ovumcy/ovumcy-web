@@ -6,3 +6,7 @@
   sign-in, two-factor or link step now carries a random session epoch the server keeps in its database and
   replaces on any boot that detects a restore. Sessions issued by earlier releases carry no epoch, so the
   first start of this release ends them all: sign in once on each device. Nothing else is lost.
+
+  If you ever restore a backup while running a release older than this one, delete the stored epoch
+  before starting this release again (`DELETE FROM app_state WHERE key = 'auth_session_epoch';`, on
+  SQLite or Postgres); that start signs everyone out once more.

@@ -117,7 +117,7 @@ func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 	// ordinary case on an oidc_only instance — would be told local recovery is
 	// unavailable and would log a local-recovery-disabled event for a routine
 	// expiry.
-	if !handler.localPublicAuthEnabled() && services.PasswordResetTokenRefusedByLocalAuthGate(handler.secretKey, token, time.Now()) {
+	if !handler.localPublicAuthEnabled() && handler.authService.PasswordResetTokenRefusedByLocalAuthGate(handler.secretKey, token, time.Now()) {
 		handler.clearResetPasswordCookie(c)
 		spec := authLocalRecoveryDisabledErrorSpec()
 		handler.logSecurityError(c, "auth.reset_password", spec)
