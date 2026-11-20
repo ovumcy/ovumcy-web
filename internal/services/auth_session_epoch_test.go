@@ -256,3 +256,69 @@ func TestAuthSessionEpochsEqualRefusesAnEmptyOperand(t *testing.T) {
 		t.Fatal("the same epoch must be equal")
 	}
 }
+
+// reloadFaultStore answers the first read as absent and then fails or corrupts
+// the read-back that follows the insert.
+type reloadFaultStore struct {
+	reads       int
+	reloadErr   error
+	reloadValue string
+}
+
+func (store *reloadFaultStore) Get(_ context.Context, _ string) (string, bool, error) {
+	store.reads++
+	if store.reads == 1 {
+		return "", false, nil
+	}
+	return store.reloadValue, store.reloadValue != "", store.reloadErr
+}
+
+func (store *reloadFaultStore) SetIfAbsent(_ context.Context, _ string, _ string) (bool, error) {
+	return true, nil
+}
+
+func (store *reloadFaultStore) Set(_ context.Context, _ string, _ string) error { return nil }
+
+func TestLoadAuthSessionEpochRefusesAReadBackItCannotTrust(t *testing.T) {
+	epoch, _, err := LoadAuthSessionEpoch(t.Context(), &reloadFaultStore{reloadErr: errors.New("reload refused")})
+	if err == nil || epoch != "" {
+		t.Fatalf("a failed read-back must fail the load with no epoch, got %q, %v", epoch, err)
+	}
+	for _, value := range []string{"", "short"} {
+		epoch, _, err := LoadAuthSessionEpoch(t.Context(), &reloadFaultStore{reloadValue: value})
+		if err == nil || epoch != "" {
+			t.Fatalf("a missing or malformed read-back %q must fail the load with no epoch, got %q, %v", value, epoch, err)
+		}
+	}
+}
+
+func TestANilAuthServiceHoldsNoSessionEpoch(t *testing.T) {
+	var service *AuthService
+	if _, err := service.SessionEpoch(); !errors.Is(err, ErrAuthSessionEpochUnavailable) {
+		t.Fatalf("a nil service must report the epoch unavailable, got %v", err)
+	}
+	if service.SessionEpochCurrent(testSessionEpoch) {
+		t.Fatal("a nil service must never call an epoch current")
+	}
+}
+
+func TestBuildPasswordResetTokenRefusesAnEmptyEpoch(t *testing.T) {
+	token, err := BuildPasswordResetToken(epochTestSecret, 7, "$2a$10$testhashvaluefortokenclaims", 1, "", PasswordResetTokenPurposeRecovery, time.Hour, time.Now())
+	if !errors.Is(err, ErrAuthSessionEpochUnavailable) || token != "" {
+		t.Fatalf("the package builder must refuse an empty epoch with no token, got %q, %v", token, err)
+	}
+}
+
+func TestPasswordResetLocalAuthGateAnswersFalseForAGrantItCannotParse(t *testing.T) {
+	service := newEpochTestService(testSessionEpoch)
+	if service.PasswordResetTokenRefusedByLocalAuthGate(epochTestSecret, "not-a-token", time.Now()) {
+		t.Fatal("an unparsable grant is the ordinary invalid-token path, not a gate refusal")
+	}
+	foreign, err := BuildPasswordResetToken(epochTestSecret, 7, "$2a$10$testhashvaluefortokenclaims", 1, otherSessionEpoch, PasswordResetTokenPurposeRecovery, time.Hour, time.Now())
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	if service.PasswordResetTokenRefusedByLocalAuthGate(epochTestSecret, foreign, time.Now()) {
+		t.Fatal("a grant from another epoch must read as unparsable, not as gate-refused")
+	}
+}

@@ -168,3 +168,48 @@ func TestOIDCIdentityLinkConfirmMapsALinkRefusal(t *testing.T) {
 		}
 	}
 }
+
+// TestPendingCookieSettersRefuseToSealWhenTheServiceHoldsNoSessionEpoch: with
+// no epoch configured (or no auth service at all) neither pending cookie is
+// sealed, a link cookie already riding is retracted, and no payload is minted
+// that every reader would then refuse or, worse, compare against an empty epoch.
+func TestPendingCookieSettersRefuseToSealWhenTheServiceHoldsNoSessionEpoch(t *testing.T) {
+	t.Parallel()
+
+	for name, authService := range map[string]*services.AuthService{
+		"service without an epoch": {},
+		"no service":               nil,
+	} {
+		handler := newSealedExpirySweepHandler()
+		handler.authService = authService
+
+		var linkErr error
+		linkResponse := runSealedCookieProbeRequest(t, nil, func(c fiber.Ctx) error {
+			linkErr = handler.setOIDCLinkPendingCookie(c, sealedExpirySweepUserID, 1, security.OIDCClaims{Issuer: "https://id.example.com", Subject: "sub"})
+			return nil
+		})
+		_ = linkResponse.Body.Close()
+		if linkErr == nil || !strings.Contains(linkErr.Error(), services.ErrAuthSessionEpochUnavailable.Error()) {
+			t.Fatalf("%s: the link setter must refuse with the epoch-unavailable error, got %v", name, linkErr)
+		}
+		if cookie := responseCookie(linkResponse.Cookies(), oidcLinkPendingCookieName); cookie == nil || strings.TrimSpace(cookie.Value) != "" {
+			t.Fatalf("%s: the link setter must retract the cookie, got %v", name, cookie)
+		}
+
+		var totpErr error
+		totpResponse := runSealedCookieProbeRequest(t, nil, func(c fiber.Ctx) error {
+			totpErr = handler.setTOTPPendingCookie(c, sealedExpirySweepUserID, 1, false, "")
+			return nil
+		})
+		_ = totpResponse.Body.Close()
+		if totpErr == nil || !strings.Contains(totpErr.Error(), services.ErrAuthSessionEpochUnavailable.Error()) {
+			t.Fatalf("%s: the totp setter must refuse with the epoch-unavailable error, got %v", name, totpErr)
+		}
+		if cookie := responseCookie(totpResponse.Cookies(), totpPendingCookieName); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
+			t.Fatalf("%s: the totp setter must not seal a cookie, got %v", name, cookie)
+		}
+		if handler.sessionEpochCurrent(testAuthSessionEpoch) {
+			t.Fatalf("%s: a handler without an epoch must call no claim current", name)
+		}
+	}
+}
