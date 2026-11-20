@@ -490,7 +490,7 @@ func TestParseUsersCreateArgsAcceptsFlags(t *testing.T) {
 func TestRunUsersCreateReturnsParseError(t *testing.T) {
 	t.Parallel()
 
-	if err := runUsersCreate(nil, localSignInOn, []string{"--nope"}, strings.NewReader(""), &bytes.Buffer{}); err == nil {
+	if err := runUsersCreate(nil, "", nil, localSignInOn, []string{"--nope"}, strings.NewReader(""), &bytes.Buffer{}); err == nil {
 		t.Fatal("expected a parse error for an unknown flag")
 	}
 }
@@ -498,28 +498,34 @@ func TestRunUsersCreateReturnsParseError(t *testing.T) {
 func TestRunUsersCreateReturnsPasswordError(t *testing.T) {
 	t.Parallel()
 
-	if err := runUsersCreate(nil, localSignInOn, []string{"owner@example.com"}, strings.NewReader("\n"), &bytes.Buffer{}); err == nil {
+	if err := runUsersCreate(nil, "", nil, localSignInOn, []string{"owner@example.com"}, strings.NewReader("\n"), &bytes.Buffer{}); err == nil {
 		t.Fatal("expected an empty-password error")
 	}
 }
 
 func TestRunUsersCreateDefaultsNilOutputOnSuccess(t *testing.T) {
 	databasePath := createCLIUsersDatabase(t)
-	service := mustCLIUsersService(t, databasePath)
+	fencePath := armOperatorFence(t, databasePath)
 
-	if err := runUsersCreate(service, localSignInOn, []string{"owner@example.com"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
-		t.Fatalf("runUsersCreate with nil output returned error: %v", err)
-	}
+	withNotifyRepositories(t, databasePath, fencePath, func(repositories *db.Repositories, fence *services.CalendarFeedRestoreFence) {
+		service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
+		if err := runUsersCreate(service, fencePath, fence, localSignInOn, []string{"owner@example.com"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
+			t.Fatalf("runUsersCreate with nil output returned error: %v", err)
+		}
+	})
 }
 
 func TestRunUsersCreateDefaultsNilOutputOnSkip(t *testing.T) {
 	databasePath := createCLIUsersDatabase(t)
 	createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
-	service := mustCLIUsersService(t, databasePath)
+	fencePath := armOperatorFence(t, databasePath)
 
-	if err := runUsersCreate(service, localSignInOn, []string{"owner@example.com", "--skip-if-exists"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
-		t.Fatalf("runUsersCreate skip with nil output returned error: %v", err)
-	}
+	withNotifyRepositories(t, databasePath, fencePath, func(repositories *db.Repositories, fence *services.CalendarFeedRestoreFence) {
+		service := services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
+		if err := runUsersCreate(service, fencePath, fence, localSignInOn, []string{"owner@example.com", "--skip-if-exists"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
+			t.Fatalf("runUsersCreate skip with nil output returned error: %v", err)
+		}
+	})
 }
 
 // TestRunUsersCommandReportsDatabaseInitFailure mirrors the reset command's

@@ -65,7 +65,7 @@ func runUsersCommandIn(databaseConfig db.Config, localSignInEnabled func() (bool
 	case "delete":
 		return runUsersDelete(service, fencePath, fence, args[1:], input, output)
 	case "create":
-		return runUsersCreate(service, localSignInEnabled, args[1:], input, output)
+		return runUsersCreate(service, fencePath, fence, localSignInEnabled, args[1:], input, output)
 	case "set-email":
 		return runUsersSetEmail(service, fencePath, fence, args[1:], output)
 	default:
@@ -270,7 +270,13 @@ func readDeleteConfirmation(input io.Reader) (bool, error) {
 	return strings.EqualFold(strings.TrimSpace(line), "DELETE"), nil
 }
 
-func runUsersCreate(service *services.OperatorUserService, localSignInEnabled func() (bool, error), args []string, input io.Reader, output io.Writer) error {
+// runUsersCreate provisions an owner account. The creation advances the restore
+// fence like a revocation does (WEB-538): an account created after a backup is
+// dropped by the restore that follows, and its id is handed out again, so the
+// fence must record the creation or no boot reads that restore. It therefore
+// passes the same operator fence gate as `users delete`, after the service's own
+// refusals and immediately before the insert, and a refusal writes nothing.
+func runUsersCreate(service *services.OperatorUserService, fencePath string, fence *services.CalendarFeedRestoreFence, localSignInEnabled func() (bool, error), args []string, input io.Reader, output io.Writer) error {
 	opts, err := parseUsersCreateArgs(args)
 	if err != nil {
 		return err
@@ -289,7 +295,22 @@ func runUsersCreate(service *services.OperatorUserService, localSignInEnabled fu
 	}
 	defer clear(password)
 
-	summary, recoveryCode, err := service.CreateOwner(context.Background(), opts.email, string(password), localSignIn, time.Now().UTC())
+	if output == nil {
+		output = os.Stdout
+	}
+	var gateErr error
+	gateRan := false
+	summary, recoveryCode, err := service.CreateOwner(context.Background(), opts.email, string(password), localSignIn, time.Now().UTC(), func(ctx context.Context) error {
+		gateRan = true
+		gateErr = confirmOperatorFeedRevocation(ctx, fencePath, fence, output)
+		return gateErr
+	})
+	if gateErr != nil {
+		return gateErr
+	}
+	if err != nil && gateRan && !errors.Is(err, services.ErrOperatorUserEmailExists) {
+		return operatorFeedRevocationCommitted(fencePath, err, mapUsersCreateError)
+	}
 	if err != nil {
 		// --skip-if-exists makes provisioning idempotent for install scripts
 		// (re-runs, upgrades): an existing email is not an error. It never

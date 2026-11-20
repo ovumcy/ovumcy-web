@@ -386,19 +386,29 @@ func requireOwnerRole(user *models.User) error {
 	return nil
 }
 
+// Create and CreateUserWithSymptoms are the only writes that insert a users
+// row, and both advance the restore fence before the insert (WEB-538). A row
+// created after a backup is invisible to the restore that drops it, and the
+// id counter returns to the backup's value, so the next account reuses the
+// id at the default session version: a restore the fence never saw would let
+// the first account's cookie resolve as the second owner. The advance is the
+// refusing form, as for every session writer: a fence volume that stays
+// unwritable refuses the creation as an ordinary failure, with the file and
+// the database marker both untouched (WEB-464).
 func (repo *UserRepository) Create(ctx context.Context, user *models.User) error {
 	if err := requireOwnerRole(user); err != nil {
 		return err
 	}
-	err := repo.database.WithContext(ctx).Create(user).Error
-	return classifyUserCreateError(err)
+	return repo.advanceCalendarFeedFenceOrRefuse(ctx, func(tx *gorm.DB) error {
+		return classifyUserCreateError(tx.Create(user).Error)
+	})
 }
 
 func (repo *UserRepository) CreateUserWithSymptoms(ctx context.Context, user *models.User, symptoms []models.SymptomType) error {
 	if err := requireOwnerRole(user); err != nil {
 		return err
 	}
-	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return repo.advanceCalendarFeedFenceOrRefuse(ctx, func(tx *gorm.DB) error {
 		if err := classifyUserCreateError(tx.Create(user).Error); err != nil {
 			return err
 		}

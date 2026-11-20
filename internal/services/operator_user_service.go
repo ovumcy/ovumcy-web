@@ -220,7 +220,13 @@ func (service *OperatorUserService) SetEmailByID(ctx context.Context, userID uin
 // code is returned for the caller to surface; the CLI prints it only on explicit
 // opt-in so it cannot leak into install logs. With localSignInEnabled false
 // (OIDC_LOGIN_MODE=oidc_only) none is minted and the code returned is empty.
-func (service *OperatorUserService) CreateOwner(ctx context.Context, email string, rawPassword string, localSignInEnabled bool, now time.Time) (models.OperatorUserSummary, string, error) {
+//
+// beforeWrite, when set, runs once every refusal above the insert has passed and
+// immediately before it; its error refuses the creation. The CLI passes the
+// operator fence gate there: the creation advances the restore fence like a
+// revocation does (WEB-538), so a weak password or a malformed address advances
+// nothing.
+func (service *OperatorUserService) CreateOwner(ctx context.Context, email string, rawPassword string, localSignInEnabled bool, now time.Time, beforeWrite func(context.Context) error) (models.OperatorUserSummary, string, error) {
 	normalizedEmail, err := normalizeOperatorUserEmail(email)
 	if err != nil {
 		return models.OperatorUserSummary{}, "", err
@@ -237,6 +243,11 @@ func (service *OperatorUserService) CreateOwner(ctx context.Context, email strin
 	// The unique email index is the authoritative guard: a duplicate address —
 	// from a retry or a concurrent create — is rejected here. Account count is
 	// intentionally not gated, so a household can hold several owners.
+	if beforeWrite != nil {
+		if err := beforeWrite(ctx); err != nil {
+			return models.OperatorUserSummary{}, "", err
+		}
+	}
 	if err := service.users.CreateUserWithSymptoms(ctx, &user, BuiltinSymptomRecordsForUser(0)); err != nil {
 		if isRegistrationUniqueConstraintError(err) {
 			return models.OperatorUserSummary{}, "", ErrOperatorUserEmailExists

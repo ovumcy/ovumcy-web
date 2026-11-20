@@ -28,7 +28,7 @@ func TestOperatorCommandsRefuseADatabaseWithoutTheNormalizedEmailIndex(t *testin
 			return runUsersCommand(config, []string{"list"}, "", strings.NewReader(""), output)
 		}},
 		{"users create", func(config db.Config, owner models.User, output *bytes.Buffer) error {
-			return runUsersCommand(config, []string{"create", " " + strings.ToUpper(owner.Email)}, "", strings.NewReader("StrongPass1\n"), output)
+			return runUsersCommand(config, []string{"create", " " + strings.ToUpper(owner.Email)}, "/fence/ovumcy.fence", strings.NewReader("StrongPass1\n"), output)
 		}},
 		{"users set-email", func(config db.Config, owner models.User, output *bytes.Buffer) error {
 			return runUsersCommand(config, []string{"set-email", "--id", strconv.FormatUint(uint64(owner.ID), 10), "second@example.com"}, "", strings.NewReader(""), output)

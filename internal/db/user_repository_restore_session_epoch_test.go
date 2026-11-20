@@ -177,14 +177,9 @@ func TestARestoreRefusesACookieFromAnAccountThatSharesItsIdWithANewSignup(t *tes
 				t.Fatalf("anti-vacuity: the cookie must resolve as the account that signed up, got %v, %v", resolved, err)
 			}
 
-			// The fence reads a restore only when some revocation advanced it
-			// after the backup, so the backed-up owner signs out once here: the
-			// restore then puts a database behind the fence file, as it does in
-			// any instance that has revoked anything since its last backup.
-			if err := repositories.Users.BumpAuthSessionVersion(ctx, existing.ID); err != nil {
-				t.Fatalf("sign the backed-up owner out: %v", err)
-			}
-
+			// No revocation happens after the backup: the signup itself advanced
+			// the fence, so the restore puts the database behind the fence file
+			// and the boot reads it (the account-creation arm of WEB-538).
 			restoreRestoreSnapshot(t, database, backup)
 			if err := database.Where("id > ?", existing.ID).Delete(&models.User{}).Error; err != nil {
 				t.Fatalf("drop the post-backup account: %v", err)
