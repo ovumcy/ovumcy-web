@@ -21,7 +21,7 @@ import (
 // test so the tests can drive the seal/parse flow through real HTTP.
 func newTOTPCookieTestApp(t *testing.T, secretKey []byte) (*fiber.App, *Handler) {
 	t.Helper()
-	handler := &Handler{secretKey: secretKey, cookieSecure: false}
+	handler := &Handler{secretKey: secretKey, cookieSecure: false, authService: authServiceUnderTestEpoch()}
 	app := fiber.New()
 	app.Get("/seal-pending", func(c fiber.Ctx) error {
 		userID := uint(fiber.Query(c, "user_id", 0))
@@ -183,6 +183,7 @@ func TestTOTPPendingCookie_ExpiredPayload_ParseError(t *testing.T) {
 		UserID:         1,
 		ExpiresAt:      time.Now().Add(-1 * time.Minute),
 		SessionVersion: 1,
+		Epoch:          testAuthSessionEpoch,
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/parse-pending", nil)
@@ -243,6 +244,7 @@ func TestTOTPPendingCookieUnusableValueIsClearedNotLeftRiding(t *testing.T) {
 				UserID:         0,
 				ExpiresAt:      time.Now().Add(5 * time.Minute),
 				SessionVersion: 1,
+				Epoch:          testAuthSessionEpoch,
 			}),
 		},
 		{
@@ -251,6 +253,7 @@ func TestTOTPPendingCookieUnusableValueIsClearedNotLeftRiding(t *testing.T) {
 				UserID:         42,
 				ExpiresAt:      time.Now().Add(-1 * time.Minute),
 				SessionVersion: 1,
+				Epoch:          testAuthSessionEpoch,
 			}),
 		},
 		{
@@ -261,6 +264,7 @@ func TestTOTPPendingCookieUnusableValueIsClearedNotLeftRiding(t *testing.T) {
 			value: sealTOTPCookiePayloadForTest(t, secretKey, totpPendingCookieName, totpPendingCookiePayload{
 				UserID:    42,
 				ExpiresAt: time.Now().Add(5 * time.Minute),
+				Epoch:     testAuthSessionEpoch,
 			}),
 		},
 	}

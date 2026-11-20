@@ -48,6 +48,7 @@ func sealPendingLinkCookie(t *testing.T, secret []byte, userID uint, version int
 	serialized, err := json.Marshal(oidcLinkPendingCookiePayload{
 		UserID:         userID,
 		SessionVersion: version,
+		Epoch:          testAuthSessionEpoch,
 		Issuer:         "https://id.example.com",
 		Subject:        linkForeignSubject,
 		ExpiresAt:      time.Now().Add(time.Minute),

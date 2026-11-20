@@ -462,6 +462,8 @@ func assertSealedPayloadCarriesNothingReplayable(
 }
 
 func newSealedExpirySweepHandler() *Handler {
+	sweepAuth := services.NewAuthService(sealedSweepAuthRepo{})
+	sweepAuth.ConfigureSessionEpoch(testAuthSessionEpoch)
 	return &Handler{
 		secretKey: []byte(sealedExpirySweepKeyMaterial),
 		location:  time.UTC,
@@ -474,7 +476,7 @@ func newSealedExpirySweepHandler() *Handler {
 		// the retraction guard drives. It answers with the owner the sweep
 		// mints for, so a freshly minted session cookie is honoured and the
 		// refusal cases mean something.
-		authService: services.NewAuthService(sealedSweepAuthRepo{}),
+		authService: sweepAuth,
 	}
 }
 

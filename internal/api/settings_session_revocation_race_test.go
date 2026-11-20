@@ -51,6 +51,7 @@ type revokingWriteHooks struct {
 func (hooks *revokingWriteHooks) install(dependencies *Dependencies, users *db.UserRepository) {
 	repository := &revokingWriteUserRepository{UserRepository: users, hooks: hooks}
 	dependencies.AuthService = services.NewAuthService(repository)
+	dependencies.AuthService.ConfigureSessionEpoch(testAuthSessionEpoch)
 	settingsService := services.NewSettingsService(repository)
 	settingsService.ConfigureReauthAttempts(
 		[]byte(testAppSecretKey),
