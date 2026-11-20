@@ -348,7 +348,7 @@ func loadAuthSessionEpoch(ctx context.Context, store interface {
 		return "", "", fmt.Errorf("auth session epoch failed: %w", err)
 	}
 	if epoch == "" {
-		return "", "", errors.New("auth session epoch failed: empty epoch")
+		return "", "", errors.New("auth session epoch failed: empty epoch") // codecov:ignore -- defensive: services.LoadAuthSessionEpoch returns only a validated non-empty epoch on a nil error, so no store can reach this
 	}
 	if created {
 		return epoch, "auth session epoch created: sessions issued before it are signed out once", nil

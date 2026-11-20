@@ -1,14 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 )
@@ -111,5 +116,43 @@ func TestMainLoadsTheSessionEpochAfterTheRestoreFenceAndBeforeTheDependencies(t 
 	}
 	if load > build {
 		t.Fatal("main() must call mustLoadAuthSessionEpoch before BuildDependencies")
+	}
+}
+
+func TestMustLoadAuthSessionEpochCreatesAndThenServesTheStoredEpoch(t *testing.T) {
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "session-epoch-boot.db")})
+	if err != nil {
+		t.Fatalf("OpenDatabase: %v", err)
+	}
+	t.Cleanup(func() { closeDatabase(database) })
+	repositories := db.NewRepositories(database)
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	epoch := mustLoadAuthSessionEpoch(repositories)
+	if !security.ValidAuthSessionEpoch(epoch) || !strings.Contains(output.String(), "auth session epoch created") {
+		t.Fatalf("the first boot must create a well-formed epoch and say so, got %q in %q", epoch, output.String())
+	}
+	stored, found, err := repositories.AppState.Get(context.Background(), models.AppStateKeyAuthSessionEpoch)
+	if err != nil || !found || stored != epoch {
+		t.Fatalf("the created epoch must be stored, got %q found=%t err=%v", stored, found, err)
+	}
+
+	output.Reset()
+	if again := mustLoadAuthSessionEpoch(repositories); again != epoch || output.Len() != 0 {
+		t.Fatalf("a later boot must serve the stored epoch quietly, got %q in %q", again, output.String())
+	}
+}
+
+func TestBootstrapOptionsUnderEpochCarriesTheEpochOnTopOfTheConfigMapping(t *testing.T) {
+	config := runtimeConfig{RegistrationMode: "closed"}
+	options := bootstrapOptionsUnderEpoch(config, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+	if options.AuthSessionEpoch != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" {
+		t.Fatalf("the loaded epoch must reach the dependency options, got %q", options.AuthSessionEpoch)
+	}
+	if options.RegistrationMode != bootstrapOptions(config).RegistrationMode || options.RegistrationMode != "closed" {
+		t.Fatalf("the config mapping must be kept, got %q", options.RegistrationMode)
 	}
 }

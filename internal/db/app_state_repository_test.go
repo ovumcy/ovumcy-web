@@ -39,6 +39,28 @@ func TestAppStateSetIfAbsentKeepsTheFirstWriter(t *testing.T) {
 	}
 }
 
+// A failed insert is an error, never "someone else already wrote it": the boot
+// would otherwise read back a value that was not stored.
+func TestAppStateSetIfAbsentReportsAStorageFailure(t *testing.T) {
+	database, err := OpenDatabase(migratedSQLiteConfig(t, filepath.Join(t.TempDir(), "set-if-absent-failure.db")))
+	if err != nil {
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, dbErr := database.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if err := database.Migrator().DropTable(&models.AppState{}); err != nil {
+		t.Fatalf("drop app_state: %v", err)
+	}
+
+	wrote, err := NewAppStateRepository(database).SetIfAbsent(context.Background(), "set_if_absent_key", "first")
+	if err == nil || wrote {
+		t.Fatalf("a storage failure must surface as an error with wrote=false, got wrote=%v err=%v", wrote, err)
+	}
+}
+
 // TestAppStateProbeWritableCommitsNothingAndRefusesAReadOnlyStore pins #1321:
 // the probe passes on a writable store without leaving its row behind, and
 // refuses a store SQLite opened read-only -- what an unwritable file becomes.

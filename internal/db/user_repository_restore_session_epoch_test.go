@@ -212,3 +212,33 @@ func TestARestoreRefusesACookieFromAnAccountThatSharesItsIdWithANewSignup(t *tes
 		})
 	}
 }
+
+// TestRevokeRestoredAccessRefusesWhenTheEpochCannotBeStored pins that a failed
+// epoch write fails the whole revocation: bumping versions without the rotated
+// epoch would revive a revoked cookie.
+func TestRevokeRestoredAccessRefusesWhenTheEpochCannotBeStored(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "restore-epoch-store-failure.db"))
+	repositories := NewRepositories(database)
+	user := models.User{Email: "epoch-store-failure@example.com", Role: models.RoleOwner, LocalAuthEnabled: true, PasswordHash: "x", AuthSessionVersion: 3}
+	if err := database.Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := database.Migrator().DropTable(&models.AppState{}); err != nil {
+		t.Fatalf("drop app_state: %v", err)
+	}
+
+	counts, err := repositories.Users.RevokeRestoredAccess(context.Background(), "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
+	if err == nil {
+		t.Fatal("an epoch that cannot be stored must fail the revocation")
+	}
+	if counts != (models.RestoreRevocationCounts{}) {
+		t.Fatalf("a refused revocation must report no work, got %+v", counts)
+	}
+	var reloaded models.User
+	if err := database.First(&reloaded, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if reloaded.AuthSessionVersion != 3 {
+		t.Fatalf("a refused revocation must not bump the session version, got %d", reloaded.AuthSessionVersion)
+	}
+}
