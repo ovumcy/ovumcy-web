@@ -63,7 +63,16 @@ var loadBearingRevocationWriters = []string{
 	"UserRepository.UpdateTOTPFieldsAndRevokeSessions",
 	"UserRepository.UpdatePasswordAndRevokeSessions",
 	"OIDCIdentityRepository.DeleteForUserAndRevokeSessions",
+	// The two account-creation inserts (WEB-538): found by the users-row
+	// Create arm, so a scan that stopped resolving gorm's Create on a models.User
+	// fails here instead of passing over every creation path.
+	"UserRepository.Create",
+	"UserRepository.CreateUserWithSymptoms",
 }
+
+// usersInsertInSQL matches a raw INSERT into the users table, the creation
+// path a struct Create would not show.
+var usersInsertInSQL = regexp.MustCompile(`(?i)insert\s+into\s+"?users"?\b`)
 
 var revocationColumnInSQL = regexp.MustCompile(`\b(auth_session_version|password_hash|recovery_code_hash|must_change_password|local_auth_enabled|totp_secret|totp_enabled|email)\b`)
 
@@ -137,6 +146,24 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 		_, ok := kind.Underlying().(*types.Map)
 		return ok
 	}
+	userType := models.Types.Scope().Lookup("User").Type()
+	// isUserRowOrRows reports a models.User, a pointer to one, or a slice of
+	// either: gorm creates from all of them. Compared with types.Identical.
+	isUserRowOrRows := func(expr ast.Expr) bool {
+		kind := info.TypeOf(expr)
+		for kind != nil {
+			switch typed := kind.(type) {
+			case *types.Pointer:
+				kind = typed.Elem()
+				continue
+			case *types.Slice:
+				kind = typed.Elem()
+				continue
+			}
+			return types.Identical(kind, userType)
+		}
+		return false
+	}
 	isUserLiteral := func(literal *ast.CompositeLit) bool {
 		kind := info.TypeOf(literal)
 		return kind != nil && types.Identical(kind, models.Types.Scope().Lookup("User").Type())
@@ -191,7 +218,15 @@ func TestEverySessionAndCredentialWriterAdvancesTheRestoreFence(t *testing.T) {
 								earliest(&writeAt, typed.Pos())
 							}
 						case "Exec":
-							if len(typed.Args) > 0 && revocationColumnInSQL.MatchString(column(typed.Args[0])) {
+							if len(typed.Args) > 0 && (revocationColumnInSQL.MatchString(column(typed.Args[0])) || usersInsertInSQL.MatchString(column(typed.Args[0]))) {
+								earliest(&writeAt, typed.Pos())
+							}
+						case "Create", "CreateInBatches", "FirstOrCreate", "Save":
+							// WEB-538: an INSERT of a users row is a session
+							// writer too. A row created after a backup is dropped by
+							// the restore and its id handed out again at the default
+							// session version.
+							if len(typed.Args) > 0 && isUserRowOrRows(typed.Args[0]) {
 								earliest(&writeAt, typed.Pos())
 							}
 						case "Delete":

@@ -38,7 +38,7 @@ func TestRunUsersCommandCreateOnAnOIDCOnlyInstanceIssuesNoRecoveryCode(t *testin
 				db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 				localSignInOff,
 				args,
-				"",
+				armOperatorFence(t, databasePath),
 				strings.NewReader("StrongPass1\n"),
 				&output,
 			)
@@ -89,14 +89,14 @@ func TestRunUsersCreateRefusesWhenTheModeCannotBeResolved(t *testing.T) {
 	service := mustCLIUsersService(t, databasePath)
 	modeFault := errors.New("OIDC_ISSUER_URL is required")
 
-	err := runUsersCreate(service, func() (bool, error) { return false, modeFault }, []string{"owner@example.com"}, strings.NewReader("StrongPass1\n"), &bytes.Buffer{})
+	err := runUsersCreate(service, "", nil, func() (bool, error) { return false, modeFault }, []string{"owner@example.com"}, strings.NewReader("StrongPass1\n"), &bytes.Buffer{})
 	if !errors.Is(err, modeFault) {
 		t.Fatalf("expected the mode error, got %v", err)
 	}
 	if emails := listCLIUserEmails(t, databasePath); len(emails) != 0 {
 		t.Fatalf("expected no account created, got %#v", emails)
 	}
-	if err := runUsersCreate(service, nil, []string{"owner@example.com"}, strings.NewReader("StrongPass1\n"), &bytes.Buffer{}); err == nil {
+	if err := runUsersCreate(service, "", nil, nil, []string{"owner@example.com"}, strings.NewReader("StrongPass1\n"), &bytes.Buffer{}); err == nil {
 		t.Fatal("expected a nil mode resolver to be refused")
 	}
 }

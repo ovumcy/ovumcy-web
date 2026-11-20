@@ -280,7 +280,7 @@ func TestRunUsersCommandCreateProvisionsOwnerFromStdin(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "Owner@Example.com"},
-		"",
+		armOperatorFence(t, databasePath),
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)
@@ -320,7 +320,7 @@ func TestRunUsersCommandCreatePrintsRecoveryCodeOnOptIn(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "owner@example.com", "--show-recovery-code"},
-		"",
+		armOperatorFence(t, databasePath),
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)
@@ -344,7 +344,7 @@ func TestRunUsersCommandCreateAddsSecondHouseholdOwner(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "daughter@example.com"},
-		"",
+		armOperatorFence(t, databasePath),
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)
@@ -371,7 +371,7 @@ func TestRunUsersCommandCreateRejectsDuplicateEmail(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "owner@example.com"},
-		"",
+		armOperatorFence(t, databasePath),
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)
@@ -395,7 +395,7 @@ func TestRunUsersCommandCreateSkipIfExistsIsIdempotent(t *testing.T) {
 	err := runUsersCommand(
 		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
 		[]string{"create", "mom@example.com", "--skip-if-exists"},
-		"",
+		armOperatorFence(t, databasePath),
 		strings.NewReader("StrongPass1\n"),
 		&output,
 	)

@@ -70,7 +70,7 @@ func TestOperatorUserServiceCreateOwnerPassesTheModeToTheBuilder(t *testing.T) {
 	for _, localSignInEnabled := range []bool{true, false} {
 		builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, localSignInEnabled: !localSignInEnabled}
 		service := NewOperatorUserService(&stubOperatorUserRepo{}, builder)
-		if _, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", localSignInEnabled, time.Now().UTC()); err != nil {
+		if _, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", localSignInEnabled, time.Now().UTC(), nil); err != nil {
 			t.Fatalf("CreateOwner: %v", err)
 		}
 		if builder.localSignInEnabled != localSignInEnabled {
