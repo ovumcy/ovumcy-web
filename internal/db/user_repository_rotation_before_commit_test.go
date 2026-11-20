@@ -40,8 +40,8 @@ func TestRecoveryCodeRotationSurfacesAFailedStatementAndWritesNothing(t *testing
 
 				repo := openRevealMarkRepoForTest(t)
 				fence := &refusingCalendarFeedFence{}
-				repo.calendarFeedFence = fence
 				before := seedRotationUserForTest(t, repo, "rotation-statement@example.com")
+				repo.calendarFeedFence = fence
 
 				injected := errors.New("injected users statement failure")
 				armed := false
@@ -143,8 +143,8 @@ func TestRecoveryCodeRotationWritesNothingWhenItsDeliveryFails(t *testing.T) {
 
 			repo := openRevealMarkRepoForTest(t)
 			fence := &refusingCalendarFeedFence{}
-			repo.calendarFeedFence = fence
 			before := seedRotationUserForTest(t, repo, "rotation-rollback@example.com")
+			repo.calendarFeedFence = fence
 
 			refused := errors.New("delivery could not be sealed")
 			hookCalls := 0
@@ -194,8 +194,8 @@ func TestRecoveryCodeRotationHandsItsHookTheStoredSessionVersion(t *testing.T) {
 
 			repo := openRevealMarkRepoForTest(t)
 			fence := &refusingCalendarFeedFence{}
-			repo.calendarFeedFence = fence
 			before := seedRotationUserForTest(t, repo, "rotation-commit@example.com")
+			repo.calendarFeedFence = fence
 
 			seen := 0
 			if err := rotation.rotate(repo, before, func(sessionVersion int) error {
@@ -232,8 +232,8 @@ func TestRecoveryCodeRotationRefusesAZeroOwnerBeforeItsHook(t *testing.T) {
 
 			repo := openRevealMarkRepoForTest(t)
 			fence := &refusingCalendarFeedFence{}
-			repo.calendarFeedFence = fence
 			user := seedRotationUserForTest(t, repo, "rotation-zero@example.com")
+			repo.calendarFeedFence = fence
 			user.ID = 0
 
 			hookCalls := 0
