@@ -12,7 +12,7 @@ import (
 func TestBuildResetPasswordPageDataValidTokenAndForcedFlag(t *testing.T) {
 	t.Parallel()
 
-	handler := &Handler{secretKey: []byte("test-reset-secret")}
+	handler := &Handler{secretKey: []byte("test-reset-secret"), authService: authServiceUnderTestEpoch()}
 	token, err := services.BuildPasswordResetToken(handler.secretKey, 42, "$2a$10$testhashvaluefortokenclaims", 1, testAuthSessionEpoch, services.PasswordResetTokenPurposeForcedLocal, 30*time.Minute, time.Now())
 	if err != nil {
 		t.Fatalf("buildPasswordResetToken returned error: %v", err)
@@ -40,7 +40,7 @@ func TestBuildResetPasswordPageDataValidTokenAndForcedFlag(t *testing.T) {
 func TestBuildResetPasswordPageDataMarksInvalidToken(t *testing.T) {
 	t.Parallel()
 
-	handler := &Handler{secretKey: []byte("test-reset-secret")}
+	handler := &Handler{secretKey: []byte("test-reset-secret"), authService: authServiceUnderTestEpoch()}
 	cookieHeader := mustBuildResetCookieHeader(t, handler.secretKey, resetPasswordCookiePayload{
 		Token: "invalid-token",
 	})

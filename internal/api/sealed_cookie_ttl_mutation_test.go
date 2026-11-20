@@ -40,6 +40,7 @@ func ttlMutationTestHandler() *Handler {
 	return &Handler{
 		secretKey:    []byte("0123456789abcdef0123456789abcdef"),
 		cookieSecure: true,
+		authService:  authServiceUnderTestEpoch(),
 	}
 }
 
