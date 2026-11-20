@@ -33,7 +33,7 @@ func authServiceUnderStoredEpoch(t *testing.T, repositories *Repositories) *serv
 func restoreUsersCounterTo(t *testing.T, database *gorm.DB, maxID uint) {
 	t.Helper()
 	var err error
-	switch database.Dialector.Name() {
+	switch database.Name() {
 	case "sqlite":
 		err = database.Exec("UPDATE sqlite_sequence SET seq = ? WHERE name = 'users'", maxID).Error
 	default:
