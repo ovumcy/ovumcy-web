@@ -272,6 +272,10 @@ func TestASessionWriterRefusesWhatTheFenceCannotRecord(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			// The account is created before a refusing fence is wired: a creation
+			// advances the fence too (WEB-538), and the previous case left its
+			// refusing double on the repository.
+			repo.calendarFeedFence = nil
 			user := createUserForTimezoneTest(t, repo, "session-fence-"+testCase.name+"@example.com")
 			fence := &refusingCalendarFeedFence{err: refused}
 			repo.calendarFeedFence = fence
@@ -371,6 +375,9 @@ func TestAnErasureFenceFailureNeverRefusesTheWrite(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			// Created before the failing fence is wired: a creation advances the
+			// fence too (WEB-538), and the previous case left it on the repository.
+			repo.calendarFeedFence = nil
 			user := createUserForTimezoneTest(t, repo, "post-op-fence-"+testCase.name+"@example.com")
 			repo.calendarFeedFence = fence
 			before := fence.diverged
