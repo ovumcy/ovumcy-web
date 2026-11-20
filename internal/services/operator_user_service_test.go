@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -35,6 +36,14 @@ type stubOperatorUserRepo struct {
 	// FindAllByNormalizedEmail otherwise derives from stub.found, for the one
 	// case that shape cannot express: more than one row on the same address.
 	findAllByEmailUsers []models.User
+	// createEmailTaken and createExistsErr answer CreateOwner's pre-insert
+	// existence check, kept apart from the set-email check above.
+	createEmailTaken bool
+	createExistsErr  error
+}
+
+func (stub *stubOperatorUserRepo) ExistsByNormalizedEmail(context.Context, string) (bool, error) {
+	return stub.createEmailTaken, stub.createExistsErr
 }
 
 func (stub *stubOperatorUserRepo) ListOperatorUserSummaries(context.Context) ([]models.OperatorUserSummary, error) {
@@ -350,6 +359,65 @@ func TestOperatorUserServiceCreateOwnerWrapsPersistenceError(t *testing.T) {
 	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", true, time.Now().UTC(), nil)
 	if !errors.Is(err, ErrOperatorUserCreateFailed) {
 		t.Fatalf("expected ErrOperatorUserCreateFailed from a non-unique persistence error, got %v", err)
+	}
+}
+
+// TestOperatorUserServiceCreateOwnerKeepsTheFenceOutcomeInTheChain: the CLI
+// tells a half-advanced fence from a refusal by errors.Is on this error, so the
+// persistence error must stay wrapped, not flattened into text.
+func TestOperatorUserServiceCreateOwnerKeepsTheFenceOutcomeInTheChain(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOperatorUserRepo{createErr: fmt.Errorf("commit: %w", ErrCalendarFeedFenceHalfAdvanced)}
+	builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, code: "OVUM-AAAA-BBBB-CCCC"}
+	service := NewOperatorUserService(repo, builder)
+
+	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", true, time.Now().UTC(), nil)
+	if !errors.Is(err, ErrOperatorUserCreateFailed) || !errors.Is(err, ErrCalendarFeedFenceHalfAdvanced) {
+		t.Fatalf("expected both ErrOperatorUserCreateFailed and ErrCalendarFeedFenceHalfAdvanced in the chain, got %v", err)
+	}
+}
+
+// TestOperatorUserServiceCreateOwnerAnswersATakenAddressBeforeTheGate: an
+// existing address creates nothing, so neither the fence gate nor the insert
+// runs, and a --skip-if-exists re-run needs no fence.
+func TestOperatorUserServiceCreateOwnerAnswersATakenAddressBeforeTheGate(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOperatorUserRepo{createEmailTaken: true}
+	builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, code: "OVUM-AAAA-BBBB-CCCC"}
+	service := NewOperatorUserService(repo, builder)
+
+	gateRan := false
+	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", true, time.Now().UTC(), func(context.Context) error {
+		gateRan = true
+		return nil
+	})
+	if !errors.Is(err, ErrOperatorUserEmailExists) {
+		t.Fatalf("expected ErrOperatorUserEmailExists, got %v", err)
+	}
+	if gateRan || repo.createWasCalled {
+		t.Fatalf("a taken address must run neither the gate (%v) nor the insert (%v)", gateRan, repo.createWasCalled)
+	}
+}
+
+func TestOperatorUserServiceCreateOwnerRefusesWhenTheExistenceCheckFails(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOperatorUserRepo{createExistsErr: errors.New("db unavailable")}
+	builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, code: "OVUM-AAAA-BBBB-CCCC"}
+	service := NewOperatorUserService(repo, builder)
+
+	gateRan := false
+	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", true, time.Now().UTC(), func(context.Context) error {
+		gateRan = true
+		return nil
+	})
+	if !errors.Is(err, ErrOperatorUserCreateFailed) {
+		t.Fatalf("expected ErrOperatorUserCreateFailed, got %v", err)
+	}
+	if gateRan || repo.createWasCalled {
+		t.Fatalf("a failed existence read must run neither the gate (%v) nor the insert (%v)", gateRan, repo.createWasCalled)
 	}
 }
 
