@@ -120,6 +120,20 @@ func TestTrivyFSScanAndGateScanAlike(t *testing.T) {
 	}
 }
 
+// TestTheTrivyFSGateCannotPassOnAFinding holds the runner to the gate's
+// `--exit-code 1`: a step `if:` or `continue-on-error:`, or a job-level one,
+// would let a finding pass with the run line untouched.
+func TestTheTrivyFSGateCannotPassOnAFinding(t *testing.T) {
+	block := workflowfile.Job(t, securityWorkflow, "trivy-fs")
+	if found := workflowfile.JobFailOpenKeys(block); len(found) > 0 {
+		t.Errorf("the trivy-fs job carries %v, so a failed gate still concludes it successful", found)
+	}
+	step := workflowfile.Step(t, securityWorkflow, "trivy-fs", block, trivyFSGateStep)
+	if found := workflowfile.StepFailOpenKeys(step); len(found) > 0 {
+		t.Errorf("the trivy-fs gate step carries %v, so the runner can pass it whatever Trivy finds", found)
+	}
+}
+
 func TestTrivyFSStepsScanAlikeRefusesDrift(t *testing.T) {
 	const (
 		base = `docker run --rm -w /work "img" fs --scanners vuln --severity HIGH,CRITICAL --include-dev-deps --skip-dirs .tmp`
@@ -132,10 +146,10 @@ func TestTrivyFSStepsScanAlikeRefusesDrift(t *testing.T) {
 	for name, pair := range map[string][2]string{
 		"severity drift":          {scan, strings.Replace(gate, "HIGH,CRITICAL", "CRITICAL", 1)},
 		"dev deps dropped":        {strings.Replace(scan, " --include-dev-deps", "", 1), gate},
-		"extra skip-dirs":         {scan, strings.Replace(gate, " .", " --skip-dirs web .", 1)},
+		"extra skip-dirs":         {scan, strings.Replace(gate, " --format", " --skip-dirs web --format", 1)},
 		"gate does not fail":      {scan, strings.Replace(gate, "--exit-code 1", "--exit-code 0", 1)},
 		"gate exit-code inlined":  {scan, strings.Replace(gate, "--exit-code 1", "--exit-code=1", 1)},
-		"scan reads the waiver":   {strings.Replace(scan, " .", " --ignorefile "+fsGateWaiverFile+" .", 1), gate},
+		"scan reads the waiver":   {strings.Replace(scan, " --format", " --ignorefile "+fsGateWaiverFile+" --format", 1), gate},
 		"gate reads another file": {scan, strings.Replace(gate, fsGateWaiverFile, ".trivyignore", 1)},
 		"scan can fail":           {strings.Replace(scan, "--exit-code 0", "--exit-code 1", 1), gate},
 	} {
@@ -184,6 +198,7 @@ func parseFSGateWaivers(text string) ([]fsGateWaiver, error) {
 		if !ok {
 			return fmt.Errorf("line %d: %q is not a key", n, kv)
 		}
+		value, _, _ = strings.Cut(value, " #")
 		value = strings.TrimSpace(value)
 		if keys[key] {
 			return fmt.Errorf("line %d: %s set twice in one entry", n, key)
@@ -274,6 +289,11 @@ func FSGateWaiversAreBounded(text string, today time.Time) error {
 		if len(e.paths) == 0 || slices.Contains(e.paths, "") {
 			problems = append(problems, at+": no paths, so it waives the id wherever it appears")
 		}
+		for _, p := range e.paths {
+			if strings.ContainsAny(p, "*?[{") {
+				problems = append(problems, fmt.Sprintf("%s: path %q is a glob, which waives the id beyond the file it was granted for", at, p))
+			}
+		}
 		if e.statement == "" {
 			problems = append(problems, at+": empty statement")
 		}
@@ -306,28 +326,35 @@ func TestFSGateWaiversAreBounded(t *testing.T) {
 func TestFSGateWaiversAreBoundedRefusesAnUnboundedEntry(t *testing.T) {
 	today := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
 	const valid = "vulnerabilities:\n  - id: CVE-1\n    paths:\n      - package-lock.json\n    expired_at: 2027-02-18\n    statement: >-\n      no fix,\n      dev-only.\n"
-	if err := FSGateWaiversAreBounded(valid, today); err != nil {
-		t.Fatalf("a bounded entry was refused: %v", err)
+	for _, text := range []string{valid, strings.Replace(valid, "2027-02-18", "2027-02-18 # renew", 1)} {
+		if err := FSGateWaiversAreBounded(text, today); err != nil {
+			t.Fatalf("a bounded entry was refused: %v", err)
+		}
 	}
-	entries, _ := parseFSGateWaivers(valid)
+	entries, err := parseFSGateWaivers(valid)
+	if err != nil {
+		t.Fatalf("the valid fixture does not parse: %v", err)
+	}
 	if len(entries) != 1 || entries[0].statement != "no fix, dev-only." {
 		t.Fatalf("the folded statement was misread: %+v", entries)
 	}
 	for name, text := range map[string]string{
-		"no expired_at":     strings.Replace(valid, "    expired_at: 2027-02-18\n", "", 1),
-		"too far out":       strings.Replace(valid, "2027-02-18", "2027-06-01", 1),
-		"not a date":        strings.Replace(valid, "2027-02-18", "2027-02-18T00:00:00Z", 1),
-		"empty statement":   strings.Replace(valid, "    statement: >-\n      no fix,\n      dev-only.\n", "    statement: \"\"\n", 1),
-		"blank block":       strings.Replace(valid, "      no fix,\n      dev-only.\n", "", 1),
-		"no statement":      strings.Replace(valid, "    statement: >-\n      no fix,\n      dev-only.\n", "", 1),
-		"no paths":          strings.Replace(valid, "    paths:\n      - package-lock.json\n", "", 1),
-		"flow paths":        strings.Replace(valid, "    paths:\n      - package-lock.json\n", "    paths: [\"**\"]\n", 1),
-		"unknown key":       strings.Replace(valid, "    paths:", "    purls:\n      - pkg:npm/x\n    paths:", 1),
-		"unknown section":   strings.Replace(valid, "vulnerabilities:", "ignore:", 1),
-		"flow entry":        "vulnerabilities: [{id: CVE-1}]\n",
-		"second unbounded":  valid + "  - id: CVE-2\n    paths:\n      - go.sum\n    statement: x\n",
-		"duplicate key":     strings.Replace(valid, "    expired_at: 2027-02-18\n", "    expired_at: 2027-02-18\n    expired_at: 2099-01-01\n", 1),
-		"tab-indented line": strings.Replace(valid, "    paths:", "\tpaths:", 1),
+		"no expired_at":      strings.Replace(valid, "    expired_at: 2027-02-18\n", "", 1),
+		"too far out":        strings.Replace(valid, "2027-02-18", "2027-06-01", 1),
+		"not a date":         strings.Replace(valid, "2027-02-18", "2027-02-18T00:00:00Z", 1),
+		"empty statement":    strings.Replace(valid, "    statement: >-\n      no fix,\n      dev-only.\n", "    statement: \"\"\n", 1),
+		"blank block":        strings.Replace(valid, "      no fix,\n      dev-only.\n", "", 1),
+		"no statement":       strings.Replace(valid, "    statement: >-\n      no fix,\n      dev-only.\n", "", 1),
+		"no paths":           strings.Replace(valid, "    paths:\n      - package-lock.json\n", "", 1),
+		"flow paths":         strings.Replace(valid, "    paths:\n      - package-lock.json\n", "    paths: [\"**\"]\n", 1),
+		"glob path":          strings.Replace(valid, "      - package-lock.json\n", "      - \"**\"\n", 1),
+		"commented far date": strings.Replace(valid, "2027-02-18", "2099-01-01 # renew", 1),
+		"unknown key":        strings.Replace(valid, "    paths:", "    purls:\n      - pkg:npm/x\n    paths:", 1),
+		"unknown section":    strings.Replace(valid, "vulnerabilities:", "ignore:", 1),
+		"flow entry":         "vulnerabilities: [{id: CVE-1}]\n",
+		"second unbounded":   valid + "  - id: CVE-2\n    paths:\n      - go.sum\n    statement: x\n",
+		"duplicate key":      strings.Replace(valid, "    expired_at: 2027-02-18\n", "    expired_at: 2027-02-18\n    expired_at: 2099-01-01\n", 1),
+		"tab-indented line":  strings.Replace(valid, "    paths:", "\tpaths:", 1),
 	} {
 		if err := FSGateWaiversAreBounded(text, today); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -348,10 +375,22 @@ func TestOnlyTheTrivyFSGateReadsAnIgnoreFile(t *testing.T) {
 		}
 	}
 	_, gate := trivyFSRunLines(t)
+	files := allWorkflowFiles(t)
+	actions, err := filepath.Glob(filepath.Join(root, ".github", "actions", "*", "action.y*ml"))
+	if err != nil || len(actions) == 0 {
+		t.Fatalf("no composite action found under .github/actions (%v) — this sweep would miss them", err)
+	}
+	for _, a := range actions {
+		rel, _ := filepath.Rel(root, a)
+		files = append(files, filepath.ToSlash(rel))
+	}
 	readers := 0
-	for _, wf := range allWorkflowFiles(t) {
+	for _, wf := range files {
 		for line := range strings.SplitSeq(workflowfile.Read(t, wf), "\n") {
-			if !strings.Contains(line, "--ignorefile") && !strings.Contains(line, "TRIVY_IGNOREFILE") {
+			// A Trivy config file can name an ignore file too.
+			trivyConfig := strings.Contains(line, "--config") && strings.Contains(strings.ToLower(line), "trivy")
+			if !strings.Contains(line, "--ignorefile") && !strings.Contains(line, "TRIVY_IGNOREFILE") &&
+				!trivyConfig && !strings.Contains(line, "TRIVY_CONFIG") {
 				continue
 			}
 			if strings.HasPrefix(strings.TrimSpace(line), "#") {
