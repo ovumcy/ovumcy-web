@@ -116,7 +116,7 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:2.11.8-alpine
+    image: caddy:2.11.9-alpine
     pull_policy: always
     depends_on:
       ovumcy:
