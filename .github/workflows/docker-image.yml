@@ -1289,7 +1289,7 @@ jobs:
             BUILD_REVISION=${{ github.sha }}
           sbom: true
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
           # `name-canonical` is what `push-by-digest` requires to know the
           # repository it is pushing into without a tag to read it from. `tags:`
           # and `push:` are deliberately absent: either one would put a public
