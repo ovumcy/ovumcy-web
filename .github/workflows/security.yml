@@ -475,7 +475,7 @@ jobs:
           cache-from: |
             type=gha
             type=gha,scope=trivy-image-arm64
-          cache-to: type=gha,mode=max,scope=trivy-image-arm64
+          cache-to: type=gha,mode=max,scope=trivy-image-arm64,ignore-error=true
 
       - name: Pull Trivy image
         uses: ./.github/actions/docker-pull-retry
@@ -553,7 +553,7 @@ jobs:
           push: false
           tags: ovumcy-security:${{ github.sha }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Prepare security artifact directory
         run: mkdir -p .tmp/security

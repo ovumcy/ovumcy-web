@@ -2174,7 +2174,7 @@ jobs:
           push: false
           tags: ovumcy-image-smoke:${{ github.sha }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Boot image and smoke public surfaces
         run: |
