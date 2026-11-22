@@ -1,5 +1,6 @@
 import { test as base, expect } from '@playwright/test';
 import type { BrowserContext } from '@playwright/test';
+import { msUntilMidnight } from './day-boundary';
 
 /**
  * The suite's own `test`, and the only one specs may import.
@@ -105,7 +106,32 @@ export class BrowserErrorWatcher {
   }
 }
 
-export const test = base.extend<{ browserErrors: BrowserErrorWatcher }>({
+/**
+ * In-body `test.slow()` triples the timeout after this fixture has run, so the
+ * longest a test can still take is three times what it reads here.
+ */
+const SLOW_TEST_FACTOR = 3;
+
+export const test = base.extend<{ browserErrors: BrowserErrorWatcher; dayBoundary: void }>({
+  // The server keys "today" on its own clock in the request's zone, and nothing
+  // a spec does to the page clock reaches it. A test that crosses midnight
+  // writes to one day and reads back the next, empty one (WEB-542: an undo
+  // landed at 00:00:00.181 on yesterday, the reload rendered the new day). No
+  // test can span midnight once it starts further from it than it can run.
+  dayBoundary: [
+    async ({ timezoneId }, use, testInfo) => {
+      const longest = testInfo.timeout * SLOW_TEST_FACTOR;
+      const remaining = msUntilMidnight(new Date(), timezoneId);
+      if (remaining < longest) {
+        const wait = remaining + 1000;
+        testInfo.setTimeout(testInfo.timeout + wait);
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+      await use();
+    },
+    { auto: true },
+  ],
+
   // `auto` so a spec inherits the guard without naming it: a fixture that has
   // to be opted into is the per-spec plumbing this replaces.
   browserErrors: [
