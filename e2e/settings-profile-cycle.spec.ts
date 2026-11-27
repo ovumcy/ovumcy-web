@@ -448,13 +448,6 @@ test.describe('Settings: profile and cycle', () => {
     expect(invalidState.valid).toBe(false);
     expect(invalidState.validationMessage).not.toBe('');
     await expect(page.locator('[data-dashboard-save-form] input[name="cervical_mucus"][value="dry"]')).toBeVisible();
-    // The LH test group is offered once the toggle is on: three options, and
-    // choosing a result saves it with the entry.
-    await expect(page.locator('[data-dashboard-save-form] [data-lh-test-option]')).toHaveCount(3);
-    await saveDashboardEntry(page, async () => {
-      await page.locator('[data-dashboard-save-form] [data-lh-test-option="positive"]').click();
-    });
-    await expect(page.locator('[data-dashboard-save-form] input[name="lh_test"][value="positive"]')).toBeChecked();
     await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toHaveCount(0);
     await saveDashboardEntry(page, async () => {
       await bbtInput.fill('98.6');
@@ -462,6 +455,15 @@ test.describe('Settings: profile and cycle', () => {
     });
     // Trailing zeros are trimmed, as the summary and /stats print the value.
     await expect(bbtInput).toHaveValue('98.6');
+    // The LH test group is offered once the toggle is on: three options, and
+    // choosing a result saves it with the entry. It runs after the BBT field
+    // holds a valid value: autosave refuses the whole form while a temperature
+    // input is out of range, so a choice made beside 150.0 °F never leaves.
+    await expect(page.locator('[data-dashboard-save-form] [data-lh-test-option]')).toHaveCount(3);
+    await saveDashboardEntry(page, async () => {
+      await page.locator('[data-dashboard-save-form] [data-lh-test-option="positive"]').click();
+    });
+    await expect(page.locator('[data-dashboard-save-form] input[name="lh_test"][value="positive"]')).toBeChecked();
 
     const todayAction = await dashboardForm.getAttribute('hx-put');
     expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);

@@ -30,8 +30,9 @@ var clearDataCopyGroups = map[string][]string{
 		"unpredictable_cycle", "long_period_warning_cycle_start", "last_period_start", "age_group", "usage_goal",
 	},
 	"preferences": {
-		"track_bbt", "temperature_unit", "track_cervical_mucus", "hide_sex_chip", "hide_cycle_factors",
-		"hide_notes_field", "show_historical_phases", "week_starts_on", "shown_period_tip", "timezone",
+		"track_bbt", "temperature_unit", "track_cervical_mucus", "track_lh_test", "hide_sex_chip",
+		"hide_cycle_factors", "hide_notes_field", "show_historical_phases", "week_starts_on",
+		"shown_period_tip", "timezone",
 	},
 	"sessions": {"auth_session_version"},
 }
