@@ -490,6 +490,7 @@ func TestDashboardJournalKeepsRareFieldsBehindOneDisclosure(t *testing.T) {
 		{hook: htmlNodeAttrEquals("data-dashboard-section", "symptoms"), inside: false, name: "symptoms"},
 		{hook: htmlNodeAttrEquals("name", "sex_activity"), inside: true, name: "intimacy"},
 		{hook: htmlNodeAttrEquals("name", "cervical_mucus"), inside: true, name: "cervical mucus"},
+		{hook: htmlNodeAttrEquals("name", "lh_test"), inside: true, name: "the LH test"},
 		{hook: htmlNodeHasAttr("data-pregnancy-test"), inside: true, name: "the pregnancy test"},
 		{hook: htmlNodeAttrEquals("id", "dashboard-bbt"), inside: true, name: "BBT"},
 		{hook: htmlNodeAttrEquals("name", "cycle_factor_keys"), inside: true, name: "cycle factors"},
@@ -514,6 +515,7 @@ func TestDashboardJournalMoreDisclosureOpensForDataItHolds(t *testing.T) {
 	for name, seed := range map[string]func(*models.DailyLog){
 		"sex_activity":   func(entry *models.DailyLog) { entry.SexActivity = models.SexActivityProtected },
 		"cervical_mucus": func(entry *models.DailyLog) { entry.CervicalMucus = models.CervicalMucusEggWhite },
+		"lh_test":        func(entry *models.DailyLog) { entry.LHTest = models.LHTestPositive },
 		"pregnancy_test": func(entry *models.DailyLog) { entry.PregnancyTest = models.PregnancyTestNegative },
 		"bbt":            func(entry *models.DailyLog) { entry.BBT = new(36.6) },
 		"cycle_factors":  func(entry *models.DailyLog) { entry.CycleFactorKeys = []string{models.CycleFactorStress} },
@@ -731,15 +733,16 @@ func seedDashboardCompletedCycles(t *testing.T, database *gorm.DB, userID uint) 
 	}
 }
 
-// enableDashboardMeasurementTracking switches on the two tracking-gated fields
-// the journal's disclosure holds (BBT and cervical mucus); the rest are on by
-// default.
+// enableDashboardMeasurementTracking switches on the three tracking-gated fields
+// the journal's disclosure holds (BBT, cervical mucus and the LH test); the
+// rest are on by default.
 func enableDashboardMeasurementTracking(t *testing.T, database *gorm.DB, userID uint) {
 	t.Helper()
 
 	if err := database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"track_bbt":            true,
 		"track_cervical_mucus": true,
+		"track_lh_test":        true,
 		"temperature_unit":     services.TemperatureUnitCelsius,
 	}).Error; err != nil {
 		t.Fatalf("enable measurement tracking: %v", err)
