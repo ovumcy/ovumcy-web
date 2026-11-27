@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 *New entries accumulate as per-pull-request fragments in [changelog.d/](changelog.d/) and are assembled here at release.*
 
+## [2.3.0] - 2026-11-27
+
+### Added
+
+- **Operators can set how long "Remember me" keeps owners signed in.** `REMEMBER_ME_TTL_DAYS` (8 to 365,
+  default 30) sets the lifetime of a remembered sign-in, for instances whose owners open the app less
+  than once a month. The sign-in checkbox names the configured number of days. While the value is
+  lowered, longer sessions already issued are refused, and a value outside the range refuses to start
+  the app. A longer value keeps a stolen session cookie usable for longer; a password or 2FA change
+  still signs out every other device at once.
+
+- **Owners can record an LH test result for a day.** A new "Show LH test field" switch in Settings
+  (off by default) adds a none, negative or positive LH test to the day editor, the day summary and
+  both exports (JSON `lh_test`, CSV column `LH test` after `Uncertain`). The result is stored and
+  shown only: it does not change the predicted ovulation, the fertile window or any cycle estimate,
+  and it never leaves through the calendar feed or a webhook. Turning the switch off keeps the stored
+  results. An import of an older export reads the missing field as no result. The tracking save
+  (`PATCH /api/v1/users/current/tracking`) is a full snapshot, so an API client must now send
+  `track_lh_test`: an omitted flag reads as off.
+
+- **Onboarding step 1 can be skipped.** If you do not remember when your last period started, "I don't remember — I'll
+  add it later" finishes setup without the date. No estimates are shown until you add it. Leaving the date empty
+  without the skip is still refused.
+- **One notice for an account with no cycle start.** After a skipped date, or after clearing your data, the dashboard,
+  the calendar and the insights page show the same notice asking for the first day of your last period, with a link
+  to the calendar and to Settings. Nothing is blocked, and the notice goes away once a period day is logged.
+
+### Changed
+
+- **Regenerating the recovery code now warns that the calendar feed link stops working.** A new recovery
+  code has always revoked the calendar feed subscribe URL, but the confirmation only mentioned the old
+  code. It now says both, in every language.
+
+- Fiber upgraded to 3.7.0.
+
+### Security
+
+- **Upgrading signs everyone out once.** A restored backup could bring back a session that had been signed
+  out after the backup was taken, and could let a session from before the restore resolve as a different
+  account that was created afterwards and happened to reuse its id. Every session and every pending
+  sign-in, two-factor or link step now carries a random session epoch the server keeps in its database and
+  replaces on any boot that detects a restore. Sessions issued by earlier releases carry no epoch, so the
+  first start of this release ends them all: sign in once on each device. Nothing else is lost.
+
+  If you ever restore a backup while running a release older than this one, delete the stored epoch
+  before starting this release again (`DELETE FROM app_state WHERE key = 'auth_session_epoch';`, on
+  SQLite or Postgres); that start signs everyone out once more.
+
+- **A restore across nothing but a sign-up is now detected.** Creating an account (sign-up, OIDC
+  auto-provisioning, `ovumcy users create`) now records itself in the calendar-feed restore fence the same
+  way a sign-out or password change does. Before, restoring a backup taken before a sign-up was not read as
+  a restore, so the session epoch did not rotate and a cookie issued to the lost account could resolve as a
+  new account that reused its id. If the fence file cannot be written, the sign-up is refused and can be
+  retried; nothing is created. `ovumcy users create` needs `CALENDAR_FEED_FENCE_PATH` set to the server's
+  fence path, as `users delete` already does.
+
+- CI now refuses a trivy-fs gate waiver without a path scope, a statement, or an expiry within six months, and fails when the Security-tab scan and the gate scan drift apart or an ignore file reaches any other Trivy scan.
+
+### Dependencies
+
+- **Go modules:** PostgreSQL driver `pgx` v5.13.0 (from v5.12.0), `fasthttp` v1.79.0 (from v1.77.0),
+  `golang.org/x/crypto` v0.59.0, `x/net` v0.63.0, `x/oauth2` v0.38.0, `x/sys` v0.50.0.
+- **Image:** builder `golang:1.27.4-alpine3.24` refreshed to the current digest; runtime assets from
+  `alpine` 3.24.4 (from 3.24.3).
+- **Example stacks:** Caddy 2.11.9 (from 2.11.7) in the two Caddy reverse-proxy examples.
+
 ## [2.2.1] - 2026-11-12
 
 ### Fixed
@@ -8719,7 +8785,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/ovumcy/ovumcy-web/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/ovumcy/ovumcy-web/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/ovumcy/ovumcy-web/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/ovumcy/ovumcy-web/compare/v2.0.0...v2.1.0
