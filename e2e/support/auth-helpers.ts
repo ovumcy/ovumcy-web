@@ -1,6 +1,6 @@
 import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { isoToday, shiftISODate } from './iso-date-helpers';
-import { selectOnboardingStartDate } from './onboarding-helpers';
+import { onboardingStepOneSubmit, selectOnboardingStartDate } from './onboarding-helpers';
 
 export type Credentials = {
   email: string;
@@ -151,7 +151,7 @@ export async function completeOnboardingIfPresent(page: Page): Promise<void> {
 
   if (isStepOneVisible) {
     await selectOnboardingStartDate(page, shiftISODate(isoToday(), -3));
-    await stepOneForm.locator('button[type="submit"]').click();
+    await onboardingStepOneSubmit(page).click();
   }
 
   if (!isStepOneVisible && !isStepTwoVisible) {

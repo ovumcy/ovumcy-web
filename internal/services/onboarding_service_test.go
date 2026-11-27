@@ -136,6 +136,26 @@ func TestCompleteOnboardingSkippingStartCompletesWithoutAStart(t *testing.T) {
 	}
 }
 
+// TestCompleteOnboardingSkippingStartReturnsTheRepositoryRefusal: a failed
+// start-less completion reports the failure and no day, never a completed
+// onboarding the account does not hold.
+func TestCompleteOnboardingSkippingStartReturnsTheRepositoryRefusal(t *testing.T) {
+	refusal := errors.New("complete refused")
+	repo := &stubOnboardingRepo{user: models.User{CycleLength: 28, PeriodLength: 5}, completeErr: refusal}
+	service := NewOnboardingService(repo)
+
+	startDay, err := service.CompleteOnboardingSkippingStart(context.Background(), onboardingFixtureUserID, time.Now(), time.UTC, "en")
+	if !errors.Is(err, refusal) {
+		t.Fatalf("expected the repository refusal, got %v", err)
+	}
+	if !repo.completeCalled || !repo.completeStartNil {
+		t.Fatalf("expected the start-less completion to have been attempted, got called=%v nil=%v", repo.completeCalled, repo.completeStartNil)
+	}
+	if !startDay.IsZero() {
+		t.Fatalf("expected no start day on a refusal, got %s", startDay)
+	}
+}
+
 // TestCompleteOnboardingSkippingStartKeepsAStartGivenAfterTheSkip: a date the
 // account holds wins over the skip flag a stale form still carries.
 func TestCompleteOnboardingSkippingStartKeepsAStartGivenAfterTheSkip(t *testing.T) {

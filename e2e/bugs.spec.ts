@@ -1,6 +1,6 @@
 import { expect, test, type Page } from './support/fixtures';
 import { fillDateField, formatDisplayDate } from './support/date-field-helpers';
-import { selectOnboardingStartDate } from './support/onboarding-helpers';
+import { onboardingStepOneSubmit, selectOnboardingStartDate } from './support/onboarding-helpers';
 import { openCalendarDayEditor } from './support/stats-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
@@ -63,7 +63,7 @@ async function onboardOwnerWithAutoPeriodFill(
   await setRequestTimezoneFromBrowser(page);
 
   await selectOnboardingStartDate(page, onboardingDate);
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
+  await onboardingStepOneSubmit(page).click();
   await expect(page.locator('form[hx-post="/api/v1/onboarding/steps/2"]')).toBeVisible();
 
   const autoFillToggle = page.locator('label[data-binary-toggle]:has(input[name="auto_period_fill"])');

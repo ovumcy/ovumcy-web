@@ -192,6 +192,8 @@ func TestOnboardingStep1SkipOnJSONAndCompletion(t *testing.T) {
 	}
 
 	post("/api/v1/onboarding/complete", `{}`, http.StatusBadRequest)
+	// A skip flag that does not decode as a boolean is no skip.
+	post("/api/v1/onboarding/complete", `{"skip_last_period":"yes"}`, http.StatusBadRequest)
 	if reloadOnboardingUserForTest(t, database, user.ID).OnboardingCompleted {
 		t.Fatal("completion without a start and without the skip must be refused")
 	}

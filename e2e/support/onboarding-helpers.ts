@@ -1,6 +1,15 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
 /**
+ * Step 1's "Next" control. Step 1 carries two submit buttons — "Next" and the
+ * skip of the last-period date — so the primary one is addressed by its own
+ * hook, never as the form's `button[type="submit"]`.
+ */
+export function onboardingStepOneSubmit(page: Page): Locator {
+  return page.locator('[data-onboarding-step1-submit]');
+}
+
+/**
  * Step 1 of onboarding holds exactly one mechanism for the last-period-start
  * value: the month picker. Every spec that has to reach a specific date goes
  * through these helpers rather than typing into a field — there is no field to
