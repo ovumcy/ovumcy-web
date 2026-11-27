@@ -22,7 +22,7 @@ import {
 } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
-import { selectOnboardingStartDate } from './support/onboarding-helpers';
+import { onboardingStepOneSubmit, selectOnboardingStartDate } from './support/onboarding-helpers';
 import { localeText } from './support/locale-helpers';
 import {
   acceptConfirmDialog,
@@ -118,7 +118,7 @@ async function registerAndOnboardOnDate(page: Page, prefix: string, startISO: st
   await continueFromRecoveryCode(page);
 
   await selectOnboardingStartDate(page, startISO);
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
+  await onboardingStepOneSubmit(page).click();
   const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
   await expect(stepTwoForm).toBeVisible();
   await Promise.all([

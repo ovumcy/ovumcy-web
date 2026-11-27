@@ -18,6 +18,7 @@ import {
   onboardingDayCell,
   onboardingPicker,
   onboardingShortcut,
+  onboardingStepOneSubmit,
   selectOnboardingStartDate,
 } from './support/onboarding-helpers';
 
@@ -51,17 +52,10 @@ async function ensureOnboardingStepOneVisible(page: Page): Promise<void> {
   await expect(onboardingPicker(page)).toBeVisible();
 }
 
-function onboardingStepOneForm(page: Page): Locator {
-  return page.locator('form[data-onboarding-form-step="1"]');
-}
-
 function onboardingStepTwoForm(page: Page): Locator {
   return page.locator('form[data-onboarding-form-step="2"]');
 }
 
-function onboardingStepOneSubmit(page: Page): Locator {
-  return onboardingStepOneForm(page).locator('button[type="submit"]');
-}
 
 function onboardingStepTwoSubmit(page: Page): Locator {
   return page.locator('[data-onboarding-step2-submit]');

@@ -5,7 +5,7 @@ import {
   openDashboardMoreFields,
   saveDashboardEntry,
 } from './support/dashboard-helpers';
-import { selectOnboardingStartDate } from './support/onboarding-helpers';
+import { onboardingStepOneSubmit, selectOnboardingStartDate } from './support/onboarding-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import {
   completeOnboardingIfPresent,
@@ -176,7 +176,7 @@ async function saveTodayWithSymptom(page: Page, symptomName: string): Promise<st
 
 async function completeOnboardingWithStartDate(page: Page, startDate: string): Promise<void> {
   await selectOnboardingStartDate(page, startDate);
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
+  await onboardingStepOneSubmit(page).click();
 
   const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
   await expect(stepTwoForm).toBeVisible();

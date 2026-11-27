@@ -9,7 +9,7 @@ import {
   registerOwnerViaUI,
 } from './auth-helpers';
 import { isoToday, shiftISODate } from './iso-date-helpers';
-import { selectOnboardingStartDate } from './onboarding-helpers';
+import { onboardingStepOneSubmit, selectOnboardingStartDate } from './onboarding-helpers';
 import { setRequestTimezoneFromBrowser } from './timezone-helpers';
 
 // The date arithmetic itself lives in the dependency-free `iso-date-helpers`, so
@@ -91,7 +91,7 @@ export async function registerAndOnboardWithStartDaysAgo(
 
   const startISO = shiftISODate(isoToday(), -startDaysAgo);
   await selectOnboardingStartDate(page, startISO);
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
+  await onboardingStepOneSubmit(page).click();
 
   const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
   await expect(stepTwoForm).toBeVisible();

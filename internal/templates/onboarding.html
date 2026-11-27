@@ -93,7 +93,7 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-          <button type="submit" class="btn-primary">{{t .Messages "onboarding.button.next"}}</button>
+          <button type="submit" class="btn-primary" data-onboarding-step1-submit>{{t .Messages "onboarding.button.next"}}</button>
           {{/* The skip stays a submit button that bypasses the date's required
                check: a browser without the script completes it on the same
                request, and an empty submit without it is still refused. */}}

@@ -9,7 +9,7 @@ import {
 } from './support/auth-helpers';
 import { isoToday, shiftISODate } from './support/iso-date-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
-import { selectOnboardingStartDate } from './support/onboarding-helpers';
+import { onboardingStepOneSubmit, selectOnboardingStartDate } from './support/onboarding-helpers';
 import { openCalendarDayEditor, saveDayEditorForm } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
@@ -27,7 +27,7 @@ async function onboardWithAutoFillOffAndAnOldPeriodStart(page: Page, prefix: str
 
   const startISO = shiftISODate(isoToday(), -PERIOD_STARTED_DAYS_AGO);
   await selectOnboardingStartDate(page, startISO);
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
+  await onboardingStepOneSubmit(page).click();
 
   const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
   await expect(stepTwoForm).toBeVisible();
