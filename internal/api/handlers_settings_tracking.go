@@ -36,6 +36,7 @@ func (handler *Handler) UpdateTrackingSettings(c fiber.Ctx) error {
 			"track_bbt":              update.TrackBBT,
 			"temperature_unit":       services.NormalizeTemperatureUnit(update.TemperatureUnit),
 			"track_cervical_mucus":   update.TrackCervicalMucus,
+			"track_lh_test":          update.TrackLHTest,
 			"hide_sex_chip":          hidden.HideSexChip,
 			"hide_cycle_factors":     hidden.HideCycleFactors,
 			"hide_notes_field":       hidden.HideNotesField,
@@ -70,6 +71,7 @@ func parseTrackingSettingsInput(c fiber.Ctx) (services.TrackingSettingsUpdate, e
 			TrackBBT:           input.TrackBBT,
 			TemperatureUnit:    input.TemperatureUnit,
 			TrackCervicalMucus: input.TrackCervicalMucus,
+			TrackLHTest:        input.TrackLHTest,
 			Visibility: services.TrackingVisibilityFromHiddenColumns(services.TrackingHiddenColumns{
 				HideSexChip:      input.HideSexChip,
 				HideCycleFactors: input.HideCycleFactors,
@@ -84,6 +86,7 @@ func parseTrackingSettingsInput(c fiber.Ctx) (services.TrackingSettingsUpdate, e
 		TrackBBT:           services.ParseBoolLike(c.FormValue("track_bbt")),
 		TemperatureUnit:    c.FormValue("temperature_unit"),
 		TrackCervicalMucus: services.ParseBoolLike(c.FormValue("track_cervical_mucus")),
+		TrackLHTest:        services.ParseBoolLike(c.FormValue("track_lh_test")),
 		Visibility: services.TrackingVisibility{
 			ShowSexChip:      services.ParseBoolLike(c.FormValue("show_sex_chip")),
 			ShowCycleFactors: services.ParseBoolLike(c.FormValue("show_cycle_factors")),

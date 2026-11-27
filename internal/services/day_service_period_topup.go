@@ -190,6 +190,7 @@ func newAutoFilledPeriodEntry(userID uint, day time.Time, flow string) models.Da
 		SexActivity:     models.SexActivityNone,
 		CervicalMucus:   models.CervicalMucusNone,
 		PregnancyTest:   models.PregnancyTestNone,
+		LHTest:          models.LHTestNone,
 		CycleFactorKeys: []string{},
 		SymptomIDs:      []uint{},
 		AutoFilled:      autoFilledMark(true),

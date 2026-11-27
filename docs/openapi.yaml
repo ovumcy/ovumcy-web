@@ -445,7 +445,7 @@ components:
         saved settings, normalised the way they are stored (an omitted
         `temperature_unit` reads as `c`, an unrecognised `week_starts_on` as
         `sunday`).
-      required: [ok, status, track_bbt, temperature_unit, track_cervical_mucus, hide_sex_chip, hide_cycle_factors, hide_notes_field, show_historical_phases, week_starts_on]
+      required: [ok, status, track_bbt, temperature_unit, track_cervical_mucus, track_lh_test, hide_sex_chip, hide_cycle_factors, hide_notes_field, show_historical_phases, week_starts_on]
       properties:
         ok:
           type: boolean
@@ -458,6 +458,7 @@ components:
           type: string
           enum: [c, f]
         track_cervical_mucus: { type: boolean }
+        track_lh_test: { type: boolean }
         hide_sex_chip: { type: boolean }
         hide_cycle_factors: { type: boolean }
         hide_notes_field: { type: boolean }
@@ -887,6 +888,7 @@ components:
         base_bbt: { type: [number, 'null'] }
         base_cervical_mucus: { type: string }
         base_pregnancy_test: { type: string }
+        base_lh_test: { type: string }
         base_cycle_factor_keys: { type: array, items: { type: string } }
         base_symptom_ids: { type: array, items: { type: integer, minimum: 0 } }
         base_notes: { type: string }
@@ -900,10 +902,11 @@ components:
         defaults below do not apply, while an explicit `null` is a stated value
         and clears the field. Read is not the same as validated — a
         temperature outside the accepted range is refused with 400, an unknown
-        spelling of sex_activity, cervical_mucus or pregnancy_test collapses to
-        "none", and notes are trimmed. Hidden-field preservation belongs to the
+        spelling of sex_activity, cervical_mucus, pregnancy_test or lh_test
+        collapses to "none", and notes are trimmed. Hidden-field preservation
+        belongs to the
         form body the browser day editor posts, not here — for a field the
-        account hides in its tracking preferences (BBT, cervical mucus, sex
+        account hides in its tracking preferences (BBT, cervical mucus, LH test, sex
         activity, cycle factors, notes) that form carries no input, the request
         is not read for one, and an update keeps what is already stored under
         the same rules a sent value gets: a stored temperature outside the
@@ -944,6 +947,10 @@ components:
           type: string
           enum: [none, negative, positive]
           default: none
+        lh_test:
+          type: string
+          enum: [none, negative, positive]
+          default: none
         cycle_factor_keys:
           type: array
           items: { type: string }
@@ -966,7 +973,7 @@ components:
         `GET /api/v1/days/{date}` answers for a day without one. `date` is
         stored as UTC midnight on disk and returned as that calendar day, with
         no timezone shift.
-      required: [id, user_id, date, is_period, flow, mood, sex_activity, cervical_mucus, pregnancy_test]
+      required: [id, user_id, date, is_period, flow, mood, sex_activity, cervical_mucus, pregnancy_test, lh_test]
       properties:
         id:
           type: integer
@@ -999,6 +1006,9 @@ components:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]
         pregnancy_test:
+          type: string
+          enum: [none, negative, positive]
+        lh_test:
           type: string
           enum: [none, negative, positive]
         cycle_factor_keys:
@@ -1451,6 +1461,10 @@ components:
         pregnancy_test:
           type: string
           enum: [none, negative, positive]
+        lh_test:
+          type: string
+          enum: [none, negative, positive]
+          description: Absent in an export written before the LH test existed; on import an absent or unknown value reads as `none`.
         cycle_factors:
           type: array
           items: { type: string }
@@ -1670,6 +1684,7 @@ components:
           type: string
           enum: [c, f]
         track_cervical_mucus: { type: boolean }
+        track_lh_test: { type: boolean }
         hide_sex_chip: { type: boolean }
         hide_cycle_factors: { type: boolean }
         hide_notes_field: { type: boolean }
@@ -2678,8 +2693,8 @@ paths:
         with a placeholder built at
         read time and never stored: `id` is `0`, `user_id` is the caller,
         `date` is the requested date, `is_period`, `cycle_start` and
-        `is_uncertain` are `false`, `flow`, `sex_activity`, `cervical_mucus`
-        and `pregnancy_test` are `none`, `mood` is `0`, `notes` is empty,
+        `is_uncertain` are `false`, `flow`, `sex_activity`, `cervical_mucus`,
+        `pregnancy_test` and `lh_test` are `none`, `mood` is `0`, `notes` is empty,
         `cycle_factor_keys` and `symptom_ids` are `[]`, `bbt` is absent, and
         `created_at` and `updated_at` are `0001-01-01T00:00:00Z`.
         `id: 0` means "no stored record"; a stored record always has a

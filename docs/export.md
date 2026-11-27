@@ -36,6 +36,7 @@ Response body:
       "bbt": 36.7,
       "cervical_mucus": "creamy",
       "pregnancy_test": "negative",
+      "lh_test": "none",
       "cycle_factors": ["stress", "travel"],
       "symptoms": {
         "cramps": true,
@@ -77,6 +78,7 @@ Field semantics:
 | `bbt` | float | Basal body temperature in Celsius, always — storage is canonical Celsius regardless of the account's display unit, and export emits the stored value unconverted. Emitted only when measured; the key is absent on unmeasured days. On import, an absent key, an explicit `null`, or a legacy `0` are all read as "not measured"; a value outside the accepted range is read as "not measured" too, like any other malformed field, rather than rejecting the day. |
 | `cervical_mucus` | string | One of `none`, `dry`, `moist`, `creamy`, `eggwhite`. |
 | `pregnancy_test` | string | One of `none`, `negative`, `positive`. |
+| `lh_test` | string | One of `none`, `negative`, `positive`. A stored result only: it is never read by the cycle or ovulation estimates. Absent from an export written before it existed; import reads an absent or unknown value as `none`. |
 | `cycle_factors` | array of strings | Factor keys recorded that day, from the closed catalog `stress`, `illness`, `travel`, `sleep_disruption`, `medication_change`. Any other key is dropped on import. |
 | `symptoms` | object of booleans | Flags for the 16 built-in symptoms. Always present, even when all false. |
 | `other_symptoms` | array of strings | Names of owner-managed custom symptoms recorded that day. |
@@ -102,7 +104,7 @@ Date, Period, Flow, Mood rating, Sex activity, BBT (C), Cervical mucus,
 Cramps, Headache, Acne, Mood, Bloating, Fatigue, Breast tenderness,
 Back pain, Nausea, Spotting, Irritability, Insomnia, Food cravings,
 Diarrhea, Constipation, Swelling, Cycle factors, Other, Notes, Pregnancy test,
-Cycle start, Uncertain
+Cycle start, Uncertain, LH test
 ```
 
 Cell semantics:
@@ -118,6 +120,7 @@ Cell semantics:
 - CSV-injection mitigation: `Cycle factors`, `Other`, and `Notes` are the only cells built from user-entered text. If such a cell (after stripping leading spaces) starts with `=`, `+`, `-`, `@`, or a tab/CR/LF, a leading `'` is prepended so spreadsheet apps do not interpret it as a formula.
 - `Pregnancy test` was introduced after the 1.1.1 layout and appended after the original columns so existing column positions stay stable, per the stability rule below.
 - `Cycle start` and `Uncertain` are `Yes`/`No`. They are the last two columns, appended after `Pregnancy test` so existing column positions stay stable, per the stability rule below. `Cycle start` marks the manually flagged start of a cycle; `Uncertain` marks a day the owner flagged as uncertain. Both are owner-only.
+- `LH test` is the last column, appended after `Uncertain` so existing column positions stay stable. It is `Negative` or `Positive`, and the cell is empty when no result was recorded.
 - The owner's onboarding start (the JSON export's `last_period_start`, under the same range rule) is marked `Cycle start = Yes` on its row. Setup now logs that day as a period day (`Period = Yes`, `Cycle start = Yes`), with auto period fill on or off, so the calendar and both exports agree on it. An account set up before that change, whose start has no logged day, is not backfilled: its file carries a bare row holding only the date and the mark (`Period = No`). Correcting the start in Settings moves that mark to the new date with its period day (a bare old-start row is deleted, one holding other data keeps it without the mark), and replacing the start by marking another day moves the stored start to that day, so the export never carries two starts for one period.
 
 ## Summary Export

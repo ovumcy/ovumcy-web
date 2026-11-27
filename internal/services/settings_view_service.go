@@ -84,6 +84,7 @@ type SettingsPageViewData struct {
 	TrackBBT               bool
 	TemperatureUnit        string
 	TrackCervicalMucus     bool
+	TrackLHTest            bool
 	// The three section toggles are rendered positively; the stored columns are
 	// inverted and are converted exactly once, in tracking_visibility.go.
 	ShowSexChip             bool
@@ -188,6 +189,7 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 	resolvedUser.TrackBBT = persisted.TrackBBT
 	resolvedUser.TemperatureUnit = NormalizeTemperatureUnit(persisted.TemperatureUnit)
 	resolvedUser.TrackCervicalMucus = persisted.TrackCervicalMucus
+	resolvedUser.TrackLHTest = persisted.TrackLHTest
 	TrackingVisibilityForUser(&persisted).ApplyToUser(&resolvedUser)
 	resolvedUser.ShowHistoricalPhases = persisted.ShowHistoricalPhases
 	resolvedUser.WeekStartsOn = NormalizeWeekStart(persisted.WeekStartsOn)
@@ -233,6 +235,7 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 		TrackBBT:               user.TrackBBT,
 		TemperatureUnit:        user.TemperatureUnit,
 		TrackCervicalMucus:     user.TrackCervicalMucus,
+		TrackLHTest:            user.TrackLHTest,
 		ShowSexChip:            visibility.ShowSexChip,
 		ShowCycleFactors:       visibility.ShowCycleFactors,
 		ShowNotesField:         visibility.ShowNotesField,

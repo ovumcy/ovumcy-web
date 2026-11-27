@@ -356,6 +356,7 @@ func normalizeImportEntryInput(entry ExportJSONEntry) DayEntryInput {
 		BBT:             normalizeStoredDayBBT(normalizeExportBBT(entry.BBT)),
 		CervicalMucus:   NormalizeDayCervicalMucus(entry.CervicalMucus),
 		PregnancyTest:   NormalizeDayPregnancyTest(entry.PregnancyTest),
+		LHTest:          NormalizeDayLHTest(entry.LHTest),
 		CycleFactorKeys: cycleFactors,
 		Notes:           TrimDayNotes(entry.Notes),
 	}
@@ -459,6 +460,7 @@ func (service *ImportService) writeDays(ctx context.Context, userID uint, planne
 				BBT:             day.input.BBT,
 				CervicalMucus:   day.input.CervicalMucus,
 				PregnancyTest:   day.input.PregnancyTest,
+				LHTest:          day.input.LHTest,
 				CycleFactorKeys: day.input.CycleFactorKeys,
 				SymptomIDs:      symptomIDs,
 				Notes:           day.input.Notes,

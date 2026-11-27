@@ -628,6 +628,7 @@ func (service *SettingsService) SaveTrackingSettings(ctx context.Context, userID
 		"track_bbt":              settings.TrackBBT,
 		"temperature_unit":       NormalizeTemperatureUnit(settings.TemperatureUnit),
 		"track_cervical_mucus":   settings.TrackCervicalMucus,
+		"track_lh_test":          settings.TrackLHTest,
 		"hide_sex_chip":          hidden.HideSexChip,
 		"hide_cycle_factors":     hidden.HideCycleFactors,
 		"hide_notes_field":       hidden.HideNotesField,

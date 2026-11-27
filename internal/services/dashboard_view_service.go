@@ -85,6 +85,7 @@ type DashboardViewData struct {
 	ShowSexChip                       bool
 	ShowBBTField                      bool
 	ShowCervicalMucus                 bool
+	ShowLHTest                        bool
 	ShowCycleFactors                  bool
 	ShowNotesField                    bool
 	MoreFieldsOpen                    bool
@@ -135,6 +136,7 @@ type DayEditorViewData struct {
 	ShowSexChip                bool
 	ShowBBTField               bool
 	ShowCervicalMucus          bool
+	ShowLHTest                 bool
 	ShowCycleFactors           bool
 	ShowNotesField             bool
 	AllowManualCycleStart      bool
@@ -253,6 +255,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		ShowSexChip:                       visibility.ShowSexChip,
 		ShowBBTField:                      visibility.ShowBBTField,
 		ShowCervicalMucus:                 visibility.ShowCervicalMucus,
+		ShowLHTest:                        visibility.ShowLHTest,
 		ShowCycleFactors:                  visibility.ShowCycleFactors,
 		ShowNotesField:                    visibility.ShowNotesField,
 		MoreFieldsOpen:                    dashboardMoreFieldsHoldData(todayLog, visibility, timingFrame.BBTInVisibleTier),
@@ -295,6 +298,7 @@ type dashboardOwnerVisibility struct {
 	ShowSexChip           bool
 	ShowBBTField          bool
 	ShowCervicalMucus     bool
+	ShowLHTest            bool
 	ShowCycleFactors      bool
 	ShowNotesField        bool
 	AllowManualCycleStart bool
@@ -395,6 +399,9 @@ func dashboardMoreFieldsHoldData(entry models.DailyLog, visibility dashboardOwne
 	if visibility.ShowCervicalMucus && NormalizeDayCervicalMucus(entry.CervicalMucus) != models.CervicalMucusNone {
 		return true
 	}
+	if visibility.ShowLHTest && NormalizeDayLHTest(entry.LHTest) != models.LHTestNone {
+		return true
+	}
 	if NormalizeDayPregnancyTest(entry.PregnancyTest) != models.PregnancyTestNone {
 		return true
 	}
@@ -414,6 +421,7 @@ func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.
 		ShowSexChip:           isOwner && visibility.ShowSexChip,
 		ShowBBTField:          isOwner && visibility.ShowBBTField,
 		ShowCervicalMucus:     isOwner && visibility.ShowCervicalMucus,
+		ShowLHTest:            isOwner && visibility.ShowLHTest,
 		ShowCycleFactors:      isOwner && visibility.ShowCycleFactors,
 		ShowNotesField:        isOwner && visibility.ShowNotesField,
 		AllowManualCycleStart: isOwner && IsAllowedManualCycleStartDate(today, now, location),
@@ -506,6 +514,7 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 		ShowSexChip:            visibility.ShowSexChip,
 		ShowBBTField:           visibility.ShowBBTField,
 		ShowCervicalMucus:      visibility.ShowCervicalMucus,
+		ShowLHTest:             visibility.ShowLHTest,
 		ShowCycleFactors:       visibility.ShowCycleFactors,
 		ShowNotesField:         visibility.ShowNotesField,
 		AllowManualCycleStart:  visibility.AllowManualCycleStart,

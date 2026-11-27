@@ -38,7 +38,7 @@
   {{/* A stored reading stays out of the summary while BBT tracking is off,
        the same switch that hides the editor's field (ShowBBT). */}}
   {{$showBBT := and .ShowBBT (hasBBT .Log.BBT)}}
-  {{if or (ne .Log.SexActivity "none") $showBBT (ne .Log.CervicalMucus "none") (ne .Log.PregnancyTest "none")}}
+  {{if or (ne .Log.SexActivity "none") $showBBT (ne .Log.CervicalMucus "none") (ne .Log.PregnancyTest "none") (ne .Log.LHTest "none")}}
   <div class="grid gap-3 sm:grid-cols-2">
     {{if ne .Log.SexActivity "none"}}
     <p><span class="journal-muted">{{t .Messages "dashboard.sex"}}{{t .Messages "common.colon"}}</span> {{sexActivityLabel .Messages .Log.SexActivity}}</p>
@@ -48,6 +48,9 @@
     {{end}}
     {{if ne .Log.CervicalMucus "none"}}
     <p><span class="journal-muted">{{t .Messages "dashboard.cervical_mucus"}}{{t .Messages "common.colon"}}</span> {{cervicalMucusLabel .Messages .Log.CervicalMucus}}</p>
+    {{end}}
+    {{if ne .Log.LHTest "none"}}
+    <p><span class="journal-muted">{{t .Messages "dashboard.lh_test"}}{{t .Messages "common.colon"}}</span> {{lhTestLabel .Messages .Log.LHTest}}</p>
     {{end}}
     {{if ne .Log.PregnancyTest "none"}}
     <p><span class="journal-muted">{{t .Messages "dashboard.pregnancy_test"}}{{t .Messages "common.colon"}}</span> {{pregnancyTestLabel .Messages .Log.PregnancyTest}}</p>

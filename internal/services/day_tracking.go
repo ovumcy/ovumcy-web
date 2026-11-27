@@ -88,6 +88,26 @@ func IsValidDayPregnancyTest(value string) bool {
 	}
 }
 
+func NormalizeDayLHTest(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case models.LHTestNegative:
+		return models.LHTestNegative
+	case models.LHTestPositive:
+		return models.LHTestPositive
+	default:
+		return models.LHTestNone
+	}
+}
+
+func IsValidDayLHTest(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", models.LHTestNone, models.LHTestNegative, models.LHTestPositive:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsValidDayBBT reports whether a basal body temperature value is acceptable
 // for storage. A nil pointer means "not measured" and is always valid; a
 // measured value is valid only inside the physiological range. There is no
