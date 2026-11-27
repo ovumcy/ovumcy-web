@@ -680,6 +680,20 @@ An additive migration (`ALTER TABLE ... ADD COLUMN ... NOT NULL DEFAULT ...`, `C
   `schema_migrations` by hand instead, the older binary ignores the columns and serves single
   estimated days, but a link it mints keeps the previous link's choices after the re-upgrade:
   generate a new link then.
+- **Migration `047_daily_logs_lh_test.sql` is additive.** It adds each day's LH test result
+  (`none` by default) and the account's "Show LH test field" switch (off by default). A v2.x binary
+  refuses a database this release has migrated (the newer-schema check above), so a downgrade means
+  restoring a pre-upgrade backup, which has no LH results recorded after it was taken. If the `047`
+  row is deleted from `schema_migrations` by hand instead, the older binary ignores both columns:
+  it neither shows nor exports the stored results, and deleting a day, clearing data or deleting
+  the account still removes them with the day rows.
+- **The session epoch (v2.3.0) is not a migration, and a restore under an older release bypasses
+  it.** The first start of v2.3.0 signs every owner out once. An older release ignores the epoch,
+  so a backup restored while it runs leaves the stored epoch unrotated, and after the re-upgrade
+  sessions from before that restore are accepted again. After any restore done under an older
+  release, delete the epoch before starting v2.3.0 or later
+  (`DELETE FROM app_state WHERE key = 'auth_session_epoch';`, the same on SQLite and Postgres);
+  that start signs everyone out once more.
 - **Migration `043_calendar_feed_detailed_titles.sql` is additive.** The column holds the owner's opt-in to name "Period (estimate)" and "Ovulation (estimate)" in the feed's event titles; the older binary ignores it and serves neutral titles. Every revoke and disarm on this release clears the flag, so a link the older binary mints after such a revoke serves neutral titles after the re-upgrade. A link the older binary rotated in place, or minted after its own revoke, is different: the older binary never touches the keyed verifier this release wrote for the previous link, so after the re-upgrade the new link no longer verifies and answers 404. **If a binary older than v2.0.0 rotated a feed, the owner generates a new link after the re-upgrade** from `Settings → Calendar feed`.
 
 - **Migration `044_purge_cleartext_oidc_logout_states.sql` deletes every OIDC logout state, and a downgrade past it needs one manual step in each direction.** From this release on, the `id_token_hint` in `oidc_logout_states` is stored sealed under `SECRET_KEY` and bound to its owner; 044 removes the rows an earlier release wrote in cleartext. A binary older than 044 reads the column as cleartext, so it would send the sealed value to the provider as the hint, and every row it writes holds the provider's ID token in cleartext again for up to 7 days. Neither direction loses owner data — a session without a logout state simply signs out locally. **Run `DELETE FROM oidc_logout_states` against the database when you downgrade past 044, and again right after the re-upgrade**: the first stops the older binary from sending sealed values, the second removes the cleartext rows it wrote (044 is already recorded, so the re-upgrade does not re-apply it; the server refuses those rows but does not purge them until each one is read or expires).
