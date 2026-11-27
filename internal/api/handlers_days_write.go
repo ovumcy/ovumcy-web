@@ -38,6 +38,7 @@ type preservedDayFields struct {
 	SexActivity   bool
 	BBT           bool
 	CervicalMucus bool
+	LHTest        bool
 	CycleFactors  bool
 	Notes         bool
 }
@@ -49,7 +50,7 @@ type preservedDayFields struct {
 // the client states, so it is granted no preservation and every field it sends
 // is read. Read is not the same as validated: a temperature outside the
 // accepted range is refused with 400, an unknown spelling of sex_activity,
-// cervical_mucus or pregnancy_test collapses to "none", and notes are trimmed.
+// cervical_mucus, pregnancy_test or lh_test collapses to "none", and notes are trimmed.
 //
 // Which fields an account hides is the services layer's answer, and all five
 // come from one TrackingVisibility so that no tracking column is negated in
@@ -66,6 +67,7 @@ func hiddenDayFields(user *models.User, formBody bool) preservedDayFields {
 		SexActivity:   visibility.SexChipHidden(),
 		BBT:           visibility.BBTFieldHidden(),
 		CervicalMucus: visibility.CervicalMucusHidden(),
+		LHTest:        visibility.LHTestHidden(),
 		CycleFactors:  visibility.CycleFactorsHidden(),
 		Notes:         visibility.NotesFieldHidden(),
 	}
@@ -213,12 +215,14 @@ func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, hidden
 		BBT:                   payload.BBT,
 		CervicalMucus:         payload.CervicalMucus,
 		PregnancyTest:         payload.PregnancyTest,
+		LHTest:                payload.LHTest,
 		CycleFactorKeys:       payload.CycleFactorKeys,
 		Notes:                 payload.Notes,
 		SymptomIDs:            cleanSymptomIDs,
 		PreserveSexActivity:   hidden.SexActivity,
 		PreserveBBT:           hidden.BBT,
 		PreserveCervicalMucus: hidden.CervicalMucus,
+		PreserveLHTest:        hidden.LHTest,
 		PreserveCycleFactors:  hidden.CycleFactors,
 		PreserveNotes:         hidden.Notes,
 	}

@@ -469,7 +469,7 @@ func openAPIResponseSchemaGuardTable() []openAPIResponseSchemaGuardEntry {
 				"exported_at": time.Now().UTC().Format(time.RFC3339),
 				"entries": []map[string]any{{
 					"date": schemaGuardDay(4), "period": true, "flow": "light", "mood_rating": 0,
-					"sex_activity": "none", "cervical_mucus": "none", "cycle_factors": []string{},
+					"sex_activity": "none", "cervical_mucus": "none", "lh_test": "positive", "cycle_factors": []string{},
 					"symptoms": map[string]bool{}, "other_symptoms": []string{}, "notes": "",
 				}},
 			})
@@ -485,7 +485,7 @@ func openAPIResponseSchemaGuardTable() []openAPIResponseSchemaGuardEntry {
 		}},
 		{operation: "PATCH /api/v1/users/current/tracking", drive: func(t *testing.T) (int, []byte) {
 			return newSchemaGuardOwner(t).send(t, http.MethodPatch, "/api/v1/users/current/tracking", map[string]any{
-				"track_bbt": true, "temperature_unit": "f", "track_cervical_mucus": true,
+				"track_bbt": true, "temperature_unit": "f", "track_cervical_mucus": true, "track_lh_test": true,
 				"hide_sex_chip": true, "hide_cycle_factors": false, "hide_notes_field": false,
 				"show_historical_phases": true, "week_starts_on": "monday",
 			})

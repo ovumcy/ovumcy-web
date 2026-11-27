@@ -31,6 +31,7 @@ type DayEntryInput struct {
 	BBT             *float64
 	CervicalMucus   string
 	PregnancyTest   string
+	LHTest          string
 	CycleFactorKeys []string
 	Notes           string
 	SymptomIDs      []uint
@@ -52,6 +53,7 @@ type DayEntryInput struct {
 	PreserveSexActivity   bool
 	PreserveBBT           bool
 	PreserveCervicalMucus bool
+	PreserveLHTest        bool
 	PreserveCycleFactors  bool
 	PreserveNotes         bool
 }
@@ -179,6 +181,7 @@ func fetchLogByDate(ctx context.Context, find func(context.Context, uint, time.T
 			SexActivity:     models.SexActivityNone,
 			CervicalMucus:   models.CervicalMucusNone,
 			PregnancyTest:   models.PregnancyTestNone,
+			LHTest:          models.LHTestNone,
 			CycleFactorKeys: []string{},
 			SymptomIDs:      []uint{},
 		}, nil
@@ -186,6 +189,7 @@ func fetchLogByDate(ctx context.Context, find func(context.Context, uint, time.T
 	entry.SexActivity = NormalizeDaySexActivity(entry.SexActivity)
 	entry.CervicalMucus = NormalizeDayCervicalMucus(entry.CervicalMucus)
 	entry.PregnancyTest = NormalizeDayPregnancyTest(entry.PregnancyTest)
+	entry.LHTest = NormalizeDayLHTest(entry.LHTest)
 	entry.CycleFactorKeys, _ = NormalizeDayCycleFactorKeys(entry.CycleFactorKeys)
 	if !IsValidDayBBT(entry.BBT) {
 		entry.BBT = nil
@@ -260,6 +264,7 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		entry.BBT = payload.BBT
 		entry.CervicalMucus = payload.CervicalMucus
 		entry.PregnancyTest = payload.PregnancyTest
+		entry.LHTest = payload.LHTest
 		entry.CycleFactorKeys = payload.CycleFactorKeys
 		entry.SymptomIDs = payload.SymptomIDs
 		entry.Notes = payload.Notes
@@ -280,6 +285,7 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		BBT:             payload.BBT,
 		CervicalMucus:   payload.CervicalMucus,
 		PregnancyTest:   payload.PregnancyTest,
+		LHTest:          payload.LHTest,
 		CycleFactorKeys: payload.CycleFactorKeys,
 		Notes:           payload.Notes,
 		SymptomIDs:      payload.SymptomIDs,
@@ -325,6 +331,9 @@ func mergePreservedDayEntryInput(existing models.DailyLog, payload DayEntryInput
 	if payload.PreserveCervicalMucus {
 		payload.CervicalMucus = NormalizeDayCervicalMucus(existing.CervicalMucus)
 	}
+	if payload.PreserveLHTest {
+		payload.LHTest = NormalizeDayLHTest(existing.LHTest)
+	}
 	if payload.PreserveCycleFactors {
 		normalized, _ := NormalizeDayCycleFactorKeys(existing.CycleFactorKeys)
 		payload.CycleFactorKeys = normalized
@@ -351,6 +360,7 @@ type DayEntryFields struct {
 	BBT             bool
 	CervicalMucus   bool
 	PregnancyTest   bool
+	LHTest          bool
 	CycleFactorKeys bool
 	Notes           bool
 	SymptomIDs      bool
@@ -402,6 +412,9 @@ func mergeDayEntryPatch(existing models.DailyLog, patch DayEntryInput, fields Da
 	if !fields.PregnancyTest {
 		merged.PregnancyTest = NormalizeDayPregnancyTest(existing.PregnancyTest)
 	}
+	if !fields.LHTest {
+		merged.LHTest = NormalizeDayLHTest(existing.LHTest)
+	}
 	if !fields.CycleFactorKeys {
 		merged.CycleFactorKeys, _ = NormalizeDayCycleFactorKeys(existing.CycleFactorKeys)
 	}
@@ -450,6 +463,7 @@ func dayEntryPatchConflicts(existing models.DailyLog, written DayEntryInput, fie
 		conflicts(fields.BBT, base.Fields.BBT, func(a, b DayEntryInput) bool { return sameStoredDayBBT(a.BBT, b.BBT) }) ||
 		conflicts(fields.CervicalMucus, base.Fields.CervicalMucus, func(a, b DayEntryInput) bool { return a.CervicalMucus == b.CervicalMucus }) ||
 		conflicts(fields.PregnancyTest, base.Fields.PregnancyTest, func(a, b DayEntryInput) bool { return a.PregnancyTest == b.PregnancyTest }) ||
+		conflicts(fields.LHTest, base.Fields.LHTest, func(a, b DayEntryInput) bool { return a.LHTest == b.LHTest }) ||
 		conflicts(fields.CycleFactorKeys, base.Fields.CycleFactorKeys, func(a, b DayEntryInput) bool { return slices.Equal(a.CycleFactorKeys, b.CycleFactorKeys) }) ||
 		conflicts(fields.Notes, base.Fields.Notes, func(a, b DayEntryInput) bool { return a.Notes == b.Notes }) ||
 		conflicts(fields.SymptomIDs, base.Fields.SymptomIDs, func(a, b DayEntryInput) bool { return sameDaySymptomIDSet(a.SymptomIDs, b.SymptomIDs) })
@@ -472,6 +486,7 @@ func dayLogFromEntryInput(input DayEntryInput) models.DailyLog {
 		BBT:             input.BBT,
 		CervicalMucus:   input.CervicalMucus,
 		PregnancyTest:   input.PregnancyTest,
+		LHTest:          input.LHTest,
 		CycleFactorKeys: input.CycleFactorKeys,
 		Notes:           input.Notes,
 		SymptomIDs:      input.SymptomIDs,
@@ -1022,6 +1037,7 @@ func (service *DayService) manualCycleStartPayload(ctx context.Context, userID u
 		BBT:             existingEntry.BBT,
 		CervicalMucus:   NormalizeDayCervicalMucus(existingEntry.CervicalMucus),
 		PregnancyTest:   NormalizeDayPregnancyTest(existingEntry.PregnancyTest),
+		LHTest:          NormalizeDayLHTest(existingEntry.LHTest),
 		CycleFactorKeys: append([]string{}, existingEntry.CycleFactorKeys...),
 		Notes:           existingEntry.Notes,
 		SymptomIDs:      symptomIDs,

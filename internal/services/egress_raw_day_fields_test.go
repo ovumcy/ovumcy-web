@@ -21,6 +21,7 @@ var rawDayFieldMarkers = []string{
 	models.CervicalMucusEggWhite,
 	models.SexActivityUnprotected,
 	models.PregnancyTestNegative,
+	models.LHTestPositive,
 	models.FlowHeavy,
 }
 
@@ -34,6 +35,7 @@ func withRawDayFields(logs []models.DailyLog) []models.DailyLog {
 		entry.CervicalMucus = models.CervicalMucusEggWhite
 		entry.SexActivity = models.SexActivityUnprotected
 		entry.PregnancyTest = models.PregnancyTestNegative
+		entry.LHTest = models.LHTestPositive
 		entry.Flow = models.FlowHeavy
 		entry.Mood = 5
 		entry.SymptomIDs = []uint{41, 42}

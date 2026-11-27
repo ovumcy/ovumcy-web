@@ -9,6 +9,7 @@ type TrackingSettingsUpdate struct {
 	TrackBBT             bool
 	TemperatureUnit      string
 	TrackCervicalMucus   bool
+	TrackLHTest          bool
 	Visibility           TrackingVisibility
 	ShowHistoricalPhases bool
 	WeekStartsOn         string
@@ -21,6 +22,7 @@ func (service *SettingsService) ApplyTrackingSettings(user *models.User, update 
 	user.TrackBBT = update.TrackBBT
 	user.TemperatureUnit = NormalizeTemperatureUnit(update.TemperatureUnit)
 	user.TrackCervicalMucus = update.TrackCervicalMucus
+	user.TrackLHTest = update.TrackLHTest
 	update.Visibility.ApplyToUser(user)
 	user.ShowHistoricalPhases = update.ShowHistoricalPhases
 	user.WeekStartsOn = NormalizeWeekStart(update.WeekStartsOn)

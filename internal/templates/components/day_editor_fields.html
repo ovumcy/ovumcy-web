@@ -188,6 +188,30 @@
      the hidden carrier onto "none" and lets the change it fires reach whichever
      save model the surrounding form uses — the dashboard's autosave, or the
      calendar editor's explicit Save. */}}
+{{/* The LH (ovulation) test is a plain three-way choice, like the mucus group:
+     "none" is a real option here, and the group reuses the mucus row and chip
+     styling so no new component class is needed. The value is recorded and
+     shown only; it feeds no prediction. */}}
+{{define "lh_test_option"}}
+<label class="choice-option" data-lh-test-option="{{.Value}}">
+  <input
+    type="radio"
+    name="lh_test"
+    value="{{.Value}}"
+    class="choice-input"
+    {{if eq .SelectedLHTest .Value}}checked{{end}}>
+  <span class="chip chip-stack{{if .Compact}} chip-sm{{end}}">
+    <span>{{lhTestLabel .Messages .Value}}</span>
+  </span>
+</label>
+{{end}}
+{{define "lh_test_options"}}
+<div class="cervical-mucus-row{{if .Compact}} cervical-mucus-row-compact{{end}}">
+  {{template "lh_test_option" (dict "Messages" .Messages "SelectedLHTest" .SelectedLHTest "Value" "none" "Compact" .Compact)}}
+  {{template "lh_test_option" (dict "Messages" .Messages "SelectedLHTest" .SelectedLHTest "Value" "negative" "Compact" .Compact)}}
+  {{template "lh_test_option" (dict "Messages" .Messages "SelectedLHTest" .SelectedLHTest "Value" "positive" "Compact" .Compact)}}
+</div>
+{{end}}
 {{define "pregnancy_test_option"}}
 <label class="choice-option" data-pregnancy-test-option="{{.Value}}">
   <input

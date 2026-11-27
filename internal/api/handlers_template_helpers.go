@@ -47,6 +47,9 @@ func newTemplateFuncMap() template.FuncMap {
 		"usageGoalLabel": func(messages map[string]string, value string) string {
 			return translateMessage(messages, services.UsageGoalTranslationKey(value))
 		},
+		"lhTestLabel": func(messages map[string]string, value string) string {
+			return translateMessage(messages, services.LHTestTranslationKey(value))
+		},
 		"pregnancyTestLabel": func(messages map[string]string, value string) string {
 			return translateMessage(messages, services.PregnancyTestTranslationKey(value))
 		},

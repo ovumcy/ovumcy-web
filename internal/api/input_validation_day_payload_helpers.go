@@ -82,6 +82,9 @@ func parseDayPayloadUnderPrefix(c fiber.Ctx, user *models.User, formBody bool, h
 			payload.CervicalMucus = strings.ToLower(strings.TrimSpace(formBodyValue(c, prefix+"cervical_mucus")))
 		}
 		payload.PregnancyTest = strings.ToLower(strings.TrimSpace(formBodyValue(c, prefix+"pregnancy_test")))
+		if !hidden.LHTest {
+			payload.LHTest = strings.ToLower(strings.TrimSpace(formBodyValue(c, prefix+"lh_test")))
+		}
 		if !hidden.Notes {
 			payload.Notes = strings.TrimSpace(formBodyValue(c, prefix+"notes"))
 		}
@@ -120,6 +123,7 @@ func parseDayPayloadUnderPrefix(c fiber.Ctx, user *models.User, formBody bool, h
 	payload.SexActivity = services.NormalizeDaySexActivity(payload.SexActivity)
 	payload.CervicalMucus = services.NormalizeDayCervicalMucus(payload.CervicalMucus)
 	payload.PregnancyTest = services.NormalizeDayPregnancyTest(payload.PregnancyTest)
+	payload.LHTest = services.NormalizeDayLHTest(payload.LHTest)
 	payload.Notes = strings.TrimSpace(payload.Notes)
 
 	return payload, nil
@@ -169,6 +173,7 @@ type dayPayloadPresence struct {
 	BBT             json.RawMessage `json:"bbt"`
 	CervicalMucus   json.RawMessage `json:"cervical_mucus"`
 	PregnancyTest   json.RawMessage `json:"pregnancy_test"`
+	LHTest          json.RawMessage `json:"lh_test"`
 	CycleFactorKeys json.RawMessage `json:"cycle_factor_keys"`
 	SymptomIDs      json.RawMessage `json:"symptom_ids"`
 	Notes           json.RawMessage `json:"notes"`
@@ -214,6 +219,7 @@ func parseDayPayloadFieldsUnderPrefix(c fiber.Ctx, formBody bool, hidden preserv
 			BBT:             presence.BBT != nil,
 			CervicalMucus:   presence.CervicalMucus != nil,
 			PregnancyTest:   presence.PregnancyTest != nil,
+			LHTest:          presence.LHTest != nil,
 			CycleFactorKeys: presence.CycleFactorKeys != nil,
 			SymptomIDs:      presence.SymptomIDs != nil,
 			Notes:           presence.Notes != nil,
@@ -229,6 +235,7 @@ func parseDayPayloadFieldsUnderPrefix(c fiber.Ctx, formBody bool, hidden preserv
 		BBT:             !hidden.BBT && formValuePresent(c, prefix+"bbt"),
 		CervicalMucus:   !hidden.CervicalMucus && formValuePresent(c, prefix+"cervical_mucus"),
 		PregnancyTest:   formValuePresent(c, prefix+"pregnancy_test"),
+		LHTest:          !hidden.LHTest && formValuePresent(c, prefix+"lh_test"),
 		CycleFactorKeys: !hidden.CycleFactors && postArgs.Has(prefix+"cycle_factor_keys"),
 		SymptomIDs:      postArgs.Has(prefix + "symptom_ids"),
 		Notes:           !hidden.Notes && formValuePresent(c, prefix+"notes"),

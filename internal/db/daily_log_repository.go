@@ -190,6 +190,7 @@ func findDailyLogInDayRange(query *gorm.DB, userID uint, dayStart time.Time, day
 			"bbt",
 			"cervical_mucus",
 			"pregnancy_test",
+			"lh_test",
 			"cycle_factor_keys",
 			"symptom_ids",
 			"notes",

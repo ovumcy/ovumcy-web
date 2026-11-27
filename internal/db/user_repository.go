@@ -1972,6 +1972,7 @@ func bareOnboardingPeriodDay(userID uint, day time.Time, createdAt time.Time) mo
 		SexActivity:   models.SexActivityNone,
 		CervicalMucus: models.CervicalMucusNone,
 		PregnancyTest: models.PregnancyTestNone,
+		LHTest:        models.LHTestNone,
 		SymptomIDs:    []uint{},
 		AutoFilled:    &autoFilled,
 	}
@@ -2021,6 +2022,7 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"track_bbt",
 			"temperature_unit",
 			"track_cervical_mucus",
+			"track_lh_test",
 			"hide_sex_chip",
 			"hide_cycle_factors",
 			"hide_notes_field",
@@ -2156,6 +2158,7 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"track_bbt":                       false,
 			"temperature_unit":                "c",
 			"track_cervical_mucus":            false,
+			"track_lh_test":                   false,
 			"hide_sex_chip":                   false,
 			"hide_cycle_factors":              false,
 			"hide_notes_field":                false,

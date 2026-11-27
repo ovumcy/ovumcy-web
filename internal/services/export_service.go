@@ -53,6 +53,7 @@ var exportCSVHeaders = []string{
 	"Pregnancy test",
 	"Cycle start",
 	"Uncertain",
+	"LH test",
 }
 
 // exportSymptomColumnsByName maps a symptom's name onto the built-in KEY whose
@@ -179,6 +180,7 @@ type ExportJSONEntry struct {
 	BBT           *float64           `json:"bbt,omitempty"`
 	CervicalMucus string             `json:"cervical_mucus"`
 	PregnancyTest string             `json:"pregnancy_test"`
+	LHTest        string             `json:"lh_test"`
 	CycleFactors  []string           `json:"cycle_factors"`
 	Symptoms      ExportSymptomFlags `json:"symptoms"`
 	OtherSymptoms []string           `json:"other_symptoms"`
@@ -196,6 +198,7 @@ type ExportCSVRow struct {
 	BBT           *float64
 	CervicalMucus string
 	PregnancyTest string
+	LHTest        string
 	CycleFactors  []string
 	Symptoms      ExportSymptomFlags
 	OtherSymptoms []string
@@ -315,6 +318,7 @@ func (service *ExportService) BuildJSONEntries(ctx context.Context, userID uint,
 			BBT:           normalizeExportBBT(logEntry.BBT),
 			CervicalMucus: NormalizeDayCervicalMucus(logEntry.CervicalMucus),
 			PregnancyTest: NormalizeDayPregnancyTest(logEntry.PregnancyTest),
+			LHTest:        NormalizeDayLHTest(logEntry.LHTest),
 			CycleFactors:  normalizeExportCycleFactorKeys(logEntry.CycleFactorKeys),
 			Symptoms:      flags,
 			OtherSymptoms: other,
@@ -344,6 +348,7 @@ func (service *ExportService) BuildCSVRows(ctx context.Context, userID uint, fro
 			BBT:           normalizeExportBBT(logEntry.BBT),
 			CervicalMucus: csvCervicalMucusLabel(logEntry.CervicalMucus),
 			PregnancyTest: csvPregnancyTestLabel(logEntry.PregnancyTest),
+			LHTest:        csvLHTestLabel(logEntry.LHTest),
 			CycleFactors:  csvCycleFactorLabels(logEntry.CycleFactorKeys),
 			Symptoms:      flags,
 			OtherSymptoms: other,
@@ -430,6 +435,7 @@ func (row ExportCSVRow) Columns() []string {
 		row.PregnancyTest,
 		csvYesNo(row.CycleStart),
 		csvYesNo(row.IsUncertain),
+		row.LHTest,
 	}
 }
 
@@ -587,6 +593,20 @@ func csvPregnancyTestLabel(value string) string {
 		return "Positive"
 	default:
 		return "None"
+	}
+}
+
+// csvLHTestLabel leaves the cell empty for "no result", unlike the older
+// pregnancy test column: an empty cell is what the mobile app writes, and a
+// day with no LH test is the common case.
+func csvLHTestLabel(value string) string {
+	switch NormalizeDayLHTest(value) {
+	case models.LHTestNegative:
+		return "Negative"
+	case models.LHTestPositive:
+		return "Positive"
+	default:
+		return ""
 	}
 }
 

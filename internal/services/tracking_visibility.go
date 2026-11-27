@@ -31,6 +31,7 @@ type TrackingVisibility struct {
 	ShowNotesField    bool
 	ShowBBTField      bool
 	ShowCervicalMucus bool
+	ShowLHTest        bool
 }
 
 // TrackingHiddenColumns is the stored, inverted spelling of the same three
@@ -73,6 +74,7 @@ func TrackingVisibilityForUser(user *models.User) TrackingVisibility {
 	})
 	visibility.ShowBBTField = user.TrackBBT
 	visibility.ShowCervicalMucus = user.TrackCervicalMucus
+	visibility.ShowLHTest = user.TrackLHTest
 	return visibility
 }
 
@@ -124,4 +126,8 @@ func (visibility TrackingVisibility) BBTFieldHidden() bool {
 
 func (visibility TrackingVisibility) CervicalMucusHidden() bool {
 	return !visibility.ShowCervicalMucus
+}
+
+func (visibility TrackingVisibility) LHTestHidden() bool {
+	return !visibility.ShowLHTest
 }

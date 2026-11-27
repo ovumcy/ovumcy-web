@@ -75,6 +75,17 @@ func PregnancyTestTranslationKey(value string) string {
 	}
 }
 
+func LHTestTranslationKey(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case models.LHTestNegative:
+		return "dashboard.lh_test.negative"
+	case models.LHTestPositive:
+		return "dashboard.lh_test.positive"
+	default:
+		return "dashboard.lh_test.none"
+	}
+}
+
 // MoodTranslationKey names a step of the mood scale. The faces alone leave the
 // scale to be guessed — two people picking the third one were recording
 // different things — so every step carries a name, and the name is a catalogue

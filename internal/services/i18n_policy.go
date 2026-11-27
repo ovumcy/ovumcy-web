@@ -147,6 +147,7 @@ var authErrorTranslationKeys = map[string]string{ // #nosec G101 -- false positi
 	"invalid bbt value":                               "dashboard.error.invalid_bbt",
 	"invalid cervical mucus value":                    "dashboard.error.invalid_cervical_mucus",
 	"invalid pregnancy test value":                    "dashboard.error.invalid_pregnancy_test",
+	"invalid lh test value":                           "dashboard.error.invalid_lh_test",
 	"invalid date":                                    "dashboard.error.invalid_day_entry",
 	"invalid payload":                                 "dashboard.error.invalid_day_entry",
 	"invalid symptom ids":                             "dashboard.error.invalid_day_entry",
