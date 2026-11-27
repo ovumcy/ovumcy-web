@@ -50,13 +50,15 @@ type preservedDayFields struct {
 // the client states, so it is granted no preservation and every field it sends
 // is read. Read is not the same as validated: a temperature outside the
 // accepted range is refused with 400, an unknown spelling of sex_activity,
-// cervical_mucus, pregnancy_test or lh_test collapses to "none", and notes are trimmed.
+// cervical_mucus, pregnancy_test or lh_test collapses to "none", and notes are
+// trimmed.
 //
-// Which fields an account hides is the services layer's answer, and all five
-// come from one TrackingVisibility so that no tracking column is negated in
-// transport. Whether the caller may write this owner's day at all is the
-// route's question — days.Put and days.Patch declare OwnerOnly (routes.go) — and not this
-// set's. Regression: TestUpsertDayRefusesAnImpossibleTemperatureSentAsJSON,
+// Which fields an account hides is the services layer's answer, and all of
+// them come from one TrackingVisibility so that no tracking column is negated
+// in transport. Whether the caller may write this owner's day at all is the
+// route's question — days.Put and days.Patch declare OwnerOnly (routes.go) —
+// and not this set's. Regression:
+// TestUpsertDayRefusesAnImpossibleTemperatureSentAsJSON,
 // TestParseDayPayloadSkipsEveryFieldTheAccountHides.
 func hiddenDayFields(user *models.User, formBody bool) preservedDayFields {
 	if !formBody || user == nil {

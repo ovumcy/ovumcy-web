@@ -471,6 +471,8 @@ test.describe('Settings: profile and cycle', () => {
     const dayEditorForm = await openCalendarDayEditor(page, todayISO);
     await expect(dayEditorForm.locator('#calendar-bbt')).toHaveValue('98.6');
     await expect(dayEditorForm.locator('.measurement-field-unit')).toContainText('°F');
+    // The editor is rendered by the server, so this reads the stored result back.
+    await expect(dayEditorForm.locator('input[name="lh_test"][value="positive"]')).toBeChecked();
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
