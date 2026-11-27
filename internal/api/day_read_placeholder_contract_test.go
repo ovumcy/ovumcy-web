@@ -103,6 +103,7 @@ func TestGetDayWithoutRecordAnswersTheDocumentedPlaceholder(t *testing.T) {
 			"sex_activity":      `"none"`,
 			"cervical_mucus":    `"none"`,
 			"pregnancy_test":    `"none"`,
+			"lh_test":           `"none"`,
 			"mood":              `0`,
 			"notes":             `""`,
 			"cycle_factor_keys": `[]`,
