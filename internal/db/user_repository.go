@@ -2090,6 +2090,20 @@ func (repo *UserRepository) SaveOnboardingStep1(ctx context.Context, userID uint
 	}).Error
 }
 
+// ClearOnboardingStart answers step 1 with "later": last_period_start returns
+// to NULL, which also withdraws a date an earlier step-1 submit of the same
+// onboarding stored, so a skip never leaves a start the owner no longer stands
+// behind.
+func (repo *UserRepository) ClearOnboardingStart(ctx context.Context, userID uint) error {
+	query, err := repo.scopedUserUpdate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	return query.Updates(map[string]any{
+		"last_period_start": nil,
+	}).Error
+}
+
 // SaveOnboardingStep2 writes the columns the second onboarding step owns.
 // age_group is not among them — onboarding no longer collects it, and the
 // column is written by the settings cycle form only.
@@ -2377,10 +2391,16 @@ func (repo *UserRepository) purgeExpiredOIDCLogoutStatesBestEffort(ctx context.C
 // last day or the owner's local today, whichever comes first — so the bound by
 // today is not computed here; an end before startDay writes no day at all.
 //
+// A nil startDay is an owner who skipped the last-period date: no day is
+// written, last_period_start is left as it is (NULL after the skip) and only
+// the completion flag and the locale-bound preferences are settled. It is a
+// pointer so that "no start" cannot be spelled as a zero time, which would
+// walk the fill from year 1.
+//
 // A non-empty weekStart replaces users.week_starts_on; a non-empty language is
 // stored in users.interface_language only while that column is still empty, so
 // a language the owner already chose is never overwritten.
-func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error {
+func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, start *time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error {
 	// Checked up front, before any DailyLog write runs inside the
 	// transaction below: letting a zero id reach those writes first would
 	// create owner-less daily-log rows before the users UPDATE ever refused
@@ -2389,8 +2409,14 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 		return err
 	}
 
+	hasStart := start != nil
+	var startDay time.Time
+	if hasStart {
+		startDay = *start
+	}
+
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if autoPeriodFill {
+		if hasStart && autoPeriodFill {
 			stamp := time.Now().UTC()
 			for cursor := startDay; !cursor.After(fillEndDay); cursor = cursor.AddDate(0, 0, 1) {
 				dayStart := cursor
@@ -2425,7 +2451,7 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 		// A start the owner's today has not reached yet (fillEndDay is bounded
 		// by today) is stored as the baseline only: no logged day is written
 		// ahead of the day the owner has reached.
-		if !fillEndDay.Before(startDay) {
+		if hasStart && !fillEndDay.Before(startDay) {
 			if err := recordOnboardingCycleStart(tx, userID, startDay, autoPeriodFill); err != nil {
 				return err
 			}
@@ -2446,8 +2472,10 @@ func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint,
 			return err // codecov:ignore -- unreachable: requireUserOwnerID above already refused a zero userID before this transaction started, and userID does not change inside it
 		}
 		updates := map[string]any{
-			"last_period_start":    startDay,
 			"onboarding_completed": true,
+		}
+		if hasStart {
+			updates["last_period_start"] = startDay
 		}
 		if weekStart != "" {
 			updates["week_starts_on"] = weekStart

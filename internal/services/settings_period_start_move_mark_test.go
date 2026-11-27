@@ -20,7 +20,7 @@ func markMoveOwner(t *testing.T, email string, autoFill bool) (*db.Repositories,
 	if err := repositories.Users.UpdateByID(ctx, user.ID, map[string]any{"auto_period_fill": autoFill}); err != nil {
 		t.Fatalf("set auto-fill: %v", err)
 	}
-	if err := repositories.Users.CompleteOnboarding(ctx, user.ID, startMoveDay(time.September, 14), startMoveDay(time.September, 18), autoFill, "", ""); err != nil {
+	if err := repositories.Users.CompleteOnboarding(ctx, user.ID, new(startMoveDay(time.September, 14)), startMoveDay(time.September, 18), autoFill, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 	return repositories, user.ID

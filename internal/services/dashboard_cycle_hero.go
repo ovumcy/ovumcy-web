@@ -140,6 +140,11 @@ func BuildDashboardCycleHero(user *models.User, stats CycleStats, cycleContext D
 	if location == nil {
 		location = time.UTC
 	}
+	// A zero start (an account that skipped the onboarding date) has no cycle
+	// to anchor the hero on; do not rely on the upstream gate alone.
+	if stats.LastPeriodStart.IsZero() {
+		return DashboardCycleHero{}
+	}
 	cycleStart := CalendarDay(stats.LastPeriodStart, location)
 
 	// FertilitySuppressed is FertilityProjectionSuppressed(user, stats) resolved

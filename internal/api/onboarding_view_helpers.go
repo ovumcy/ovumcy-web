@@ -31,5 +31,8 @@ func (handler *Handler) buildOnboardingViewData(c fiber.Ctx, user *models.User, 
 		"AutoPeriodFill":  state.AutoPeriodFill,
 		"IrregularCycle":  state.IrregularCycle,
 		"UsageGoal":       state.UsageGoal,
+		// The skip is not stored; the no-JS redirect hands it to this page, which
+		// puts it into the step-2 form. A start the account holds outranks it.
+		"SkippedLastPeriod": state.Step == 2 && lastPeriodStart == "" && services.ParseBoolLike(c.Query(onboardingSkipFieldName)),
 	}
 }

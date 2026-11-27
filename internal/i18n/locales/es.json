@@ -142,6 +142,8 @@
   "onboarding.step1.selected": "Seleccionado: %s",
   "onboarding.step1.day1_tip": "El día 1 es el primer día de flujo real, no de manchado.",
   "onboarding.step1.privacy": "Todos tus datos se quedan en este servidor y solo salen de él a través de integraciones que tú activas.",
+  "onboarding.step1.skip": "No lo recuerdo — lo añadiré más tarde",
+  "onboarding.step1.skip_hint": "¿No recuerdas la fecha exacta? Omítela y añádela más tarde en Ajustes; las estimaciones empezarán cuando lo hagas.",
   "onboarding.step1.field": "Fecha de inicio del último periodo",
   "onboarding.step2.title": "Configura los parámetros del ciclo",
   "onboarding.step2.cycle_length": "Duración habitual del ciclo",

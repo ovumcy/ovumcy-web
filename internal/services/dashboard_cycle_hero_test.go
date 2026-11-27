@@ -11,6 +11,7 @@ func TestBuildDashboardCycleHeroBuildsSegmentedOverview(t *testing.T) {
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	stats := CycleStats{
 		CurrentCycleDay:     3,
+		LastPeriodStart:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		CurrentPhase:        "menstrual",
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
@@ -51,6 +52,7 @@ func TestBuildDashboardCycleHeroMarksRangeBasedViewsApproximate(t *testing.T) {
 	user := &models.User{Role: models.RoleOwner, CycleLength: 29, IrregularCycle: true}
 	stats := CycleStats{
 		CurrentCycleDay:     11,
+		LastPeriodStart:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		CurrentPhase:        "follicular",
 		AveragePeriodLength: 5,
 		LutealPhase:         14,

@@ -48,10 +48,27 @@ func (handler *Handler) requestLocationFromOnboardingForm(c fiber.Ctx) *time.Loc
 	return handler.requestLocation(c)
 }
 
+// onboardingSkipRequested reports whether the request names the step-1 skip. A
+// body that does not decode, or names nothing, is not a skip: the refusal for a
+// missing start date stays the answer to every request that did not ask for it.
+func onboardingSkipRequested(c fiber.Ctx) bool {
+	if hasJSONBody(c) {
+		input := onboardingSkipInput{}
+		if err := c.Bind().Body(&input); err != nil {
+			return false
+		}
+		return input.SkipLastPeriod
+	}
+	return services.ParseBoolLike(c.FormValue(onboardingSkipFieldName))
+}
+
 func (handler *Handler) parseOnboardingStep1Values(c fiber.Ctx, today time.Time, location *time.Location) (onboardingStep1Values, string) {
 	input := onboardingStep1Input{}
 	if err := c.Bind().Body(&input); err != nil {
 		return onboardingStep1Values{}, "invalid input"
+	}
+	if onboardingSkipRequested(c) {
+		return onboardingStep1Values{Skip: true}, ""
 	}
 	parsedDay, err := handler.onboardingSvc.ValidateAndParseStep1StartDate(input.LastPeriodStart, today, location)
 	if err != nil {

@@ -124,7 +124,7 @@ func TestUserRepositoryCompleteOnboardingRefusesZeroOwner(t *testing.T) {
 	repo := openRegistrationRepositoryForTest(t)
 
 	today := time.Now().UTC()
-	err := repo.CompleteOnboarding(context.Background(), 0, today, today.AddDate(0, 0, 4), false, "", "")
+	err := repo.CompleteOnboarding(context.Background(), 0, &today, today.AddDate(0, 0, 4), false, "", "")
 	if !errors.Is(err, ErrUserOwnerRequired) {
 		t.Fatalf("expected ErrUserOwnerRequired, got %v", err)
 	}
@@ -160,7 +160,7 @@ func TestUserRepositoryCompleteOnboardingStoresTheLanguageOnlyWhileUnset(t *test
 			}
 			startDay := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
 
-			if err := repo.CompleteOnboarding(ctx, owner.ID, startDay, startDay, false, "de", models.WeekStartMonday); err != nil {
+			if err := repo.CompleteOnboarding(ctx, owner.ID, &startDay, startDay, false, "de", models.WeekStartMonday); err != nil {
 				t.Fatalf("complete onboarding: %v", err)
 			}
 
@@ -211,7 +211,7 @@ func TestUserRepositoryCompleteOnboardingRollsBackWhenTheLanguageWriteFails(t *t
 	}
 
 	startDay := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
-	err := repo.CompleteOnboarding(ctx, owner.ID, startDay, startDay, false, "de", models.WeekStartMonday)
+	err := repo.CompleteOnboarding(ctx, owner.ID, &startDay, startDay, false, "de", models.WeekStartMonday)
 	if !errors.Is(err, injected) {
 		t.Fatalf("expected the failed language write back, got %v", err)
 	}
@@ -239,7 +239,7 @@ func TestUserRepositoryCompleteOnboardingMarksAnExistingDayAsPeriod(t *testing.T
 	ctx := context.Background()
 	ownerID, startDay, dayID := seedOnboardingOwnerWithExistingDay(t, repo)
 
-	if err := repo.CompleteOnboarding(ctx, ownerID, startDay, startDay, true, "", ""); err != nil {
+	if err := repo.CompleteOnboarding(ctx, ownerID, &startDay, startDay, true, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 
@@ -249,6 +249,81 @@ func TestUserRepositoryCompleteOnboardingMarksAnExistingDayAsPeriod(t *testing.T
 	}
 	if !reloaded.IsPeriod {
 		t.Fatal("expected the onboarding auto-fill to mark the existing day as period")
+	}
+}
+
+// TestUserRepositoryCompleteOnboardingWithoutAStartWritesNoDay pins the skip's
+// completion: a nil start with auto-fill on and a fill bound far past it writes
+// no daily_logs row and leaves last_period_start NULL, yet still settles the
+// completion flag, the language and the week start.
+func TestUserRepositoryCompleteOnboardingWithoutAStartWritesNoDay(t *testing.T) {
+	repo := openRegistrationRepositoryForTest(t)
+	ctx := context.Background()
+	owner := &models.User{
+		Email:        "onboarding-no-start@example.com",
+		PasswordHash: "hash",
+		Role:         models.RoleOwner,
+		CycleLength:  models.DefaultCycleLength,
+		PeriodLength: models.DefaultPeriodLength,
+		CreatedAt:    time.Now().UTC(),
+	}
+	if err := repo.Create(ctx, owner); err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+
+	fillEnd := time.Date(2026, time.June, 5, 0, 0, 0, 0, time.UTC)
+	if err := repo.CompleteOnboarding(ctx, owner.ID, nil, fillEnd, true, "de", models.WeekStartMonday); err != nil {
+		t.Fatalf("complete onboarding without a start: %v", err)
+	}
+
+	var rows int64
+	if err := repo.database.WithContext(ctx).Model(&models.DailyLog{}).Where("user_id = ?", owner.ID).Count(&rows).Error; err != nil {
+		t.Fatalf("count daily logs: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("expected no daily_logs row without a start, got %d", rows)
+	}
+	reloaded, err := repo.FindByID(ctx, owner.ID)
+	if err != nil {
+		t.Fatalf("reload owner: %v", err)
+	}
+	if reloaded.LastPeriodStart != nil {
+		t.Fatalf("expected last_period_start to stay NULL, got %v", reloaded.LastPeriodStart)
+	}
+	if !reloaded.OnboardingCompleted || reloaded.InterfaceLanguage != "de" || reloaded.WeekStartsOn != models.WeekStartMonday {
+		t.Fatalf("expected the completion settled, got completed=%v language=%q week=%q", reloaded.OnboardingCompleted, reloaded.InterfaceLanguage, reloaded.WeekStartsOn)
+	}
+}
+
+// TestUserRepositoryClearOnboardingStartWithdrawsOnlyTheOwnersStart: the skip
+// clears the start of the account it names and no other, and refuses a zero id.
+func TestUserRepositoryClearOnboardingStartWithdrawsOnlyTheOwnersStart(t *testing.T) {
+	repo := openRegistrationRepositoryForTest(t)
+	ctx := context.Background()
+	start := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
+	create := func(email string) *models.User {
+		user := &models.User{Email: email, PasswordHash: "hash", Role: models.RoleOwner, CycleLength: models.DefaultCycleLength, PeriodLength: models.DefaultPeriodLength, CreatedAt: time.Now().UTC()}
+		if err := repo.Create(ctx, user); err != nil {
+			t.Fatalf("create owner: %v", err)
+		}
+		if err := repo.SaveOnboardingStep1(ctx, user.ID, start); err != nil {
+			t.Fatalf("seed start: %v", err)
+		}
+		return user
+	}
+	first, second := create("clear-start-a@example.com"), create("clear-start-b@example.com")
+
+	if err := repo.ClearOnboardingStart(ctx, first.ID); err != nil {
+		t.Fatalf("clear start: %v", err)
+	}
+	if reloaded, _ := repo.FindByID(ctx, first.ID); reloaded.LastPeriodStart != nil {
+		t.Fatalf("expected the named owner's start cleared, got %v", reloaded.LastPeriodStart)
+	}
+	if reloaded, _ := repo.FindByID(ctx, second.ID); reloaded.LastPeriodStart == nil {
+		t.Fatal("another owner's start must survive")
+	}
+	if err := repo.ClearOnboardingStart(ctx, 0); !errors.Is(err, ErrUserOwnerRequired) {
+		t.Fatalf("expected ErrUserOwnerRequired for a zero id, got %v", err)
 	}
 }
 
@@ -270,7 +345,7 @@ func TestUserRepositoryCompleteOnboardingUpdateIsScopedByOwner(t *testing.T) {
 		t.Fatalf("register update callback: %v", err)
 	}
 
-	if err := repo.CompleteOnboarding(context.Background(), ownerID, startDay, startDay, true, "", ""); err != nil {
+	if err := repo.CompleteOnboarding(context.Background(), ownerID, &startDay, startDay, true, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 

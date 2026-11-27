@@ -29,7 +29,8 @@ func (handler *Handler) OnboardingComplete(c fiber.Ctx) error {
 		return handler.failMutation(c, onboardingCompleteMutation, unauthorizedErrorSpec())
 	}
 
-	if err := services.ValidateOnboardingCompletionEligibility(user); err != nil {
+	skippedStart := onboardingSkipRequested(c)
+	if err := services.ValidateOnboardingCompletionEligibility(user, skippedStart); err != nil {
 		switch {
 		case errors.Is(err, services.ErrOnboardingCompletionNotNeeded):
 			return redirectOrJSON(c, "/dashboard")
@@ -39,7 +40,11 @@ func (handler *Handler) OnboardingComplete(c fiber.Ctx) error {
 			return handler.failMutation(c, onboardingCompleteMutation, onboardingFinishErrorSpec()) // codecov:ignore -- unreachable: ValidateOnboardingCompletionEligibility returns only the two sentinels above or nil.
 		}
 	}
-	_, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.clockNow(), handler.requestLocationFromOnboardingForm(c), handler.onboardingAccountLanguage(c)) // codecov:ignore -- onboarding completion covered by the e2e onboarding flow
+	completeOnboarding := handler.onboardingSvc.CompleteOnboardingForUser
+	if skippedStart {
+		completeOnboarding = handler.onboardingSvc.CompleteOnboardingSkippingStart
+	}
+	_, err := completeOnboarding(c.Context(), user.ID, handler.clockNow(), handler.requestLocationFromOnboardingForm(c), handler.onboardingAccountLanguage(c)) // codecov:ignore -- onboarding completion covered by the e2e onboarding flow
 	if err != nil {
 		// codecov:ignore:start -- defensive: eligibility (incl. steps-required) is validated above
 		// against the request user before CompleteOnboardingForUser re-reads the row, so this

@@ -153,6 +153,8 @@
   "onboarding.step1.selected": "Sélectionné : %s",
   "onboarding.step1.day1_tip": "Le jour 1 est le premier jour de véritable flux, pas de simples légères pertes.",
   "onboarding.step1.privacy": "Toutes vos données restent sur ce serveur et ne le quittent qu'à travers les intégrations que vous activez vous-même.",
+  "onboarding.step1.skip": "Je ne m'en souviens pas — je l'ajouterai plus tard",
+  "onboarding.step1.skip_hint": "Vous ne vous souvenez pas de la date exacte ? Passez cette étape et ajoutez-la plus tard dans les Paramètres ; les estimations commenceront une fois la date saisie.",
   "onboarding.step1.field": "Date de début des dernières règles",
   "onboarding.step2.title": "Configurer les paramètres du cycle",
   "onboarding.step2.cycle_length": "Durée habituelle du cycle",

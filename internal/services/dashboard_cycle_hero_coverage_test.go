@@ -108,6 +108,7 @@ func TestDashboardCycleHeroOvulationDayOneMoreThanPeriodPlusOneRendersOK(t *test
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	stats := CycleStats{
 		CurrentCycleDay:     4,
+		LastPeriodStart:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		AveragePeriodLength: 5,
 		AverageCycleLength:  28,
 		LutealPhase:         21, // ovulationDay = 7; periodLength+1 = 6 → 7 > 6 OK
@@ -145,6 +146,7 @@ func TestDashboardCycleHeroTodayCellSplitsRecordedFromProjected(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := CycleStats{
 		CurrentCycleDay:     7,
+		LastPeriodStart:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		CurrentPhase:        "follicular",
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
@@ -227,6 +229,7 @@ func TestDashboardCycleHeroCurrentCycleDayOneRendersVisible(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := CycleStats{
 		CurrentCycleDay:     1,
+		LastPeriodStart:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		CurrentPhase:        "menstrual",
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
@@ -259,6 +262,7 @@ func TestDashboardCycleHeroCurrentCycleDayEqualsLengthRendersVisible(t *testing.
 	user := dashboardcycleheroCovUser28() // cycleLength=28
 	stats := CycleStats{
 		CurrentCycleDay:     28, // == cycleLength → must render
+		LastPeriodStart:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		CurrentPhase:        "luteal",
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
@@ -290,6 +294,7 @@ func TestDashboardCycleHeroDayCellsCarryTheirPhaseSpan(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := CycleStats{
 		CurrentCycleDay:     3,
+		LastPeriodStart:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		CurrentPhase:        "menstrual",
 		AveragePeriodLength: 5,
 		LutealPhase:         14,
@@ -574,5 +579,24 @@ func TestDashboardCycleHeroDisplayOvulationImpossibleBlocksRender(t *testing.T) 
 	hero := BuildDashboardCycleHero(user, stats, ctx, dashboardCycleHeroInput{})
 	if hero.Visible {
 		t.Fatal("expected invisible hero when DisplayOvulationImpossible is true")
+	}
+}
+
+// A zero LastPeriodStart (an account that skipped the onboarding date) must
+// not render a ribbon anchored on the zero calendar day, even when every
+// other gate would let it through.
+func TestDashboardCycleHeroZeroLastPeriodStartIsNotRenderable(t *testing.T) {
+	user := dashboardcycleheroCovUser28()
+	stats := CycleStats{
+		CurrentCycleDay:     3,
+		AveragePeriodLength: 5,
+		LutealPhase:         14,
+	}
+	if !stats.LastPeriodStart.IsZero() {
+		t.Fatal("fixture must carry a zero LastPeriodStart")
+	}
+	hero := BuildDashboardCycleHero(user, stats, dashboardcycleheroCovExactContext(), dashboardCycleHeroInput{})
+	if hero.Visible || hero.AxisDays != 0 {
+		t.Fatalf("zero LastPeriodStart must yield an empty hero, got %+v", hero)
 	}
 }

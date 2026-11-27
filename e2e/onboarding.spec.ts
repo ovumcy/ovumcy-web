@@ -116,6 +116,24 @@ test.describe('Onboarding flow', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
   });
 
+  test('step 1 can be skipped and the dashboard then asks for the start date', async ({ page }) => {
+    await registerAndOpenOnboarding(page, 'onboarding-step1-skip');
+
+    const skip = page.locator('[data-onboarding-skip-start]');
+    await expect(skip).toHaveText(localeText('en', 'onboarding.step1.skip'));
+    await skip.click();
+
+    // The skip moves on to step 2 without any date entered.
+    await expect(onboardingStepTwoForm(page)).toBeVisible();
+    await submitStepTwo(page);
+
+    const prompt = page.getByRole('link', {
+      name: localeText('en', 'dashboard.next_period_prompt'),
+    });
+    await expect(prompt).toBeVisible();
+    await expect(prompt).toHaveAttribute('href', '/settings#settings-cycle');
+  });
+
   test('step 1 blocks an empty submit and the today shortcut fills the date', async ({
     browserErrors,
     page,

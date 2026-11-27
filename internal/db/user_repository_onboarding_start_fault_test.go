@@ -40,7 +40,7 @@ func TestUserRepositoryCompleteOnboardingRollsBackWhenTheStartDayReadFails(t *te
 	}
 
 	startDay := time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC)
-	err := repo.CompleteOnboarding(ctx, owner.ID, startDay, startDay, false, "", "")
+	err := repo.CompleteOnboarding(ctx, owner.ID, &startDay, startDay, false, "", "")
 	if !errors.Is(err, injected) {
 		t.Fatalf("expected the failed start-day read back, got %v", err)
 	}

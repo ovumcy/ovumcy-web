@@ -92,7 +92,14 @@
           <p class="journal-muted text-sm" data-onboarding-selected-date aria-live="polite"></p>
         </div>
 
-        <button type="submit" class="btn-primary">{{t .Messages "onboarding.button.next"}}</button>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="submit" class="btn-primary">{{t .Messages "onboarding.button.next"}}</button>
+          {{/* The skip stays a submit button that bypasses the date's required
+               check: a browser without the script completes it on the same
+               request, and an empty submit without it is still refused. */}}
+          <button type="submit" class="btn-soft text-sm" name="skip_last_period" value="1" formnovalidate data-onboarding-skip-start>{{t .Messages "onboarding.step1.skip"}}</button>
+        </div>
+        <p class="journal-muted text-sm">{{t .Messages "onboarding.step1.skip_hint"}}</p>
         <div id="onboarding-step1-status" class="save-status text-sm" aria-live="polite"></div>
       </form>
     </div>
@@ -112,6 +119,9 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="day_form_account" value="{{.DayFormAccount}}">
         <input type="hidden" name="client_timezone" value="" data-onboarding-timezone-field>
+        {{/* The skip of step 1 is not stored, so this form carries it to the
+             completion. Disabled (and so unsent) unless step 1 was skipped. */}}
+        <input type="hidden" name="skip_last_period" value="1" data-onboarding-skip-field {{if not .SkippedLastPeriod}}disabled{{end}}>
 
         <div class="space-y-2">
           <div class="flex items-center justify-between gap-2">
