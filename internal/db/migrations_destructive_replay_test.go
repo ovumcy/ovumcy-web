@@ -256,7 +256,8 @@ INSERT INTO %s (id, user_id, date) SELECT id, user_id, date FROM %s;`
   is_uncertain BOOLEAN NOT NULL DEFAULT 0,
   cycle_factor_keys TEXT NOT NULL DEFAULT '[]',
   pregnancy_test TEXT NOT NULL DEFAULT 'none',
-  auto_filled BOOLEAN
+  auto_filled BOOLEAN,
+  lh_test TEXT NOT NULL DEFAULT 'none'
 );
 INSERT INTO %s SELECT * FROM %s;`
 
