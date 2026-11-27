@@ -164,6 +164,7 @@ test.describe('Settings: export download buttons', () => {
         'Pregnancy test',
         'Cycle start',
         'Uncertain',
+        'LH test',
       ].join(',')
     );
     for (const [date, mark] of [
