@@ -26,7 +26,7 @@ func TestOnboardingFillMarksAnExistingDayItTicks(t *testing.T) {
 	repo := openRegistrationRepositoryForTest(t)
 	ownerID, startDay, dayID := seedOnboardingOwnerWithExistingDay(t, repo)
 
-	if err := repo.CompleteOnboarding(context.Background(), ownerID, startDay, startDay, true, "", ""); err != nil {
+	if err := repo.CompleteOnboarding(context.Background(), ownerID, &startDay, startDay, true, "", ""); err != nil {
 		t.Fatalf("complete onboarding: %v", err)
 	}
 

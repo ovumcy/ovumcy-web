@@ -22,8 +22,9 @@ var (
 type OnboardingUserRepository interface {
 	FindByID(ctx context.Context, userID uint) (models.User, error)
 	SaveOnboardingStep1(ctx context.Context, userID uint, start time.Time) error
+	ClearOnboardingStart(ctx context.Context, userID uint) error
 	SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error
-	CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error
+	CompleteOnboarding(ctx context.Context, userID uint, start *time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error
 }
 
 type OnboardingService struct {
@@ -36,6 +37,16 @@ func NewOnboardingService(users OnboardingUserRepository) *OnboardingService {
 
 func (service *OnboardingService) SaveStep1(ctx context.Context, userID uint, valuesStart time.Time) error {
 	return service.users.SaveOnboardingStep1(ctx, userID, valuesStart)
+}
+
+// SkipStep1 answers step 1 with "I'll add it later". The account is left with
+// no last period start — a date an earlier step-1 submit of the same onboarding
+// stored is withdrawn — which is the state the account holds after clear-data,
+// so every surface already knows how to render it. The answer itself is not
+// stored: the caller carries it to the completion (see
+// CompleteOnboardingSkippingStart), because the schema has no column for it.
+func (service *OnboardingService) SkipStep1(ctx context.Context, userID uint) error {
+	return service.users.ClearOnboardingStart(ctx, userID)
 }
 
 func (service *OnboardingService) ValidateStep1StartDate(start time.Time, now time.Time, location *time.Location) error {
@@ -114,12 +125,43 @@ func (service *OnboardingService) ParseAndNormalizeStep2Input(cycleRaw string, p
 // the account's language — Settings, where it is chosen, is unreachable before
 // onboarding completes (WEB-257).
 func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context, userID uint, now time.Time, location *time.Location, language string) (time.Time, error) {
+	return service.completeOnboarding(ctx, userID, now, location, language, false)
+}
+
+// CompleteOnboardingSkippingStart completes onboarding for an owner who
+// answered step 1 with the skip. Where the account holds a start it behaves as
+// CompleteOnboardingForUser (a start given after the skip wins); without one it
+// completes with no start and seeds no day, and the returned day is the zero
+// time. The refusal CompleteOnboardingForUser gives a start-less account stays
+// for every caller that did not skip.
+func (service *OnboardingService) CompleteOnboardingSkippingStart(ctx context.Context, userID uint, now time.Time, location *time.Location, language string) (time.Time, error) {
+	return service.completeOnboarding(ctx, userID, now, location, language, true)
+}
+
+func (service *OnboardingService) completeOnboarding(ctx context.Context, userID uint, now time.Time, location *time.Location, language string, skippedStart bool) (time.Time, error) {
 	current, err := service.users.FindByID(ctx, userID)
 	if err != nil {
 		return time.Time{}, err
 	}
-	if current.LastPeriodStart == nil {
+	if current.LastPeriodStart == nil && !skippedStart {
 		return time.Time{}, ErrOnboardingStepsRequired
+	}
+
+	accountLanguage := strings.TrimSpace(current.InterfaceLanguage)
+	languageToStore := ""
+	if accountLanguage == "" {
+		accountLanguage = language
+		languageToStore = language
+	}
+	weekStart := DefaultWeekStartForLanguage(accountLanguage)
+
+	if current.LastPeriodStart == nil {
+		// Typed nil: the repository settles the flag and the preferences and
+		// writes no day, so a zero time never reaches its fill loop.
+		if err := service.users.CompleteOnboarding(ctx, userID, nil, time.Time{}, current.AutoPeriodFill, languageToStore, weekStart); err != nil {
+			return time.Time{}, err
+		}
+		return time.Time{}, nil
 	}
 
 	startDay := CalendarDay(*current.LastPeriodStart, time.UTC)
@@ -130,14 +172,7 @@ func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context,
 	// owner's location and handed over as the UTC-midnight calendar day the
 	// repository iterates.
 	fillEndDay := CalendarDay(periodFillLastDay(startDay, periodLength, now, location), time.UTC)
-	accountLanguage := strings.TrimSpace(current.InterfaceLanguage)
-	languageToStore := ""
-	if accountLanguage == "" {
-		accountLanguage = language
-		languageToStore = language
-	}
-	weekStart := DefaultWeekStartForLanguage(accountLanguage)
-	if err := service.users.CompleteOnboarding(ctx, userID, startDay, fillEndDay, current.AutoPeriodFill, languageToStore, weekStart); err != nil {
+	if err := service.users.CompleteOnboarding(ctx, userID, &startDay, fillEndDay, current.AutoPeriodFill, languageToStore, weekStart); err != nil {
 		return time.Time{}, err
 	}
 	return startDay, nil
@@ -230,10 +265,10 @@ const OnboardingStartDateWindowDays = 60
 // The floor used to be raised to 1 January of the current year whenever that
 // was the later of the two, which made the accepted window one single day on
 // 1 January and shorter than the copy promised through all of January and
-// February. Completion is impossible without a start date
-// (ValidateOnboardingCompletionEligibility), so an owner onboarding in that
-// stretch could only proceed by entering a date they knew to be wrong — and
-// that date anchors the first cycle and every estimate built on it. The window
+// February. Completion is impossible without a start date unless step 1 was
+// skipped (ValidateOnboardingCompletionEligibility), so an owner onboarding in
+// that stretch could only proceed by entering a date they knew to be wrong —
+// and that date anchors the first cycle and every estimate built on it. The window
 // crossing into the previous calendar year is the point, not a side effect.
 func OnboardingDateBounds(now time.Time, location *time.Location) (time.Time, time.Time) {
 	if location == nil {
@@ -251,11 +286,13 @@ func RequiresOnboarding(user *models.User) bool {
 	return user.Role == models.RoleOwner && !user.OnboardingCompleted
 }
 
-func ValidateOnboardingCompletionEligibility(user *models.User) error {
+// ValidateOnboardingCompletionEligibility refuses a completion with no last
+// period start unless the owner answered step 1 with the skip.
+func ValidateOnboardingCompletionEligibility(user *models.User, skippedStart bool) error {
 	if !RequiresOnboarding(user) {
 		return ErrOnboardingCompletionNotNeeded
 	}
-	if user.LastPeriodStart == nil {
+	if user.LastPeriodStart == nil && !skippedStart {
 		return ErrOnboardingStepsRequired
 	}
 	return nil

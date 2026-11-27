@@ -142,6 +142,8 @@
   "onboarding.step1.selected": "Ausgewählt: %s",
   "onboarding.step1.day1_tip": "Tag 1 ist der erste Tag mit voller Blutung, nicht Schmierblutung.",
   "onboarding.step1.privacy": "Alle Ihre Daten bleiben auf diesem Server und verlassen ihn nur über Integrationen, die Sie selbst aktivieren.",
+  "onboarding.step1.skip": "Ich weiß es nicht mehr — ich trage es später ein",
+  "onboarding.step1.skip_hint": "Sie sind sich beim Datum nicht sicher? Überspringen Sie es und tragen Sie es später in den Einstellungen ein; Schätzungen gibt es, sobald Sie es getan haben.",
   "onboarding.step1.field": "Startdatum der letzten Periode",
   "onboarding.step2.title": "Zyklusparameter einrichten",
   "onboarding.step2.cycle_length": "Typische Zykluslänge",

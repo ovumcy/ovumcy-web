@@ -142,6 +142,8 @@
   "onboarding.step1.selected": "Selezionato: %s",
   "onboarding.step1.day1_tip": "Il Giorno 1 è il primo giorno di flusso pieno, non di perdite.",
   "onboarding.step1.privacy": "Tutti i tuoi dati restano su questo server e lo lasciano solo tramite integrazioni che attivi tu.",
+  "onboarding.step1.skip": "Non ricordo — lo aggiungerò più tardi",
+  "onboarding.step1.skip_hint": "Non ricordi la data esatta? Saltala e aggiungila più tardi nelle Impostazioni; le stime partiranno quando lo avrai fatto.",
   "onboarding.step1.field": "Data di inizio dell'ultimo ciclo",
   "onboarding.step2.title": "Imposta i parametri del ciclo",
   "onboarding.step2.cycle_length": "Lunghezza tipica del ciclo",

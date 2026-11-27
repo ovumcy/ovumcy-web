@@ -142,6 +142,8 @@
   "onboarding.step1.selected": "Selected: %s",
   "onboarding.step1.day1_tip": "Day 1 is the first day of full flow, not spotting.",
   "onboarding.step1.privacy": "All your data stays on this server and only leaves it through integrations you turn on yourself.",
+  "onboarding.step1.skip": "I don't remember — I'll add it later",
+  "onboarding.step1.skip_hint": "Not sure of the date? Skip it and add it later in Settings; estimates start once you have.",
   "onboarding.step1.field": "Last period start date",
   "onboarding.step2.title": "Set up cycle parameters",
   "onboarding.step2.cycle_length": "Typical cycle length",

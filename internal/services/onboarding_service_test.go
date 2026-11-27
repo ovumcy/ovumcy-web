@@ -21,6 +21,9 @@ type stubOnboardingRepo struct {
 	completeErr        error
 	completeCalled     bool
 	completeStartDay   time.Time
+	completeStartNil   bool
+	clearCalled        bool
+	clearUserID        uint
 	completeFillEndDay time.Time
 	completeAutoFill   bool
 	completeLanguage   string
@@ -57,12 +60,21 @@ func (stub *stubOnboardingRepo) SaveOnboardingStep2(_ context.Context, userID ui
 	return nil
 }
 
-func (stub *stubOnboardingRepo) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error {
+func (stub *stubOnboardingRepo) ClearOnboardingStart(_ context.Context, userID uint) error {
+	stub.clearCalled = true
+	stub.clearUserID = userID
+	return nil
+}
+
+func (stub *stubOnboardingRepo) CompleteOnboarding(ctx context.Context, userID uint, start *time.Time, fillEndDay time.Time, autoPeriodFill bool, language string, weekStart string) error {
 	stub.completeLanguage = language
 	stub.completeWeekStart = weekStart
 	stub.completeCalled = true
 	stub.completeUserID = userID
-	stub.completeStartDay = startDay
+	stub.completeStartNil = start == nil
+	if start != nil {
+		stub.completeStartDay = *start
+	}
 	stub.completeFillEndDay = fillEndDay
 	stub.completeAutoFill = autoPeriodFill
 	return stub.completeErr
@@ -85,6 +97,58 @@ func TestCompleteOnboardingForUserRequiresStep1Date(t *testing.T) {
 	}
 	if repo.findUserID != onboardingFixtureUserID {
 		t.Fatalf("expected the eligibility read to be scoped to owner %d, got %d", onboardingFixtureUserID, repo.findUserID)
+	}
+	if repo.completeCalled {
+		t.Fatal("a completion without a start and without the skip must write nothing")
+	}
+}
+
+// TestCompleteOnboardingSkippingStartCompletesWithoutAStart pins the skip's
+// completion: no start reaches the repository (a typed nil, never a zero time
+// that would walk the fill from year 1), the baseline preferences still settle,
+// and the account the step-1 skip cleared is scoped to the caller's owner id.
+func TestCompleteOnboardingSkippingStartCompletesWithoutAStart(t *testing.T) {
+	repo := &stubOnboardingRepo{user: models.User{CycleLength: 28, PeriodLength: 5, AutoPeriodFill: true}}
+	service := NewOnboardingService(repo)
+
+	if err := service.SkipStep1(context.Background(), onboardingFixtureUserID); err != nil {
+		t.Fatalf("SkipStep1() unexpected error: %v", err)
+	}
+	if !repo.clearCalled || repo.clearUserID != onboardingFixtureUserID {
+		t.Fatalf("expected the start cleared for owner %d, got called=%v owner=%d", onboardingFixtureUserID, repo.clearCalled, repo.clearUserID)
+	}
+
+	startDay, err := service.CompleteOnboardingSkippingStart(context.Background(), onboardingFixtureUserID, time.Now(), time.UTC, "de")
+	if err != nil {
+		t.Fatalf("CompleteOnboardingSkippingStart() unexpected error: %v", err)
+	}
+	if !repo.completeCalled || repo.completeUserID != onboardingFixtureUserID {
+		t.Fatalf("expected completion for owner %d, got called=%v owner=%d", onboardingFixtureUserID, repo.completeCalled, repo.completeUserID)
+	}
+	if !repo.completeStartNil {
+		t.Fatal("expected no start to reach the repository after a skip")
+	}
+	if !startDay.IsZero() || !repo.completeFillEndDay.IsZero() {
+		t.Fatalf("expected no start day and no fill bound, got %s and %s", startDay, repo.completeFillEndDay)
+	}
+	if repo.completeLanguage != "de" || repo.completeWeekStart != models.WeekStartMonday {
+		t.Fatalf("expected the locale preferences settled, got language %q week start %q", repo.completeLanguage, repo.completeWeekStart)
+	}
+}
+
+// TestCompleteOnboardingSkippingStartKeepsAStartGivenAfterTheSkip: a date the
+// account holds wins over the skip flag a stale form still carries.
+func TestCompleteOnboardingSkippingStartKeepsAStartGivenAfterTheSkip(t *testing.T) {
+	start := time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC)
+	repo := &stubOnboardingRepo{user: models.User{CycleLength: 28, PeriodLength: 5, LastPeriodStart: &start}}
+	service := NewOnboardingService(repo)
+
+	startDay, err := service.CompleteOnboardingSkippingStart(context.Background(), onboardingFixtureUserID, start.AddDate(0, 1, 0), time.UTC, "")
+	if err != nil {
+		t.Fatalf("CompleteOnboardingSkippingStart() unexpected error: %v", err)
+	}
+	if repo.completeStartNil || !repo.completeStartDay.Equal(start) || !startDay.Equal(start) {
+		t.Fatalf("expected the held start %s to be completed with, got nil=%v repo=%s service=%s", start, repo.completeStartNil, repo.completeStartDay, startDay)
 	}
 }
 

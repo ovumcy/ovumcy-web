@@ -289,9 +289,10 @@ func TestOnboardingRedirectPolicy(t *testing.T) {
 
 func TestValidateOnboardingCompletionEligibility(t *testing.T) {
 	tests := []struct {
-		name string
-		user *models.User
-		want error
+		name    string
+		skipped bool
+		user    *models.User
+		want    error
 	}{
 		{
 			name: "owner pending with step1 data allowed",
@@ -326,11 +327,29 @@ func TestValidateOnboardingCompletionEligibility(t *testing.T) {
 			},
 			want: ErrOnboardingStepsRequired,
 		},
+		{
+			name:    "owner pending without step1 data but with the skip is eligible",
+			skipped: true,
+			user: &models.User{
+				Role:                models.RoleOwner,
+				OnboardingCompleted: false,
+			},
+			want: nil,
+		},
+		{
+			name:    "the skip does not make a completed owner eligible",
+			skipped: true,
+			user: &models.User{
+				Role:                models.RoleOwner,
+				OnboardingCompleted: true,
+			},
+			want: ErrOnboardingCompletionNotNeeded,
+		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := ValidateOnboardingCompletionEligibility(testCase.user)
+			err := ValidateOnboardingCompletionEligibility(testCase.user, testCase.skipped)
 			if !errors.Is(err, testCase.want) {
 				t.Fatalf("ValidateOnboardingCompletionEligibility() error = %v, want %v", err, testCase.want)
 			}

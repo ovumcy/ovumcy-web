@@ -1855,12 +1855,23 @@ components:
 
     OnboardingStep1Request:
       type: object
-      description: First-step onboarding payload — owner specifies first day of latest period.
-      required: [last_period_start]
+      description: >-
+        First-step onboarding payload — owner specifies first day of latest period, or
+        skips it with `skip_last_period` and logs it later. One of the two is required: a
+        body naming neither (or an empty date) is refused with `400`. The skip is not
+        stored — it clears any `last_period_start` an earlier step-1 submit saved, and
+        the client repeats `skip_last_period: true` on step 2 or on
+        `POST /api/v1/onboarding/complete`, which then completes without a start. The
+        HTML form posts the same fields.
       properties:
         last_period_start:
           type: string
           format: date
+        skip_last_period:
+          type: boolean
+          description: >-
+            When true the date is not asked for and `last_period_start` is ignored; the
+            account is left with no last period start, as after clear-data.
 
     OnboardingStep2Request:
       type: object
@@ -1876,6 +1887,12 @@ components:
           maximum: 14
         auto_period_fill: { type: boolean }
         irregular_cycle: { type: boolean }
+        skip_last_period:
+          type: boolean
+          description: >-
+            Carries a step-1 skip: with no stored last period start, true completes
+            onboarding without one (no day is logged); without it the completion is
+            refused and the account stays in onboarding.
         usage_goal:
           type: string
           enum: [health, avoid_pregnancy, trying_to_conceive]
@@ -2594,6 +2611,19 @@ paths:
     post:
       tags: [onboarding]
       summary: Mark onboarding as complete.
+      description: |
+        Needs a stored last period start, unless the body names `skip_last_period: true`
+        (step 1 was skipped): then it completes with no start and logs no day. A request
+        naming neither is refused with `400`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                skip_last_period: { type: boolean }
       responses:
         '200':
           description: Completed.

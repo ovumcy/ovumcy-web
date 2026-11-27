@@ -341,6 +341,16 @@
     bindUsageGoalWarnings(root);
   }
 
+  // The server does not store that step 1 was skipped, so the step-2 form
+  // carries it. The field is sent only while the last step-1 answer was the
+  // skip; a date given after going back turns it off again.
+  function syncOnboardingSkipField(root, skipped) {
+    var field = root && root.querySelector ? root.querySelector("[data-onboarding-skip-field]") : null;
+    if (field) {
+      field.disabled = !skipped;
+    }
+  }
+
   function goToOnboardingStep(state, nextStep) {
     state.step = normalizeOnboardingStep(nextStep);
     clearAllOnboardingStatuses(state);
@@ -478,7 +488,10 @@
           var guidance;
           if (form && form.matches && form.matches("form[data-onboarding-form-step='1']")) {
             syncOnboardingTimezoneFields(currentState);
-            var startDateError = validateOnboardingStartDate(currentState);
+            // The skip answers step 1 without a date, so it bypasses the date
+            // check; the step-2 form is told afterwards, once the server took it.
+            currentState.skipStart = !!(event.submitter && event.submitter.matches && event.submitter.matches("[data-onboarding-skip-start]"));
+            var startDateError = currentState.skipStart ? "" : validateOnboardingStartDate(currentState);
             if (startDateError) {
               event.preventDefault();
               clearOnboardingStatus(currentState, "1");
@@ -515,6 +528,7 @@
 
           switch (form.getAttribute("data-onboarding-form-step")) {
             case "1":
+              syncOnboardingSkipField(this, this.__ovumcyOnboardingState.skipStart === true);
               goToOnboardingStep(this.__ovumcyOnboardingState, 2);
               break;
           }

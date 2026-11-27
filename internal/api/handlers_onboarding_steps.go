@@ -34,7 +34,13 @@ func (handler *Handler) OnboardingStep1(c fiber.Ctx) error {
 	if validationError != "" {
 		return handler.failMutation(c, onboardingCycleStartMutation, onboardingValidationErrorSpec(validationError))
 	}
-	if err := handler.onboardingSvc.SaveStep1(c.Context(), user.ID, values.Start); err != nil {
+	var saveErr error
+	if values.Skip {
+		saveErr = handler.onboardingSvc.SkipStep1(c.Context(), user.ID)
+	} else {
+		saveErr = handler.onboardingSvc.SaveStep1(c.Context(), user.ID, values.Start)
+	}
+	if saveErr != nil {
 		return handler.failMutation(c, onboardingCycleStartMutation, onboardingSaveStepErrorSpec())
 	}
 
@@ -45,6 +51,11 @@ func (handler *Handler) OnboardingStep1(c fiber.Ctx) error {
 	}
 	if isHTMX(c) {
 		return c.SendStatus(fiber.StatusNoContent)
+	}
+	if values.Skip {
+		// The skip is not stored, so the page that follows carries it to the
+		// step-2 form.
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/onboarding?step=2&" + onboardingSkipFieldName + "=1")
 	}
 	return c.Redirect().Status(fiber.StatusSeeOther).To("/onboarding?step=2")
 }
@@ -82,7 +93,11 @@ func (handler *Handler) OnboardingStep2(c fiber.Ctx) error {
 	if err != nil {
 		return handler.failMutation(c, onboardingCycleMutation, onboardingSaveStepErrorSpec())
 	}
-	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.clockNow(), location, handler.onboardingAccountLanguage(c)); err != nil {
+	completeOnboarding := handler.onboardingSvc.CompleteOnboardingForUser
+	if onboardingSkipRequested(c) {
+		completeOnboarding = handler.onboardingSvc.CompleteOnboardingSkippingStart
+	}
+	if _, err := completeOnboarding(c.Context(), user.ID, handler.clockNow(), location, handler.onboardingAccountLanguage(c)); err != nil {
 		if errors.Is(err, services.ErrOnboardingStepsRequired) {
 			// The step-2 columns are persisted at this point; only the completion
 			// (which seeds the first period's day entries) did not run, so the
