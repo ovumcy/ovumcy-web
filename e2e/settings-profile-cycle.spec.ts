@@ -360,6 +360,8 @@ test.describe('Settings: profile and cycle', () => {
 
     const trackBBT = trackingSection.locator('input[name="track_bbt"]');
     const trackCervicalMucus = trackingSection.locator('input[name="track_cervical_mucus"]');
+    const trackLHTest = trackingSection.locator('input[name="track_lh_test"]');
+    const trackLHTestToggle = trackingSection.locator('[data-tracking-setting="track-lh-test"]');
     const showSexChip = trackingSection.locator('input[name="show_sex_chip"]');
     const trackBBTToggle = trackingSection.locator('[data-tracking-setting="track-bbt"]');
     const trackCervicalMucusToggle = trackingSection.locator('[data-tracking-setting="track-cervical-mucus"]');
@@ -385,6 +387,8 @@ test.describe('Settings: profile and cycle', () => {
     // catalogues with every key-based search coming back clean.
     await expect(trackBBT).not.toBeChecked();
     await expect(trackCervicalMucus).not.toBeChecked();
+    await expect(trackLHTest).not.toBeChecked();
+    await expect(trackLHTestToggle).toContainText(localeText('en', 'settings.tracking.track_lh_test'));
     await expect(showSexChip).toBeChecked();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'false');
@@ -399,6 +403,8 @@ test.describe('Settings: profile and cycle', () => {
 
     await trackBBT.check();
     await trackCervicalMucus.check();
+    await trackLHTest.check();
+    await expect(trackLHTestToggle).toHaveAttribute('data-active', 'true');
     await showSexChip.uncheck();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
@@ -411,6 +417,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page).toHaveURL(/\/settings$/);
     await expect(trackBBT).toBeChecked();
     await expect(trackCervicalMucus).toBeChecked();
+    await expect(trackLHTest).toBeChecked();
     await expect(showSexChip).not.toBeChecked();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
@@ -441,6 +448,13 @@ test.describe('Settings: profile and cycle', () => {
     expect(invalidState.valid).toBe(false);
     expect(invalidState.validationMessage).not.toBe('');
     await expect(page.locator('[data-dashboard-save-form] input[name="cervical_mucus"][value="dry"]')).toBeVisible();
+    // The LH test group is offered once the toggle is on: three options, and
+    // choosing a result saves it with the entry.
+    await expect(page.locator('[data-dashboard-save-form] [data-lh-test-option]')).toHaveCount(3);
+    await saveDashboardEntry(page, async () => {
+      await page.locator('[data-dashboard-save-form] [data-lh-test-option="positive"]').click();
+    });
+    await expect(page.locator('[data-dashboard-save-form] input[name="lh_test"][value="positive"]')).toBeChecked();
     await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toHaveCount(0);
     await saveDashboardEntry(page, async () => {
       await bbtInput.fill('98.6');
@@ -460,6 +474,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page).toHaveURL(/\/settings$/);
     await trackBBT.uncheck();
     await trackCervicalMucus.uncheck();
+    await trackLHTest.uncheck();
     await showSexChip.check();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'false');
@@ -472,6 +487,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.locator('[data-dashboard-save-form] input[name="bbt"]')).toHaveCount(0);
     await expect(page.locator('[data-dashboard-save-form] input[name="cervical_mucus"][value="dry"]')).toHaveCount(0);
+    await expect(page.locator('[data-dashboard-save-form] [data-lh-test-option]')).toHaveCount(0);
     await openDashboardMoreFields(page);
     await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toBeVisible();
   });

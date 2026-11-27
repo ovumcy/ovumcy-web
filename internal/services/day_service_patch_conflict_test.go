@@ -53,6 +53,10 @@ var dayFieldConflictCases = map[string]dayFieldConflictCase{
 		base:    func(in *DayEntryInput) { in.PregnancyTest = models.PregnancyTestNone },
 		written: func(in *DayEntryInput) { in.PregnancyTest = models.PregnancyTestPositive },
 	},
+	"LHTest": {
+		base:    func(in *DayEntryInput) { in.LHTest = models.LHTestNone },
+		written: func(in *DayEntryInput) { in.LHTest = models.LHTestNegative },
+	},
 	"CycleFactorKeys": {
 		base:    func(in *DayEntryInput) { in.CycleFactorKeys = []string{} },
 		written: func(in *DayEntryInput) { in.CycleFactorKeys = []string{models.CycleFactorIllness} },

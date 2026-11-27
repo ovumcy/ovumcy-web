@@ -37,8 +37,8 @@ var trackingInversionAllowedFiles = map[string]string{
 // same question as the three inverted ones — does this owner's day form show
 // this field — and must reach a day form through the same view model.
 var positiveTrackingColumnTokens = []string{
-	"TrackBBT", "TrackCervicalMucus",
-	"track_bbt", "track_cervical_mucus",
+	"TrackBBT", "TrackCervicalMucus", "TrackLHTest",
+	"track_bbt", "track_cervical_mucus", "track_lh_test",
 }
 
 // positiveTrackingColumnAllowedFiles are the files that may read those two

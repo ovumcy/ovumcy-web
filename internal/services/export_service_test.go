@@ -267,6 +267,7 @@ func TestExportBuildJSONEntriesNormalizesFlowAndMapsSymptoms(t *testing.T) {
 					BBT:             new(36.55),
 					CervicalMucus:   models.CervicalMucusEggWhite,
 					PregnancyTest:   models.PregnancyTestPositive,
+					LHTest:          models.LHTestNegative,
 					CycleStart:      true,
 					IsUncertain:     true,
 					CycleFactorKeys: []string{models.CycleFactorStress, models.CycleFactorTravel},
@@ -311,6 +312,7 @@ func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
 					BBT:             new(36.7),
 					CervicalMucus:   models.CervicalMucusCreamy,
 					PregnancyTest:   models.PregnancyTestNegative,
+					LHTest:          models.LHTestPositive,
 					CycleStart:      true,
 					IsUncertain:     true,
 					CycleFactorKeys: []string{models.CycleFactorStress, models.CycleFactorMedicationChange},
@@ -557,6 +559,9 @@ func assertExportJSONEntryTrackingFields(t *testing.T, entry ExportJSONEntry) {
 	if entry.CervicalMucus != models.CervicalMucusEggWhite {
 		t.Fatalf("expected eggwhite cervical mucus, got %q", entry.CervicalMucus)
 	}
+	if entry.LHTest != models.LHTestNegative {
+		t.Fatalf("expected negative lh test, got %q", entry.LHTest)
+	}
 	if entry.PregnancyTest != models.PregnancyTestPositive {
 		t.Fatalf("expected positive pregnancy test, got %q", entry.PregnancyTest)
 	}
@@ -617,14 +622,24 @@ func assertExportCSVTrackingColumns(t *testing.T, columns []string, indexByHeade
 	if columns[indexByHeader["Uncertain"]] != "Yes" {
 		t.Fatalf("expected uncertain column Yes, got %q", columns[indexByHeader["Uncertain"]])
 	}
-	// Append-only stability contract: the two new tracking columns must remain the
-	// final two headers, after Pregnancy test (docs/export.md "Stability").
-	headers := ExportCSVHeaders()
-	if got := headers[len(headers)-2]; got != "Cycle start" {
-		t.Fatalf("expected second-to-last header to be Cycle start, got %q", got)
+	if columns[indexByHeader["LH test"]] != "Positive" {
+		t.Fatalf("expected LH test column Positive, got %q", columns[indexByHeader["LH test"]])
 	}
-	if got := headers[len(headers)-1]; got != "Uncertain" {
-		t.Fatalf("expected last header to be Uncertain, got %q", got)
+	// Append-only stability contract: Cycle start and Uncertain keep their
+	// positions after Pregnancy test, and the LH test column is appended last
+	// (docs/export.md "Stability").
+	headers := ExportCSVHeaders()
+	if got := headers[len(headers)-3]; got != "Cycle start" {
+		t.Fatalf("expected third-to-last header to be Cycle start, got %q", got)
+	}
+	if got := headers[len(headers)-2]; got != "Uncertain" {
+		t.Fatalf("expected second-to-last header to be Uncertain, got %q", got)
+	}
+	if got := headers[len(headers)-1]; got != "LH test" {
+		t.Fatalf("expected last header to be LH test, got %q", got)
+	}
+	if got := csvLHTestLabel(models.LHTestNone); got != "" {
+		t.Fatalf("expected an empty cell for no LH test result, got %q", got)
 	}
 }
 

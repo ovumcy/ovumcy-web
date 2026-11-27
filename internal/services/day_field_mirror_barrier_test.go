@@ -63,6 +63,7 @@ var dayManualSignalFixtures = map[string]models.DailyLog{
 	"BBT":             {BBT: new(36.5)},
 	"CervicalMucus":   {CervicalMucus: models.CervicalMucusEggWhite},
 	"PregnancyTest":   {PregnancyTest: models.PregnancyTestPositive},
+	"LHTest":          {LHTest: models.LHTestPositive},
 	"CycleFactorKeys": {CycleFactorKeys: []string{models.CycleFactorStress}},
 	"SymptomIDs":      {SymptomIDs: []uint{1}},
 	"Notes":           {Notes: "spotty"},

@@ -493,7 +493,7 @@ func TestImportServiceSanitizesGarbageValues(t *testing.T) {
 	payload := importPayload{Entries: []ExportJSONEntry{
 		{
 			Date: "2026-10-01", Period: true, Flow: "ZZZ", MoodRating: 999, BBT: new(9999.0),
-			SexActivity: "??", CervicalMucus: "??", PregnancyTest: "??",
+			SexActivity: "??", CervicalMucus: "??", PregnancyTest: "??", LHTest: "??",
 			CycleFactors: []string{"not_a_factor"},
 		},
 	}}
@@ -515,7 +515,7 @@ func TestImportServiceSanitizesGarbageValues(t *testing.T) {
 	if stored.Flow != models.FlowNone || stored.Mood != 0 || stored.BBT != nil {
 		t.Fatalf("garbage flow/mood/bbt not sanitized: flow=%q mood=%d bbt=%v", stored.Flow, stored.Mood, stored.BBT)
 	}
-	if stored.SexActivity != models.SexActivityNone || stored.CervicalMucus != models.CervicalMucusNone || stored.PregnancyTest != models.PregnancyTestNone {
+	if stored.SexActivity != models.SexActivityNone || stored.CervicalMucus != models.CervicalMucusNone || stored.PregnancyTest != models.PregnancyTestNone || stored.LHTest != models.LHTestNone {
 		t.Fatalf("garbage sex/mucus/pregnancy not sanitized: %+v", stored)
 	}
 	if len(stored.CycleFactorKeys) != 0 {

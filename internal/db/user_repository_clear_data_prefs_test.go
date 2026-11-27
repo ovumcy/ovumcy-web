@@ -71,6 +71,7 @@ func TestClearAllDataResetsDisplayPreferences(t *testing.T) {
 	if err := repo.database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"track_bbt":              true,
 		"track_cervical_mucus":   true,
+		"track_lh_test":          true,
 		"hide_sex_chip":          true,
 		"hide_cycle_factors":     true,
 		"hide_notes_field":       true,
@@ -84,7 +85,7 @@ func TestClearAllDataResetsDisplayPreferences(t *testing.T) {
 	}
 
 	got := reloadUserForWebhook(t, repo, user.ID)
-	if got.TrackBBT || got.TrackCervicalMucus || got.HideSexChip || got.HideCycleFactors || got.HideNotesField {
+	if got.TrackBBT || got.TrackCervicalMucus || got.TrackLHTest || got.HideSexChip || got.HideCycleFactors || got.HideNotesField {
 		t.Fatalf("expected tracking toggles reset to false, got %+v", got)
 	}
 	if got.ShowHistoricalPhases {

@@ -387,6 +387,13 @@ func TestNormalizeDayEntryInputDropsAPreservedFieldsIncomingValue(t *testing.T) 
 			wantErrWithoutPreserve: ErrInvalidDayCervicalMucus,
 		},
 		{
+			name:                   "an unknown lh test",
+			send:                   func(input *DayEntryInput) { input.LHTest = "not-a-result" },
+			neutral:                func(input *DayEntryInput) { input.LHTest = models.LHTestNone },
+			preserve:               func(input *DayEntryInput) { input.PreserveLHTest = true },
+			wantErrWithoutPreserve: ErrInvalidDayLHTest,
+		},
+		{
 			name:                   "an unknown cycle factor",
 			send:                   func(input *DayEntryInput) { input.CycleFactorKeys = []string{"not_a_factor"} },
 			neutral:                func(input *DayEntryInput) { input.CycleFactorKeys = nil },
