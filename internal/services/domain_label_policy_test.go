@@ -71,6 +71,9 @@ func domainLabelTranslationKeys(t *testing.T) map[string]string {
 	for _, result := range []string{models.PregnancyTestNone, models.PregnancyTestNegative, models.PregnancyTestPositive, "unrecognized"} {
 		add("pregnancy test "+result, PregnancyTestTranslationKey(result))
 	}
+	for _, result := range []string{models.LHTestNone, models.LHTestNegative, models.LHTestPositive, "unrecognized"} {
+		add("lh test "+result, LHTestTranslationKey(result))
+	}
 	for _, step := range DayMoodScale().Steps {
 		add(fmt.Sprintf("mood step %d", step), MoodTranslationKey(step))
 	}

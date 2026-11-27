@@ -28,6 +28,7 @@ func seedPatchCycleStartDay(t *testing.T, logs *dayLogRepositoryStub, day time.T
 		BBT:             new(36.55),
 		CervicalMucus:   models.CervicalMucusCreamy,
 		PregnancyTest:   models.PregnancyTestNegative,
+		LHTest:          models.LHTestPositive,
 		CycleFactorKeys: []string{models.CycleFactorStress},
 		SymptomIDs:      []uint{4},
 		Notes:           "keep me",
@@ -58,6 +59,9 @@ func TestPatchDayEntryChangesOnlyTheNamedField(t *testing.T) {
 	}
 	if saved.SexActivity != models.SexActivityProtected || saved.CervicalMucus != models.CervicalMucusCreamy || saved.PregnancyTest != models.PregnancyTestNegative {
 		t.Fatalf("expected owner fields kept, got sex=%q mucus=%q test=%q", saved.SexActivity, saved.CervicalMucus, saved.PregnancyTest)
+	}
+	if saved.LHTest != models.LHTestPositive {
+		t.Fatalf("expected the stored lh test kept, got %q", saved.LHTest)
 	}
 	if len(saved.CycleFactorKeys) != 1 || saved.CycleFactorKeys[0] != models.CycleFactorStress || len(saved.SymptomIDs) != 1 || saved.SymptomIDs[0] != 4 {
 		t.Fatalf("expected cycle factors and symptoms kept, got %v / %v", saved.CycleFactorKeys, saved.SymptomIDs)
