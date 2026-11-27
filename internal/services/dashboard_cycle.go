@@ -44,12 +44,18 @@ type DashboardCycleContext struct {
 	DisplayNextPeriodRangeEnd   time.Time
 	DisplayNextPeriodUseRange   bool
 	DisplayNextPeriodPrompt     bool
-	DisplayNextPeriodNeedsData  bool
-	DisplayOvulationDate        time.Time
-	DisplayOvulationRangeStart  time.Time
-	DisplayOvulationRangeEnd    time.Time
-	DisplayOvulationUseRange    bool
-	DisplayOvulationNeedsData   bool
+	// CycleStartMissing drives the shared no-cycle-start notice on the
+	// dashboard, calendar and stats pages. It is CycleStartMissing(stats) on the
+	// predicting branch only: the notice promises predictions, so a branch that
+	// withholds them for another reason (prediction off, pregnancy pause) leaves
+	// it false and keeps its own explainer.
+	CycleStartMissing          bool
+	DisplayNextPeriodNeedsData bool
+	DisplayOvulationDate       time.Time
+	DisplayOvulationRangeStart time.Time
+	DisplayOvulationRangeEnd   time.Time
+	DisplayOvulationUseRange   bool
+	DisplayOvulationNeedsData  bool
 	// DisplayOvulationConfirmed marks DisplayOvulationDate as a day the owner's
 	// own thermal shift CONFIRMS — inferred from the temperature signal, never a
 	// measurement of the ovulation itself.
@@ -880,6 +886,7 @@ func BuildDashboardCycleContext(user *models.User, logs []models.DailyLog, stats
 		DisplayNextPeriodRangeEnd:   display.nextPeriodRangeEnd,
 		DisplayNextPeriodUseRange:   display.nextPeriodUseRange,
 		DisplayNextPeriodPrompt:     display.nextPeriodPrompt,
+		CycleStartMissing:           CycleStartMissing(stats),
 		DisplayNextPeriodNeedsData:  display.nextPeriodNeedsData,
 		DisplayOvulationDate:        display.ovulationDate,
 		DisplayOvulationRangeStart:  display.ovulationRangeStart,
@@ -922,7 +929,7 @@ func buildDashboardPredictionDisplay(user *models.User, logs []models.DailyLog, 
 	display := dashboardPredictionDisplay{
 		nextPeriodStart:     nextPeriodStart,
 		nextPeriodEnd:       nextPeriodEnd,
-		nextPeriodPrompt:    stats.LastPeriodStart.IsZero(),
+		nextPeriodPrompt:    CycleStartMissing(stats),
 		nextPeriodNeedsData: dashboardNeedsNextPeriodData(user, stats, nextPeriodStart),
 		ovulationDate:       prediction.OvulationDate,
 		ovulationNeedsData:  dashboardNeedsOvulationData(user, stats),

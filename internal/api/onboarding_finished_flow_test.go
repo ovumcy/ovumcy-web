@@ -144,8 +144,8 @@ func TestOnboardingSkippingTheLastPeriodDateCompletesWithoutAStart(t *testing.T)
 	response := mustAppResponse(t, app, request)
 	defer func() { _ = response.Body.Close() }()
 	assertStatusCode(t, response, http.StatusOK)
-	if !strings.Contains(mustReadBodyString(t, response.Body), `href="/settings#settings-cycle"`) {
-		t.Fatal("expected the dashboard to link the start-date prompt to the settings card")
+	if !strings.Contains(mustReadBodyString(t, response.Body), "data-cycle-start-missing-notice") {
+		t.Fatal("expected the dashboard to show the no-cycle-start notice after a skipped start")
 	}
 }
 

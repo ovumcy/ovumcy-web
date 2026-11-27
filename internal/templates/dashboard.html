@@ -96,9 +96,9 @@
                        every surface, and a caption beside a date is not a
                        substitute for withholding it. */}}
                   {{printf (tn .Messages .Lang "dashboard.next_period_need_cycles" cycleFloor) cycleFloor}}
-                {{else if .DisplayNextPeriodPrompt}}
-                  <a href="/settings#settings-cycle" class="inline-link">{{t .Messages "dashboard.next_period_prompt"}}</a>
-                {{else if .DisplayNextPeriodStart.IsZero}}
+                {{else if or .DisplayNextPeriodPrompt .DisplayNextPeriodStart.IsZero}}
+                  {{/* With no cycle start the shared notice below the header
+                       asks for the date; the slot only says there is none. */}}
                   {{.NoDataLabel}}
                 {{else}}
                   {{/* First to last predicted period day — the calendar legend's
@@ -350,6 +350,7 @@
       </p>
       {{end}}
     </section>
+    {{template "cycle_start_missing_notice" (dict "Messages" .Messages "Visible" .CycleStartMissing "OnCalendar" false)}}
   </section>
 
   <div class="grid gap-6" data-dashboard-editor data-phase="{{.Stats.CurrentPhase}}" data-fertility="{{$fertilityStatus}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">

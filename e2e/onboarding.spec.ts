@@ -116,7 +116,11 @@ test.describe('Onboarding flow', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
   });
 
-  test('step 1 can be skipped and the dashboard then asks for the start date', async ({ page }) => {
+  test('step 1 can be skipped and every owner page then asks for the start date', async ({
+    page,
+  }) => {
+    // Registration, both onboarding steps and three page loads in one test.
+    test.slow();
     await registerAndOpenOnboarding(page, 'onboarding-step1-skip');
 
     const skip = page.locator('[data-onboarding-skip-start]');
@@ -127,11 +131,30 @@ test.describe('Onboarding flow', () => {
     await expect(onboardingStepTwoForm(page)).toBeVisible();
     await submitStepTwo(page);
 
-    const prompt = page.getByRole('link', {
-      name: localeText('en', 'dashboard.next_period_prompt'),
-    });
-    await expect(prompt).toBeVisible();
-    await expect(prompt).toHaveAttribute('href', '/settings#settings-cycle');
+    for (const path of ['/dashboard', '/calendar', '/stats']) {
+      if (path !== '/dashboard') {
+        await page.goto(path);
+      }
+      const notice = page.locator('[data-cycle-start-missing-notice]');
+      await expect(notice).toHaveCount(1);
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText(localeText('en', 'cycle_start_missing.body'));
+
+      const settings = notice.locator('[data-cycle-start-missing-settings]');
+      await expect(settings).toHaveText(localeText('en', 'cycle_start_missing.action_settings'));
+      await expect(settings).toHaveAttribute('href', '/settings#settings-cycle');
+
+      // On the calendar the grid is where the day is marked, so the notice
+      // does not link to the page it is on.
+      const calendar = notice.locator('[data-cycle-start-missing-calendar]');
+      if (path === '/calendar') {
+        await expect(calendar).toHaveCount(0);
+      } else {
+        await expect(calendar).toHaveText(localeText('en', 'cycle_start_missing.action_calendar'));
+        await expect(calendar).toHaveAttribute('href', '/calendar');
+      }
+    }
+    await expect(page.locator('[data-stats-empty-state]')).toHaveCount(0);
   });
 
   test('step 1 blocks an empty submit and the today shortcut fills the date', async ({
