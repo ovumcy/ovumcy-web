@@ -82,6 +82,11 @@ func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCy
 		return predictionExplainerPregnancyPausedKey
 	case cycleContext.PredictionDisabled:
 		return "prediction.explainer.unpredictable"
+	// With no cycle start the shared notice is the page's one explanation: the
+	// first-cycle sentence below would claim a setup cycle length stands behind
+	// estimates that do not exist yet.
+	case cycleContext.CycleStartMissing:
+		return ""
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodNeedsData || cycleContext.DisplayOvulationNeedsData):
 		return predictionExplainerIrregularSparseKey
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodUseRange || cycleContext.DisplayOvulationUseRange):

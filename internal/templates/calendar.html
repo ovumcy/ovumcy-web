@@ -29,6 +29,8 @@
     </div>
   </div>
 
+  {{template "cycle_start_missing_notice" (dict "Messages" .Messages "Visible" .CycleStartMissing "OnCalendar" true)}}
+
   {{if .CalendarMonthInvalid}}
   <p class="status-notice" role="status" data-calendar-month-invalid>{{t .Messages "calendar.month_invalid"}}</p>
   {{end}}

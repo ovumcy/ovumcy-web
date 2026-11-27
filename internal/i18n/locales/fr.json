@@ -613,7 +613,9 @@
   "dashboard.next_period_days": "%s — %s (jours de règles estimés)",
   "dashboard.next_period_need_cycles.one": "%d cycle est nécessaire pour obtenir une plage fiable",
   "dashboard.next_period_need_cycles.other": "%d cycles sont nécessaires pour obtenir une plage fiable",
-  "dashboard.next_period_prompt": "Saisissez la date de début de votre dernier cycle",
+  "cycle_start_missing.body": "Ajoutez le premier jour de vos dernières règles — les prévisions et les rappels apparaîtront ensuite.",
+  "cycle_start_missing.action_calendar": "Le marquer dans le calendrier",
+  "cycle_start_missing.action_settings": "Le saisir dans les Paramètres",
   "dashboard.next_period_unknown": "inconnu",
   "dashboard.next_period_estimate_paused": "L'estimation des prochaines règles reviendra au début de votre prochain cycle.",
 

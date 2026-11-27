@@ -222,6 +222,7 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"HasPredictionExplanationPrimary":     viewData.HasPredictionExplanationPrimary,
 		"HasPredictionExplanationSecondary":   viewData.HasPredictionExplanationSecondary,
 		"LateCycle":                           viewData.LateCycle,
+		"CycleStartMissing":                   viewData.CycleStartMissing,
 		"RecentCycleFactors":                  viewData.RecentCycleFactors,
 		"HasRecentCycleFactors":               viewData.HasRecentCycleFactors,
 		"CycleFactorPatternSummaries":         viewData.CycleFactorPatternSummaries,

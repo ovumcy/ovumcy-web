@@ -33,7 +33,11 @@
   <div class="card-quiet text-sm journal-muted" data-stats-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{template "prediction_explainer_primary" .}}</div>
   {{end}}
 
-  {{if not .HasInsights}}
+  {{/* With no cycle start the empty state's completed-cycle count is not the
+       thing missing, so the shared notice stands in its place. */}}
+  {{if .CycleStartMissing}}
+  {{template "cycle_start_missing_notice" (dict "Messages" .Messages "Visible" .CycleStartMissing "OnCalendar" false)}}
+  {{else if not .HasInsights}}
   <section class="card p-4 sm:p-5 space-y-4" data-stats-empty-state data-stats-completed-cycles="{{.CompletedCycleCount}}">
     <div class="stats-empty-hero" aria-hidden="true">
       <div class="card card-illustration">

@@ -1,0 +1,17 @@
+{{define "cycle_start_missing_notice"}}
+{{/* The one notice an account with no cycle start sees on the dashboard,
+     calendar and stats pages (services.CycleStartMissing). It blocks nothing,
+     has no dismiss, and goes away once a period day exists. Called with
+     (dict "Messages" … "Visible" .CycleStartMissing "OnCalendar" bool): on the
+     calendar the grid itself is where the day is marked, so the calendar link
+     would only reload the page and is left out there. */}}
+{{if .Visible}}
+<div class="card-quiet text-sm space-y-3" data-cycle-start-missing-notice>
+  <p>{{t .Messages "cycle_start_missing.body"}}</p>
+  <div class="flex flex-wrap gap-2">
+    {{if not .OnCalendar}}<a href="/calendar" class="btn-primary" data-cycle-start-missing-calendar>{{t .Messages "cycle_start_missing.action_calendar"}}</a>{{end}}
+    <a href="/settings#settings-cycle" class="btn-secondary" data-cycle-start-missing-settings>{{t .Messages "cycle_start_missing.action_settings"}}</a>
+  </div>
+</div>
+{{end}}
+{{end}}
