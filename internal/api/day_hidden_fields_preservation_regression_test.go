@@ -21,6 +21,7 @@ func TestDashboardFormSavePreservesHiddenOwnerOnlyFields(t *testing.T) {
 		"hide_notes_field":     true,
 		"track_bbt":            false,
 		"track_cervical_mucus": false,
+		"track_lh_test":        false,
 	}).Error; err != nil {
 		t.Fatalf("configure hidden tracking fields: %v", err)
 	}
@@ -33,6 +34,7 @@ func TestDashboardFormSavePreservesHiddenOwnerOnlyFields(t *testing.T) {
 		SexActivity:     models.SexActivityProtected,
 		BBT:             new(36.65),
 		CervicalMucus:   models.CervicalMucusEggWhite,
+		LHTest:          models.LHTestPositive,
 		CycleFactorKeys: []string{models.CycleFactorStress},
 		Notes:           "keep me",
 	}
@@ -68,6 +70,9 @@ func TestDashboardFormSavePreservesHiddenOwnerOnlyFields(t *testing.T) {
 	if saved.CervicalMucus != models.CervicalMucusEggWhite {
 		t.Fatalf("expected hidden cervical mucus to be preserved, got %q", saved.CervicalMucus)
 	}
+	if saved.LHTest != models.LHTestPositive {
+		t.Fatalf("expected hidden LH test to be preserved, got %q", saved.LHTest)
+	}
 	if len(saved.CycleFactorKeys) != 1 || saved.CycleFactorKeys[0] != models.CycleFactorStress {
 		t.Fatalf("expected hidden cycle factors to be preserved, got %#v", saved.CycleFactorKeys)
 	}
@@ -100,6 +105,7 @@ func TestDashboardFormSaveClearsEveryTrackedFieldToItsRawStoredZeroValue(t *test
 		"hide_notes_field":     false,
 		"track_bbt":            true,
 		"track_cervical_mucus": true,
+		"track_lh_test":        true,
 	}).Error; err != nil {
 		t.Fatalf("configure tracked fields: %v", err)
 	}
@@ -120,6 +126,7 @@ func TestDashboardFormSaveClearsEveryTrackedFieldToItsRawStoredZeroValue(t *test
 		BBT:             new(36.65),
 		CervicalMucus:   models.CervicalMucusEggWhite,
 		PregnancyTest:   models.PregnancyTestPositive,
+		LHTest:          models.LHTestPositive,
 		CycleFactorKeys: []string{models.CycleFactorStress},
 		Notes:           "clear me",
 		SymptomIDs:      []uint{symptom.ID},
@@ -140,6 +147,7 @@ func TestDashboardFormSaveClearsEveryTrackedFieldToItsRawStoredZeroValue(t *test
 		"sex_activity":   {""},
 		"cervical_mucus": {""},
 		"pregnancy_test": {models.PregnancyTestNone},
+		"lh_test":        {models.LHTestNone},
 		"notes":          {""},
 	}
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+todayRaw, strings.NewReader(form.Encode()))
@@ -173,6 +181,9 @@ func TestDashboardFormSaveClearsEveryTrackedFieldToItsRawStoredZeroValue(t *test
 	}
 	if saved.PregnancyTest != models.PregnancyTestNone {
 		t.Fatalf("expected stored pregnancy test cleared to %q, got %q", models.PregnancyTestNone, saved.PregnancyTest)
+	}
+	if saved.LHTest != models.LHTestNone {
+		t.Fatalf("expected stored LH test cleared to %q, got %q", models.LHTestNone, saved.LHTest)
 	}
 	if len(saved.CycleFactorKeys) != 0 {
 		t.Fatalf("expected stored cycle factors cleared, got %#v", saved.CycleFactorKeys)
