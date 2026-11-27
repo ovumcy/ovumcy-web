@@ -641,6 +641,9 @@ func assertExportCSVTrackingColumns(t *testing.T, columns []string, indexByHeade
 	if got := csvLHTestLabel(models.LHTestNone); got != "" {
 		t.Fatalf("expected an empty cell for no LH test result, got %q", got)
 	}
+	if got := csvLHTestLabel(models.LHTestNegative); got != "Negative" {
+		t.Fatalf("expected Negative for a negative LH test, got %q", got)
+	}
 }
 
 func assertExportCSVSymptomColumns(t *testing.T, columns []string, indexByHeader map[string]int) {
