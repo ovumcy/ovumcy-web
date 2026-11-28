@@ -73,7 +73,7 @@ issues. Use either channel:
 
 - GitHub private vulnerability reporting (preferred):
   https://github.com/ovumcy/ovumcy-web/security/advisories/new
-- Email: contact@ovumcy.com (subject: `SECURITY: <short summary>`)
+- Email: security@ovumcy.app (subject: `SECURITY: <short summary>`)
 
 Include impact, reproduction steps, affected endpoints/files, and a suggested
 fix if you have one.
